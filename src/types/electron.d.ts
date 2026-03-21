@@ -13,6 +13,10 @@ interface ElectronAPI {
   calendar: {
     getTodayEvents: () => Promise<CalendarEvent[]>
   }
+  tray: {
+    updateStats: (stats: { tasks: string; habits: string; score: string }) => void
+  }
+  onNavigate: (callback: (route: string) => void) => void
 }
 
 declare global {
