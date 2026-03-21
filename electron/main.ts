@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename)
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let currentStats = { tasks: '0/0', habits: '0/0', score: '—' }
 
 const isDev = !app.isPackaged
 
@@ -37,28 +38,18 @@ function createWindow() {
   })
 }
 
-function createTray() {
-  const iconPath = isDev
-    ? path.join(__dirname, '../build/trayTemplate.png')
-    : path.join(process.resourcesPath, 'build/trayTemplate.png')
-
-  const icon = nativeImage.createFromPath(iconPath)
-  icon.setTemplateImage(true)
-
-  tray = new Tray(icon)
-  tray.setToolTip('Cortex')
-
-  const showAndNavigate = (route: string) => {
-    if (mainWindow) {
-      mainWindow.show()
-      mainWindow.focus()
-      mainWindow.webContents.send('navigate', route)
-    } else {
-      createWindow()
-    }
+function showAndNavigate(route: string) {
+  if (mainWindow) {
+    mainWindow.show()
+    mainWindow.focus()
+    mainWindow.webContents.send('navigate', route)
+  } else {
+    createWindow()
   }
+}
 
-  const contextMenu = Menu.buildFromTemplate([
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
     {
       label: 'Open Cortex',
       click: () => {
@@ -69,6 +60,19 @@ function createTray() {
           createWindow()
         }
       },
+    },
+    { type: 'separator' },
+    {
+      label: `Tasks: ${currentStats.tasks}`,
+      enabled: false,
+    },
+    {
+      label: `Habits: ${currentStats.habits}`,
+      enabled: false,
+    },
+    {
+      label: `Score: ${currentStats.score}`,
+      enabled: false,
     },
     { type: 'separator' },
     {
@@ -105,8 +109,19 @@ function createTray() {
       click: () => app.quit(),
     },
   ])
+}
 
-  tray.setContextMenu(contextMenu)
+function createTray() {
+  const iconPath = isDev
+    ? path.join(__dirname, '../build/trayTemplate.png')
+    : path.join(process.resourcesPath, 'build/trayTemplate.png')
+
+  const icon = nativeImage.createFromPath(iconPath)
+  icon.setTemplateImage(true)
+
+  tray = new Tray(icon)
+  tray.setToolTip('Cortex')
+  tray.setContextMenu(buildTrayMenu())
 
   tray.on('click', () => {
     if (mainWindow) {
@@ -123,13 +138,19 @@ ipcMain.handle('calendar:getTodayEvents', async () => {
   return getTodayEvents()
 })
 
+ipcMain.on('tray:updateStats', (_event, stats: { tasks: string; habits: string; score: string }) => {
+  currentStats = stats
+  if (tray) {
+    tray.setContextMenu(buildTrayMenu())
+  }
+})
+
 app.on('ready', () => {
   createWindow()
   createTray()
 })
 
 app.on('window-all-closed', () => {
-  // On macOS, keep running in tray when window is closed
   if (process.platform !== 'darwin') {
     app.quit()
   }
