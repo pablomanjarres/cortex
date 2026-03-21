@@ -1,5 +1,4 @@
 const GITHUB_API = 'https://api.github.com'
-const REPOS = ['pablomanjarresneg/project', 'pablomanjarresneg/project-website', 'pablomanjarresneg/life-audit-dashboard']
 
 interface GitHubStats {
   commitsToday: number
@@ -7,6 +6,7 @@ interface GitHubStats {
   prsOpen: number
   prsMerged: number
   latestCommit: string | null
+  repoCount: number
 }
 
 async function ghFetch(endpoint: string, token: string) {
@@ -21,10 +21,44 @@ async function ghFetch(endpoint: string, token: string) {
   return res.json()
 }
 
+async function getUserRepos(token: string): Promise<string[]> {
+  // Fetch all repos the user owns, sorted by most recently pushed
+  const repos: string[] = []
+  let page = 1
+  while (true) {
+    const batch = await ghFetch(`/user/repos?type=owner&sort=pushed&per_page=100&page=${page}`, token)
+    if (!batch.length) break
+    for (const repo of batch) {
+      repos.push(repo.full_name)
+    }
+    if (batch.length < 100) break
+    page++
+  }
+  return repos
+}
+
 export async function getGitHubStats(token: string): Promise<GitHubStats> {
   const now = new Date()
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
   const weekStart = new Date(now.getTime() - 7 * 86400000).toISOString()
+
+  // Get all user repos
+  const allRepos = await getUserRepos(token)
+
+  // Only check repos pushed to in the last 7 days to avoid hitting rate limits
+  const recentRepos: string[] = []
+  for (const repoName of allRepos) {
+    try {
+      const repo = await ghFetch(`/repos/${repoName}`, token)
+      if (repo.pushed_at && new Date(repo.pushed_at) >= new Date(weekStart)) {
+        recentRepos.push(repoName)
+      }
+    } catch {
+      // skip repos we can't access
+    }
+    // Cap at 20 most recent repos to stay within rate limits
+    if (recentRepos.length >= 20) break
+  }
 
   let commitsToday = 0
   let commitsWeek = 0
@@ -32,13 +66,11 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
   let prsMerged = 0
   let latestCommit: string | null = null
 
-  for (const repo of REPOS) {
+  for (const repo of recentRepos) {
     try {
-      // Commits today
       const todayCommits = await ghFetch(`/repos/${repo}/commits?since=${todayStart}&per_page=100`, token)
       commitsToday += todayCommits.length
 
-      // Commits this week
       const weekCommits = await ghFetch(`/repos/${repo}/commits?since=${weekStart}&per_page=100`, token)
       commitsWeek += weekCommits.length
 
@@ -46,11 +78,9 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
         latestCommit = todayCommits[0].commit?.message?.split('\n')[0] || null
       }
 
-      // Open PRs
       const openPrs = await ghFetch(`/repos/${repo}/pulls?state=open&per_page=100`, token)
       prsOpen += openPrs.length
 
-      // Merged PRs this week
       const closedPrs = await ghFetch(`/repos/${repo}/pulls?state=closed&since=${weekStart}&per_page=100`, token)
       prsMerged += closedPrs.filter((pr: any) => pr.merged_at).length
     } catch (e) {
@@ -58,5 +88,5 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
     }
   }
 
-  return { commitsToday, commitsWeek, prsOpen, prsMerged, latestCommit }
+  return { commitsToday, commitsWeek, prsOpen, prsMerged, latestCommit, repoCount: allRepos.length }
 }

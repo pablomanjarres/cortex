@@ -4,6 +4,7 @@ export interface GitHubStats {
   prsOpen: number
   prsMerged: number
   latestCommit: string | null
+  repoCount: number
 }
 
 export interface LemonStats {
