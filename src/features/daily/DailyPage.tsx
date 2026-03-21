@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Progress } from '@/components/ui/progress'
-import { useNavigate } from 'react-router-dom'
 import {
-  Plus,
   Star,
   Calendar,
   RefreshCw,
@@ -17,22 +15,7 @@ import {
   Target,
   Flame,
   Zap,
-  CheckCircle2,
 } from 'lucide-react'
-
-interface ChecklistItem {
-  id: string
-  text: string
-  done: boolean
-}
-
-const defaultChecklist: ChecklistItem[] = [
-  { id: '1', text: 'Morning workout', done: false },
-  { id: '2', text: 'Review daily goals', done: false },
-  { id: '3', text: 'Deep work block (2h)', done: false },
-  { id: '4', text: 'Check emails & messages', done: false },
-  { id: '5', text: 'Evening reflection', done: false },
-]
 
 function getGreeting() {
   const hour = new Date().getHours()
@@ -49,7 +32,6 @@ function getFormattedDate() {
   })
 }
 
-// Habits are tracked separately but we show a summary here
 const defaultHabits = [
   'Workout', 'Read 30min', 'Meditate', 'Journal',
   'No social media before noon', 'Drink 2L water', 'Sleep by 11pm',
@@ -57,20 +39,19 @@ const defaultHabits = [
 
 export function DailyPage() {
   const navigate = useNavigate()
-  const [checklist, setChecklist] = useState<ChecklistItem[]>(defaultChecklist)
-  const [newItem, setNewItem] = useState('')
   const [intentions, setIntentions] = useState(['', '', ''])
   const [score, setScore] = useState(0)
   const [habitsDone, setHabitsDone] = useState<Record<string, boolean>>({})
   const [calendarEvents, setCalendarEvents] = useState<{ title: string; startTime: string; endTime: string; calendar: string; isAllDay: boolean }[]>([])
   const [calendarLoading, setCalendarLoading] = useState(false)
-  const isElectron = !!window.electronAPI?.calendar
+  const isElectron = !!window.electronAPI
 
   const greeting = getGreeting()
   const GreetingIcon = greeting.icon
 
   const habitsCompleted = Object.values(habitsDone).filter(Boolean).length
   const habitsTotal = defaultHabits.length
+  const intentionsFilled = intentions.filter((i) => i.trim()).length
 
   const fetchCalendar = async () => {
     if (!window.electronAPI?.calendar) return
@@ -89,7 +70,6 @@ export function DailyPage() {
     fetchCalendar()
   }, [])
 
-  // Listen for tray navigation
   useEffect(() => {
     if (window.electronAPI?.onNavigate) {
       window.electronAPI.onNavigate((route) => navigate(route))
@@ -100,30 +80,12 @@ export function DailyPage() {
   useEffect(() => {
     if (window.electronAPI?.tray) {
       window.electronAPI.tray.updateStats({
-        tasks: `${completedCount}/${checklist.length}`,
+        tasks: '—',
         habits: `${habitsCompleted}/${habitsTotal}`,
         score: score > 0 ? `${score}/10` : '—',
       })
     }
   })
-
-  const completedCount = checklist.filter((i) => i.done).length
-  const progress = checklist.length > 0 ? (completedCount / checklist.length) * 100 : 0
-
-  const toggleItem = (id: string) => {
-    setChecklist((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, done: !item.done } : item))
-    )
-  }
-
-  const addItem = () => {
-    if (!newItem.trim()) return
-    setChecklist((prev) => [
-      ...prev,
-      { id: Date.now().toString(), text: newItem.trim(), done: false },
-    ])
-    setNewItem('')
-  }
 
   const updateIntention = (index: number, value: string) => {
     setIntentions((prev) => {
@@ -132,8 +94,6 @@ export function DailyPage() {
       return next
     })
   }
-
-  const intentionsFilled = intentions.filter((i) => i.trim()).length
 
   return (
     <PageShell>
@@ -158,14 +118,14 @@ export function DailyPage() {
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
-        className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+        className="grid grid-cols-3 gap-3"
       >
         {[
           {
-            label: 'Tasks',
-            value: `${completedCount}/${checklist.length}`,
-            icon: CheckCircle2,
-            color: completedCount === checklist.length && checklist.length > 0 ? 'text-green-400' : 'text-muted-foreground',
+            label: 'Habits',
+            value: `${habitsCompleted}/${habitsTotal}`,
+            icon: Flame,
+            color: habitsCompleted === habitsTotal && habitsTotal > 0 ? 'text-orange-400' : 'text-muted-foreground',
           },
           {
             label: 'Intentions',
@@ -178,12 +138,6 @@ export function DailyPage() {
             value: score > 0 ? `${score}/10` : '—',
             icon: Star,
             color: score >= 8 ? 'text-yellow-400' : 'text-muted-foreground',
-          },
-          {
-            label: 'Habits',
-            value: `${habitsCompleted}/${habitsTotal}`,
-            icon: Flame,
-            color: habitsCompleted === habitsTotal && habitsTotal > 0 ? 'text-orange-400' : 'text-muted-foreground',
           },
         ].map((stat) => (
           <div
@@ -201,53 +155,48 @@ export function DailyPage() {
 
       {/* Main grid */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        {/* Left column — checklist + schedule */}
+        {/* Left column — habits + schedule */}
         <div className="flex flex-col gap-5 lg:col-span-5">
-          {/* Daily Checklist */}
+          {/* Today's Habits */}
           <WidgetCard
-            title="Today's Tasks"
-            description={progress === 100 ? 'All done!' : `${completedCount} of ${checklist.length} done`}
+            title="Today's Habits"
+            description={
+              habitsCompleted === habitsTotal && habitsTotal > 0
+                ? 'All done!'
+                : `${habitsCompleted} of ${habitsTotal} done`
+            }
             delay={0.15}
           >
-            <Progress value={progress} className="mb-4 h-1" />
             <div className="flex flex-col gap-1">
-              {checklist.map((item) => (
+              {defaultHabits.map((habit) => (
                 <label
-                  key={item.id}
+                  key={habit}
                   className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-secondary"
                 >
                   <Checkbox
-                    checked={item.done}
-                    onCheckedChange={() => toggleItem(item.id)}
+                    checked={!!habitsDone[habit]}
+                    onCheckedChange={() =>
+                      setHabitsDone((prev) => ({ ...prev, [habit]: !prev[habit] }))
+                    }
                   />
                   <span
                     className={
-                      item.done
+                      habitsDone[habit]
                         ? 'text-sm text-muted-foreground line-through'
                         : 'text-sm text-foreground'
                     }
                   >
-                    {item.text}
+                    {habit}
                   </span>
-                  {item.done && <CheckCircle2 className="ml-auto h-3.5 w-3.5 text-green-400/60" />}
                 </label>
               ))}
             </div>
-            <div className="mt-3 flex gap-2">
-              <Input
-                placeholder="Add task..."
-                value={newItem}
-                onChange={(e) => setNewItem(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && addItem()}
-                className="h-8 bg-input text-sm"
-              />
-              <button
-                onClick={addItem}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-foreground transition-colors hover:bg-secondary/80"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
+            <button
+              onClick={() => navigate('/habits')}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              Full habit tracker →
+            </button>
           </WidgetCard>
 
           {/* Schedule */}
@@ -258,7 +207,7 @@ export function DailyPage() {
                 ? 'Loading...'
                 : isElectron
                   ? `${calendarEvents.length} event${calendarEvents.length !== 1 ? 's' : ''} today`
-                  : 'Electron only'
+                  : 'Calendar syncs in desktop app'
             }
             delay={0.25}
           >
@@ -267,7 +216,12 @@ export function DailyPage() {
                 {calendarEvents.length === 0 && !calendarLoading ? (
                   <div className="flex flex-col items-center gap-2 py-6 text-center">
                     <Calendar className="h-6 w-6 text-muted-foreground" />
-                    <p className="text-xs text-muted-foreground">No events today</p>
+                    <p className="text-xs text-muted-foreground">
+                      No events today — if this is wrong, grant calendar access in
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      System Settings → Privacy & Security → Calendars
+                    </p>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-0.5">
@@ -305,47 +259,9 @@ export function DailyPage() {
             ) : (
               <div className="flex flex-col items-center gap-2 py-6">
                 <Calendar className="h-6 w-6 text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">Open in Electron to sync calendar</p>
+                <p className="text-xs text-muted-foreground">Calendar syncs in the desktop app</p>
               </div>
             )}
-          </WidgetCard>
-
-          {/* Today's Habits */}
-          <WidgetCard
-            title="Today's Habits"
-            description={`${habitsCompleted}/${habitsTotal} done`}
-            delay={0.3}
-          >
-            <div className="flex flex-col gap-1">
-              {defaultHabits.map((habit) => (
-                <label
-                  key={habit}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-secondary"
-                >
-                  <Checkbox
-                    checked={!!habitsDone[habit]}
-                    onCheckedChange={() =>
-                      setHabitsDone((prev) => ({ ...prev, [habit]: !prev[habit] }))
-                    }
-                  />
-                  <span
-                    className={
-                      habitsDone[habit]
-                        ? 'text-sm text-muted-foreground line-through'
-                        : 'text-sm text-foreground'
-                    }
-                  >
-                    {habit}
-                  </span>
-                </label>
-              ))}
-            </div>
-            <button
-              onClick={() => navigate('/habits')}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              Full habit tracker →
-            </button>
           </WidgetCard>
         </div>
 

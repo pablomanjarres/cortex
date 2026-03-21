@@ -38,12 +38,18 @@
         "to": "build/trayTemplate@2x.png"
       }
     ],
+    "icon": "build/icon.icns",
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
-      "target": "dmg",
+      "target": "dir",
       "darkModeSupport": true,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSCalendarsUsageDescription": "Cortex needs access to your calendars to show your schedule.",
+        "NSCalendarsFullAccessUsageDescription": "Cortex needs access to your calendars to show your schedule."
+      }
     },
     "dmg": {
       "title": "Cortex"
