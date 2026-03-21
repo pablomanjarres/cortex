@@ -2,9 +2,16 @@ import { useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
-import { Flame, Trophy } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Flame, Trophy, Plus, X, Pencil, Check } from 'lucide-react'
 
-const habits = [
+interface Habit {
+  id: string
+  name: string
+  emoji: string
+}
+
+const defaultHabits: Habit[] = [
   { id: '1', name: 'Workout', emoji: '💪' },
   { id: '2', name: 'Read 30min', emoji: '📖' },
   { id: '3', name: 'Meditate', emoji: '🧘' },
@@ -17,7 +24,13 @@ const habits = [
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function HabitsPage() {
+  const [habits, setHabits] = useState<Habit[]>(defaultHabits)
   const [grid, setGrid] = useState<Record<string, Record<string, boolean>>>({})
+  const [newName, setNewName] = useState('')
+  const [newEmoji, setNewEmoji] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editEmoji, setEditEmoji] = useState('')
 
   const toggle = (habitId: string, day: string) => {
     setGrid((prev) => ({
@@ -27,6 +40,41 @@ export function HabitsPage() {
         [day]: !prev[habitId]?.[day],
       },
     }))
+  }
+
+  const addHabit = () => {
+    if (!newName.trim()) return
+    setHabits((prev) => [
+      ...prev,
+      { id: Date.now().toString(), name: newName.trim(), emoji: newEmoji || '⭐' },
+    ])
+    setNewName('')
+    setNewEmoji('')
+  }
+
+  const removeHabit = (id: string) => {
+    setHabits((prev) => prev.filter((h) => h.id !== id))
+    setGrid((prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }
+
+  const startEdit = (habit: Habit) => {
+    setEditingId(habit.id)
+    setEditName(habit.name)
+    setEditEmoji(habit.emoji)
+  }
+
+  const saveEdit = () => {
+    if (!editingId || !editName.trim()) return
+    setHabits((prev) =>
+      prev.map((h) =>
+        h.id === editingId ? { ...h, name: editName.trim(), emoji: editEmoji || h.emoji } : h
+      )
+    )
+    setEditingId(null)
   }
 
   const getStreak = (habitId: string) => {
@@ -59,14 +107,34 @@ export function HabitsPage() {
                   <th className="pb-3 text-center text-xs font-medium text-muted-foreground w-12">
                     <Flame className="mx-auto h-3.5 w-3.5" />
                   </th>
+                  <th className="pb-3 w-16" />
                 </tr>
               </thead>
               <tbody>
                 {habits.map((habit) => (
-                  <tr key={habit.id} className="border-t border-border/50">
+                  <tr key={habit.id} className="border-t border-border/50 group">
                     <td className="py-2.5 pr-4 text-sm text-foreground">
-                      <span className="mr-2">{habit.emoji}</span>
-                      {habit.name}
+                      {editingId === habit.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            value={editEmoji}
+                            onChange={(e) => setEditEmoji(e.target.value)}
+                            className="h-7 w-10 bg-input px-1 text-center text-sm"
+                          />
+                          <Input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
+                            className="h-7 bg-input text-sm"
+                            autoFocus
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <span className="mr-2">{habit.emoji}</span>
+                          {habit.name}
+                        </>
+                      )}
                     </td>
                     {weekDays.map((day) => (
                       <td key={day} className="py-2.5 text-center">
@@ -89,10 +157,58 @@ export function HabitsPage() {
                         {getStreak(habit.id)}
                       </span>
                     </td>
+                    <td className="py-2.5 text-center">
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {editingId === habit.id ? (
+                          <button
+                            onClick={saveEdit}
+                            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => startEdit(habit)}
+                            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => removeHabit(habit.id)}
+                          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Add new habit */}
+          <div className="mt-4 flex items-center gap-2 border-t border-border/50 pt-4">
+            <Input
+              value={newEmoji}
+              onChange={(e) => setNewEmoji(e.target.value)}
+              placeholder="🎯"
+              className="h-8 w-12 bg-input px-1 text-center text-sm"
+            />
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addHabit()}
+              placeholder="New habit..."
+              className="h-8 bg-input text-sm flex-1"
+            />
+            <button
+              onClick={addHabit}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-foreground transition-colors hover:bg-secondary/80"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
         </WidgetCard>
 
