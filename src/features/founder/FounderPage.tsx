@@ -1,6 +1,5 @@
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { Badge } from '@/components/ui/badge'
 import { TrendingUp, Lightbulb, Users, Calendar } from 'lucide-react'
 
 export function FounderPage() {

@@ -1,7 +1,7 @@
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
-import { Clock, BookOpen, GraduationCap, CalendarDays } from 'lucide-react'
+import { Clock, BookOpen, GraduationCap } from 'lucide-react'
 
 export function StudentPage() {
   return (

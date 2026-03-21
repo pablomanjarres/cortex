@@ -59,10 +59,10 @@ export function Sidebar() {
       <div className="h-[38px] shrink-0 [-webkit-app-region:drag]" />
       <div className="flex items-center gap-3 px-5 pb-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground">
-          <span className="text-sm font-bold text-background">LA</span>
+          <span className="text-sm font-bold text-background">C</span>
         </div>
         <span className="text-lg font-semibold tracking-tight text-sidebar-foreground">
-          Life <span className="font-serif italic font-normal">Audit</span>
+          <span className="font-serif italic font-normal">Cortex</span>
         </span>
       </div>
 
