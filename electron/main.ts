@@ -190,8 +190,8 @@ ipcMain.handle('keychain:list', async () => listKeys())
 
 ipcMain.handle('github:getStats', async () => {
   const token = getKey('github-token')
-  if (!token) return null
-  try { return await getGitHubStats(token) } catch (e) { console.error('GitHub error:', e); return null }
+  if (!token) return { error: 'No GitHub token saved' }
+  try { return await getGitHubStats(token) } catch (e: any) { return { error: `GitHub: ${e.message}` } }
 })
 
 // ─── IPC: Lemon Squeezy ───────────────────────────────────
@@ -199,8 +199,9 @@ ipcMain.handle('github:getStats', async () => {
 ipcMain.handle('lemon:getStats', async () => {
   const apiKey = getKey('lemon-api-key')
   const storeId = getKey('lemon-store-id')
-  if (!apiKey || !storeId) return null
-  try { return await getLemonStats(apiKey, storeId) } catch (e) { console.error('Lemon error:', e); return null }
+  if (!apiKey) return { error: 'No Lemon API key saved' }
+  if (!storeId) return { error: 'No Lemon Store ID saved' }
+  try { return await getLemonStats(apiKey, storeId) } catch (e: any) { return { error: `Lemon: ${e.message}` } }
 })
 
 // ─── IPC: Vercel ───────────────────────────────────────────

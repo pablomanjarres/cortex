@@ -22,6 +22,7 @@ export function FounderPage() {
   const [lemon, setLemon] = useState<LemonStats | null>(null)
   const [vercel, setVercel] = useState<VercelStats | null>(null)
   const [supabase, setSupabase] = useState<SupabaseStats | null>(null)
+  const [errors, setErrors] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const isElectron = !!window.electronAPI?.integrations
@@ -29,16 +30,19 @@ export function FounderPage() {
   const fetchAll = async () => {
     if (!window.electronAPI?.integrations) return
     setLoading(true)
+    setErrors([])
     const [gh, lm, vc, sb] = await Promise.all([
       window.electronAPI.integrations.github(),
       window.electronAPI.integrations.lemon(),
       window.electronAPI.integrations.vercel(),
       window.electronAPI.integrations.supabase(),
     ])
-    setGithub(gh)
-    setLemon(lm)
-    setVercel(vc)
-    setSupabase(sb)
+    const errs: string[] = []
+    if (gh && 'error' in gh && gh.error) { errs.push(gh.error); setGithub(null) } else if (gh && !('error' in gh)) { setGithub(gh) }
+    if (lm && 'error' in lm && lm.error) { errs.push(lm.error); setLemon(null) } else if (lm && !('error' in lm)) { setLemon(lm) }
+    if (vc && 'error' in vc && vc.error) { errs.push(vc.error); setVercel(null) } else if (vc && !('error' in vc)) { setVercel(vc) }
+    if (sb && 'error' in sb && sb.error) { errs.push(sb.error); setSupabase(null) } else if (sb && !('error' in sb)) { setSupabase(sb) }
+    setErrors(errs)
     setLastUpdated(new Date())
     setLoading(false)
   }
@@ -62,6 +66,14 @@ export function FounderPage() {
           Refresh
         </Button>
       </div>
+
+      {errors.length > 0 && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/[0.03] px-4 py-3">
+          {errors.map((err, i) => (
+            <p key={i} className="text-xs text-red-400">{err}</p>
+          ))}
+        </div>
+      )}
 
       {!isElectron ? (
         <WidgetCard title="CONNECT" delay={0}>

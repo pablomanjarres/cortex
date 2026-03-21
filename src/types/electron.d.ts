@@ -26,10 +26,10 @@ interface ElectronAPI {
     list: () => Promise<string[]>
   }
   integrations: {
-    github: () => Promise<GitHubStats | null>
-    lemon: () => Promise<LemonStats | null>
-    vercel: () => Promise<VercelStats | null>
-    supabase: () => Promise<SupabaseStats | null>
+    github: () => Promise<(GitHubStats & { error?: undefined }) | { error: string } | null>
+    lemon: () => Promise<(LemonStats & { error?: undefined }) | { error: string } | null>
+    vercel: () => Promise<(VercelStats & { error?: undefined }) | { error: string } | null>
+    supabase: () => Promise<(SupabaseStats & { error?: undefined }) | { error: string } | null>
   }
   onNavigate: (callback: (route: string) => void) => void
 }
