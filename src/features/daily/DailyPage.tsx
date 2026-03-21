@@ -90,6 +90,8 @@ export function DailyPage() {
   const [sessions, setSessions] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerPresets = [15, 25, 45, 60, 90]
+  const [showCustomTime, setShowCustomTime] = useState(false)
+  const [customTimeInput, setCustomTimeInput] = useState('')
 
   // Content
   const [contentTasks, setContentTasks] = useState(defaultContentTasks)
@@ -296,10 +298,10 @@ export function DailyPage() {
               {timerPresets.map((m) => (
                 <button
                   key={m}
-                  onClick={() => setDuration(m)}
+                  onClick={() => { setDuration(m); setShowCustomTime(false) }}
                   disabled={isRunning}
                   className={`flex-1 rounded-md py-1 text-xs font-medium transition-all ${
-                    timerDuration === m
+                    timerDuration === m && !showCustomTime
                       ? 'bg-foreground text-background'
                       : 'bg-secondary text-muted-foreground hover:text-foreground disabled:opacity-30'
                   }`}
@@ -307,7 +309,47 @@ export function DailyPage() {
                   {m}m
                 </button>
               ))}
+              <button
+                onClick={() => setShowCustomTime(!showCustomTime)}
+                disabled={isRunning}
+                className={`flex-1 rounded-md py-1 text-xs font-medium transition-all ${
+                  showCustomTime || !timerPresets.includes(timerDuration)
+                    ? 'bg-foreground text-background'
+                    : 'bg-secondary text-muted-foreground hover:text-foreground disabled:opacity-30'
+                }`}
+              >
+                {!timerPresets.includes(timerDuration) ? `${timerDuration}m` : '...'}
+              </button>
             </div>
+            {showCustomTime && (
+              <div className="flex gap-1.5 items-center">
+                <input
+                  type="number"
+                  min={1}
+                  max={240}
+                  value={customTimeInput}
+                  onChange={(e) => setCustomTimeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const val = parseInt(customTimeInput)
+                      if (val > 0 && val <= 240) { setDuration(val); setShowCustomTime(false) }
+                    }
+                  }}
+                  placeholder="minutes"
+                  className="flex-1 h-7 rounded-md bg-input px-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    const val = parseInt(customTimeInput)
+                    if (val > 0 && val <= 240) { setDuration(val); setShowCustomTime(false) }
+                  }}
+                  className="h-7 rounded-md bg-foreground px-3 text-xs font-medium text-background"
+                >
+                  Set
+                </button>
+              </div>
+            )}
           </div>
         </WidgetCard>
 
