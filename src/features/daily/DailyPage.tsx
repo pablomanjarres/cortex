@@ -84,10 +84,12 @@ export function DailyPage() {
 
   // Sprint timer
   const [timerTask, setTimerTask] = useState('')
+  const [timerDuration, setTimerDuration] = useState(25)
   const [timeLeft, setTimeLeft] = useState(25 * 60)
   const [isRunning, setIsRunning] = useState(false)
   const [sessions, setSessions] = useState(0)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timerPresets = [15, 25, 45, 60, 90]
 
   // Content
   const [contentTasks, setContentTasks] = useState(defaultContentTasks)
@@ -115,15 +117,16 @@ export function DailyPage() {
       intervalRef.current = setInterval(() => setTimeLeft((p) => p - 1), 1000)
     } else if (timeLeft === 0 && isRunning) {
       setSessions((p) => p + 1)
-      setTimeLeft(25 * 60)
+      setTimeLeft(timerDuration * 60)
       setIsRunning(false)
     }
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [isRunning, timeLeft])
+  }, [isRunning, timeLeft, timerDuration])
 
   const mins = Math.floor(timeLeft / 60)
   const secs = timeLeft % 60
-  const resetTimer = () => { setIsRunning(false); setTimeLeft(25 * 60) }
+  const resetTimer = () => { setIsRunning(false); setTimeLeft(timerDuration * 60) }
+  const setDuration = (m: number) => { setTimerDuration(m); if (!isRunning) setTimeLeft(m * 60) }
 
   // ─── Calendar ────────────────────────────────────────────
   const fetchCalendar = async () => {
@@ -261,7 +264,7 @@ export function DailyPage() {
       {/* ─── TIER 2: EXECUTION ──────────────────────────── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Sprint Timer */}
-        <WidgetCard title="SPRINT" description={`${sessions} sessions · ${Math.floor(sessions * 25 / 60)}h ${(sessions * 25) % 60}m deep work`} delay={0.1}>
+        <WidgetCard title="SPRINT" description={`${sessions} sessions · ${Math.floor(sessions * timerDuration / 60)}h ${(sessions * timerDuration) % 60}m deep work`} delay={0.1}>
           <div className="flex flex-col gap-4">
             <Input
               value={timerTask}
@@ -287,6 +290,23 @@ export function DailyPage() {
                   <RotateCcw className="h-4 w-4" />
                 </button>
               </div>
+            </div>
+            {/* Duration presets */}
+            <div className="flex gap-1.5">
+              {timerPresets.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setDuration(m)}
+                  disabled={isRunning}
+                  className={`flex-1 rounded-md py-1 text-xs font-medium transition-all ${
+                    timerDuration === m
+                      ? 'bg-foreground text-background'
+                      : 'bg-secondary text-muted-foreground hover:text-foreground disabled:opacity-30'
+                  }`}
+                >
+                  {m}m
+                </button>
+              ))}
             </div>
           </div>
         </WidgetCard>
@@ -425,6 +445,42 @@ export function DailyPage() {
           </div>
         </WidgetCard>
       </div>
+
+      {/* ─── EVENING REFLECTION ─────────────────────────── */}
+      <WidgetCard title="EVENING REFLECTION" delay={0.4} compact>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              What went well?
+            </label>
+            <textarea
+              className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              rows={3}
+              placeholder="Today's wins..."
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              What could improve?
+            </label>
+            <textarea
+              className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              rows={3}
+              placeholder="Areas for growth..."
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Key learnings
+            </label>
+            <textarea
+              className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              rows={3}
+              placeholder="What did you learn today..."
+            />
+          </div>
+        </div>
+      </WidgetCard>
     </PageShell>
   )
 }
