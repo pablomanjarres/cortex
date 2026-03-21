@@ -32,11 +32,12 @@ export async function getLemonStats(apiKey: string, storeId: string): Promise<Le
   let mrr = 0
   for (const sub of allSubs) {
     const price = sub.attributes?.first_subscription_item?.price || 0
-    const interval = sub.attributes?.billing_anchor || sub.attributes?.variant_name || ''
-    // Price is in cents
-    const monthly = interval.toLowerCase().includes('annual') || interval.toLowerCase().includes('yearly')
-      ? price / 12
-      : price
+    const variantName = String(sub.attributes?.variant_name || '')
+    const productName = String(sub.attributes?.product_name || '')
+    const combined = `${variantName} ${productName}`.toLowerCase()
+    // Check if annual/yearly subscription
+    const isAnnual = combined.includes('annual') || combined.includes('yearly') || combined.includes('year')
+    const monthly = isAnnual ? price / 12 : price
     mrr += monthly / 100 // cents to dollars
   }
 
