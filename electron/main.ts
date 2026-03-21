@@ -1,6 +1,7 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { getTodayEvents } from './calendar.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -34,6 +35,11 @@ function createWindow() {
     mainWindow = null
   })
 }
+
+// IPC handlers
+ipcMain.handle('calendar:getTodayEvents', async () => {
+  return getTodayEvents()
+})
 
 app.on('ready', createWindow)
 
