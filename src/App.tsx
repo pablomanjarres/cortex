@@ -12,6 +12,7 @@ import { SocialPage } from '@/features/social/SocialPage'
 import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
 import { AdminPage } from '@/features/admin/AdminPage'
 import { ContentPage } from '@/features/content/ContentPage'
+import { SettingsPage } from '@/features/settings/SettingsPage'
 
 export function App() {
   return (
@@ -30,6 +31,7 @@ export function App() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="content" element={<ContentPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
   )

@@ -4,6 +4,11 @@ import http from 'http'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { getTodayEvents } from './calendar.js'
+import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
+import { getGitHubStats } from './integrations/github.js'
+import { getLemonStats } from './integrations/lemon.js'
+import { getVercelStats } from './integrations/vercel.js'
+import { getSupabaseStats } from './integrations/supabase.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -57,27 +62,13 @@ function buildTrayMenu() {
     {
       label: 'Open Cortex',
       click: () => {
-        if (mainWindow) {
-          mainWindow.show()
-          mainWindow.focus()
-        } else {
-          createWindow()
-        }
+        if (mainWindow) { mainWindow.show(); mainWindow.focus() } else { createWindow() }
       },
     },
     { type: 'separator' },
-    {
-      label: `Tasks: ${currentStats.tasks}`,
-      enabled: false,
-    },
-    {
-      label: `Habits: ${currentStats.habits}`,
-      enabled: false,
-    },
-    {
-      label: `Score: ${currentStats.score}`,
-      enabled: false,
-    },
+    { label: `Tasks: ${currentStats.tasks}`, enabled: false },
+    { label: `Habits: ${currentStats.habits}`, enabled: false },
+    { label: `Score: ${currentStats.score}`, enabled: false },
     { type: 'separator' },
     {
       label: 'Core',
@@ -106,14 +97,12 @@ function buildTrayMenu() {
       ],
     },
     { label: 'Analytics', click: () => showAndNavigate('/analytics') },
+    { label: 'Settings', click: () => showAndNavigate('/settings') },
     { type: 'separator' },
     {
       label: webServer ? `Web: localhost:${WEB_PORT}` : 'Start Web Server',
       click: () => {
-        if (!webServer) {
-          startWebServer()
-          if (tray) tray.setContextMenu(buildTrayMenu())
-        }
+        if (!webServer) { startWebServer(); if (tray) tray.setContextMenu(buildTrayMenu()) }
         shell.openExternal(`http://localhost:${WEB_PORT}`)
       },
     },
@@ -129,21 +118,13 @@ function createTray() {
   const iconPath = isDev
     ? path.join(__dirname, '../build/trayTemplate.png')
     : path.join(process.resourcesPath, 'build/trayTemplate.png')
-
   const icon = nativeImage.createFromPath(iconPath)
   icon.setTemplateImage(true)
-
   tray = new Tray(icon)
   tray.setToolTip('Cortex')
   tray.setContextMenu(buildTrayMenu())
-
   tray.on('click', () => {
-    if (mainWindow) {
-      mainWindow.show()
-      mainWindow.focus()
-    } else {
-      createWindow()
-    }
+    if (mainWindow) { mainWindow.show(); mainWindow.focus() } else { createWindow() }
   })
 }
 
@@ -153,74 +134,80 @@ const mimeTypes: Record<string, string> = {
   '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml', '.woff': 'font/woff', '.woff2': 'font/woff2',
-  '.ico': 'image/x-icon',
 }
 
 function startWebServer() {
-  if (webServer) return // already running
-
-  const distPath = isDev
-    ? path.join(__dirname, '../dist')
-    : path.join(__dirname, '../dist')
-
+  if (webServer) return
+  const distPath = path.join(__dirname, '../dist')
   webServer = http.createServer((req, res) => {
     let filePath = path.join(distPath, req.url === '/' ? '/index.html' : req.url!)
-
-    // If file doesn't exist, serve index.html (SPA fallback)
-    if (!fs.existsSync(filePath)) {
-      filePath = path.join(distPath, 'index.html')
-    }
-
+    if (!fs.existsSync(filePath)) filePath = path.join(distPath, 'index.html')
     const ext = path.extname(filePath)
-    const contentType = mimeTypes[ext] || 'application/octet-stream'
-
     try {
-      const content = fs.readFileSync(filePath)
-      res.writeHead(200, { 'Content-Type': contentType })
-      res.end(content)
-    } catch {
-      res.writeHead(404)
-      res.end('Not found')
-    }
+      res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' })
+      res.end(fs.readFileSync(filePath))
+    } catch { res.writeHead(404); res.end('Not found') }
   })
-
-  webServer.listen(WEB_PORT, '0.0.0.0', () => {
-    console.log(`Cortex web server running at http://localhost:${WEB_PORT}`)
-  })
+  webServer.listen(WEB_PORT, '0.0.0.0')
 }
 
-function stopWebServer() {
-  if (webServer) {
-    webServer.close()
-    webServer = null
-  }
-}
+function stopWebServer() { if (webServer) { webServer.close(); webServer = null } }
 
-// IPC handlers
-ipcMain.handle('calendar:getTodayEvents', async () => {
-  return getTodayEvents()
-})
+// ─── IPC: Calendar ─────────────────────────────────────────
 
-ipcMain.on('tray:updateStats', (_event, stats: { tasks: string; habits: string; score: string }) => {
+ipcMain.handle('calendar:getTodayEvents', async () => getTodayEvents())
+
+// ─── IPC: Tray stats ──────────────────────────────────────
+
+ipcMain.on('tray:updateStats', (_event, stats) => {
   currentStats = stats
-  if (tray) {
-    tray.setContextMenu(buildTrayMenu())
-  }
+  if (tray) tray.setContextMenu(buildTrayMenu())
 })
 
-app.on('ready', () => {
-  createWindow()
-  createTray()
+// ─── IPC: Keychain ─────────────────────────────────────────
+
+ipcMain.handle('keychain:save', async (_event, service: string, value: string) => saveKey(service, value))
+ipcMain.handle('keychain:get', async (_event, service: string) => getKey(service))
+ipcMain.handle('keychain:delete', async (_event, service: string) => deleteKey(service))
+ipcMain.handle('keychain:has', async (_event, service: string) => hasKey(service))
+ipcMain.handle('keychain:list', async () => listKeys())
+
+// ─── IPC: GitHub ───────────────────────────────────────────
+
+ipcMain.handle('github:getStats', async () => {
+  const token = getKey('github-token')
+  if (!token) return null
+  try { return await getGitHubStats(token) } catch (e) { console.error('GitHub error:', e); return null }
 })
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+// ─── IPC: Lemon Squeezy ───────────────────────────────────
+
+ipcMain.handle('lemon:getStats', async () => {
+  const apiKey = getKey('lemon-api-key')
+  const storeId = getKey('lemon-store-id')
+  if (!apiKey || !storeId) return null
+  try { return await getLemonStats(apiKey, storeId) } catch (e) { console.error('Lemon error:', e); return null }
 })
 
-app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow()
-  }
+// ─── IPC: Vercel ───────────────────────────────────────────
+
+ipcMain.handle('vercel:getStats', async () => {
+  const token = getKey('vercel-token')
+  if (!token) return null
+  try { return await getVercelStats(token) } catch (e) { console.error('Vercel error:', e); return null }
 })
+
+// ─── IPC: Supabase ─────────────────────────────────────────
+
+ipcMain.handle('supabase:getStats', async () => {
+  const url = getKey('supabase-url')
+  const key = getKey('supabase-service-key')
+  if (!url || !key) return null
+  try { return await getSupabaseStats(url, key) } catch (e) { console.error('Supabase error:', e); return null }
+})
+
+// ─── App lifecycle ─────────────────────────────────────────
+
+app.on('ready', () => { createWindow(); createTray() })
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
+app.on('activate', () => { if (mainWindow === null) createWindow() })
