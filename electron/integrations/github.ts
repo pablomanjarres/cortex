@@ -21,12 +21,13 @@ async function ghFetch(endpoint: string, token: string) {
   return res.json()
 }
 
-async function getUserRepos(token: string): Promise<string[]> {
-  // Fetch all repos the user owns, sorted by most recently pushed
+const ORG = 'project-labs'
+
+async function getOrgRepos(token: string): Promise<string[]> {
   const repos: string[] = []
   let page = 1
   while (true) {
-    const batch = await ghFetch(`/user/repos?type=owner&sort=pushed&per_page=100&page=${page}`, token)
+    const batch = await ghFetch(`/orgs/${ORG}/repos?sort=pushed&per_page=100&page=${page}`, token)
     if (!batch.length) break
     for (const repo of batch) {
       repos.push(repo.full_name)
@@ -42,8 +43,8 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
   const weekStart = new Date(now.getTime() - 7 * 86400000).toISOString()
 
-  // Get all user repos
-  const allRepos = await getUserRepos(token)
+  // Get all org repos
+  const allRepos = await getOrgRepos(token)
 
   // Only check repos pushed to in the last 7 days to avoid hitting rate limits
   const recentRepos: string[] = []
