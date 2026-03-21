@@ -13,6 +13,7 @@ const pageTitles: Record<string, string> = {
   '/analytics': 'Analytics',
   '/admin': 'Life Admin',
   '/content': 'Content Hub',
+  '/settings': 'Settings',
 }
 
 export function Header() {

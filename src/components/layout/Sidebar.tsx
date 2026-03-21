@@ -15,6 +15,7 @@ import {
   BarChart3,
   ClipboardList,
   Video,
+  Settings,
 } from 'lucide-react'
 
 const navGroups = [
@@ -48,6 +49,12 @@ const navGroups = [
     label: 'Insights',
     items: [
       { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+    ],
+  },
+  {
+    label: '',
+    items: [
+      { to: '/settings', icon: Settings, label: 'Settings' },
     ],
   },
 ]
