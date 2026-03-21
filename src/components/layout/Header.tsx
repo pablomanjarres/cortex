@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom'
 
 const pageTitles: Record<string, string> = {
-  '/daily': 'Daily Command Center',
+  '/daily': 'Execute',
   '/habits': 'Habit Tracking',
   '/founder': 'Founder Mode',
   '/student': 'Student Mode',

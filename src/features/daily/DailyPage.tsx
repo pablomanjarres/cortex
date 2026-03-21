@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { PageShell } from '@/components/shared/PageShell'
@@ -6,374 +6,424 @@ import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import {
-  Star,
+  Play,
+  Pause,
+  RotateCcw,
   Calendar,
   RefreshCw,
-  Sun,
-  Moon,
-  Sunset,
-  Target,
-  Flame,
+  Instagram,
+  Linkedin,
+  MessageCircle,
+  Plus,
+  Clock,
   Zap,
 } from 'lucide-react'
 
-function getGreeting() {
-  const hour = new Date().getHours()
-  if (hour < 12) return { text: 'Good morning', icon: Sun, period: 'morning' }
-  if (hour < 18) return { text: 'Good afternoon', icon: Sunset, period: 'afternoon' }
-  return { text: 'Good evening', icon: Moon, period: 'evening' }
+// ─── NON-NEGOTIABLES ──────────────────────────────────────────
+
+interface Target {
+  id: string
+  text: string
+  deadline: string
+  done: boolean
 }
 
-function getFormattedDate() {
-  return new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  })
-}
-
-const defaultHabits = [
-  'Workout', 'Read 30min', 'Meditate', 'Journal',
-  'No social media before noon', 'Drink 2L water', 'Sleep by 11pm',
+const emptyTargets: Target[] = [
+  { id: '1', text: '', deadline: '18:00', done: false },
+  { id: '2', text: '', deadline: '18:00', done: false },
+  { id: '3', text: '', deadline: '18:00', done: false },
 ]
+
+// ─── CONTENT TASKS ────────────────────────────────────────────
+
+interface ContentTask {
+  id: string
+  label: string
+  icon: typeof Instagram
+  done: boolean
+}
+
+const defaultContentTasks: ContentTask[] = [
+  { id: 'ig1', label: 'IG Reel #1', icon: Instagram, done: false },
+  { id: 'ig2', label: 'IG Reel #2', icon: Instagram, done: false },
+  { id: 'li', label: 'LinkedIn', icon: Linkedin, done: false },
+  { id: 'rd', label: 'Reddit', icon: MessageCircle, done: false },
+  { id: 'rd-eng', label: 'Reddit engage', icon: MessageCircle, done: false },
+  { id: 'li-eng', label: 'LinkedIn engage', icon: Linkedin, done: false },
+]
+
+// ─── SHIPPING LOG ─────────────────────────────────────────────
+
+interface ShipEntry {
+  id: string
+  text: string
+  time: string
+}
+
+// ─── HABITS ───────────────────────────────────────────────────
+
+const habits = [
+  { key: 'workout', emoji: '💪' },
+  { key: 'read', emoji: '📖' },
+  { key: 'meditate', emoji: '🧘' },
+  { key: 'journal', emoji: '✍️' },
+  { key: 'no-social', emoji: '📵' },
+  { key: 'water', emoji: '💧' },
+  { key: 'sleep', emoji: '🌙' },
+]
+
+// ─── PAGE ─────────────────────────────────────────────────────
 
 export function DailyPage() {
   const navigate = useNavigate()
-  const [intentions, setIntentions] = useState(['', '', ''])
-  const [score, setScore] = useState(0)
+
+  // Non-negotiables
+  const [targets, setTargets] = useState<Target[]>(emptyTargets)
+  const shippedCount = targets.filter((t) => t.done).length
+  const allShipped = shippedCount === 3 && targets.every((t) => t.text.trim())
+
+  // Sprint timer
+  const [timerTask, setTimerTask] = useState('')
+  const [timeLeft, setTimeLeft] = useState(25 * 60)
+  const [isRunning, setIsRunning] = useState(false)
+  const [sessions, setSessions] = useState(0)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Content
+  const [contentTasks, setContentTasks] = useState(defaultContentTasks)
+  const contentDone = contentTasks.filter((t) => t.done).length
+
+  // Shipping log
+  const [shipLog, setShipLog] = useState<ShipEntry[]>([])
+  const [shipInput, setShipInput] = useState('')
+
+  // Habits
   const [habitsDone, setHabitsDone] = useState<Record<string, boolean>>({})
+  const habitsCompleted = Object.values(habitsDone).filter(Boolean).length
+
+  // Calendar
   const [calendarEvents, setCalendarEvents] = useState<{ title: string; startTime: string; endTime: string; calendar: string; isAllDay: boolean }[]>([])
   const [calendarLoading, setCalendarLoading] = useState(false)
   const isElectron = !!window.electronAPI
 
-  const greeting = getGreeting()
-  const GreetingIcon = greeting.icon
+  // Score
+  const [score, setScore] = useState(0)
 
-  const habitsCompleted = Object.values(habitsDone).filter(Boolean).length
-  const habitsTotal = defaultHabits.length
-  const intentionsFilled = intentions.filter((i) => i.trim()).length
+  // ─── Timer logic ─────────────────────────────────────────
+  useEffect(() => {
+    if (isRunning && timeLeft > 0) {
+      intervalRef.current = setInterval(() => setTimeLeft((p) => p - 1), 1000)
+    } else if (timeLeft === 0 && isRunning) {
+      setSessions((p) => p + 1)
+      setTimeLeft(25 * 60)
+      setIsRunning(false)
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
+  }, [isRunning, timeLeft])
 
+  const mins = Math.floor(timeLeft / 60)
+  const secs = timeLeft % 60
+  const resetTimer = () => { setIsRunning(false); setTimeLeft(25 * 60) }
+
+  // ─── Calendar ────────────────────────────────────────────
   const fetchCalendar = async () => {
     if (!window.electronAPI?.calendar) return
     setCalendarLoading(true)
-    try {
-      const events = await window.electronAPI.calendar.getTodayEvents()
-      setCalendarEvents(events)
-    } catch (e) {
-      console.error('Failed to fetch calendar:', e)
-    } finally {
-      setCalendarLoading(false)
-    }
+    try { setCalendarEvents(await window.electronAPI.calendar.getTodayEvents()) }
+    catch { /* silent */ }
+    finally { setCalendarLoading(false) }
   }
+  useEffect(() => { fetchCalendar() }, [])
 
-  useEffect(() => {
-    fetchCalendar()
-  }, [])
-
+  // ─── Tray navigation ────────────────────────────────────
   useEffect(() => {
     if (window.electronAPI?.onNavigate) {
       window.electronAPI.onNavigate((route) => navigate(route))
     }
   }, [navigate])
 
-  // Send stats to tray
+  // ─── Tray stats ──────────────────────────────────────────
   useEffect(() => {
     if (window.electronAPI?.tray) {
       window.electronAPI.tray.updateStats({
-        tasks: '—',
-        habits: `${habitsCompleted}/${habitsTotal}`,
+        tasks: `${shippedCount}/3 shipped`,
+        habits: `${habitsCompleted}/${habits.length}`,
         score: score > 0 ? `${score}/10` : '—',
       })
     }
   })
 
-  const updateIntention = (index: number, value: string) => {
-    setIntentions((prev) => {
-      const next = [...prev]
-      next[index] = value
-      return next
-    })
+  // ─── Helpers ─────────────────────────────────────────────
+  const updateTarget = (id: string, field: Partial<Target>) => {
+    setTargets((prev) => prev.map((t) => (t.id === id ? { ...t, ...field } : t)))
+  }
+
+  const addShipEntry = () => {
+    if (!shipInput.trim()) return
+    const now = new Date()
+    setShipLog((prev) => [{
+      id: Date.now().toString(),
+      text: shipInput.trim(),
+      time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+    }, ...prev])
+    setShipInput('')
+  }
+
+  const toggleContent = (id: string) => {
+    setContentTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)))
+  }
+
+  // ─── Check deadline urgency ──────────────────────────────
+  const isOverdue = (deadline: string) => {
+    if (!deadline) return false
+    const [h, m] = deadline.split(':').map(Number)
+    const now = new Date()
+    return now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m)
   }
 
   return (
     <PageShell>
-      {/* Hero greeting */}
+      {/* ─── HEADER ─────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="mb-2"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex items-center justify-between"
       >
-        <div className="flex items-center gap-3 mb-1">
-          <GreetingIcon className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm font-medium text-muted-foreground">{getFormattedDate()}</span>
+        <div>
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
+          <h2 className="text-2xl font-semibold tracking-tight mt-0.5">
+            {shippedCount === 3 && targets.every(t => t.text.trim())
+              ? 'Everything shipped.'
+              : shippedCount > 0
+                ? `${3 - shippedCount} left to ship.`
+                : 'Nothing shipped yet.'}
+          </h2>
         </div>
-        <h2 className="text-3xl font-semibold tracking-tight">
-          {greeting.text}, <span className="font-serif italic font-normal">Pablo</span>
-        </h2>
+        <div className={`flex items-center gap-2 rounded-lg px-4 py-2 font-mono text-2xl font-bold tabular-nums transition-colors ${
+          allShipped ? 'text-green-400' : 'text-red-400'
+        }`}>
+          {shippedCount}/3
+        </div>
       </motion.div>
 
-      {/* Quick stats row */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-        className="grid grid-cols-3 gap-3"
+      {/* ─── TIER 1: NON-NEGOTIABLES ────────────────────── */}
+      <WidgetCard
+        title="NON-NEGOTIABLES"
+        description="Ship these or the day is wasted"
+        variant={allShipped ? 'success' : 'urgent'}
+        delay={0.05}
       >
-        {[
-          {
-            label: 'Habits',
-            value: `${habitsCompleted}/${habitsTotal}`,
-            icon: Flame,
-            color: habitsCompleted === habitsTotal && habitsTotal > 0 ? 'text-orange-400' : 'text-muted-foreground',
-          },
-          {
-            label: 'Intentions',
-            value: `${intentionsFilled}/3`,
-            icon: Target,
-            color: intentionsFilled === 3 ? 'text-green-400' : 'text-muted-foreground',
-          },
-          {
-            label: 'Score',
-            value: score > 0 ? `${score}/10` : '—',
-            icon: Star,
-            color: score >= 8 ? 'text-yellow-400' : 'text-muted-foreground',
-          },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            className="liquid-glass flex items-center gap-3 rounded-xl px-4 py-3"
-          >
-            <stat.icon className={`h-4 w-4 shrink-0 ${stat.color}`} />
-            <div>
-              <p className="text-xl font-bold tabular-nums leading-tight">{stat.value}</p>
-              <p className="text-[11px] text-muted-foreground">{stat.label}</p>
+        <div className="flex flex-col gap-2">
+          {targets.map((target, i) => (
+            <div
+              key={target.id}
+              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all ${
+                target.done
+                  ? 'bg-green-500/5'
+                  : isOverdue(target.deadline) && target.text.trim()
+                    ? 'bg-red-500/5'
+                    : 'bg-secondary/50'
+              }`}
+            >
+              <Checkbox
+                checked={target.done}
+                onCheckedChange={() => updateTarget(target.id, { done: !target.done })}
+              />
+              <span className="text-sm font-semibold text-muted-foreground w-5">{i + 1}.</span>
+              <Input
+                value={target.text}
+                onChange={(e) => updateTarget(target.id, { text: e.target.value })}
+                placeholder={
+                  i === 0 ? 'Ship feature X...'
+                    : i === 1 ? 'Talk to 3 users...'
+                      : 'Post demo on X + LinkedIn...'
+                }
+                className={`h-8 flex-1 border-0 bg-transparent text-sm font-medium placeholder:text-muted-foreground/40 focus-visible:ring-0 ${
+                  target.done ? 'line-through text-muted-foreground' : ''
+                }`}
+              />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Clock className={`h-3 w-3 ${isOverdue(target.deadline) && !target.done ? 'text-red-400' : 'text-muted-foreground/50'}`} />
+                <input
+                  type="time"
+                  value={target.deadline}
+                  onChange={(e) => updateTarget(target.id, { deadline: e.target.value })}
+                  className="bg-transparent text-xs tabular-nums text-muted-foreground w-16 focus:outline-none"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </WidgetCard>
+
+      {/* ─── TIER 2: EXECUTION ──────────────────────────── */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        {/* Sprint Timer */}
+        <WidgetCard title="SPRINT" description={`${sessions} sessions · ${Math.floor(sessions * 25 / 60)}h ${(sessions * 25) % 60}m deep work`} delay={0.1}>
+          <div className="flex flex-col gap-4">
+            <Input
+              value={timerTask}
+              onChange={(e) => setTimerTask(e.target.value)}
+              placeholder="What are you working on?"
+              className="h-9 bg-input text-sm font-medium"
+            />
+            <div className="flex items-center justify-between">
+              <span className={`font-mono text-5xl font-bold tabular-nums tracking-tight ${isRunning ? 'text-foreground' : 'text-muted-foreground'}`}>
+                {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setIsRunning(!isRunning)}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background transition-opacity hover:opacity-80"
+                >
+                  {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
+                </button>
+                <button
+                  onClick={resetTimer}
+                  className="flex h-10 w-10 items-center justify-center rounded-lg bg-secondary text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
-        ))}
-      </motion.div>
+        </WidgetCard>
 
-      {/* Main grid */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        {/* Left column — habits + schedule */}
-        <div className="flex flex-col gap-5 lg:col-span-5">
-          {/* Today's Habits */}
-          <WidgetCard
-            title="Today's Habits"
-            description={
-              habitsCompleted === habitsTotal && habitsTotal > 0
-                ? 'All done!'
-                : `${habitsCompleted} of ${habitsTotal} done`
-            }
-            delay={0.15}
-          >
-            <div className="flex flex-col gap-1">
-              {defaultHabits.map((habit) => (
+        {/* Right column: Content + Shipping */}
+        <div className="flex flex-col gap-5">
+          {/* Content */}
+          <WidgetCard title="CONTENT" description={`${contentDone}/${contentTasks.length} done`} delay={0.15} compact>
+            <div className="grid grid-cols-2 gap-1">
+              {contentTasks.map((task) => (
                 <label
-                  key={habit}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-secondary"
+                  key={task.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary"
                 >
                   <Checkbox
-                    checked={!!habitsDone[habit]}
-                    onCheckedChange={() =>
-                      setHabitsDone((prev) => ({ ...prev, [habit]: !prev[habit] }))
-                    }
+                    checked={task.done}
+                    onCheckedChange={() => toggleContent(task.id)}
                   />
-                  <span
-                    className={
-                      habitsDone[habit]
-                        ? 'text-sm text-muted-foreground line-through'
-                        : 'text-sm text-foreground'
-                    }
-                  >
-                    {habit}
+                  <task.icon className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <span className={`text-xs ${task.done ? 'text-muted-foreground line-through' : ''}`}>
+                    {task.label}
                   </span>
                 </label>
               ))}
             </div>
-            <button
-              onClick={() => navigate('/habits')}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-            >
-              Full habit tracker →
-            </button>
           </WidgetCard>
 
-          {/* Schedule */}
-          <WidgetCard
-            title="Schedule"
-            description={
-              calendarLoading
-                ? 'Loading...'
-                : isElectron
-                  ? `${calendarEvents.length} event${calendarEvents.length !== 1 ? 's' : ''} today`
-                  : 'Calendar syncs in desktop app'
-            }
-            delay={0.25}
-          >
-            {isElectron ? (
-              <>
-                {calendarEvents.length === 0 && !calendarLoading ? (
-                  <div className="flex flex-col items-center gap-2 py-6 text-center">
-                    <Calendar className="h-6 w-6 text-muted-foreground" />
-                    <p className="text-xs text-muted-foreground">
-                      No events today — if this is wrong, grant calendar access in
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      System Settings → Privacy & Security → Calendars
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-0.5">
-                    {calendarEvents.map((event, i) => (
-                      <div
-                        key={`${event.title}-${i}`}
-                        className="flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-secondary"
-                      >
-                        <div className="flex flex-col items-center w-12 shrink-0">
-                          <span className="text-[11px] font-semibold tabular-nums">
-                            {event.isAllDay ? 'ALL' : event.startTime}
-                          </span>
-                          {!event.isAllDay && (
-                            <span className="text-[10px] tabular-nums text-muted-foreground">{event.endTime}</span>
-                          )}
-                        </div>
-                        <div className="h-8 w-0.5 rounded-full bg-foreground/15" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm truncate">{event.title}</p>
-                          <p className="text-[10px] text-muted-foreground">{event.calendar}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <button
-                  onClick={fetchCalendar}
-                  disabled={calendarLoading}
-                  className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-                >
-                  <RefreshCw className={`h-3 w-3 ${calendarLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
-              </>
+          {/* Shipping Log */}
+          <WidgetCard title="SHIPPED TODAY" description={`${shipLog.length} outputs`} delay={0.2} compact>
+            <div className="flex gap-2 mb-3">
+              <Input
+                value={shipInput}
+                onChange={(e) => setShipInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addShipEntry()}
+                placeholder="What did you just ship?"
+                className="h-8 bg-input text-sm flex-1"
+              />
+              <button
+                onClick={addShipEntry}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground text-background transition-opacity hover:opacity-80"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+            {shipLog.length === 0 ? (
+              <p className="text-center text-xs text-muted-foreground/50 py-3">
+                Nothing shipped yet. Get to work.
+              </p>
             ) : (
-              <div className="flex flex-col items-center gap-2 py-6">
-                <Calendar className="h-6 w-6 text-muted-foreground" />
-                <p className="text-xs text-muted-foreground">Calendar syncs in the desktop app</p>
+              <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
+                {shipLog.map((entry) => (
+                  <div key={entry.id} className="flex items-start gap-2.5 px-1 py-1">
+                    <span className="text-[10px] font-mono tabular-nums text-muted-foreground shrink-0 mt-0.5">{entry.time}</span>
+                    <Zap className="h-3 w-3 text-green-400 shrink-0 mt-0.5" />
+                    <span className="text-xs text-foreground">{entry.text}</span>
+                  </div>
+                ))}
               </div>
             )}
           </WidgetCard>
         </div>
+      </div>
 
-        {/* Center column — intentions + score */}
-        <div className="flex flex-col gap-5 lg:col-span-4">
-          {/* Intentions */}
-          <WidgetCard title="Today's Focus" description="Set 3 intentions" delay={0.2}>
-            <div className="flex flex-col gap-3">
-              {intentions.map((intention, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${
-                    intention.trim()
-                      ? 'bg-foreground text-background'
-                      : 'bg-secondary text-muted-foreground'
-                  }`}>
-                    {intention.trim() ? <Zap className="h-3.5 w-3.5" /> : i + 1}
-                  </div>
-                  <Input
-                    placeholder={
-                      i === 0 ? 'Most important thing today...'
-                        : i === 1 ? 'Second priority...'
-                          : 'Bonus goal...'
-                    }
-                    value={intention}
-                    onChange={(e) => updateIntention(i, e.target.value)}
-                    className="h-9 bg-input text-sm"
-                  />
+      {/* ─── TIER 3: SUPPORT ────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {/* Compact Habits */}
+        <WidgetCard title="HABITS" description={`${habitsCompleted}/${habits.length}`} delay={0.25} compact>
+          <div className="flex items-center justify-between">
+            {habits.map((h) => (
+              <button
+                key={h.key}
+                onClick={() => setHabitsDone((p) => ({ ...p, [h.key]: !p[h.key] }))}
+                className={`flex h-10 w-10 items-center justify-center rounded-full text-base transition-all ${
+                  habitsDone[h.key]
+                    ? 'bg-foreground/10 ring-1 ring-foreground/20'
+                    : 'bg-secondary/80 opacity-40 hover:opacity-70'
+                }`}
+              >
+                {h.emoji}
+              </button>
+            ))}
+          </div>
+        </WidgetCard>
+
+        {/* Schedule */}
+        <WidgetCard
+          title="SCHEDULE"
+          description={isElectron ? `${calendarEvents.length} events` : '—'}
+          delay={0.3}
+          compact
+        >
+          {isElectron && calendarEvents.length > 0 ? (
+            <div className="flex flex-col gap-0.5 max-h-28 overflow-y-auto">
+              {calendarEvents.slice(0, 4).map((evt, i) => (
+                <div key={`${evt.title}-${i}`} className="flex items-center gap-2 py-1">
+                  <span className="text-[10px] font-mono tabular-nums text-muted-foreground w-10 shrink-0">
+                    {evt.isAllDay ? 'ALL' : evt.startTime}
+                  </span>
+                  <span className="text-xs truncate">{evt.title}</span>
                 </div>
               ))}
             </div>
-          </WidgetCard>
-
-          {/* Daily Score */}
-          <WidgetCard title="Daily Score" description="How was your day?" delay={0.3}>
-            <div className="flex flex-col items-center gap-5 py-4">
-              <div className="relative flex items-center justify-center">
-                <svg className="h-32 w-32 -rotate-90" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="42" fill="none" stroke="hsl(0 0% 12%)" strokeWidth="5" />
-                  <circle
-                    cx="50" cy="50" r="42" fill="none"
-                    stroke={score >= 8 ? 'hsl(48 96% 53%)' : score >= 5 ? 'hsl(0 0% 55%)' : 'hsl(0 0% 28%)'}
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                    strokeDasharray={`${(score / 10) * 264} 264`}
-                    className="transition-all duration-700 ease-out"
-                  />
-                </svg>
-                <div className="absolute flex flex-col items-center">
-                  <span className="text-4xl font-bold tabular-nums leading-none">
-                    {score || '—'}
-                  </span>
-                  {score > 0 && <span className="text-[10px] text-muted-foreground mt-1">/10</span>}
-                </div>
-              </div>
-              <div className="grid grid-cols-5 gap-1.5">
-                {Array.from({ length: 10 }, (_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setScore(i + 1)}
-                    className={`flex h-9 w-9 items-center justify-center rounded-lg text-xs font-semibold transition-all ${
-                      i + 1 <= score
-                        ? i + 1 >= 8
-                          ? 'bg-yellow-400/20 text-yellow-400 ring-1 ring-yellow-400/30'
-                          : 'bg-foreground text-background'
-                        : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
-                    }`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
-              </div>
+          ) : (
+            <div className="flex items-center gap-2 py-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">
+                {isElectron ? 'No events' : 'Desktop app only'}
+              </p>
+              {isElectron && (
+                <button onClick={fetchCalendar} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
+                  <RefreshCw className={`h-3 w-3 ${calendarLoading ? 'animate-spin' : ''}`} />
+                </button>
+              )}
             </div>
-          </WidgetCard>
-        </div>
+          )}
+        </WidgetCard>
 
-        {/* Right column — reflection */}
-        <div className="flex flex-col gap-5 lg:col-span-3">
-          <WidgetCard title="Reflection" delay={0.35}>
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Star className="h-3 w-3 text-yellow-400/70" /> Wins
-                </label>
-                <textarea
-                  className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-                  rows={3}
-                  placeholder="What went well..."
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Flame className="h-3 w-3 text-orange-400/70" /> Improve
-                </label>
-                <textarea
-                  className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-                  rows={3}
-                  placeholder="What could be better..."
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <Zap className="h-3 w-3 text-blue-400/70" /> Learnings
-                </label>
-                <textarea
-                  className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-                  rows={3}
-                  placeholder="Key takeaways..."
-                />
-              </div>
-            </div>
-          </WidgetCard>
-        </div>
+        {/* Daily Score — minimal */}
+        <WidgetCard title="DAY SCORE" description="End of day" delay={0.35} compact>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: 10 }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => setScore(i + 1)}
+                className={`flex h-7 flex-1 items-center justify-center rounded text-[10px] font-bold transition-all ${
+                  i + 1 <= score
+                    ? i + 1 >= 8
+                      ? 'bg-yellow-400/20 text-yellow-400'
+                      : 'bg-foreground text-background'
+                    : 'bg-secondary text-muted-foreground/50 hover:text-muted-foreground'
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+        </WidgetCard>
       </div>
     </PageShell>
   )
