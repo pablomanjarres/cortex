@@ -3,7 +3,6 @@ import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Plus, Star } from 'lucide-react'
 
@@ -146,38 +145,8 @@ export function DailyPage() {
           </div>
         </WidgetCard>
 
-        {/* Today's Schedule */}
-        <WidgetCard title="Today's Schedule" description="Your day at a glance" delay={0.3} className="lg:col-span-2 xl:col-span-2">
-          <div className="flex flex-col gap-2">
-            {[
-              { time: '06:00', label: 'Wake up & workout', tag: 'health' },
-              { time: '08:00', label: 'Deep work session', tag: 'focus' },
-              { time: '10:00', label: 'Team standup', tag: 'founder' },
-              { time: '11:00', label: 'Lecture: Formal Languages', tag: 'student' },
-              { time: '13:00', label: 'Lunch break', tag: 'life' },
-              { time: '14:00', label: 'Content creation', tag: 'content' },
-              { time: '16:00', label: 'Study session', tag: 'student' },
-              { time: '18:00', label: 'Evening reflection', tag: 'life' },
-            ].map((item) => (
-              <div
-                key={item.time}
-                className="flex items-center gap-4 rounded-lg px-3 py-2 transition-colors hover:bg-secondary"
-              >
-                <span className="w-12 text-xs font-medium tabular-nums text-muted-foreground">
-                  {item.time}
-                </span>
-                <div className="h-2 w-2 rounded-full bg-foreground/30" />
-                <span className="flex-1 text-sm text-foreground">{item.label}</span>
-                <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
-                  {item.tag}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </WidgetCard>
-
         {/* Evening Reflection */}
-        <WidgetCard title="Evening Reflection" delay={0.4}>
+        <WidgetCard title="Evening Reflection" delay={0.3}>
           <div className="flex flex-col gap-3">
             <div>
               <label className="mb-1 flex items-center gap-2 text-xs font-medium text-muted-foreground">
