@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { getTodayEvents } from './calendar.js'
@@ -7,6 +7,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
 
 const isDev = !app.isPackaged
 
@@ -36,14 +37,89 @@ function createWindow() {
   })
 }
 
+function createTray() {
+  const iconPath = isDev
+    ? path.join(__dirname, '../build/trayTemplate.png')
+    : path.join(process.resourcesPath, 'build/trayTemplate.png')
+
+  const icon = nativeImage.createFromPath(iconPath)
+  icon.setTemplateImage(true)
+
+  tray = new Tray(icon)
+  tray.setToolTip('Cortex')
+
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Open Cortex',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.focus()
+        } else {
+          createWindow()
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Daily',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.webContents.send('navigate', '/daily')
+        }
+      },
+    },
+    {
+      label: 'Habits',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.webContents.send('navigate', '/habits')
+        }
+      },
+    },
+    {
+      label: 'Content',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.webContents.send('navigate', '/content')
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Cortex',
+      accelerator: 'CommandOrControl+Q',
+      click: () => app.quit(),
+    },
+  ])
+
+  tray.setContextMenu(contextMenu)
+
+  tray.on('click', () => {
+    if (mainWindow) {
+      mainWindow.show()
+      mainWindow.focus()
+    } else {
+      createWindow()
+    }
+  })
+}
+
 // IPC handlers
 ipcMain.handle('calendar:getTodayEvents', async () => {
   return getTodayEvents()
 })
 
-app.on('ready', createWindow)
+app.on('ready', () => {
+  createWindow()
+  createTray()
+})
 
 app.on('window-all-closed', () => {
+  // On macOS, keep running in tray when window is closed
   if (process.platform !== 'darwin') {
     app.quit()
   }

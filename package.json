@@ -24,7 +24,19 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*"
+      "dist-electron/**/*",
+      "build/trayTemplate.png",
+      "build/trayTemplate@2x.png"
+    ],
+    "extraResources": [
+      {
+        "from": "build/trayTemplate.png",
+        "to": "build/trayTemplate.png"
+      },
+      {
+        "from": "build/trayTemplate@2x.png",
+        "to": "build/trayTemplate@2x.png"
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",
