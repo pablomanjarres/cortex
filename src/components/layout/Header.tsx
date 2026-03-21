@@ -20,7 +20,7 @@ export function Header() {
   const title = pageTitles[location.pathname] || 'Dashboard'
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur-md">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur-md [-webkit-app-region:drag]">
       <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
       <div className="flex items-center gap-3">
         <div className="liquid-glass rounded-lg px-3 py-1.5">
