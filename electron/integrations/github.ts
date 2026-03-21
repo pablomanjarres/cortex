@@ -21,13 +21,13 @@ async function ghFetch(endpoint: string, token: string) {
   return res.json()
 }
 
-const ORG = 'nella-labs'
-
-async function getOrgRepos(token: string): Promise<string[]> {
+async function getAccessibleRepos(token: string): Promise<string[]> {
+  // Works with both classic and fine-grained tokens
+  // Returns all repos the token has access to (personal + org)
   const repos: string[] = []
   let page = 1
   while (true) {
-    const batch = await ghFetch(`/orgs/${ORG}/repos?sort=pushed&per_page=100&page=${page}`, token)
+    const batch = await ghFetch(`/user/repos?sort=pushed&per_page=100&page=${page}`, token)
     if (!batch.length) break
     for (const repo of batch) {
       repos.push(repo.full_name)
@@ -43,8 +43,8 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString()
   const weekStart = new Date(now.getTime() - 7 * 86400000).toISOString()
 
-  // Get all org repos
-  const allRepos = await getOrgRepos(token)
+  // Get all repos the token can access
+  const allRepos = await getAccessibleRepos(token)
 
   // Only check repos pushed to in the last 7 days to avoid hitting rate limits
   const recentRepos: string[] = []
