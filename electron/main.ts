@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, clipboard } from 'electron'
 import path from 'path'
 import http from 'http'
+import os from 'os'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { getTodayEvents } from './calendar.js'
@@ -99,13 +100,19 @@ function buildTrayMenu() {
     { label: 'Analytics', click: () => showAndNavigate('/analytics') },
     { label: 'Settings', click: () => showAndNavigate('/settings') },
     { type: 'separator' },
-    {
-      label: webServer ? `Web: localhost:${WEB_PORT}` : 'Start Web Server',
-      click: () => {
-        if (!webServer) { startWebServer(); if (tray) tray.setContextMenu(buildTrayMenu()) }
-        shell.openExternal(`http://localhost:${WEB_PORT}`)
+    ...(webServer ? [
+      { label: `localhost:${WEB_PORT}`, click: () => shell.openExternal(`http://localhost:${WEB_PORT}`) },
+      { label: `${getLanIP()}:${WEB_PORT}`, click: () => { clipboard.writeText(`http://${getLanIP()}:${WEB_PORT}`); shell.openExternal(`http://${getLanIP()}:${WEB_PORT}`) } },
+    ] : [
+      {
+        label: 'Open in Browser',
+        click: () => {
+          startWebServer()
+          if (tray) tray.setContextMenu(buildTrayMenu())
+          shell.openExternal(`http://localhost:${WEB_PORT}`)
+        },
       },
-    },
+    ]),
     {
       label: 'Quit Cortex',
       accelerator: 'CommandOrControl+Q',
@@ -129,6 +136,16 @@ function createTray() {
 }
 
 // ─── Web server ────────────────────────────────────────────
+
+function getLanIP(): string {
+  const interfaces = os.networkInterfaces()
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address
+    }
+  }
+  return 'localhost'
+}
 
 const mimeTypes: Record<string, string> = {
   '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
