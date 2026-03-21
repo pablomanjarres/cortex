@@ -314,27 +314,30 @@ export function DailyPage() {
           <WidgetCard title="Daily Score" description="How was your day?" delay={0.3}>
             <div className="flex flex-col items-center gap-5 py-4">
               <div className="relative flex items-center justify-center">
-                <svg className="h-28 w-28 -rotate-90" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="42" fill="none" stroke="hsl(0 0% 15%)" strokeWidth="6" />
+                <svg className="h-32 w-32 -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="42" fill="none" stroke="hsl(0 0% 12%)" strokeWidth="5" />
                   <circle
                     cx="50" cy="50" r="42" fill="none"
-                    stroke={score >= 8 ? 'hsl(48 96% 53%)' : score >= 5 ? 'hsl(0 0% 60%)' : 'hsl(0 0% 30%)'}
-                    strokeWidth="6"
+                    stroke={score >= 8 ? 'hsl(48 96% 53%)' : score >= 5 ? 'hsl(0 0% 55%)' : 'hsl(0 0% 28%)'}
+                    strokeWidth="5"
                     strokeLinecap="round"
                     strokeDasharray={`${(score / 10) * 264} 264`}
-                    className="transition-all duration-500"
+                    className="transition-all duration-700 ease-out"
                   />
                 </svg>
-                <span className="absolute text-3xl font-bold tabular-nums">
-                  {score || '—'}
-                </span>
+                <div className="absolute flex flex-col items-center">
+                  <span className="text-4xl font-bold tabular-nums leading-none">
+                    {score || '—'}
+                  </span>
+                  {score > 0 && <span className="text-[10px] text-muted-foreground mt-1">/10</span>}
+                </div>
               </div>
-              <div className="flex gap-1.5">
+              <div className="grid grid-cols-5 gap-1.5">
                 {Array.from({ length: 10 }, (_, i) => (
                   <button
                     key={i}
                     onClick={() => setScore(i + 1)}
-                    className={`flex h-8 w-8 items-center justify-center rounded-lg text-xs font-semibold transition-all ${
+                    className={`flex h-9 w-9 items-center justify-center rounded-lg text-xs font-semibold transition-all ${
                       i + 1 <= score
                         ? i + 1 >= 8
                           ? 'bg-yellow-400/20 text-yellow-400 ring-1 ring-yellow-400/30'
