@@ -48,6 +48,16 @@ function createTray() {
   tray = new Tray(icon)
   tray.setToolTip('Cortex')
 
+  const showAndNavigate = (route: string) => {
+    if (mainWindow) {
+      mainWindow.show()
+      mainWindow.focus()
+      mainWindow.webContents.send('navigate', route)
+    } else {
+      createWindow()
+    }
+  }
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: 'Open Cortex',
@@ -62,32 +72,32 @@ function createTray() {
     },
     { type: 'separator' },
     {
-      label: 'Daily',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show()
-          mainWindow.webContents.send('navigate', '/daily')
-        }
-      },
+      label: 'Core',
+      submenu: [
+        { label: 'Daily Overview', click: () => showAndNavigate('/daily') },
+        { label: 'Habits', click: () => showAndNavigate('/habits') },
+      ],
     },
     {
-      label: 'Habits',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show()
-          mainWindow.webContents.send('navigate', '/habits')
-        }
-      },
+      label: 'Roles',
+      submenu: [
+        { label: 'Founder', click: () => showAndNavigate('/founder') },
+        { label: 'Student', click: () => showAndNavigate('/student') },
+        { label: 'Content Hub', click: () => showAndNavigate('/content') },
+      ],
     },
     {
-      label: 'Content',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show()
-          mainWindow.webContents.send('navigate', '/content')
-        }
-      },
+      label: 'Life',
+      submenu: [
+        { label: 'Health & Energy', click: () => showAndNavigate('/health') },
+        { label: 'Time & Focus', click: () => showAndNavigate('/focus') },
+        { label: 'Finance', click: () => showAndNavigate('/finance') },
+        { label: 'Journal', click: () => showAndNavigate('/journal') },
+        { label: 'Social', click: () => showAndNavigate('/social') },
+        { label: 'Life Admin', click: () => showAndNavigate('/admin') },
+      ],
     },
+    { label: 'Analytics', click: () => showAndNavigate('/analytics') },
     { type: 'separator' },
     {
       label: 'Quit Cortex',
