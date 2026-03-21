@@ -93,7 +93,7 @@ export function FounderPage() {
                 value: github ? github.commitsToday.toString() : '—',
                 icon: GitCommit,
                 color: github && github.commitsToday > 0 ? 'text-foreground' : 'text-muted-foreground',
-                sub: github ? `${github.commitsWeek} this week` : 'Connect GitHub',
+                sub: github ? `${github.commitsWeek} this week · ${github.repoCount} repos` : 'Connect GitHub',
               },
               {
                 label: 'Deploys',
