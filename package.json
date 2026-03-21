@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "electron:compile": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
     "electron:dev": "npm run electron:compile && concurrently \"vite --host\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && npm run electron:compile && electron-builder"
+    "electron:build": "npm run build && npm run electron:compile && electron-builder",
+    "cortex:install": "npm run electron:build && rm -rf /Applications/Cortex.app && cp -R release/mac-arm64/Cortex.app /Applications/Cortex.app && xattr -cr /Applications/Cortex.app && codesign --force --sign - /Applications/Cortex.app/Contents/Frameworks/Electron\\ Framework.framework && codesign --force --sign - /Applications/Cortex.app/Contents/Frameworks/Cortex\\ Helper.app && codesign --force --sign - '/Applications/Cortex.app/Contents/Frameworks/Cortex Helper (GPU).app' && codesign --force --sign - '/Applications/Cortex.app/Contents/Frameworks/Cortex Helper (Plugin).app' && codesign --force --sign - '/Applications/Cortex.app/Contents/Frameworks/Cortex Helper (Renderer).app' && codesign --force --sign - /Applications/Cortex.app && open /Applications/Cortex.app"
   },
   "build": {
     "appId": "com.pablo.cortex",

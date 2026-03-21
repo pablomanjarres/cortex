@@ -130,9 +130,6 @@ function createTray() {
   tray = new Tray(icon)
   tray.setToolTip('Cortex')
   tray.setContextMenu(buildTrayMenu())
-  tray.on('click', () => {
-    if (mainWindow) { mainWindow.show(); mainWindow.focus() } else { createWindow() }
-  })
 }
 
 // ─── Web server ────────────────────────────────────────────
