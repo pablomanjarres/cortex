@@ -26,7 +26,7 @@ export function DailyPage() {
   const [newItem, setNewItem] = useState('')
   const [intentions, setIntentions] = useState(['', '', ''])
   const [score, setScore] = useState(0)
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [calendarEvents, setCalendarEvents] = useState<{ title: string; startTime: string; endTime: string; calendar: string; isAllDay: boolean }[]>([])
   const [calendarLoading, setCalendarLoading] = useState(false)
   const isElectron = !!window.electronAPI?.calendar
 

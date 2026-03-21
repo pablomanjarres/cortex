@@ -1,7 +1,10 @@
 {
-  "name": "life-audit-dashboard",
+  "name": "cortex",
+  "productName": "Cortex",
   "private": true,
   "version": "0.1.0",
+  "description": "Personal dashboard for auditing your days as a founder, student, and human.",
+  "author": "Pablo",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -12,6 +15,27 @@
     "electron:compile": "tsc -p electron/tsconfig.json",
     "electron:dev": "npm run electron:compile && concurrently \"vite --host\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "npm run build && npm run electron:compile && electron-builder"
+  },
+  "build": {
+    "appId": "com.pablo.cortex",
+    "productName": "Cortex",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg",
+      "darkModeSupport": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "title": "Cortex"
+    }
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
