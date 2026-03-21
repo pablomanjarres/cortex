@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Plus, Star } from 'lucide-react'
+import { Plus, Star, Calendar, RefreshCw } from 'lucide-react'
 
 interface ChecklistItem {
   id: string
@@ -25,6 +26,26 @@ export function DailyPage() {
   const [newItem, setNewItem] = useState('')
   const [intentions, setIntentions] = useState(['', '', ''])
   const [score, setScore] = useState(0)
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
+  const [calendarLoading, setCalendarLoading] = useState(false)
+  const isElectron = !!window.electronAPI?.calendar
+
+  const fetchCalendar = async () => {
+    if (!window.electronAPI?.calendar) return
+    setCalendarLoading(true)
+    try {
+      const events = await window.electronAPI.calendar.getTodayEvents()
+      setCalendarEvents(events)
+    } catch (e) {
+      console.error('Failed to fetch calendar:', e)
+    } finally {
+      setCalendarLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchCalendar()
+  }, [])
 
   const completedCount = checklist.filter((i) => i.done).length
   const progress = checklist.length > 0 ? (completedCount / checklist.length) * 100 : 0
@@ -145,8 +166,75 @@ export function DailyPage() {
           </div>
         </WidgetCard>
 
+        {/* Today's Schedule — from Apple Calendar */}
+        <WidgetCard
+          title="Today's Schedule"
+          description={
+            calendarLoading
+              ? 'Loading...'
+              : isElectron
+                ? `${calendarEvents.length} event${calendarEvents.length !== 1 ? 's' : ''}`
+                : 'Available in Electron app'
+          }
+          delay={0.3}
+          className="lg:col-span-2 xl:col-span-3"
+        >
+          {isElectron ? (
+            <>
+              <div className="mb-3 flex justify-end">
+                <button
+                  onClick={fetchCalendar}
+                  disabled={calendarLoading}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <RefreshCw className={`h-3 w-3 ${calendarLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+              {calendarEvents.length === 0 && !calendarLoading ? (
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <Calendar className="h-8 w-8 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    No events today — or grant calendar access in System Settings
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {calendarEvents.map((event, i) => (
+                    <div
+                      key={`${event.title}-${i}`}
+                      className="flex items-center gap-4 rounded-lg px-3 py-2 transition-colors hover:bg-secondary"
+                    >
+                      <span className="w-14 text-xs font-medium tabular-nums text-muted-foreground">
+                        {event.isAllDay ? 'All day' : event.startTime}
+                      </span>
+                      <div className="h-2 w-2 shrink-0 rounded-full bg-foreground/30" />
+                      <span className="flex-1 text-sm text-foreground">{event.title}</span>
+                      {!event.isAllDay && (
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {event.startTime} – {event.endTime}
+                        </span>
+                      )}
+                      <Badge variant="secondary" className="text-[10px]">
+                        {event.calendar}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <Calendar className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Open in the Electron app to see your Apple Calendar events
+              </p>
+            </div>
+          )}
+        </WidgetCard>
+
         {/* Evening Reflection */}
-        <WidgetCard title="Evening Reflection" delay={0.3}>
+        <WidgetCard title="Evening Reflection" delay={0.4}>
           <div className="flex flex-col gap-3">
             <div>
               <label className="mb-1 flex items-center gap-2 text-xs font-medium text-muted-foreground">
