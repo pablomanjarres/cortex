@@ -5,14 +5,10 @@ const pageTitles: Record<string, string> = {
   '/habits': 'Habit Tracking',
   '/founder': 'Founder Mode',
   '/student': 'Student Mode',
-  '/health': 'Health & Energy',
-  '/focus': 'Time & Focus',
   '/finance': 'Financial Pulse',
-  '/journal': 'Journal & Notes',
-  '/social': 'Social & Relationships',
-  '/analytics': 'Analytics',
-  '/admin': 'Life Admin',
-  '/content': 'Content Hub',
+  '/social': 'Contacts',
+  '/books': 'Books',
+  '/thoughts': 'Thoughts',
   '/settings': 'Settings',
 }
 

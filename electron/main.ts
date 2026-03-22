@@ -83,21 +83,17 @@ function buildTrayMenu() {
       submenu: [
         { label: 'Founder', click: () => showAndNavigate('/founder') },
         { label: 'Student', click: () => showAndNavigate('/student') },
-        { label: 'Content Hub', click: () => showAndNavigate('/content') },
       ],
     },
     {
       label: 'Life',
       submenu: [
-        { label: 'Health & Energy', click: () => showAndNavigate('/health') },
-        { label: 'Time & Focus', click: () => showAndNavigate('/focus') },
         { label: 'Finance', click: () => showAndNavigate('/finance') },
-        { label: 'Journal', click: () => showAndNavigate('/journal') },
         { label: 'Social', click: () => showAndNavigate('/social') },
-        { label: 'Life Admin', click: () => showAndNavigate('/admin') },
+        { label: 'Books', click: () => showAndNavigate('/books') },
+        { label: 'Thoughts', click: () => showAndNavigate('/thoughts') },
       ],
     },
-    { label: 'Analytics', click: () => showAndNavigate('/analytics') },
     { label: 'Settings', click: () => showAndNavigate('/settings') },
     { type: 'separator' },
     ...(webServer ? [

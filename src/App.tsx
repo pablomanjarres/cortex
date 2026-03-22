@@ -4,17 +4,11 @@ import { DailyPage } from '@/features/daily/DailyPage'
 import { HabitsPage } from '@/features/habits/HabitsPage'
 import { FounderPage } from '@/features/founder/FounderPage'
 import { StudentPage } from '@/features/student/StudentPage'
-import { HealthPage } from '@/features/health/HealthPage'
-import { FocusPage } from '@/features/focus/FocusPage'
 import { FinancePage } from '@/features/finance/FinancePage'
-import { JournalPage } from '@/features/journal/JournalPage'
 import { SocialPage } from '@/features/social/SocialPage'
-import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
-import { AdminPage } from '@/features/admin/AdminPage'
-import { ContentPage } from '@/features/content/ContentPage'
-import { SettingsPage } from '@/features/settings/SettingsPage'
 import { BooksPage } from '@/features/books/BooksPage'
 import { ThoughtsPage } from '@/features/thoughts/ThoughtsPage'
+import { SettingsPage } from '@/features/settings/SettingsPage'
 
 export function App() {
   return (
@@ -25,16 +19,10 @@ export function App() {
         <Route path="habits" element={<HabitsPage />} />
         <Route path="founder" element={<FounderPage />} />
         <Route path="student" element={<StudentPage />} />
-        <Route path="health" element={<HealthPage />} />
-        <Route path="focus" element={<FocusPage />} />
         <Route path="finance" element={<FinancePage />} />
-        <Route path="journal" element={<JournalPage />} />
         <Route path="social" element={<SocialPage />} />
         <Route path="books" element={<BooksPage />} />
         <Route path="thoughts" element={<ThoughtsPage />} />
-        <Route path="analytics" element={<AnalyticsPage />} />
-        <Route path="admin" element={<AdminPage />} />
-        <Route path="content" element={<ContentPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
