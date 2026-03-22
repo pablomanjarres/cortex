@@ -7,17 +7,11 @@ import {
   Target,
   Rocket,
   GraduationCap,
-  Heart,
-  Timer,
   Wallet,
-  BookOpen,
   Users,
-  BarChart3,
-  ClipboardList,
-  Video,
-  Settings,
   Library,
   Lightbulb,
+  Settings,
 } from 'lucide-react'
 
 const navGroups = [
@@ -33,26 +27,15 @@ const navGroups = [
     items: [
       { to: '/founder', icon: Rocket, label: 'Founder' },
       { to: '/student', icon: GraduationCap, label: 'Student' },
-      { to: '/content', icon: Video, label: 'Content' },
     ],
   },
   {
     label: 'Life',
     items: [
-      { to: '/health', icon: Heart, label: 'Health' },
-      { to: '/focus', icon: Timer, label: 'Focus' },
       { to: '/finance', icon: Wallet, label: 'Finance' },
-      { to: '/journal', icon: BookOpen, label: 'Journal' },
       { to: '/social', icon: Users, label: 'Social' },
       { to: '/books', icon: Library, label: 'Books' },
       { to: '/thoughts', icon: Lightbulb, label: 'Thoughts' },
-      { to: '/admin', icon: ClipboardList, label: 'Admin' },
-    ],
-  },
-  {
-    label: 'Insights',
-    items: [
-      { to: '/analytics', icon: BarChart3, label: 'Analytics' },
     ],
   },
   {
