@@ -13,6 +13,8 @@ import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
 import { AdminPage } from '@/features/admin/AdminPage'
 import { ContentPage } from '@/features/content/ContentPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
+import { BooksPage } from '@/features/books/BooksPage'
+import { ThoughtsPage } from '@/features/thoughts/ThoughtsPage'
 
 export function App() {
   return (
@@ -28,6 +30,8 @@ export function App() {
         <Route path="finance" element={<FinancePage />} />
         <Route path="journal" element={<JournalPage />} />
         <Route path="social" element={<SocialPage />} />
+        <Route path="books" element={<BooksPage />} />
+        <Route path="thoughts" element={<ThoughtsPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="admin" element={<AdminPage />} />
         <Route path="content" element={<ContentPage />} />

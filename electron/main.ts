@@ -221,8 +221,115 @@ ipcMain.handle('supabase:getStats', async () => {
   try { return await getSupabaseStats(url, key) } catch (e) { console.error('Supabase error:', e); return null }
 })
 
+// ─── Data persistence (JSON files in project data/) ───────
+
+// In dev: data/ in project root (caught by hourly backup)
+// In prod: also use project root via a symlink-friendly path
+const dataDir = isDev
+  ? path.join(__dirname, '..', 'data')
+  : path.join(app.getPath('home'), 'Projects', 'life-audit-dashboard', 'data')
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
+
+const backupDir = path.join(dataDir, 'backups')
+if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
+
+ipcMain.handle('data:read', async (_event, key: string) => {
+  const file = path.join(dataDir, `${key}.json`)
+  try {
+    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8'))
+  } catch (e) { console.error(`data:read error for ${key}:`, e) }
+  return null
+})
+
+ipcMain.handle('data:write', async (_event, key: string, data: unknown) => {
+  const file = path.join(dataDir, `${key}.json`)
+  try {
+    // Keep .bak of previous version
+    if (fs.existsSync(file)) {
+      fs.copyFileSync(file, path.join(backupDir, `${key}.bak.json`))
+    }
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8')
+    return true
+  } catch (e) { console.error(`data:write error for ${key}:`, e); return false }
+})
+
+ipcMain.handle('data:listKeys', async () => {
+  try {
+    return fs.readdirSync(dataDir)
+      .filter(f => f.endsWith('.json') && !f.includes('.bak'))
+      .map(f => f.replace('.json', ''))
+  } catch { return [] }
+})
+
+ipcMain.handle('data:exportAll', async () => {
+  try {
+    const files = fs.readdirSync(dataDir).filter(f => f.endsWith('.json') && !f.includes('.bak'))
+    const bundle: Record<string, unknown> = {
+      _meta: { version: '1.0', exported: new Date().toISOString(), app: 'Cortex', dataDir }
+    }
+    for (const f of files) {
+      const key = f.replace('.json', '')
+      bundle[key] = JSON.parse(fs.readFileSync(path.join(dataDir, f), 'utf-8'))
+    }
+    return JSON.stringify(bundle, null, 2)
+  } catch (e) { console.error('data:exportAll error:', e); return null }
+})
+
+ipcMain.handle('data:importAll', async (_event, json: string) => {
+  try {
+    const bundle = JSON.parse(json)
+    // Backup everything first
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const importBackupDir = path.join(backupDir, `pre-import-${timestamp}`)
+    fs.mkdirSync(importBackupDir, { recursive: true })
+    for (const f of fs.readdirSync(dataDir).filter(f => f.endsWith('.json'))) {
+      fs.copyFileSync(path.join(dataDir, f), path.join(importBackupDir, f))
+    }
+    // Write imported data
+    let count = 0
+    for (const [key, value] of Object.entries(bundle)) {
+      if (key === '_meta') continue
+      fs.writeFileSync(path.join(dataDir, `${key}.json`), JSON.stringify(value, null, 2), 'utf-8')
+      count++
+    }
+    return { success: true, count }
+  } catch (e) { console.error('data:importAll error:', e); return { success: false, error: String(e) } }
+})
+
+ipcMain.handle('data:getPath', async () => dataDir)
+
+// ─── Auto-export every 30 minutes ─────────────────────────
+
+function autoExport() {
+  try {
+    const files = fs.readdirSync(dataDir).filter(f => f.endsWith('.json') && !f.includes('.bak') && !f.startsWith('cortex-backup'))
+    if (files.length === 0) return
+    const bundle: Record<string, unknown> = {
+      _meta: { version: '1.0', exported: new Date().toISOString(), app: 'Cortex', auto: true }
+    }
+    for (const f of files) {
+      const key = f.replace('.json', '')
+      try { bundle[key] = JSON.parse(fs.readFileSync(path.join(dataDir, f), 'utf-8')) } catch { /* skip corrupted */ }
+    }
+    fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json'), JSON.stringify(bundle, null, 2), 'utf-8')
+    console.log(`[Cortex] Auto-export: ${files.length} stores saved to data/backups/cortex-backup-latest.json`)
+  } catch (e) { console.error('[Cortex] Auto-export failed:', e) }
+}
+
+let autoExportInterval: ReturnType<typeof setInterval> | null = null
+
 // ─── App lifecycle ─────────────────────────────────────────
 
-app.on('ready', () => { createWindow(); createTray() })
+app.on('ready', () => {
+  createWindow()
+  createTray()
+  // Auto-export on startup + every 30 minutes
+  setTimeout(autoExport, 5000)
+  autoExportInterval = setInterval(autoExport, 30 * 60 * 1000)
+})
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (mainWindow === null) createWindow() })
+app.on('before-quit', () => {
+  if (autoExportInterval) clearInterval(autoExportInterval)
+  autoExport() // One final export on quit
+})

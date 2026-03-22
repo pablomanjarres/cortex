@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useStore } from '@/lib/store'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
@@ -24,8 +25,10 @@ const defaultHabits: Habit[] = [
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function HabitsPage() {
-  const [habits, setHabits] = useState<Habit[]>(defaultHabits)
-  const [grid, setGrid] = useState<Record<string, Record<string, boolean>>>({})
+  const [habits, updateHabits] = useStore<Habit[]>('cortex-habits', defaultHabits)
+  const setHabits = (v: Habit[] | ((p: Habit[]) => Habit[])) => updateHabits(typeof v === 'function' ? v : () => v)
+  const [grid, updateGrid] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-grid', {})
+  const setGrid = (v: Record<string, Record<string, boolean>> | ((p: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>)) => updateGrid(typeof v === 'function' ? v : () => v)
   const [newName, setNewName] = useState('')
   const [newEmoji, setNewEmoji] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
