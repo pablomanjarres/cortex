@@ -233,18 +233,34 @@ ipcMain.handle('data:read', async (_event, key: string) => {
   const file = path.join(dataDir, `${key}.json`)
   try {
     if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8'))
-  } catch (e) { console.error(`data:read error for ${key}:`, e) }
+  } catch (e) {
+    console.warn(`[Cortex] data:read: main file corrupt for "${key}", falling back to backup...`)
+    // Fallback: try the .bak.json from backups directory
+    try {
+      const bakFile = path.join(backupDir, `${key}.bak.json`)
+      if (fs.existsSync(bakFile)) {
+        const data = JSON.parse(fs.readFileSync(bakFile, 'utf-8'))
+        console.warn(`[Cortex] data:read: successfully recovered "${key}" from backup`)
+        return data
+      }
+    } catch (bakErr) {
+      console.error(`[Cortex] data:read: backup also failed for "${key}":`, bakErr)
+    }
+  }
   return null
 })
 
 ipcMain.handle('data:write', async (_event, key: string, data: unknown) => {
   const file = path.join(dataDir, `${key}.json`)
+  const tmpFile = path.join(dataDir, `${key}.json.tmp`)
   try {
     // Keep .bak of previous version
     if (fs.existsSync(file)) {
       fs.copyFileSync(file, path.join(backupDir, `${key}.bak.json`))
     }
-    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8')
+    // Atomic write: write to .tmp first, then rename to prevent partial writes on crash
+    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8')
+    fs.renameSync(tmpFile, file)
     return true
   } catch (e) { console.error(`data:write error for ${key}:`, e); return false }
 })
@@ -294,6 +310,36 @@ ipcMain.handle('data:importAll', async (_event, json: string) => {
 
 ipcMain.handle('data:getPath', async () => dataDir)
 
+// ─── Daily file cleanup ───────────────────────────────────
+
+function cleanupOldDailyFiles() {
+  try {
+    const files = fs.readdirSync(dataDir).filter(f => f.startsWith('cortex-daily-') && f.endsWith('.json'))
+    const now = Date.now()
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000
+    let cleaned = 0
+
+    for (const file of files) {
+      // Format: cortex-daily-{type}-YYYY-MM-DD.json — date is the last 10 chars before .json
+      const baseName = file.replace('.json', '')
+      const dateStr = baseName.slice(-10) // YYYY-MM-DD
+      const fileDate = new Date(dateStr)
+      if (isNaN(fileDate.getTime())) continue // skip if date can't be parsed
+
+      if (now - fileDate.getTime() > thirtyDaysMs) {
+        fs.unlinkSync(path.join(dataDir, file))
+        cleaned++
+      }
+    }
+
+    if (cleaned > 0) {
+      console.log(`[Cortex] Cleaned up ${cleaned} daily file${cleaned === 1 ? '' : 's'} older than 30 days`)
+    }
+  } catch (e) {
+    console.error('[Cortex] Daily file cleanup failed:', e)
+  }
+}
+
 // ─── Auto-export every 30 minutes ─────────────────────────
 
 function autoExport() {
@@ -319,6 +365,7 @@ let autoExportInterval: ReturnType<typeof setInterval> | null = null
 app.on('ready', () => {
   createWindow()
   createTray()
+  cleanupOldDailyFiles()
   // Auto-export on startup + every 30 minutes
   setTimeout(autoExport, 5000)
   autoExportInterval = setInterval(autoExport, 30 * 60 * 1000)
