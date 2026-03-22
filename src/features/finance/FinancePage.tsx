@@ -169,7 +169,7 @@ export function FinancePage() {
               <BarChart data={monthlyTotals} barGap={2}>
                 <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#666' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 9, fill: '#666' }} axisLine={false} tickLine={false} tickFormatter={fmtCOP} width={50} />
-                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }} formatter={(v: number) => fmtFull(v)} />
+                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }} formatter={(v) => fmtFull(Number(v))} />
                 <Bar dataKey="income" fill="#34d399" radius={[4, 4, 0, 0]} maxBarSize={24} />
                 <Bar dataKey="expenses" fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={24} />
               </BarChart>
@@ -188,7 +188,7 @@ export function FinancePage() {
                   <Pie data={expenseBreakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
                     {expenseBreakdown.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }} formatter={(v: number) => fmtFull(v)} />
+                  <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }} formatter={(v) => fmtFull(Number(v))} />
                   <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
                 </PieChart>
               </ResponsiveContainer>
