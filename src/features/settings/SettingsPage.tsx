@@ -3,7 +3,7 @@ import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Check, Trash2, Eye, EyeOff, Key } from 'lucide-react'
+import { Check, Trash2, Eye, EyeOff, Key, Download, Upload, FolderOpen, HardDrive } from 'lucide-react'
 
 interface KeyField {
   service: string
@@ -102,6 +102,56 @@ function KeyRow({ field }: { field: KeyField }) {
 
 export function SettingsPage() {
   const isElectron = !!window.electronAPI?.keychain
+  const hasData = !!window.electronAPI?.data
+  const [dataPath, setDataPath] = useState('')
+  const [dataKeys, setDataKeys] = useState<string[]>([])
+  const [exportStatus, setExportStatus] = useState('')
+  const [importStatus, setImportStatus] = useState('')
+
+  useEffect(() => {
+    if (hasData) {
+      window.electronAPI!.data.getPath().then(setDataPath)
+      window.electronAPI!.data.listKeys().then(setDataKeys)
+    }
+  }, [hasData])
+
+  const handleExport = async () => {
+    if (!hasData) return
+    setExportStatus('Exporting...')
+    const json = await window.electronAPI!.data.exportAll()
+    if (!json) { setExportStatus('Export failed'); return }
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cortex-backup-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    setExportStatus(`Exported ${dataKeys.length} stores`)
+    setTimeout(() => setExportStatus(''), 3000)
+  }
+
+  const handleImport = async () => {
+    if (!hasData) return
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      setImportStatus('Importing...')
+      const text = await file.text()
+      const result = await window.electronAPI!.data.importAll(text)
+      if (result.success) {
+        setImportStatus(`Imported ${result.count} stores. Restart app to see changes.`)
+        window.electronAPI!.data.listKeys().then(setDataKeys)
+      } else {
+        setImportStatus(`Import failed: ${result.error}`)
+      }
+      setTimeout(() => setImportStatus(''), 5000)
+    }
+    input.click()
+  }
 
   return (
     <PageShell>
@@ -116,6 +166,58 @@ export function SettingsPage() {
           <div className="flex flex-col items-center gap-3 py-8">
             <Key className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">API keys can only be configured in the desktop app</p>
+          </div>
+        )}
+      </WidgetCard>
+
+      <WidgetCard title="DATA" description="Your data lives as JSON files — portable, human-readable, backed up" delay={0.1}>
+        {hasData ? (
+          <div className="flex flex-col gap-4">
+            {/* Storage info */}
+            <div className="flex items-center gap-3 rounded-lg bg-secondary/30 px-4 py-3">
+              <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium">Storage Location</p>
+                <p className="text-[11px] text-muted-foreground font-mono truncate">{dataPath}</p>
+              </div>
+            </div>
+
+            {/* Data stores list */}
+            <div className="flex items-center gap-3 rounded-lg bg-secondary/30 px-4 py-3">
+              <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium">{dataKeys.length} Data Stores</p>
+                <p className="text-[11px] text-muted-foreground">{dataKeys.join(', ')}</p>
+              </div>
+            </div>
+
+            {/* Export / Import buttons */}
+            <div className="flex gap-3">
+              <Button variant="secondary" size="sm" onClick={handleExport} className="flex-1">
+                <Download className="mr-2 h-3.5 w-3.5" />
+                Export All Data
+              </Button>
+              <Button variant="secondary" size="sm" onClick={handleImport} className="flex-1">
+                <Upload className="mr-2 h-3.5 w-3.5" />
+                Import Backup
+              </Button>
+            </div>
+
+            {(exportStatus || importStatus) && (
+              <p className={`text-[11px] ${(exportStatus || importStatus).includes('fail') ? 'text-red-400' : 'text-green-400'}`}>
+                {exportStatus || importStatus}
+              </p>
+            )}
+
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              All your data is stored as plain JSON files in the project folder. Your hourly backup covers them automatically.
+              Export creates a single portable file you can open in any text editor. Import restores from a previous export (backs up current data first).
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3 py-8">
+            <HardDrive className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Data management available in the desktop app</p>
           </div>
         )}
       </WidgetCard>

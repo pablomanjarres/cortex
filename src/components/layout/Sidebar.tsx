@@ -16,6 +16,8 @@ import {
   ClipboardList,
   Video,
   Settings,
+  Library,
+  Lightbulb,
 } from 'lucide-react'
 
 const navGroups = [
@@ -42,6 +44,8 @@ const navGroups = [
       { to: '/finance', icon: Wallet, label: 'Finance' },
       { to: '/journal', icon: BookOpen, label: 'Journal' },
       { to: '/social', icon: Users, label: 'Social' },
+      { to: '/books', icon: Library, label: 'Books' },
+      { to: '/thoughts', icon: Lightbulb, label: 'Thoughts' },
       { to: '/admin', icon: ClipboardList, label: 'Admin' },
     ],
   },

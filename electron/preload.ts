@@ -27,6 +27,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     supabase: () => ipcRenderer.invoke('supabase:getStats'),
   },
 
+  data: {
+    read: (key: string) => ipcRenderer.invoke('data:read', key),
+    write: (key: string, data: unknown) => ipcRenderer.invoke('data:write', key, data),
+    listKeys: () => ipcRenderer.invoke('data:listKeys'),
+    exportAll: () => ipcRenderer.invoke('data:exportAll'),
+    importAll: (json: string) => ipcRenderer.invoke('data:importAll', json),
+    getPath: () => ipcRenderer.invoke('data:getPath'),
+  },
+
   onNavigate: (callback: (route: string) => void) => {
     ipcRenderer.on('navigate', (_event, route) => callback(route))
   },

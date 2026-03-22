@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useStore } from '@/lib/store'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { PageShell } from '@/components/shared/PageShell'
@@ -77,12 +78,16 @@ const habits = [
 export function DailyPage() {
   const navigate = useNavigate()
 
-  // Non-negotiables
-  const [targets, setTargets] = useState<Target[]>(emptyTargets)
+  // Date key for daily persistence
+  const today = new Date().toISOString().slice(0, 10)
+
+  // Non-negotiables (persisted by day)
+  const [targets, updateTargets] = useStore<Target[]>(`cortex-daily-targets-${today}`, emptyTargets)
+  const setTargets = (v: Target[] | ((p: Target[]) => Target[])) => updateTargets(typeof v === 'function' ? v : () => v)
   const shippedCount = targets.filter((t) => t.done).length
   const allShipped = shippedCount === 3 && targets.every((t) => t.text.trim())
 
-  // Sprint timer
+  // Sprint timer (ephemeral — no need to persist timer ticks)
   const [timerTask, setTimerTask] = useState('')
   const [timerDuration, setTimerDuration] = useState(25)
   const [timeLeft, setTimeLeft] = useState(25 * 60)
@@ -93,16 +98,19 @@ export function DailyPage() {
   const [showCustomTime, setShowCustomTime] = useState(false)
   const [customTimeInput, setCustomTimeInput] = useState('')
 
-  // Content
-  const [contentTasks, setContentTasks] = useState(defaultContentTasks)
+  // Content (persisted by day)
+  const [contentTasks, updateContentTasks] = useStore(`cortex-daily-content-${today}`, defaultContentTasks)
+  const setContentTasks = (v: typeof defaultContentTasks | ((p: typeof defaultContentTasks) => typeof defaultContentTasks)) => updateContentTasks(typeof v === 'function' ? v : () => v)
   const contentDone = contentTasks.filter((t) => t.done).length
 
-  // Shipping log
-  const [shipLog, setShipLog] = useState<ShipEntry[]>([])
+  // Shipping log (persisted by day)
+  const [shipLog, updateShipLog] = useStore<ShipEntry[]>(`cortex-daily-shiplog-${today}`, [])
+  const setShipLog = (v: ShipEntry[] | ((p: ShipEntry[]) => ShipEntry[])) => updateShipLog(typeof v === 'function' ? v : () => v)
   const [shipInput, setShipInput] = useState('')
 
-  // Habits
-  const [habitsDone, setHabitsDone] = useState<Record<string, boolean>>({})
+  // Habits (persisted by day)
+  const [habitsDone, updateHabitsDone] = useStore<Record<string, boolean>>(`cortex-daily-habits-${today}`, {})
+  const setHabitsDone = (v: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => updateHabitsDone(typeof v === 'function' ? v : () => v)
   const habitsCompleted = Object.values(habitsDone).filter(Boolean).length
 
   // Calendar

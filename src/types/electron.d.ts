@@ -31,6 +31,14 @@ interface ElectronAPI {
     vercel: () => Promise<(VercelStats & { error?: undefined }) | { error: string } | null>
     supabase: () => Promise<(SupabaseStats & { error?: undefined }) | { error: string } | null>
   }
+  data: {
+    read: (key: string) => Promise<unknown | null>
+    write: (key: string, data: unknown) => Promise<boolean>
+    listKeys: () => Promise<string[]>
+    exportAll: () => Promise<string | null>
+    importAll: (json: string) => Promise<{ success: boolean; count?: number; error?: string }>
+    getPath: () => Promise<string>
+  }
   onNavigate: (callback: (route: string) => void) => void
 }
 
