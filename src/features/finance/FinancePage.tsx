@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { useStore } from '@/lib/store'
@@ -10,6 +10,7 @@ import {
   Plus,
   Trash2,
   CreditCard,
+  Columns2,
 } from 'lucide-react'
 import {
   BarChart,
@@ -87,12 +88,41 @@ const typeColor: Record<ItemType, string> = { Income: 'bg-green-500/15 text-gree
 const CHART_COLORS = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#fb923c', '#2dd4bf', '#818cf8', '#e879f9']
 const currentMonth = new Date().getMonth()
 
+const fmtCell = (n: number) => `$${n.toLocaleString('en-US')}`
+
+const rowBorderColor: Record<ItemType, string> = {
+  Income: 'border-l-2 border-green-500/40',
+  Expense: 'border-l-2 border-red-500/40',
+  Subscription: 'border-l-2 border-blue-500/40',
+}
+
+// ── Currency Cell ────────────────────────────────────────────────────────────
+
+function CurrencyCell({ value, onChange, className }: { value: number; onChange: (v: number) => void; className?: string }) {
+  const [focused, setFocused] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={focused ? (value || '') : (value ? fmtCell(value) : '')}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => onChange(parseInt(e.target.value.replace(/\D/g, '')) || 0)}
+      className={`bg-transparent outline-none text-right tabular-nums w-[70px] ${className ?? ''}`}
+      placeholder="$0"
+    />
+  )
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function FinancePage() {
   const [data, updateData] = useStore<FinanceData>('cortex-finances', DEFAULT_DATA)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const [filterType, setFilterType] = useState<ItemType | null>(null)
+  const [compact, setCompact] = useState(false)
 
   const setField = (id: string, field: Partial<FinanceItem>) =>
     updateData((prev) => ({ ...prev, items: prev.items.map((i) => i.id === id ? { ...i, ...field } : i) }))
@@ -130,6 +160,15 @@ export function FinancePage() {
   const subAnnual = subscriptions.reduce((s, it) => s + it.months.reduce((a, b) => a + b, 0), 0)
 
   const filtered = useMemo(() => data.items.filter((it) => !filterType || it.type === filterType), [data.items, filterType])
+
+  const groupedRows = useMemo(() => {
+    const typeOrder: ItemType[] = ['Income', 'Expense', 'Subscription']
+    const groups = typeOrder
+      .filter((t) => !filterType || filterType === t)
+      .map((t) => ({ type: t, items: filtered.filter((it) => it.type === t) }))
+      .filter((g) => g.items.length > 0)
+    return groups
+  }, [filtered, filterType])
 
   return (
     <PageShell>
@@ -218,13 +257,19 @@ export function FinancePage() {
       {/* Budget Table */}
       <WidgetCard title="Budget" description={`${filtered.length} items`} delay={0.25}>
         <div className="flex items-center justify-between mb-3">
-          <div className="flex gap-1.5">
-            {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
-              <button key={t} onClick={() => setFilterType(filterType === t ? null : t)}
-                className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${filterType === t ? `${typeColor[t]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-                {t}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <div className="flex gap-1.5">
+              {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
+                <button key={t} onClick={() => setFilterType(filterType === t ? null : t)}
+                  className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${filterType === t ? `${typeColor[t]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setCompact(!compact)}
+              className={`cursor-pointer flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border transition-all ${compact ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+              <Columns2 className="h-3 w-3" /> Compact
+            </button>
           </div>
           <div className="flex gap-1">
             {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
@@ -241,49 +286,74 @@ export function FinancePage() {
               <tr className="border-b border-border/50 text-muted-foreground">
                 <th className="px-5 py-2 text-left font-medium sticky left-0 bg-card z-10 min-w-[140px]">Item</th>
                 <th className="py-2 text-left font-medium w-16">Type</th>
-                {MONTHS.map((m, i) => (
+                {!compact && MONTHS.map((m, i) => (
                   <th key={m} className={`py-2 text-right font-medium min-w-[80px] ${i === selectedMonth ? 'text-foreground' : ''}`}>{m}</th>
                 ))}
+                {compact && <th className="py-2 text-right font-medium min-w-[80px]">{MONTHS[selectedMonth]}</th>}
                 <th className="py-2 text-right font-medium min-w-[90px]">Total</th>
                 <th className="py-2 w-6"></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((item) => {
-                const total = item.months.reduce((a, b) => a + b, 0)
-                return (
-                  <tr key={item.id} className="border-b border-border/20 hover:bg-secondary/30 group">
-                    <td className="px-5 py-2 sticky left-0 bg-card z-10">
-                      <input value={item.name} onChange={(e) => setField(item.id, { name: e.target.value })} className="bg-transparent outline-none font-medium w-full" />
-                    </td>
-                    <td className="py-2">
-                      <select value={item.type} onChange={(e) => setField(item.id, { type: e.target.value as ItemType })}
-                        className={`cursor-pointer bg-transparent outline-none text-[9px] rounded-full px-1.5 py-0.5 ${typeColor[item.type]}`}>
-                        <option value="Income">Income</option><option value="Expense">Expense</option><option value="Subscription">Sub</option>
-                      </select>
-                    </td>
-                    {item.months.map((val, mi) => (
-                      <td key={mi} className={`py-2 text-right ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>
-                        <input type="text" value={val || ''} onChange={(e) => setAmount(item.id, mi, parseInt(e.target.value.replace(/\D/g, '')) || 0)}
-                          className={`bg-transparent outline-none text-right tabular-nums w-[70px] ${item.type === 'Income' ? 'text-green-400/80' : 'text-muted-foreground'}`} placeholder="0" />
-                      </td>
+              {groupedRows.map((group) => {
+                const groupSubtotals = MONTHS.map((_, mi) => group.items.reduce((s, it) => s + it.months[mi], 0))
+                const groupTotal = groupSubtotals.reduce((a, b) => a + b, 0)
+
+                return [
+                  ...group.items.map((item, idx) => {
+                    const total = item.months.reduce((a, b) => a + b, 0)
+                    return (
+                      <tr key={item.id} className={`border-b border-border/20 hover:bg-secondary/30 group ${rowBorderColor[item.type]} ${idx % 2 === 1 ? 'bg-secondary/10' : ''}`}>
+                        <td className="px-5 py-2 sticky left-0 bg-inherit z-10">
+                          <input value={item.name} onChange={(e) => setField(item.id, { name: e.target.value })} className="bg-transparent outline-none font-medium w-full" />
+                        </td>
+                        <td className="py-2">
+                          <select value={item.type} onChange={(e) => setField(item.id, { type: e.target.value as ItemType })}
+                            className={`cursor-pointer bg-transparent outline-none text-[9px] rounded-full px-1.5 py-0.5 ${typeColor[item.type]}`}>
+                            <option value="Income">Income</option><option value="Expense">Expense</option><option value="Subscription">Sub</option>
+                          </select>
+                        </td>
+                        {!compact && item.months.map((val, mi) => (
+                          <td key={mi} className={`py-2 text-right ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>
+                            <CurrencyCell value={val} onChange={(v) => setAmount(item.id, mi, v)}
+                              className={item.type === 'Income' ? 'text-green-400/80' : 'text-muted-foreground'} />
+                          </td>
+                        ))}
+                        {compact && (
+                          <td className="py-2 text-right bg-foreground/[0.03]">
+                            <CurrencyCell value={item.months[selectedMonth]} onChange={(v) => setAmount(item.id, selectedMonth, v)}
+                              className={item.type === 'Income' ? 'text-green-400/80' : 'text-muted-foreground'} />
+                          </td>
+                        )}
+                        <td className="py-2 text-right tabular-nums font-medium">{fmtCell(total)}</td>
+                        <td className="py-2 pr-4">
+                          <button onClick={() => deleteItem(item.id)} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  }),
+                  <tr key={`subtotal-${group.type}`} className="border-t border-border/40">
+                    <td className="px-5 py-1.5 sticky left-0 bg-card z-10 text-muted-foreground font-semibold text-[10px]">{group.type} Subtotal</td>
+                    <td></td>
+                    {!compact && groupSubtotals.map((val, mi) => (
+                      <td key={mi} className={`py-1.5 text-right tabular-nums font-semibold text-muted-foreground text-[10px] ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{fmtCell(val)}</td>
                     ))}
-                    <td className="py-2 text-right tabular-nums font-medium">{fmtCOP(total)}</td>
-                    <td className="py-2 pr-4">
-                      <button onClick={() => deleteItem(item.id)} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </td>
-                  </tr>
-                )
+                    {compact && <td className="py-1.5 text-right tabular-nums font-semibold text-muted-foreground text-[10px] bg-foreground/[0.03]">{fmtCell(groupSubtotals[selectedMonth])}</td>}
+                    <td className="py-1.5 text-right tabular-nums font-semibold text-muted-foreground text-[10px]">{fmtCell(groupTotal)}</td>
+                    <td></td>
+                  </tr>,
+                ]
               })}
               <tr className="border-t border-border/50 font-medium">
                 <td className="px-5 py-2.5 sticky left-0 bg-card z-10">Net</td>
                 <td></td>
-                {MONTHS.map((_, mi) => {
+                {!compact && MONTHS.map((_, mi) => {
                   const net = monthlyTotals[mi].savings
                   return <td key={mi} className={`py-2.5 text-right tabular-nums ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''} ${net >= 0 ? 'text-green-400' : 'text-red-400'}`}>{fmtCOP(net)}</td>
                 })}
+                {compact && (() => { const net = monthlyTotals[selectedMonth].savings; return <td className={`py-2.5 text-right tabular-nums bg-foreground/[0.03] ${net >= 0 ? 'text-green-400' : 'text-red-400'}`}>{fmtCOP(net)}</td> })()}
                 <td className={`py-2.5 text-right tabular-nums ${yearTotal.income - yearTotal.expenses >= 0 ? 'text-green-400' : 'text-red-400'}`}>{fmtCOP(yearTotal.income - yearTotal.expenses)}</td>
                 <td></td>
               </tr>
