@@ -1,4 +1,7 @@
-import { execFile } from 'child_process'
+import { execFile, execSync } from 'child_process'
+import fs from 'fs'
+import path from 'path'
+import { app } from 'electron'
 
 export interface CalendarEvent {
   title: string
@@ -13,49 +16,107 @@ export interface BirthdayEntry {
   birthday: string // YYYY-MM-DD
 }
 
-const APPLESCRIPT = `
-tell application "Calendar"
-    set today to current date
-    set hours of today to 0
-    set minutes of today to 0
-    set seconds of today to 0
-    set tomorrow to today + (1 * days)
+// ─── Swift-based calendar reader (fast, uses EventKit) ─────
 
-    set output to ""
-    repeat with cal in calendars
-        set calName to name of cal
-        set evts to (every event of cal whose start date ≥ today and start date < tomorrow)
-        repeat with evt in evts
-            set evtTitle to summary of evt
-            set evtStart to start date of evt
-            set evtEnd to end date of evt
-            set evtAllDay to allday event of evt
+const SWIFT_SOURCE = `
+import EventKit
+import Foundation
 
-            set h1 to text -2 thru -1 of ("0" & (hours of evtStart))
-            set m1 to text -2 thru -1 of ("0" & (minutes of evtStart))
-            set h2 to text -2 thru -1 of ("0" & (hours of evtEnd))
-            set m2 to text -2 thru -1 of ("0" & (minutes of evtEnd))
+let store = EKEventStore()
+let sem = DispatchSemaphore(value: 0)
 
-            set output to output & evtTitle & "|||" & h1 & ":" & m1 & "|||" & h2 & ":" & m2 & "|||" & calName & "|||" & evtAllDay & linefeed
-        end repeat
-    end repeat
-    return output
-end tell
+if #available(macOS 14.0, *) {
+    store.requestFullAccessToEvents { _, _ in sem.signal() }
+} else {
+    store.requestAccess(to: .event) { _, _ in sem.signal() }
+}
+sem.wait()
+
+let cal = Calendar.current
+let start = cal.startOfDay(for: Date())
+let end = cal.date(byAdding: .day, value: 1, to: start)!
+let pred = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+let events = store.events(matching: pred)
+
+let fmt = DateFormatter()
+fmt.dateFormat = "HH:mm"
+
+for e in events.sorted(by: { $0.startDate < $1.startDate }) {
+    let s = fmt.string(from: e.startDate)
+    let f = fmt.string(from: e.endDate)
+    let t = (e.title ?? "Untitled").replacingOccurrences(of: "|||", with: " ")
+    let c = e.calendar.title.replacingOccurrences(of: "|||", with: " ")
+    let a = e.isAllDay
+    print("\\(t)|||\\(s)|||\\(f)|||\\(c)|||\\(a)")
+}
 `
 
-/**
- * Sync birthday events to Calendar.app.
- * Creates all-day recurring yearly events on each contact's birthday.
- * Skips contacts that already have a "Birthday: Name" event.
- */
+let binaryPath: string | null = null
+
+function ensureBinary(): string {
+  if (binaryPath && fs.existsSync(binaryPath)) return binaryPath
+
+  const dir = app.getPath('userData')
+  const src = path.join(dir, 'cal-helper.swift')
+  const bin = path.join(dir, 'cal-helper')
+
+  // Recompile if source changed
+  const existing = fs.existsSync(src) ? fs.readFileSync(src, 'utf-8') : ''
+  if (existing !== SWIFT_SOURCE || !fs.existsSync(bin)) {
+    fs.writeFileSync(src, SWIFT_SOURCE)
+    try {
+      execSync(`swiftc -O "${src}" -o "${bin}" -framework EventKit -framework Foundation`, { timeout: 30000 })
+    } catch (e) {
+      console.error('[Cortex] Failed to compile calendar helper:', e)
+      return ''
+    }
+  }
+
+  binaryPath = bin
+  return bin
+}
+
+export function getTodayEvents(): Promise<CalendarEvent[]> {
+  return new Promise((resolve) => {
+    const bin = ensureBinary()
+    if (!bin) { resolve([]); return }
+
+    execFile(bin, [], { timeout: 5000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('[Cortex] Calendar error:', error.message, stderr)
+        resolve([])
+        return
+      }
+
+      try {
+        const lines = stdout.trim().split('\n').filter(Boolean)
+        const events: CalendarEvent[] = lines.map((line) => {
+          const [title, startTime, endTime, calendar, isAllDayStr] = line.split('|||')
+          return {
+            title: title?.trim() || 'Untitled',
+            startTime: startTime?.trim() || '00:00',
+            endTime: endTime?.trim() || '00:00',
+            calendar: calendar?.trim() || '',
+            isAllDay: isAllDayStr?.trim() === 'true',
+          }
+        })
+        resolve(events)
+      } catch (e) {
+        console.error('[Cortex] Calendar parse error:', e)
+        resolve([])
+      }
+    })
+  })
+}
+
+// ─── Birthday sync (still uses AppleScript for write operations) ─────
+
 export function syncBirthdays(birthdays: BirthdayEntry[]): Promise<{ created: number; skipped: number }> {
   if (birthdays.length === 0) return Promise.resolve({ created: 0, skipped: 0 })
 
-  // Build AppleScript that creates birthday events
   const eventBlocks = birthdays.map((b) => {
     const [year, month, day] = b.birthday.split('-').map(Number)
     const title = `Birthday: ${b.name}`
-    // AppleScript uses 1-indexed months, date constructor
     return `
       set eventTitle to "${title.replace(/"/g, '\\"')}"
       set alreadyExists to false
@@ -79,16 +140,12 @@ export function syncBirthdays(birthdays: BirthdayEntry[]): Promise<{ created: nu
       end if`
   }).join('\n')
 
-  // Target a Google-synced calendar so events appear on iPhone/iPad/all devices
-  // Falls back to creating a local calendar if Google calendar not found
   const script = `
 tell application "Calendar"
   set targetCal to missing value
-  -- Try Google calendar first (syncs across devices)
   try
     set targetCal to calendar "user@example.com"
   end try
-  -- Fallback to local Birthdays (Cortex) calendar
   if targetCal is missing value then
     set calNames to name of every calendar
     if "Birthdays (Cortex)" is not in calNames then
@@ -113,37 +170,6 @@ end tell`
       const [created, skipped] = stdout.trim().split(',').map(Number)
       console.log(`[Cortex] Birthday sync: ${created} created, ${skipped} skipped`)
       resolve({ created: created || 0, skipped: skipped || 0 })
-    })
-  })
-}
-
-export function getTodayEvents(): Promise<CalendarEvent[]> {
-  return new Promise((resolve) => {
-    execFile('osascript', ['-e', APPLESCRIPT], { timeout: 15000 }, (error, stdout, stderr) => {
-      if (error) {
-        console.error('Calendar error:', error.message, stderr)
-        resolve([])
-        return
-      }
-
-      try {
-        const lines = stdout.trim().split('\n').filter(Boolean)
-        const events: CalendarEvent[] = lines.map((line) => {
-          const [title, startTime, endTime, calendar, isAllDayStr] = line.split('|||')
-          return {
-            title: title?.trim() || 'Untitled',
-            startTime: startTime?.trim() || '00:00',
-            endTime: endTime?.trim() || '00:00',
-            calendar: calendar?.trim() || '',
-            isAllDay: isAllDayStr?.trim() === 'true',
-          }
-        })
-        events.sort((a, b) => a.startTime.localeCompare(b.startTime))
-        resolve(events)
-      } catch (e) {
-        console.error('Calendar parse error:', e)
-        resolve([])
-      }
     })
   })
 }
