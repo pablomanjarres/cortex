@@ -119,6 +119,15 @@ export function writeStore<T>(key: string, data: T): void {
   }, delay))
 }
 
+// Flush pending writes before page unload to prevent data loss
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    for (const timer of pending.values()) clearTimeout(timer)
+    pending.clear()
+    flushBatch()
+  })
+}
+
 /** React hook for persistent state */
 export function useStore<T>(key: string, fallback: T): [T, (fn: (prev: T) => T) => void] {
   const [data, setData] = useState<T>(fallback)

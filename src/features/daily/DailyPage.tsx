@@ -40,16 +40,22 @@ interface ShipEntry {
   time: string
 }
 
-// ─── HABITS ───────────────────────────────────────────────────
+// ─── HABITS (read from same store as HabitsPage) ─────────────
 
-const habits = [
-  { key: 'workout', emoji: '💪' },
-  { key: 'read', emoji: '📖' },
-  { key: 'meditate', emoji: '🧘' },
-  { key: 'journal', emoji: '✍️' },
-  { key: 'no-social', emoji: '📵' },
-  { key: 'water', emoji: '💧' },
-  { key: 'sleep', emoji: '🌙' },
+interface HabitDef {
+  id: string
+  name: string
+  emoji: string
+}
+
+const defaultHabits: HabitDef[] = [
+  { id: '1', name: 'Workout', emoji: '💪' },
+  { id: '2', name: 'Read 30min', emoji: '📖' },
+  { id: '3', name: 'Meditate', emoji: '🧘' },
+  { id: '4', name: 'Journal', emoji: '✍️' },
+  { id: '5', name: 'No social media before noon', emoji: '📵' },
+  { id: '6', name: 'Drink 2L water', emoji: '💧' },
+  { id: '7', name: 'Sleep by 11pm', emoji: '🌙' },
 ]
 
 // ─── PAGE ─────────────────────────────────────────────────────
@@ -76,6 +82,9 @@ export function DailyPage() {
   const timerPresets = [15, 25, 45, 60, 90]
   const [showCustomTime, setShowCustomTime] = useState(false)
   const [customTimeInput, setCustomTimeInput] = useState('')
+
+  // Habits (from shared store — same as HabitsPage)
+  const [habits] = useStore<HabitDef[]>('cortex-habits', defaultHabits)
 
   // Shipping log (persisted by day)
   const [shipLog, updateShipLog] = useStore<ShipEntry[]>(`cortex-daily-shiplog-${today}`, [])
@@ -412,10 +421,10 @@ export function DailyPage() {
           <div className="flex items-center justify-between">
             {habits.map((h) => (
               <button
-                key={h.key}
-                onClick={() => setHabitsDone((p) => ({ ...p, [h.key]: !p[h.key] }))}
+                key={h.id}
+                onClick={() => setHabitsDone((p) => ({ ...p, [h.id]: !p[h.id] }))}
                 className={`flex h-10 w-10 items-center justify-center rounded-full text-base transition-all ${
-                  habitsDone[h.key]
+                  habitsDone[h.id]
                     ? 'bg-foreground/10 ring-1 ring-foreground/20'
                     : 'bg-secondary/80 opacity-40 hover:opacity-70'
                 }`}

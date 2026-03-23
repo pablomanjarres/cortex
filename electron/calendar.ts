@@ -111,7 +111,7 @@ export function getTodayEvents(): Promise<CalendarEvent[]> {
 
 // ─── Birthday sync (still uses AppleScript for write operations) ─────
 
-export function syncBirthdays(birthdays: BirthdayEntry[]): Promise<{ created: number; skipped: number }> {
+export function syncBirthdays(birthdays: BirthdayEntry[], calendarEmail?: string): Promise<{ created: number; skipped: number }> {
   if (birthdays.length === 0) return Promise.resolve({ created: 0, skipped: 0 })
 
   const eventBlocks = birthdays.map((b) => {
@@ -144,7 +144,7 @@ export function syncBirthdays(birthdays: BirthdayEntry[]): Promise<{ created: nu
 tell application "Calendar"
   set targetCal to missing value
   try
-    set targetCal to calendar "user@example.com"
+    set targetCal to calendar "${(calendarEmail || 'user@example.com').replace(/"/g, '\\"')}"
   end try
   if targetCal is missing value then
     set calNames to name of every calendar
