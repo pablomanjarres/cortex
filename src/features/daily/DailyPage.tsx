@@ -13,6 +13,8 @@ import {
   Plus,
   Clock,
   Zap,
+  Calendar,
+  RefreshCw,
 } from 'lucide-react'
 
 // ─── NON-NEGOTIABLES ──────────────────────────────────────────
@@ -87,6 +89,27 @@ export function DailyPage() {
 
   // Score
   const [score, setScore] = useState(0)
+
+  // Calendar — auto-refresh every 5 min + on window focus
+  const [calendarEvents, setCalendarEvents] = useState<{ title: string; startTime: string; endTime: string; calendar: string; isAllDay: boolean }[]>([])
+  const [calendarLoading, setCalendarLoading] = useState(false)
+  const isElectron = !!window.electronAPI
+
+  const fetchCalendar = async () => {
+    if (!window.electronAPI?.calendar) return
+    setCalendarLoading(true)
+    try { setCalendarEvents(await window.electronAPI.calendar.getTodayEvents()) }
+    catch { /* silent */ }
+    finally { setCalendarLoading(false) }
+  }
+
+  useEffect(() => {
+    fetchCalendar()
+    const interval = setInterval(fetchCalendar, 5 * 60 * 1000) // every 5 min
+    const onFocus = () => fetchCalendar()
+    window.addEventListener('focus', onFocus)
+    return () => { clearInterval(interval); window.removeEventListener('focus', onFocus) }
+  }, [])
 
   // ─── Timer logic ─────────────────────────────────────────
   useEffect(() => {
@@ -350,9 +373,42 @@ export function DailyPage() {
       </div>
 
       {/* ─── TIER 3: SUPPORT ────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {/* Schedule */}
+        <WidgetCard
+          title="SCHEDULE"
+          description={isElectron ? `${calendarEvents.length} events` : '—'}
+          delay={0.25}
+          compact
+        >
+          {isElectron && calendarEvents.length > 0 ? (
+            <div className="flex flex-col gap-0.5 max-h-36 overflow-y-auto">
+              {calendarEvents.map((evt, i) => (
+                <div key={`${evt.title}-${i}`} className="flex items-center gap-2 py-1">
+                  <span className="text-[10px] font-mono tabular-nums text-muted-foreground w-10 shrink-0">
+                    {evt.isAllDay ? 'ALL' : evt.startTime}
+                  </span>
+                  <span className="text-xs truncate">{evt.title}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 py-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">
+                {isElectron ? 'No events today' : 'Desktop app only'}
+              </p>
+              {isElectron && (
+                <button onClick={fetchCalendar} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
+                  <RefreshCw className={`h-3 w-3 ${calendarLoading ? 'animate-spin' : ''}`} />
+                </button>
+              )}
+            </div>
+          )}
+        </WidgetCard>
+
         {/* Compact Habits */}
-        <WidgetCard title="HABITS" description={`${habitsCompleted}/${habits.length}`} delay={0.25} compact>
+        <WidgetCard title="HABITS" description={`${habitsCompleted}/${habits.length}`} delay={0.3} compact>
           <div className="flex items-center justify-between">
             {habits.map((h) => (
               <button

@@ -441,6 +441,15 @@ function CourseDetail({ course, assignments, topics, onUpdateTopics }: {
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export function StudentPage() {
+  // Force re-render every minute so countdowns update in real-time
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 60_000)
+    const onFocus = () => setTick((t) => t + 1)
+    window.addEventListener('focus', onFocus)
+    return () => { clearInterval(interval); window.removeEventListener('focus', onFocus) }
+  }, [])
+
   const [assignments, updateAssignments] = useStore<Assignment[]>('cortex-student-assignments', DEFAULT_ASSIGNMENTS)
   const [topics, updateTopicsStore] = useStore<Topic[]>('cortex-student-topics', DEFAULT_TOPICS)
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
