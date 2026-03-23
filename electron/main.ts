@@ -78,6 +78,7 @@ function buildTrayMenu() {
       submenu: [
         { label: 'Daily Overview', click: () => showAndNavigate('/daily') },
         { label: 'Habits', click: () => showAndNavigate('/habits') },
+        { label: 'Automations', click: () => showAndNavigate('/automations') },
       ],
     },
     {
@@ -202,6 +203,75 @@ function startWebServer() {
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
         res.end(JSON.stringify(keys))
       } catch { res.writeHead(500); res.end('[]') }
+      return
+    }
+
+    // ─── Automation API (scheduled task output ingestion) ────
+    if (url.pathname === '/api/automation/run' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', () => {
+        try {
+          const { taskName, status, summary, fullOutput } = JSON.parse(body)
+          if (!taskName) { res.writeHead(400); res.end('Missing taskName'); return }
+          const automFile = path.join(dataDir, 'cortex-automations.json')
+          let data: { runs: any[] } = { runs: [] }
+          try { if (fs.existsSync(automFile)) data = JSON.parse(fs.readFileSync(automFile, 'utf-8')) } catch { /* fresh */ }
+          const run = {
+            id: `run-${Date.now()}`,
+            taskName,
+            timestamp: new Date().toISOString(),
+            status: status || 'success',
+            summary: summary || '',
+            fullOutput: fullOutput || '',
+          }
+          data.runs.unshift(run)
+          data.runs = data.runs.slice(0, 100) // keep last 100
+          fs.writeFileSync(automFile, JSON.stringify(data, null, 2), 'utf-8')
+
+          // Send Pushover if pending-approval
+          if (status === 'pending-approval') {
+            try {
+              const { execFile: ef } = require('child_process')
+              const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
+              if (fs.existsSync(notifyScript)) {
+                ef(notifyScript, [
+                  '-c', 'local-approval',
+                  '-m', `${taskName}: ${summary || 'Needs your approval'}`,
+                  '--url', `http://${getLanIP()}:${WEB_PORT}`,
+                  '--url-title', 'Open Cortex',
+                ], { timeout: 10000 }, () => { /* fire and forget */ })
+              }
+            } catch { /* pushover optional */ }
+          }
+
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.end(JSON.stringify({ ok: true, id: run.id }))
+        } catch { res.writeHead(500); res.end('Error') }
+      })
+      return
+    }
+
+    if (url.pathname.match(/^\/api\/automation\/[^/]+\/(approve|reject)$/) && req.method === 'POST') {
+      const parts = url.pathname.split('/')
+      const runId = parts[3]
+      const action = parts[4] as 'approve' | 'reject'
+      try {
+        const automFile = path.join(dataDir, 'cortex-automations.json')
+        if (fs.existsSync(automFile)) {
+          const data = JSON.parse(fs.readFileSync(automFile, 'utf-8'))
+          const run = data.runs.find((r: any) => r.id === runId)
+          if (run) {
+            run.status = action === 'approve' ? 'success' : 'error'
+            run.approved = action === 'approve'
+            fs.writeFileSync(automFile, JSON.stringify(data, null, 2), 'utf-8')
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+            res.end(JSON.stringify({ ok: true, action }))
+            return
+          }
+        }
+        res.writeHead(404); res.end('Run not found')
+      } catch { res.writeHead(500); res.end('Error') }
       return
     }
 

@@ -10,6 +10,7 @@ import { BooksPage } from '@/features/books/BooksPage'
 import { ThoughtsPage } from '@/features/thoughts/ThoughtsPage'
 import { ProjectsPage } from '@/features/projects/ProjectsPage'
 import { CrmPage } from '@/features/crm/CrmPage'
+import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 
 export function App() {
@@ -19,6 +20,7 @@ export function App() {
         <Route index element={<Navigate to="/daily" replace />} />
         <Route path="daily" element={<DailyPage />} />
         <Route path="habits" element={<HabitsPage />} />
+        <Route path="automations" element={<AutomationsPage />} />
         <Route path="founder" element={<FounderPage />} />
         <Route path="student" element={<StudentPage />} />
         <Route path="projects" element={<ProjectsPage />} />

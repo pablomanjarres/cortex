@@ -4,6 +4,7 @@ import { Menu } from 'lucide-react'
 const pageTitles: Record<string, string> = {
   '/daily': 'Execute',
   '/habits': 'Habit Tracking',
+  '/automations': 'Automations',
   '/founder': 'Founder Mode',
   '/student': 'Student Mode',
   '/projects': 'Projects',

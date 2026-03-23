@@ -13,6 +13,7 @@ import {
   Lightbulb,
   FolderKanban,
   Briefcase,
+  Timer,
   Settings,
 } from 'lucide-react'
 
@@ -22,6 +23,7 @@ const navGroups = [
     items: [
       { to: '/daily', icon: LayoutDashboard, label: 'Daily' },
       { to: '/habits', icon: Target, label: 'Habits' },
+      { to: '/automations', icon: Timer, label: 'Automations' },
     ],
   },
   {
