@@ -210,7 +210,7 @@ export function ProjectsPage() {
           </div>
 
           {/* Project cards */}
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 items-start">
             {filtered.map((project) => {
               const cfg = typeConfig[project.type]
               const TypeIcon = cfg.icon

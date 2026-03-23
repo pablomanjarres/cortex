@@ -151,6 +151,13 @@ const mimeTypes: Record<string, string> = {
   '.svg': 'image/svg+xml', '.woff': 'font/woff', '.woff2': 'font/woff2',
 }
 
+function getAllowedOrigin(req: http.IncomingMessage): string {
+  const origin = req.headers.origin || ''
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin
+  if (/^https?:\/\/(192\.168\.|10\.|100\.)/.test(origin)) return origin
+  return ''
+}
+
 function startWebServer() {
   if (webServer) return
   const distPath = path.join(__dirname, '../dist')
@@ -164,10 +171,10 @@ function startWebServer() {
       const file = path.join(dataDir, `${key}.json`)
       try {
         if (fs.existsSync(file)) {
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
           res.end(fs.readFileSync(file, 'utf-8'))
         } else {
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
           res.end('null')
         }
       } catch { res.writeHead(500); res.end('Read error') }
@@ -188,7 +195,7 @@ function startWebServer() {
           }
           fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8')
           fs.renameSync(tmpFile, file)
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
           res.end('true')
         } catch { res.writeHead(500); res.end('Write error') }
       })
@@ -200,7 +207,7 @@ function startWebServer() {
         const keys = fs.readdirSync(dataDir)
           .filter(f => f.endsWith('.json') && !f.includes('.bak') && !f.includes('.tmp'))
           .map(f => f.replace('.json', ''))
-        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
         res.end(JSON.stringify(keys))
       } catch { res.writeHead(500); res.end('[]') }
       return
@@ -229,23 +236,24 @@ function startWebServer() {
           data.runs = data.runs.slice(0, 100) // keep last 100
           fs.writeFileSync(automFile, JSON.stringify(data, null, 2), 'utf-8')
 
-          // Send Pushover if pending-approval
-          if (status === 'pending-approval') {
-            try {
-              const { execFile: ef } = require('child_process')
-              const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
-              if (fs.existsSync(notifyScript)) {
-                ef(notifyScript, [
-                  '-c', 'local-approval',
-                  '-m', `${taskName}: ${summary || 'Needs your approval'}`,
-                  '--url', `http://${getLanIP()}:${WEB_PORT}`,
-                  '--url-title', 'Open Cortex',
-                ], { timeout: 10000 }, () => { /* fire and forget */ })
-              }
-            } catch { /* pushover optional */ }
-          }
+          // Send Pushover notification for all runs
+          try {
+            const { execFile: ef } = require('child_process')
+            const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
+            if (fs.existsSync(notifyScript)) {
+              const category = status === 'pending-approval' ? 'local-approval'
+                : status === 'error' ? 'scheduled-alert'
+                : 'scheduled-task'
+              ef(notifyScript, [
+                '-c', category,
+                '-m', `${taskName}: ${summary || (status === 'pending-approval' ? 'Needs your approval' : 'Completed')}`,
+                '--url', `http://${getLanIP()}:${WEB_PORT}/automations`,
+                '--url-title', 'Open Cortex',
+              ], { timeout: 10000 }, () => { /* fire and forget */ })
+            }
+          } catch { /* pushover optional */ }
 
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
           res.end(JSON.stringify({ ok: true, id: run.id }))
         } catch { res.writeHead(500); res.end('Error') }
       })
@@ -265,7 +273,7 @@ function startWebServer() {
             run.status = action === 'approve' ? 'success' : 'error'
             run.approved = action === 'approve'
             fs.writeFileSync(automFile, JSON.stringify(data, null, 2), 'utf-8')
-            res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
             res.end(JSON.stringify({ ok: true, action }))
             return
           }
@@ -278,7 +286,7 @@ function startWebServer() {
     // CORS preflight
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': getAllowedOrigin(req),
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
       })
@@ -303,7 +311,10 @@ function stopWebServer() { if (webServer) { webServer.close(); webServer = null 
 // ─── IPC: Calendar ─────────────────────────────────────────
 
 ipcMain.handle('calendar:getTodayEvents', async () => getTodayEvents())
-ipcMain.handle('calendar:syncBirthdays', async (_event, birthdays: BirthdayEntry[]) => syncBirthdays(birthdays))
+ipcMain.handle('calendar:syncBirthdays', async (_event, birthdays: BirthdayEntry[]) => {
+  const calEmail = getKey('calendar-email') || undefined
+  return syncBirthdays(birthdays, calEmail)
+})
 
 // ─── IPC: Tray stats ──────────────────────────────────────
 
@@ -526,11 +537,8 @@ ipcMain.handle('projects:scan', async () => {
 
 // ─── Data persistence (JSON files in project data/) ───────
 
-// In dev: data/ in project root (caught by hourly backup)
-// In prod: also use project root via a symlink-friendly path
-const dataDir = isDev
-  ? path.join(__dirname, '..', 'data')
-  : path.join(app.getPath('home'), 'Projects', 'life-audit-dashboard', 'data')
+// data/ in project root (caught by hourly backup)
+const dataDir = path.join(__dirname, '..', 'data')
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
 
 const backupDir = path.join(dataDir, 'backups')
@@ -622,7 +630,7 @@ ipcMain.handle('data:exportAll', async () => {
   try {
     const files = fs.readdirSync(dataDir).filter(f => f.endsWith('.json') && !f.includes('.bak'))
     const bundle: Record<string, unknown> = {
-      _meta: { version: '1.0', exported: new Date().toISOString(), app: 'Cortex', dataDir }
+      _meta: { version: '1.0', exported: new Date().toISOString(), app: 'Cortex' }
     }
     for (const f of files) {
       const key = f.replace('.json', '')

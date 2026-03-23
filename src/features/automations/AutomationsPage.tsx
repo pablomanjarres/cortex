@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import Markdown from 'react-markdown'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Button } from '@/components/ui/button'
@@ -8,14 +9,14 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
-  ChevronDown,
-  ChevronRight,
+  ChevronLeft,
   Server,
   Code,
   Brain,
   Flame,
   Search,
   FileText,
+  ArrowRight,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -41,20 +42,16 @@ interface TaskDef {
 // ── Task definitions ─────────────────────────────────────────────────────────
 
 const TASKS: TaskDef[] = [
-  // Dev & Business
   { name: 'nella-daily-dev-log', description: 'Daily dev log from Nella repo activity', frequency: 'Daily', group: 'Dev & Business', type: 'claude' },
   { name: 'daily-repo-inspection', description: 'Nella Website repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude' },
   { name: 'daily-repo-summary', description: 'Nella core repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude' },
   { name: 'medellin-lead-gen', description: 'Freelance lead generation for Medellin area', frequency: 'Bimonthly', group: 'Dev & Business', type: 'claude' },
   { name: 'weekly-competition-scanner', description: 'Scan for competitions, grants, hackathons', frequency: 'Weekly', group: 'Dev & Business', type: 'claude' },
-  // Intelligence
   { name: 'ai-intelligence-brief', description: 'AI developments & intelligence brief', frequency: 'Periodic', group: 'Intelligence', type: 'claude' },
   { name: 'weekly-reading-digest', description: 'Reading materials digest from Notes & files', frequency: 'Weekly', group: 'Intelligence', type: 'claude' },
-  // Discipline & Content
   { name: 'discipline-enforcer', description: 'Daily discipline summary — commits, content, outbound', frequency: 'Daily 9pm', group: 'Discipline & Content', type: 'claude' },
   { name: 'discipline-check', description: 'Hourly commit & content check during work hours', frequency: 'Hourly 9am-10pm', group: 'Discipline & Content', type: 'cron' },
   { name: 'social-pulse', description: 'Social media engagement metrics & inbound signals', frequency: 'Periodic', group: 'Discipline & Content', type: 'claude' },
-  // System
   { name: 'daily-file-watchdog', description: 'Workspace cleanup — Downloads, Desktop, Movies', frequency: 'Daily', group: 'System', type: 'claude' },
   { name: 'backup-projects', description: 'Hourly OneDrive backup with smart pruning', frequency: 'Hourly', group: 'System', type: 'launchd' },
   { name: 'infra-health', description: 'Health check for localhost-mirror, content-pipeline, cortex', frequency: 'Every 2 min', group: 'System', type: 'launchd' },
@@ -69,10 +66,10 @@ const groupConfig: Record<string, { icon: typeof Code; color: string }> = {
   'System': { icon: Server, color: 'text-green-400' },
 }
 
-const statusIcon: Record<string, { icon: typeof CheckCircle2; color: string }> = {
-  success: { icon: CheckCircle2, color: 'text-green-400' },
-  error: { icon: XCircle, color: 'text-red-400' },
-  'pending-approval': { icon: AlertTriangle, color: 'text-yellow-400' },
+const statusStyle: Record<string, { icon: typeof CheckCircle2; color: string; bg: string; label: string }> = {
+  success: { icon: CheckCircle2, color: 'text-green-400', bg: 'bg-green-500/10', label: 'Success' },
+  error: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-500/10', label: 'Error' },
+  'pending-approval': { icon: AlertTriangle, color: 'text-yellow-400', bg: 'bg-yellow-500/10', label: 'Pending Approval' },
 }
 
 function timeAgo(ts: string): string {
@@ -83,19 +80,45 @@ function timeAgo(ts: string): string {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
+function fmtDate(ts: string): string {
+  return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+// ── Markdown prose styling ───────────────────────────────────────────────────
+
+const mdComponents = {
+  h1: (props: any) => <h1 className="text-lg font-bold mt-4 mb-2" {...props} />,
+  h2: (props: any) => <h2 className="text-base font-semibold mt-4 mb-2 text-foreground" {...props} />,
+  h3: (props: any) => <h3 className="text-sm font-semibold mt-3 mb-1.5 text-foreground" {...props} />,
+  p: (props: any) => <p className="text-sm text-muted-foreground leading-relaxed mb-2" {...props} />,
+  ul: (props: any) => <ul className="text-sm text-muted-foreground space-y-1 mb-3 ml-4 list-disc" {...props} />,
+  ol: (props: any) => <ol className="text-sm text-muted-foreground space-y-1 mb-3 ml-4 list-decimal" {...props} />,
+  li: (props: any) => <li className="leading-relaxed" {...props} />,
+  strong: (props: any) => <strong className="text-foreground font-semibold" {...props} />,
+  em: (props: any) => <em className="text-foreground/80" {...props} />,
+  code: (props: any) => <code className="text-[11px] bg-secondary/80 px-1.5 py-0.5 rounded font-mono text-foreground" {...props} />,
+  pre: (props: any) => <pre className="text-[11px] bg-secondary/50 rounded-lg p-3 overflow-x-auto my-2 font-mono" {...props} />,
+  hr: () => <hr className="border-border/30 my-4" />,
+  a: (props: any) => <a className="text-blue-400 underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...props} />,
+  blockquote: (props: any) => <blockquote className="border-l-2 border-border/50 pl-3 text-sm text-muted-foreground italic my-2" {...props} />,
+  table: (props: any) => <div className="overflow-x-auto my-2"><table className="text-xs w-full" {...props} /></div>,
+  th: (props: any) => <th className="text-left font-medium text-muted-foreground px-2 py-1.5 border-b border-border/30" {...props} />,
+  td: (props: any) => <td className="text-muted-foreground px-2 py-1.5 border-b border-border/20" {...props} />,
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function AutomationsPage() {
   const [runs, setRuns] = useState<AutomationRun[]>([])
   const [loading, setLoading] = useState(false)
-  const [expanded, setExpanded] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [groupFilter, setGroupFilter] = useState<string | null>(null)
+  const [selectedRun, setSelectedRun] = useState<AutomationRun | null>(null)
+  const [selectedTask, setSelectedTask] = useState<string | null>(null)
 
   const fetchRuns = async () => {
     setLoading(true)
     try {
-      // Try API first (works from browser/iPhone), then Electron IPC
       let data: { runs: AutomationRun[] } | null = null
       try {
         const res = await fetch('/api/data?key=cortex-automations')
@@ -111,16 +134,14 @@ export function AutomationsPage() {
 
   useEffect(() => { fetchRuns() }, [])
 
-  const handleApprove = async (runId: string, action: 'approve' | 'reject') => {
+  const handleAction = async (runId: string, action: 'approve' | 'reject') => {
     try {
       await fetch(`/api/automation/${runId}/${action}`, { method: 'POST' })
       fetchRuns()
-    } catch { /* retry from electron */ }
+      setSelectedRun(null)
+    } catch { /* silent */ }
   }
 
-  const toggleExpand = (id: string) => setExpanded(expanded === id ? null : id)
-
-  // Map runs to tasks
   const taskLastRun = useMemo(() => {
     const map: Record<string, AutomationRun> = {}
     for (const run of runs) {
@@ -129,7 +150,16 @@ export function AutomationsPage() {
     return map
   }, [runs])
 
+  const taskRuns = useMemo(() => {
+    if (!selectedTask) return []
+    return runs.filter((r) => r.taskName === selectedTask)
+  }, [runs, selectedTask])
+
   const pendingApprovals = runs.filter((r) => r.status === 'pending-approval')
+  const recentRuns = useMemo(() => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000
+    return runs.filter((r) => new Date(r.timestamp).getTime() > cutoff)
+  }, [runs])
   const groups = ['Dev & Business', 'Intelligence', 'Discipline & Content', 'System']
 
   const filteredTasks = useMemo(() => {
@@ -140,13 +170,114 @@ export function AutomationsPage() {
     )
   }, [search, groupFilter])
 
+  // ── Detail view: reading a specific run ─────────────────────────
+  if (selectedRun) {
+    const task = TASKS.find((t) => t.name === selectedRun.taskName)
+    const st = statusStyle[selectedRun.status] || statusStyle.success
+    const StatusIcon = st.icon
+
+    return (
+      <PageShell>
+        <button onClick={() => setSelectedRun(null)} className="cursor-pointer flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ChevronLeft className="h-4 w-4" /> Back to tasks
+        </button>
+
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold">{selectedRun.taskName}</h2>
+            {task && <p className="text-sm text-muted-foreground mt-0.5">{task.description}</p>}
+            <div className="flex items-center gap-3 mt-2">
+              <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${st.bg} ${st.color}`}>
+                <StatusIcon className="h-3 w-3" /> {st.label}
+              </span>
+              <span className="text-xs text-muted-foreground">{fmtDate(selectedRun.timestamp)}</span>
+              <span className="text-xs text-muted-foreground/50">{timeAgo(selectedRun.timestamp)}</span>
+            </div>
+          </div>
+          {selectedRun.status === 'pending-approval' && (
+            <div className="flex gap-2 shrink-0">
+              <button onClick={() => handleAction(selectedRun.id, 'approve')}
+                className="cursor-pointer flex items-center gap-1.5 text-sm text-green-400 bg-green-400/10 px-4 py-2 rounded-lg hover:bg-green-400/20 transition-colors font-medium">
+                <CheckCircle2 className="h-4 w-4" /> Approve
+              </button>
+              <button onClick={() => handleAction(selectedRun.id, 'reject')}
+                className="cursor-pointer flex items-center gap-1.5 text-sm text-red-400 bg-red-400/10 px-4 py-2 rounded-lg hover:bg-red-400/20 transition-colors font-medium">
+                <XCircle className="h-4 w-4" /> Reject
+              </button>
+            </div>
+          )}
+        </div>
+
+        {selectedRun.summary && (
+          <div className="rounded-xl border border-border bg-secondary/20 px-5 py-4">
+            <p className="text-sm font-medium">{selectedRun.summary}</p>
+          </div>
+        )}
+
+        {/* Full report rendered as markdown */}
+        {selectedRun.fullOutput && (
+          <div className="rounded-xl border border-border bg-card px-5 py-5 md:px-8 md:py-6">
+            <Markdown components={mdComponents}>{selectedRun.fullOutput}</Markdown>
+          </div>
+        )}
+      </PageShell>
+    )
+  }
+
+  // ── Task history view: all runs for a specific task ─────────────
+  if (selectedTask) {
+    const task = TASKS.find((t) => t.name === selectedTask)
+
+    return (
+      <PageShell>
+        <button onClick={() => setSelectedTask(null)} className="cursor-pointer flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+          <ChevronLeft className="h-4 w-4" /> Back to tasks
+        </button>
+
+        <div>
+          <h2 className="text-xl font-semibold">{selectedTask}</h2>
+          {task && <p className="text-sm text-muted-foreground mt-0.5">{task.description} · {task.frequency}</p>}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          {taskRuns.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No runs recorded yet for this task.</p>
+          ) : taskRuns.map((run) => {
+            const st = statusStyle[run.status] || statusStyle.success
+            const StatusIcon = st.icon
+            return (
+              <button key={run.id} onClick={() => setSelectedRun(run)}
+                className="cursor-pointer w-full text-left rounded-xl border border-border bg-card hover:bg-secondary/20 transition-colors px-5 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${st.color}`} />
+                      <span className="text-xs font-medium">{fmtDate(run.timestamp)}</span>
+                      <span className="text-[10px] text-muted-foreground/50">{timeAgo(run.timestamp)}</span>
+                    </div>
+                    {run.summary && <p className="text-sm text-muted-foreground">{run.summary}</p>}
+                    {run.fullOutput && (
+                      <p className="text-xs text-muted-foreground/40 mt-1 line-clamp-2">{run.fullOutput.slice(0, 200)}</p>
+                    )}
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-muted-foreground/20 shrink-0 mt-1" />
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </PageShell>
+    )
+  }
+
+  // ── Main dashboard view ────────────────────────────────────────
   return (
     <PageShell>
       {/* Header */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          {TASKS.length} tasks · {runs.length} runs logged
-          {pendingApprovals.length > 0 && ` · ${pendingApprovals.length} pending approval`}
+          {TASKS.length} tasks · {runs.length} runs
+          {pendingApprovals.length > 0 && ` · ${pendingApprovals.length} pending`}
         </p>
         <Button variant="secondary" size="sm" onClick={fetchRuns} disabled={loading}>
           <RefreshCw className={`mr-2 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -154,12 +285,13 @@ export function AutomationsPage() {
         </Button>
       </div>
 
-      {/* Pending approvals */}
+      {/* Pending approvals — prominent */}
       {pendingApprovals.length > 0 && (
-        <WidgetCard title="PENDING APPROVAL" description={`${pendingApprovals.length} tasks need your review`} variant="urgent" delay={0}>
+        <WidgetCard title="NEEDS YOUR ATTENTION" description={`${pendingApprovals.length} pending`} variant="urgent" delay={0}>
           <div className="flex flex-col gap-2">
             {pendingApprovals.map((run) => (
-              <div key={run.id} className="rounded-lg border border-yellow-500/30 bg-yellow-500/[0.03] px-4 py-3">
+              <button key={run.id} onClick={() => setSelectedRun(run)}
+                className="cursor-pointer w-full text-left rounded-lg border border-yellow-500/30 bg-yellow-500/[0.03] px-4 py-3 hover:bg-yellow-500/[0.06] transition-colors">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -168,29 +300,38 @@ export function AutomationsPage() {
                       <span className="text-[10px] text-muted-foreground">{timeAgo(run.timestamp)}</span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-1">{run.summary}</p>
-                    {run.fullOutput && (
-                      <button onClick={() => toggleExpand(run.id)} className="cursor-pointer text-[10px] text-muted-foreground/50 hover:text-foreground mt-1 flex items-center gap-1">
-                        {expanded === run.id ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                        {expanded === run.id ? 'Hide details' : 'Show details'}
-                      </button>
-                    )}
-                    {expanded === run.id && run.fullOutput && (
-                      <pre className="mt-2 text-[10px] text-muted-foreground bg-secondary/50 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto">{run.fullOutput}</pre>
-                    )}
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={() => handleApprove(run.id, 'approve')}
-                      className="cursor-pointer flex items-center gap-1 text-xs text-green-400 bg-green-400/10 px-3 py-1.5 rounded-lg hover:bg-green-400/20 transition-colors">
-                      <CheckCircle2 className="h-3 w-3" /> Approve
-                    </button>
-                    <button onClick={() => handleApprove(run.id, 'reject')}
-                      className="cursor-pointer flex items-center gap-1 text-xs text-red-400 bg-red-400/10 px-3 py-1.5 rounded-lg hover:bg-red-400/20 transition-colors">
-                      <XCircle className="h-3 w-3" /> Reject
-                    </button>
-                  </div>
+                  <ArrowRight className="h-4 w-4 text-yellow-400/40 shrink-0 mt-1" />
                 </div>
-              </div>
+              </button>
             ))}
+          </div>
+        </WidgetCard>
+      )}
+
+      {/* Recent jobs — last 24h */}
+      {recentRuns.length > 0 && (
+        <WidgetCard title="RECENT JOBS" description={`${recentRuns.length} in the last 24h`} delay={0.05}>
+          <div className="flex flex-col gap-1">
+            {recentRuns.map((run) => {
+              const st = statusStyle[run.status] || statusStyle.success
+              const StatusIcon = st.icon
+              return (
+                <button key={run.id} onClick={() => setSelectedRun(run)}
+                  className="cursor-pointer w-full text-left flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-secondary/30 transition-colors group">
+                  <StatusIcon className={`h-4 w-4 shrink-0 ${st.color}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium">{run.taskName}</span>
+                      <span className={`text-[8px] px-1 py-0.5 rounded ${st.bg} ${st.color}`}>{st.label}</span>
+                    </div>
+                    {run.summary && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{run.summary}</p>}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground/50 shrink-0">{timeAgo(run.timestamp)}</span>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/40 transition-colors shrink-0" />
+                </button>
+              )
+            })}
           </div>
         </WidgetCard>
       )}
@@ -229,18 +370,17 @@ export function AutomationsPage() {
             <div className="flex items-center gap-2 mb-3">
               <GroupIcon className={`h-4 w-4 ${cfg.color}`} />
               <h2 className="text-sm font-semibold">{group}</h2>
-              <span className="text-[10px] text-muted-foreground">{tasksInGroup.length} tasks</span>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {tasksInGroup.map((task) => {
                 const lastRun = taskLastRun[task.name]
-                const si = lastRun ? statusIcon[lastRun.status] : null
-                const StatusIcon = si?.icon || Clock
-                const isExpanded = expanded === task.name
+                const st = lastRun ? statusStyle[lastRun.status] : null
+                const StatusIcon = st?.icon || Clock
 
                 return (
                   <div key={task.name} className="rounded-xl border border-border bg-card hover:bg-secondary/20 transition-colors">
-                    <button onClick={() => toggleExpand(task.name)} className="cursor-pointer w-full text-left px-4 py-3">
+                    {/* Card header */}
+                    <div className="px-4 py-3">
                       <div className="flex items-start justify-between">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -252,52 +392,46 @@ export function AutomationsPage() {
                             }`}>{task.type}</span>
                           </div>
                           <p className="text-[10px] text-muted-foreground mt-0.5">{task.description}</p>
-                          <div className="flex items-center gap-2 mt-2">
+                          <div className="flex items-center gap-2 mt-1.5">
                             <Clock className="h-3 w-3 text-muted-foreground/40" />
                             <span className="text-[9px] text-muted-foreground/60">{task.frequency}</span>
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0 ml-2">
                           {lastRun ? (
-                            <>
-                              <StatusIcon className={`h-3.5 w-3.5 ${si?.color || 'text-muted-foreground'}`} />
-                              <span className="text-[9px] text-muted-foreground">{timeAgo(lastRun.timestamp)}</span>
-                            </>
+                            <StatusIcon className={`h-3.5 w-3.5 ${st?.color || 'text-muted-foreground'}`} />
                           ) : (
-                            <span className="text-[9px] text-muted-foreground/30">No runs</span>
+                            <span className="text-[9px] text-muted-foreground/30">—</span>
                           )}
-                          {isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground/30" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/30" />}
                         </div>
                       </div>
-                    </button>
 
-                    {isExpanded && lastRun && (
-                      <div className="px-4 pb-3 border-t border-border/30 pt-2">
-                        <div className="flex items-center gap-2 mb-1">
-                          <FileText className="h-3 w-3 text-muted-foreground/50" />
-                          <span className="text-[9px] text-muted-foreground">Latest output</span>
-                          <span className="text-[9px] text-muted-foreground/40 ml-auto">{new Date(lastRun.timestamp).toLocaleString()}</span>
-                        </div>
-                        {lastRun.summary && (
-                          <p className="text-[11px] text-muted-foreground mb-2">{lastRun.summary}</p>
-                        )}
-                        {lastRun.fullOutput && (
-                          <pre className="text-[9px] text-muted-foreground/60 bg-secondary/50 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap max-h-[200px] overflow-y-auto">{lastRun.fullOutput}</pre>
-                        )}
-                        {lastRun.status === 'pending-approval' && (
-                          <div className="flex gap-2 mt-2">
-                            <button onClick={() => handleApprove(lastRun.id, 'approve')}
-                              className="cursor-pointer flex items-center gap-1 text-[10px] text-green-400 bg-green-400/10 px-2 py-1 rounded hover:bg-green-400/20">
-                              <CheckCircle2 className="h-3 w-3" /> Approve
-                            </button>
-                            <button onClick={() => handleApprove(lastRun.id, 'reject')}
-                              className="cursor-pointer flex items-center gap-1 text-[10px] text-red-400 bg-red-400/10 px-2 py-1 rounded hover:bg-red-400/20">
-                              <XCircle className="h-3 w-3" /> Reject
-                            </button>
+                      {/* Last run preview */}
+                      {lastRun && (
+                        <div className="mt-3 pt-2 border-t border-border/30">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[9px] text-muted-foreground/50">{timeAgo(lastRun.timestamp)}</span>
                           </div>
-                        )}
-                      </div>
-                    )}
+                          {lastRun.summary && (
+                            <p className="text-[11px] text-muted-foreground line-clamp-2">{lastRun.summary}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex border-t border-border/30">
+                      {lastRun && (
+                        <button onClick={() => setSelectedRun(lastRun)}
+                          className="cursor-pointer flex-1 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground py-2 transition-colors hover:bg-secondary/30">
+                          <FileText className="h-3 w-3" /> Read report
+                        </button>
+                      )}
+                      <button onClick={() => setSelectedTask(task.name)}
+                        className="cursor-pointer flex-1 flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground py-2 transition-colors hover:bg-secondary/30 border-l border-border/30">
+                        <Clock className="h-3 w-3" /> History
+                      </button>
+                    </div>
                   </div>
                 )
               })}
@@ -305,26 +439,6 @@ export function AutomationsPage() {
           </div>
         )
       })}
-
-      {/* Recent runs log */}
-      {runs.length > 0 && (
-        <WidgetCard title="RECENT RUNS" description={`Last ${Math.min(runs.length, 20)} runs`} delay={0.1}>
-          <div className="flex flex-col gap-1 max-h-[300px] overflow-y-auto">
-            {runs.slice(0, 20).map((run) => {
-              const si = statusIcon[run.status]
-              const StatusIcon = si?.icon || Clock
-              return (
-                <div key={run.id} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/30 transition-colors">
-                  <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${si?.color || 'text-muted-foreground'}`} />
-                  <span className="text-xs font-medium truncate flex-1">{run.taskName}</span>
-                  <span className="text-[10px] text-muted-foreground truncate max-w-[200px]">{run.summary}</span>
-                  <span className="text-[9px] text-muted-foreground shrink-0">{timeAgo(run.timestamp)}</span>
-                </div>
-              )
-            })}
-          </div>
-        </WidgetCard>
-      )}
     </PageShell>
   )
 }
