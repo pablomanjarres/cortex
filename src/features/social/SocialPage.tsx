@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +13,7 @@ import {
   ArrowUpDown,
   Cake,
   Clock,
+  RotateCcw,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -130,10 +131,34 @@ export function SocialPage() {
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+
+  // Scroll to expanded contact row when selected from widgets
+  useEffect(() => {
+    if (expanded && rowRefs.current[expanded]) {
+      rowRefs.current[expanded]!.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [expanded])
+
+  // Auto-sync birthdays to Calendar.app
+  const syncedRef = useRef(false)
+  useEffect(() => {
+    if (syncedRef.current || !window.electronAPI?.calendar?.syncBirthdays) return
+    syncedRef.current = true
+    const birthdays = contacts
+      .filter((c) => c.birthday)
+      .map((c) => ({ name: c.name, birthday: c.birthday }))
+    if (birthdays.length > 0) {
+      window.electronAPI.calendar.syncBirthdays(birthdays)
+    }
+  }, [contacts])
 
   const update = updateContacts
 
-  const setField = (id: string, f: Partial<Contact>) => update((p) => p.map((c) => c.id === id ? { ...c, ...f } : c))
+  const setField = (id: string, f: Partial<Contact>) => {
+    if ('birthday' in f) syncedRef.current = false // re-sync on birthday change
+    update((p) => p.map((c) => c.id === id ? { ...c, ...f } : c))
+  }
   const deleteContact = (id: string) => { update((p) => p.filter((c) => c.id !== id)); if (expanded === id) setExpanded(null) }
   const addContact = () => {
     const c: Contact = { id: `c-${Date.now()}`, name: 'New Contact', title: '', nickname: '', categories: [], fields: [], followUp: false, birthday: '', phone: '', lastContact: '', interval: 0, email: '', socialProfiles: '', address: '' }
@@ -194,7 +219,7 @@ export function SocialPage() {
                 const days = daysUntilBirthday(c.birthday)!
                 const age = calcAge(c.birthday)
                 return (
-                  <div key={c.id} className={`flex items-center gap-3 rounded-lg px-3 py-2 ${days <= 3 ? 'bg-pink-500/[0.05]' : 'hover:bg-secondary/50'} transition-colors`}>
+                  <button key={c.id} onClick={() => setExpanded(expanded === c.id ? null : c.id)} className={`cursor-pointer w-full text-left flex items-center gap-3 rounded-lg px-3 py-2 ${days <= 3 ? 'bg-pink-500/[0.05]' : 'hover:bg-secondary/50'} ${expanded === c.id ? 'ring-1 ring-foreground/20' : ''} transition-all`}>
                     <Cake className={`h-3.5 w-3.5 shrink-0 ${days <= 3 ? 'text-pink-400' : 'text-muted-foreground'}`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{c.name}</p>
@@ -203,7 +228,7 @@ export function SocialPage() {
                     <Badge variant="secondary" className={`text-[10px] tabular-nums ${days <= 3 ? 'text-pink-400' : ''}`}>
                       {days === 0 ? 'Today!' : `${days}d`}
                     </Badge>
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -220,13 +245,22 @@ export function SocialPage() {
                 const daysSince = Math.ceil((Date.now() - new Date(c.lastContact).getTime()) / 86_400_000)
                 const overdue = daysSince - c.interval
                 return (
-                  <div key={c.id} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/50 transition-colors">
-                    <Clock className="h-3.5 w-3.5 text-orange-400 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{c.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{c.title} · last: {fmtDate(c.lastContact)}</p>
-                    </div>
-                    <Badge variant="secondary" className="text-[10px] tabular-nums text-orange-400">{overdue}d overdue</Badge>
+                  <div key={c.id} className={`flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/50 ${expanded === c.id ? 'ring-1 ring-foreground/20' : ''} transition-all`}>
+                    <button onClick={() => setExpanded(expanded === c.id ? null : c.id)} className="cursor-pointer flex items-center gap-3 flex-1 min-w-0 text-left">
+                      <Clock className="h-3.5 w-3.5 text-orange-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{c.title} · last: {fmtDate(c.lastContact)}</p>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] tabular-nums text-orange-400">{overdue}d overdue</Badge>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setField(c.id, { lastContact: '' }) }}
+                      title="Reset last contact"
+                      className="cursor-pointer shrink-0 text-muted-foreground/30 hover:text-foreground transition-colors"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                    </button>
                   </div>
                 )
               })}
@@ -281,7 +315,7 @@ export function SocialPage() {
             <tbody>
               {filtered.map((c) => (
                 <>
-                  <tr key={c.id} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                  <tr key={c.id} ref={(el) => { rowRefs.current[c.id] = el }} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
                     className={`cursor-pointer border-b border-border/20 transition-colors hover:bg-secondary/30 group ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
                     <td className="px-5 py-2.5">
                       <span className="font-medium">{c.name}</span>
@@ -348,6 +382,15 @@ export function SocialPage() {
                                   className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${fieldColor[f]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{f}</button>
                               })}
                             </div>
+                          </div>
+                          <div className="flex items-end justify-end lg:col-span-3 pt-2">
+                            <button
+                              onClick={() => deleteContact(c.id)}
+                              className="cursor-pointer flex items-center gap-1.5 text-xs text-red-400/60 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-red-400/20 hover:border-red-400/40 hover:bg-red-400/5"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              Delete contact
+                            </button>
                           </div>
                         </div>
                       </td>

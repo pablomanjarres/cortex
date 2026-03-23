@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import type { GitHubStats, LemonStats, VercelStats, SupabaseStats } from '@/types/metrics'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -17,12 +17,15 @@ import {
   UserMinus,
   Globe,
   ArrowUpRight,
+  Flame,
+  Database,
+  Cloud,
 } from 'lucide-react'
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   Tooltip,
@@ -72,6 +75,62 @@ function WoWBadge({ value }: { value: number | null }) {
       {Math.abs(value).toFixed(0)}%
     </span>
   )
+}
+
+// ── Activity Feed helpers ─────────────────────────────────────────────────────
+
+interface FeedItem {
+  icon: typeof GitCommit
+  source: string
+  text: string
+  time: string
+  color: string
+}
+
+function buildActivityFeed(
+  gh: GitHubStats | null,
+  vc: VercelStats | null,
+  sb: SupabaseStats | null,
+  lm: LemonStats | null,
+): FeedItem[] {
+  const items: FeedItem[] = []
+  if (gh?.latestCommit) {
+    items.push({
+      icon: GitCommit,
+      source: 'GitHub',
+      text: gh.latestCommit,
+      time: 'Today',
+      color: 'text-foreground',
+    })
+  }
+  if (vc?.latestDeployment) {
+    items.push({
+      icon: Cloud,
+      source: 'Vercel',
+      text: `Deploy ${vc.latestDeployment.state.toLowerCase()}`,
+      time: new Date(vc.latestDeployment.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      color: vc.latestDeployment.state === 'READY' ? 'text-green-400' : 'text-yellow-400',
+    })
+  }
+  if (sb && sb.signupsToday > 0) {
+    items.push({
+      icon: Database,
+      source: 'Supabase',
+      text: `${sb.signupsToday} new signup${sb.signupsToday === 1 ? '' : 's'} today`,
+      time: 'Today',
+      color: 'text-blue-400',
+    })
+  }
+  if (lm && lm.newThisMonth > 0) {
+    items.push({
+      icon: DollarSign,
+      source: 'Lemon',
+      text: `${lm.newThisMonth} new customer${lm.newThisMonth === 1 ? '' : 's'} this month`,
+      time: 'This month',
+      color: 'text-green-400',
+    })
+  }
+  return items
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -150,6 +209,9 @@ export function FounderPage() {
   const wowDeploys = getWoWChange(history, 'deploys')
   const wowMrr = getWoWChange(history, 'mrr')
 
+  const hasMrrHistory = history.some((h) => h.mrr > 0)
+  const feedItems = useMemo(() => buildActivityFeed(github, vercel, supabase, lemon), [github, vercel, supabase, lemon])
+
   return (
     <PageShell>
       {/* Header */}
@@ -186,7 +248,7 @@ export function FounderPage() {
             {[
               {
                 label: 'MRR',
-                value: lemon ? fmtMoney(lemon.mrr) : '—',
+                value: lemon ? fmtMoney(lemon.mrr) : '\u2014',
                 icon: DollarSign,
                 color: lemon && lemon.mrr > 0 ? 'text-green-400' : 'text-muted-foreground',
                 sub: lemon ? `${fmtMoney(lemon.revenueThisMonth)} this month` : 'Connect Lemon Squeezy',
@@ -194,7 +256,7 @@ export function FounderPage() {
               },
               {
                 label: 'Users',
-                value: supabase ? fmt(supabase.totalUsers) : '—',
+                value: supabase ? fmt(supabase.totalUsers) : '\u2014',
                 icon: Users,
                 color: supabase && supabase.totalUsers > 0 ? 'text-blue-400' : 'text-muted-foreground',
                 sub: supabase ? `+${supabase.signupsToday} today` : 'Connect Supabase',
@@ -202,15 +264,17 @@ export function FounderPage() {
               },
               {
                 label: 'Commits today',
-                value: github ? github.commitsToday.toString() : '—',
+                value: github ? github.commitsToday.toString() : '\u2014',
                 icon: GitCommit,
                 color: github && github.commitsToday > 0 ? 'text-foreground' : 'text-muted-foreground',
-                sub: github ? `${github.commitsWeek} this week · ${github.repoCount} repos` : 'Connect GitHub',
+                sub: github
+                  ? `${github.commitsWeek} this week · ${github.topRepos.length > 0 ? github.topRepos.slice(0, 2).map(r => r.name).join(', ') : `${github.repoCount} repos`}`
+                  : 'Connect GitHub',
                 wow: wowCommits,
               },
               {
                 label: 'Deploys',
-                value: vercel ? vercel.deploymentsToday.toString() : '—',
+                value: vercel ? vercel.deploymentsToday.toString() : '\u2014',
                 icon: Rocket,
                 color: vercel && vercel.deploymentsToday > 0 ? 'text-foreground' : 'text-muted-foreground',
                 sub: vercel ? `${vercel.deploymentsWeek} this week` : 'Connect Vercel',
@@ -223,7 +287,7 @@ export function FounderPage() {
                   <span className="text-[11px] text-muted-foreground">{kpi.label}</span>
                   <WoWBadge value={kpi.wow} />
                 </div>
-                <p className="text-2xl font-bold tabular-nums">{kpi.value}</p>
+                <p className="text-xl md:text-2xl font-bold tabular-nums">{kpi.value}</p>
                 <p className="text-[10px] text-muted-foreground">{kpi.sub}</p>
               </div>
             ))}
@@ -263,12 +327,43 @@ export function FounderPage() {
                     </div>
                     <span className="text-sm font-bold tabular-nums">{github.prsMerged}</span>
                   </div>
+                  {/* Streak */}
+                  {github.streak > 0 && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Flame className="h-4 w-4 text-orange-400" />
+                        <span className="text-sm">Streak</span>
+                      </div>
+                      <span className="text-sm font-bold tabular-nums">{github.streak}d</span>
+                    </div>
+                  )}
                   {github.latestCommit && (
                     <div className="mt-1 rounded-lg bg-secondary/50 px-3 py-2">
                       <p className="text-[10px] text-muted-foreground">Latest commit</p>
                       <p className="text-xs truncate">{github.latestCommit}</p>
                     </div>
                   )}
+                  {/* Top repos with visual bars */}
+                  {github.topRepos && github.topRepos.length > 0 && (() => {
+                    const maxCommits = Math.max(...github.topRepos.map(r => r.commits))
+                    return (
+                      <div className="mt-1 border-t border-border/50 pt-3">
+                        <p className="text-[10px] text-muted-foreground mb-2">Commits by repo (this week)</p>
+                        {github.topRepos.slice(0, 5).map((repo) => (
+                          <div key={repo.name} className="flex items-center gap-2 py-1">
+                            <span className="text-[11px] text-muted-foreground truncate w-16 sm:w-24 shrink-0">{repo.name}</span>
+                            <div className="flex-1 h-4 rounded bg-secondary/50 overflow-hidden">
+                              <div
+                                className="h-full rounded bg-blue-500/30"
+                                style={{ width: `${(repo.commits / maxCommits) * 100}%` }}
+                              />
+                            </div>
+                            <span className="text-[11px] font-medium tabular-nums w-6 text-right shrink-0">{repo.commits}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground py-4 text-center">Add GitHub token in Settings</p>
@@ -367,7 +462,7 @@ export function FounderPage() {
                           <span className={vercel.latestDeployment.state === 'READY' ? 'text-green-400' : 'text-yellow-400'}>
                             {vercel.latestDeployment.state}
                           </span>
-                          {' · '}
+                          {' \u00b7 '}
                           {new Date(vercel.latestDeployment.createdAt).toLocaleTimeString()}
                         </p>
                       </div>
@@ -389,10 +484,11 @@ export function FounderPage() {
             </WidgetCard>
           </div>
 
-          {/* Row 3: Trend charts */}
+          {/* Row 3: Trend charts — 2x2 grid */}
           {history.length > 1 && (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <WidgetCard title="COMMITS (14D)" description="Daily commit count" delay={0.25}>
+              {/* Commits */}
+              <WidgetCard title="COMMITS (14D)" description={github?.topRepos.length ? `Across ${github.topRepos.map(r => r.name).join(', ')}` : 'Daily commit count'} delay={0.25}>
                 <div style={{ height: 180 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={last14}>
@@ -417,10 +513,17 @@ export function FounderPage() {
                 </div>
               </WidgetCard>
 
+              {/* Users Growth — with gradient fill */}
               <WidgetCard title="USERS GROWTH" description="Total users over time" delay={0.3}>
                 <div style={{ height: 180 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={last14}>
+                    <AreaChart data={last14}>
+                      <defs>
+                        <linearGradient id="usersGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#34d399" stopOpacity={0.3} />
+                          <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
                       <XAxis
                         dataKey="date"
                         tickFormatter={(d: string) => d.slice(5)}
@@ -435,24 +538,21 @@ export function FounderPage() {
                         width={40}
                       />
                       <Tooltip {...TOOLTIP_STYLE} />
-                      <Line
+                      <Area
                         type="monotone"
                         dataKey="users"
                         stroke="#34d399"
                         strokeWidth={2}
+                        fill="url(#usersGradient)"
                         dot={{ r: 2, fill: '#34d399' }}
                         activeDot={{ r: 4 }}
                       />
-                    </LineChart>
+                    </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </WidgetCard>
-            </div>
-          )}
 
-          {/* Deploys (14d) mini chart */}
-          {history.length > 1 && vercel && (
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+              {/* Deploys */}
               <WidgetCard title="DEPLOYS (14D)" description="Daily deployments" delay={0.35}>
                 <div style={{ height: 180 }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -477,7 +577,70 @@ export function FounderPage() {
                   </ResponsiveContainer>
                 </div>
               </WidgetCard>
+
+              {/* MRR Trend — only shown when Lemon data exists in history */}
+              {hasMrrHistory && (
+                <WidgetCard title="MRR TREND" description="Monthly recurring revenue" delay={0.4}>
+                  <div style={{ height: 180 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={last14}>
+                        <defs>
+                          <linearGradient id="mrrGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#4ade80" stopOpacity={0.3} />
+                            <stop offset="100%" stopColor="#4ade80" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <XAxis
+                          dataKey="date"
+                          tickFormatter={(d: string) => d.slice(5)}
+                          tick={{ fontSize: 10, fill: '#888' }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: '#888' }}
+                          axisLine={false}
+                          tickLine={false}
+                          width={45}
+                          tickFormatter={(v: number) => `$${v}`}
+                        />
+                        <Tooltip
+                          {...TOOLTIP_STYLE}
+                          formatter={(value) => [`$${Number(value).toFixed(0)}`, 'MRR']}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="mrr"
+                          stroke="#4ade80"
+                          strokeWidth={2}
+                          fill="url(#mrrGradient)"
+                          dot={{ r: 2, fill: '#4ade80' }}
+                          activeDot={{ r: 4 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </WidgetCard>
+              )}
             </div>
+          )}
+
+          {/* Row 4: Activity Feed */}
+          {feedItems.length > 0 && (
+            <WidgetCard title="ACTIVITY" description="Recent events across integrations" delay={0.45}>
+              <div className="flex flex-col gap-2">
+                {feedItems.map((item, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-lg bg-secondary/30 px-3 py-2">
+                    <item.icon className={`h-4 w-4 shrink-0 ${item.color}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs truncate">{item.text}</p>
+                    </div>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">{item.source}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">{item.time}</span>
+                  </div>
+                ))}
+              </div>
+            </WidgetCard>
           )}
         </>
       )}

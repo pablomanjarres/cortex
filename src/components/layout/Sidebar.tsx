@@ -11,6 +11,8 @@ import {
   Users,
   Library,
   Lightbulb,
+  FolderKanban,
+  Briefcase,
   Settings,
 } from 'lucide-react'
 
@@ -27,6 +29,8 @@ const navGroups = [
     items: [
       { to: '/founder', icon: Rocket, label: 'Founder' },
       { to: '/student', icon: GraduationCap, label: 'Student' },
+      { to: '/projects', icon: FolderKanban, label: 'Projects' },
+      { to: '/crm', icon: Briefcase, label: 'CRM' },
     ],
   },
   {
@@ -46,14 +50,12 @@ const navGroups = [
   },
 ]
 
-export function Sidebar() {
+function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-[220px] border-r border-sidebar-border bg-sidebar flex flex-col">
-      {/* Spacer for macOS traffic light buttons */}
-      <div className="h-[38px] shrink-0 [-webkit-app-region:drag]" />
+    <>
       <div className="flex items-center gap-3 px-5 pb-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground">
-          <span className="text-sm font-bold text-background">C</span>
+          <span className="text-sm font-serif italic text-background">C</span>
         </div>
         <span className="text-lg font-semibold tracking-tight text-sidebar-foreground">
           <span className="font-serif italic font-normal">Cortex</span>
@@ -74,6 +76,7 @@ export function Sidebar() {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    onClick={onNavigate}
                     className={({ isActive }) =>
                       cn(
                         'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
@@ -104,6 +107,33 @@ export function Sidebar() {
           })}
         </p>
       </div>
+    </>
+  )
+}
+
+// Desktop sidebar — hidden on mobile
+export function Sidebar() {
+  return (
+    <aside className="hidden md:flex fixed left-0 top-0 z-40 h-screen w-[220px] border-r border-sidebar-border bg-sidebar flex-col">
+      {/* Spacer for macOS traffic light buttons */}
+      <div className="h-[38px] shrink-0 [-webkit-app-region:drag]" />
+      <SidebarContent />
     </aside>
+  )
+}
+
+// Mobile sidebar overlay
+export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  if (!open) return null
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      {/* Drawer */}
+      <aside className="md:hidden fixed left-0 top-0 z-50 h-screen w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col animate-in slide-in-from-left duration-200">
+        <div className="h-4 shrink-0" />
+        <SidebarContent onNavigate={onClose} />
+      </aside>
+    </>
   )
 }

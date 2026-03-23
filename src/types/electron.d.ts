@@ -1,5 +1,20 @@
 import type { GitHubStats, LemonStats, VercelStats, SupabaseStats } from './metrics'
 
+interface ProjectInfo {
+  name: string
+  path: string
+  description: string | null
+  type: 'app' | 'monorepo' | 'library' | 'skill' | 'assets' | 'unknown'
+  hasPackageJson: boolean
+  hasClaude: boolean
+  gitRemote: string | null
+  latestCommit: { message: string; date: string } | null
+  workflows: { name: string; scheduled: boolean; cron?: string }[]
+  techStack: string[]
+  scripts: string[]
+  connections: string[]
+}
+
 interface CalendarEvent {
   title: string
   startTime: string
@@ -14,6 +29,7 @@ interface ElectronAPI {
   platform: string
   calendar: {
     getTodayEvents: () => Promise<CalendarEvent[]>
+    syncBirthdays: (birthdays: { name: string; birthday: string }[]) => Promise<{ created: number; skipped: number }>
   }
   tray: {
     updateStats: (stats: { tasks: string; habits: string; score: string }) => void
@@ -38,6 +54,10 @@ interface ElectronAPI {
     exportAll: () => Promise<string | null>
     importAll: (json: string) => Promise<{ success: boolean; count?: number; error?: string }>
     getPath: () => Promise<string>
+    getStats: () => Promise<{ key: string; size: number }[]>
+  }
+  projects: {
+    scan: () => Promise<ProjectInfo[]>
   }
   onNavigate: (callback: (route: string) => void) => void
 }

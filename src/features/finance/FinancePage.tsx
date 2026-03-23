@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import {
   TrendingUp,
@@ -11,10 +12,15 @@ import {
   Trash2,
   CreditCard,
   Columns2,
+  Search,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react'
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -88,7 +94,7 @@ const typeColor: Record<ItemType, string> = { Income: 'bg-green-500/15 text-gree
 const CHART_COLORS = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#fb923c', '#2dd4bf', '#818cf8', '#e879f9']
 const currentMonth = new Date().getMonth()
 
-const fmtCell = (n: number) => `$${n.toLocaleString('en-US')}`
+const fmtCell = (n: number) => `$${n.toLocaleString('es-CO')}`
 
 const rowBorderColor: Record<ItemType, string> = {
   Income: 'border-l-2 border-green-500/40',
@@ -122,7 +128,19 @@ export function FinancePage() {
   const [data, updateData] = useStore<FinanceData>('cortex-finances', DEFAULT_DATA)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const [filterType, setFilterType] = useState<ItemType | null>(null)
-  const [compact, setCompact] = useState(false)
+  const [compact, setCompact] = useState(window.innerWidth < 768)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [sortField, setSortField] = useState<'name' | 'total' | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const toggleSort = (field: 'name' | 'total') => {
+    if (sortField === field) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDir('asc')
+    }
+  }
 
   const setField = (id: string, field: Partial<FinanceItem>) =>
     updateData((prev) => ({ ...prev, items: prev.items.map((i) => i.id === id ? { ...i, ...field } : i) }))
@@ -159,27 +177,46 @@ export function FinancePage() {
   const subMonthly = subscriptions.reduce((s, it) => s + it.months[selectedMonth], 0)
   const subAnnual = subscriptions.reduce((s, it) => s + it.months.reduce((a, b) => a + b, 0), 0)
 
-  const filtered = useMemo(() => data.items.filter((it) => !filterType || it.type === filterType), [data.items, filterType])
+  const filtered = useMemo(() => {
+    const lowerSearch = searchTerm.toLowerCase()
+    return data.items.filter((it) =>
+      (!filterType || it.type === filterType) &&
+      (!searchTerm || it.name.toLowerCase().includes(lowerSearch))
+    )
+  }, [data.items, filterType, searchTerm])
+
+  const sortItems = (items: FinanceItem[]) => {
+    if (!sortField) return items
+    return [...items].sort((a, b) => {
+      let cmp = 0
+      if (sortField === 'name') cmp = a.name.localeCompare(b.name)
+      else cmp = a.months.reduce((s, v) => s + v, 0) - b.months.reduce((s, v) => s + v, 0)
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }
 
   const groupedRows = useMemo(() => {
     const typeOrder: ItemType[] = ['Income', 'Expense', 'Subscription']
     const groups = typeOrder
       .filter((t) => !filterType || filterType === t)
-      .map((t) => ({ type: t, items: filtered.filter((it) => it.type === t) }))
+      .map((t) => ({ type: t, items: sortItems(filtered.filter((it) => it.type === t)) }))
       .filter((g) => g.items.length > 0)
     return groups
-  }, [filtered, filterType])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, filterType, sortField, sortDir])
 
   return (
     <PageShell>
       {/* Month selector */}
-      <div className="flex gap-1">
-        {MONTHS.map((m, i) => (
-          <button key={m} onClick={() => setSelectedMonth(i)}
-            className={`cursor-pointer flex-1 text-[10px] py-1.5 rounded-lg transition-all ${i === selectedMonth ? 'bg-foreground/10 text-foreground font-medium' : 'text-muted-foreground/40 hover:text-muted-foreground'} ${i === currentMonth ? 'border-b-2 border-green-400/50' : ''}`}>
-            {m}
-          </button>
-        ))}
+      <div className="overflow-x-auto">
+        <div className="flex gap-1 flex-nowrap min-w-max">
+          {MONTHS.map((m, i) => (
+            <button key={m} onClick={() => setSelectedMonth(i)}
+              className={`cursor-pointer flex-1 text-[10px] py-1.5 px-2 rounded-lg transition-all ${i === selectedMonth ? 'bg-foreground/10 text-foreground font-medium' : 'text-muted-foreground/40 hover:text-muted-foreground'} ${i === currentMonth ? 'border-b-2 border-green-400/50' : ''}`}>
+              {m}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* KPIs */}
@@ -187,15 +224,24 @@ export function FinancePage() {
         {[
           { label: 'Income', value: fmtCOP(cur.income), icon: TrendingUp, color: 'text-green-400' },
           { label: 'Expenses', value: fmtCOP(cur.expenses), icon: TrendingDown, color: 'text-red-400' },
-          { label: 'Net Savings', value: fmtCOP(cur.savings), icon: PiggyBank, color: cur.savings >= 0 ? 'text-green-400' : 'text-red-400' },
+          { label: 'Net Savings', value: fmtCOP(cur.savings), icon: PiggyBank, color: cur.savings >= 0 ? 'text-green-400' : 'text-red-400', sparkline: true },
           { label: 'Savings Rate', value: `${savingsRate.toFixed(0)}%`, icon: DollarSign, color: savingsRate >= 20 ? 'text-green-400' : 'text-yellow-400' },
         ].map((kpi) => (
-          <div key={kpi.label} className="flex items-center gap-3 rounded-xl border border-border px-4 py-3">
-            <kpi.icon className={`h-5 w-5 ${kpi.color}`} />
-            <div>
+          <div key={kpi.label} className="liquid-glass flex items-center gap-3 rounded-xl border border-border px-4 py-3">
+            <kpi.icon className={`h-5 w-5 shrink-0 ${kpi.color}`} />
+            <div className="flex-1 min-w-0">
               <p className={`text-lg font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
               <p className="text-[10px] text-muted-foreground">{kpi.label}</p>
             </div>
+            {'sparkline' in kpi && kpi.sparkline && (
+              <div className="w-[60px] sm:w-[80px] h-[30px] shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyTotals}>
+                    <Line type="monotone" dataKey="savings" stroke={cur.savings >= 0 ? '#34d399' : '#f87171'} strokeWidth={1.5} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -203,7 +249,7 @@ export function FinancePage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Bar chart */}
         <WidgetCard title="Income vs Expenses" description={`${data.year} · Net: ${fmtCOP(yearTotal.income - yearTotal.expenses)}`} delay={0.1} className="lg:col-span-2">
-          <div className="h-[220px] -mx-2">
+          <div className="h-[160px] sm:h-[220px] -mx-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthlyTotals} barGap={2}>
                 <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#666' }} axisLine={false} tickLine={false} />
@@ -221,7 +267,7 @@ export function FinancePage() {
           {expenseBreakdown.length === 0 ? (
             <p className="text-xs text-muted-foreground py-6 text-center">No expenses</p>
           ) : (
-            <div className="h-[220px] -mx-2">
+            <div className="h-[160px] sm:h-[220px] -mx-2">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={expenseBreakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
@@ -241,56 +287,92 @@ export function FinancePage() {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {subscriptions.map((sub) => {
             const amt = sub.months[selectedMonth]
+            const activeMonths = sub.months.filter((m) => m > 0).length
+            const annualCost = sub.months.reduce((a, b) => a + b, 0)
+            const isActive = amt > 0
             return (
-              <div key={sub.id} className={`flex items-center justify-between rounded-lg px-3 py-2 ${amt > 0 ? 'bg-blue-500/[0.04]' : 'bg-secondary/30 opacity-40'}`}>
-                <div>
-                  <p className="text-xs font-medium">{sub.name}</p>
-                  <p className="text-[10px] text-muted-foreground tabular-nums">{amt > 0 ? fmtFull(amt) : 'Inactive'}</p>
+              <div key={sub.id} className={`flex items-center justify-between rounded-lg px-3 py-2 ${isActive ? 'bg-blue-500/[0.04]' : 'bg-secondary/30 opacity-40'}`}>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${isActive ? 'bg-green-400' : 'bg-muted-foreground/30'}`} />
+                    <p className="text-xs font-medium truncate">{sub.name}</p>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground tabular-nums">
+                    {isActive ? fmtFull(amt) : 'Inactive'}{' '}
+                    <span className="text-muted-foreground/50">· {activeMonths}mo · {fmtCOP(annualCost)}/yr</span>
+                  </p>
                 </div>
-                <CreditCard className="h-3.5 w-3.5 text-blue-400/40" />
+                <CreditCard className="h-3.5 w-3.5 text-blue-400/40 shrink-0 ml-2" />
               </div>
             )
           })}
         </div>
       </WidgetCard>
 
+      {/* Section divider */}
+      <div className="flex items-center gap-3 pt-2">
+        <h2 className="text-sm font-semibold text-foreground">Budget</h2>
+        <div className="flex-1 h-px bg-border/50" />
+      </div>
+
       {/* Budget Table */}
       <WidgetCard title="Budget" description={`${filtered.length} items`} delay={0.25}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1.5">
+        <div className="flex flex-col gap-3 mb-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1.5">
+                {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
+                  <button key={t} onClick={() => setFilterType(filterType === t ? null : t)}
+                    className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${filterType === t ? `${typeColor[t]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setCompact(!compact)}
+                className={`cursor-pointer flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border transition-all ${compact ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+                <Columns2 className="h-3 w-3" /> Compact
+              </button>
+            </div>
+            <div className="flex gap-1">
               {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
-                <button key={t} onClick={() => setFilterType(filterType === t ? null : t)}
-                  className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${filterType === t ? `${typeColor[t]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-                  {t}
+                <button key={t} onClick={() => addItem(t)}
+                  className="cursor-pointer flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg border border-border hover:bg-secondary transition-all">
+                  <Plus className="h-3 w-3" /> {t}
                 </button>
               ))}
             </div>
-            <button onClick={() => setCompact(!compact)}
-              className={`cursor-pointer flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border transition-all ${compact ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-              <Columns2 className="h-3 w-3" /> Compact
-            </button>
           </div>
-          <div className="flex gap-1">
-            {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
-              <button key={t} onClick={() => addItem(t)}
-                className="cursor-pointer flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg border border-border hover:bg-secondary transition-all">
-                <Plus className="h-3 w-3" /> {t}
-              </button>
-            ))}
+          <div className="relative max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+            <Input
+              placeholder="Search items..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-7 pl-8 text-xs"
+            />
           </div>
         </div>
         <div className="overflow-x-auto -mx-5">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="px-5 py-2 text-left font-medium sticky left-0 bg-card z-10 min-w-[140px]">Item</th>
+                <th className="px-5 py-2 text-left font-medium sticky left-0 bg-card z-10 min-w-[140px]">
+                  <button onClick={() => toggleSort('name')} className="cursor-pointer flex items-center gap-1 hover:text-foreground transition-colors">
+                    Item
+                    {sortField === 'name' ? (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronUp className="h-3 w-3 opacity-0 group-hover:opacity-30" />}
+                  </button>
+                </th>
                 <th className="py-2 text-left font-medium w-16">Type</th>
                 {!compact && MONTHS.map((m, i) => (
                   <th key={m} className={`py-2 text-right font-medium min-w-[80px] ${i === selectedMonth ? 'text-foreground' : ''}`}>{m}</th>
                 ))}
                 {compact && <th className="py-2 text-right font-medium min-w-[80px]">{MONTHS[selectedMonth]}</th>}
-                <th className="py-2 text-right font-medium min-w-[90px]">Total</th>
+                <th className="py-2 text-right font-medium min-w-[90px]">
+                  <button onClick={() => toggleSort('total')} className="cursor-pointer flex items-center gap-1 ml-auto hover:text-foreground transition-colors">
+                    Total
+                    {sortField === 'total' ? (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronUp className="h-3 w-3 opacity-0 group-hover:opacity-30" />}
+                  </button>
+                </th>
                 <th className="py-2 w-6"></th>
               </tr>
             </thead>

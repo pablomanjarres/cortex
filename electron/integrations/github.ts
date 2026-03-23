@@ -7,6 +7,8 @@ interface GitHubStats {
   prsMerged: number
   latestCommit: string | null
   repoCount: number
+  streak: number
+  topRepos: { name: string; commits: number }[]
 }
 
 async function ghFetch(endpoint: string, token: string) {
@@ -66,6 +68,7 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
   let prsOpen = 0
   let prsMerged = 0
   let latestCommit: string | null = null
+  const repoCommitCounts: Record<string, number> = {}
 
   for (const repo of recentRepos) {
     try {
@@ -74,6 +77,7 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
 
       const weekCommits = await ghFetch(`/repos/${repo}/commits?since=${weekStart}&per_page=100`, token)
       commitsWeek += weekCommits.length
+      repoCommitCounts[repo.split('/').pop() || repo] = weekCommits.length
 
       if (todayCommits.length > 0 && !latestCommit) {
         latestCommit = todayCommits[0].commit?.message?.split('\n')[0] || null
@@ -89,5 +93,39 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
     }
   }
 
-  return { commitsToday, commitsWeek, prsOpen, prsMerged, latestCommit, repoCount: allRepos.length }
+  // Top 5 repos by weekly commits
+  const topRepos = Object.entries(repoCommitCounts)
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, commits]) => ({ name, commits }))
+
+  // Calculate streak from Events API
+  let streak = 0
+  try {
+    const user = await ghFetch('/user', token)
+    const username = user.login
+    const events = await ghFetch(`/users/${username}/events?per_page=100`, token)
+    const pushDates = new Set<string>()
+    for (const event of events) {
+      if (event.type === 'PushEvent' && event.created_at) {
+        pushDates.add(event.created_at.slice(0, 10))
+      }
+    }
+    // Count consecutive days backwards from today
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    while (true) {
+      const dateStr = day.toISOString().slice(0, 10)
+      if (pushDates.has(dateStr)) {
+        streak++
+        day.setDate(day.getDate() - 1)
+      } else {
+        break
+      }
+    }
+  } catch (e) {
+    console.error('GitHub streak error:', e)
+  }
+
+  return { commitsToday, commitsWeek, prsOpen, prsMerged, latestCommit, repoCount: allRepos.length, streak, topRepos }
 }

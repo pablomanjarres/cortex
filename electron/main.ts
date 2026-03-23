@@ -3,8 +3,10 @@ import path from 'path'
 import http from 'http'
 import os from 'os'
 import fs from 'fs'
+import zlib from 'zlib'
 import { fileURLToPath } from 'url'
-import { getTodayEvents } from './calendar.js'
+import { getTodayEvents, syncBirthdays } from './calendar.js'
+import type { BirthdayEntry } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { getGitHubStats } from './integrations/github.js'
 import { getLemonStats } from './integrations/lemon.js'
@@ -83,6 +85,8 @@ function buildTrayMenu() {
       submenu: [
         { label: 'Founder', click: () => showAndNavigate('/founder') },
         { label: 'Student', click: () => showAndNavigate('/student') },
+        { label: 'Projects', click: () => showAndNavigate('/projects') },
+        { label: 'CRM', click: () => showAndNavigate('/crm') },
       ],
     },
     {
@@ -150,7 +154,70 @@ function startWebServer() {
   if (webServer) return
   const distPath = path.join(__dirname, '../dist')
   webServer = http.createServer((req, res) => {
-    let filePath = path.join(distPath, req.url === '/' ? '/index.html' : req.url!)
+    const url = new URL(req.url!, `http://localhost:${WEB_PORT}`)
+
+    // ─── JSON API for data sync (used by browser/iPhone) ──────
+    if (url.pathname === '/api/data' && req.method === 'GET') {
+      const key = url.searchParams.get('key')
+      if (!key) { res.writeHead(400); res.end('Missing key'); return }
+      const file = path.join(dataDir, `${key}.json`)
+      try {
+        if (fs.existsSync(file)) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.end(fs.readFileSync(file, 'utf-8'))
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.end('null')
+        }
+      } catch { res.writeHead(500); res.end('Read error') }
+      return
+    }
+
+    if (url.pathname === '/api/data' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', () => {
+        try {
+          const { key, data } = JSON.parse(body)
+          if (!key) { res.writeHead(400); res.end('Missing key'); return }
+          const file = path.join(dataDir, `${key}.json`)
+          const tmpFile = path.join(dataDir, `${key}.json.tmp`)
+          if (fs.existsSync(file)) {
+            fs.copyFileSync(file, path.join(backupDir, `${key}.bak.json`))
+          }
+          fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8')
+          fs.renameSync(tmpFile, file)
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+          res.end('true')
+        } catch { res.writeHead(500); res.end('Write error') }
+      })
+      return
+    }
+
+    if (url.pathname === '/api/data/keys' && req.method === 'GET') {
+      try {
+        const keys = fs.readdirSync(dataDir)
+          .filter(f => f.endsWith('.json') && !f.includes('.bak') && !f.includes('.tmp'))
+          .map(f => f.replace('.json', ''))
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+        res.end(JSON.stringify(keys))
+      } catch { res.writeHead(500); res.end('[]') }
+      return
+    }
+
+    // CORS preflight
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      })
+      res.end()
+      return
+    }
+
+    // ─── Static file serving ──────────────────────────────────
+    let filePath = path.join(distPath, url.pathname === '/' ? '/index.html' : url.pathname)
     if (!fs.existsSync(filePath)) filePath = path.join(distPath, 'index.html')
     const ext = path.extname(filePath)
     try {
@@ -166,6 +233,7 @@ function stopWebServer() { if (webServer) { webServer.close(); webServer = null 
 // ─── IPC: Calendar ─────────────────────────────────────────
 
 ipcMain.handle('calendar:getTodayEvents', async () => getTodayEvents())
+ipcMain.handle('calendar:syncBirthdays', async (_event, birthdays: BirthdayEntry[]) => syncBirthdays(birthdays))
 
 // ─── IPC: Tray stats ──────────────────────────────────────
 
@@ -217,6 +285,175 @@ ipcMain.handle('supabase:getStats', async () => {
   try { return await getSupabaseStats(url, key) } catch (e) { console.error('Supabase error:', e); return null }
 })
 
+// ─── IPC: Projects scanner ────────────────────────────────
+
+interface ProjectInfo {
+  name: string
+  path: string
+  description: string | null
+  type: 'app' | 'monorepo' | 'library' | 'skill' | 'assets' | 'unknown'
+  hasPackageJson: boolean
+  hasClaude: boolean
+  gitRemote: string | null
+  latestCommit: { message: string; date: string } | null
+  workflows: { name: string; scheduled: boolean; cron?: string }[]
+  techStack: string[]
+  scripts: string[]
+  connections: string[]
+}
+
+const TECH_DETECT: Record<string, string> = {
+  'react': 'React', 'react-dom': 'React', 'next': 'Next.js', 'vue': 'Vue',
+  'electron': 'Electron', 'express': 'Express', 'fastify': 'Fastify',
+  'remotion': 'Remotion', 'tailwindcss': 'Tailwind', '@tailwindcss/vite': 'Tailwind',
+  'typescript': 'TypeScript', 'vite': 'Vite', 'turbo': 'Turborepo',
+  'drizzle-orm': 'Drizzle', 'prisma': 'Prisma',
+}
+
+const CONNECTION_DETECT: Record<string, string> = {
+  '@supabase/supabase-js': 'Supabase', '@supabase/ssr': 'Supabase',
+  '@vercel/analytics': 'Vercel', '@vercel/speed-insights': 'Vercel',
+  'stripe': 'Stripe', '@lemonsqueezy/lemonsqueezy.js': 'Lemon Squeezy',
+  'openai': 'OpenAI', '@anthropic-ai/sdk': 'Anthropic',
+  'resend': 'Resend', 'nodemailer': 'Email',
+  '@clerk/nextjs': 'Clerk', 'lucia': 'Lucia Auth',
+  '@sentry/nextjs': 'Sentry', '@sentry/node': 'Sentry',
+}
+
+function scanProject(dir: string, name: string): ProjectInfo {
+  const info: ProjectInfo = {
+    name, path: dir, description: null,
+    type: 'unknown', hasPackageJson: false, hasClaude: false,
+    gitRemote: null, latestCommit: null,
+    workflows: [], techStack: [], scripts: [], connections: [],
+  }
+
+  // package.json
+  const pkgPath = path.join(dir, 'package.json')
+  let pkg: any = null
+  if (fs.existsSync(pkgPath)) {
+    info.hasPackageJson = true
+    try { pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) } catch { /* skip */ }
+  }
+
+  if (pkg) {
+    if (pkg.description) info.description = pkg.description
+    if (pkg.scripts) info.scripts = Object.keys(pkg.scripts)
+
+    // Detect tech stack + connections from all dependency fields
+    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies }
+    const techSet = new Set<string>()
+    const connSet = new Set<string>()
+    for (const dep of Object.keys(allDeps || {})) {
+      if (TECH_DETECT[dep]) techSet.add(TECH_DETECT[dep])
+      if (CONNECTION_DETECT[dep]) connSet.add(CONNECTION_DETECT[dep])
+    }
+    info.techStack = [...techSet]
+    info.connections = [...connSet]
+
+    // Type detection
+    if (allDeps?.electron || allDeps?.['electron-builder']) info.type = 'app'
+    else if (pkg.workspaces || fs.existsSync(path.join(dir, 'turbo.json'))) info.type = 'monorepo'
+    else if (allDeps?.next || allDeps?.react) info.type = 'app'
+    else info.type = 'library'
+  }
+
+  // Skill detection
+  if (fs.existsSync(path.join(dir, 'skill.md'))) info.type = 'skill'
+
+  // Assets detection (no package.json, has images/videos)
+  if (!info.hasPackageJson) {
+    try {
+      const entries = fs.readdirSync(dir)
+      const mediaExts = ['.png', '.jpg', '.jpeg', '.svg', '.mp4', '.mov', '.mkv', '.webm']
+      const hasMedia = entries.some(e => mediaExts.some(ext => e.toLowerCase().endsWith(ext)))
+      const hasDirs = entries.some(e => { try { return fs.statSync(path.join(dir, e)).isDirectory() } catch { return false } })
+      info.type = hasMedia || hasDirs ? 'assets' : 'unknown'
+    } catch { /* skip */ }
+  }
+
+  // CLAUDE.md
+  info.hasClaude = fs.existsSync(path.join(dir, 'CLAUDE.md'))
+
+  // Description fallback from README
+  if (!info.description) {
+    const readmePath = path.join(dir, 'README.md')
+    if (fs.existsSync(readmePath)) {
+      try {
+        const lines = fs.readFileSync(readmePath, 'utf-8').split('\n')
+        // Find first non-empty, non-heading line
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('!') && !trimmed.startsWith('---')) {
+            info.description = trimmed.slice(0, 200)
+            break
+          }
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  // Git remote
+  const gitConfigPath = path.join(dir, '.git', 'config')
+  if (fs.existsSync(gitConfigPath)) {
+    try {
+      const gitConfig = fs.readFileSync(gitConfigPath, 'utf-8')
+      const match = gitConfig.match(/url\s*=\s*(.+)/)
+      if (match) info.gitRemote = match[1].trim()
+    } catch { /* skip */ }
+  }
+
+  // Latest commit (sync, with timeout protection)
+  try {
+    const { execSync } = require('child_process')
+    const log = execSync(`git -C "${dir}" log --oneline --format="%s|||%ci" -1`, { timeout: 3000, encoding: 'utf-8' }).trim()
+    if (log) {
+      const [message, date] = log.split('|||')
+      info.latestCommit = { message: message || '', date: date?.slice(0, 10) || '' }
+    }
+  } catch { /* not a git repo or no commits */ }
+
+  // GitHub Actions workflows
+  const workflowsDir = path.join(dir, '.github', 'workflows')
+  if (fs.existsSync(workflowsDir)) {
+    try {
+      for (const wf of fs.readdirSync(workflowsDir).filter(f => f.endsWith('.yml') || f.endsWith('.yaml'))) {
+        const content = fs.readFileSync(path.join(workflowsDir, wf), 'utf-8')
+        const nameMatch = content.match(/^name:\s*(.+)/m)
+        const cronMatch = content.match(/cron:\s*'([^']+)'/)
+        info.workflows.push({
+          name: nameMatch ? nameMatch[1].trim() : wf.replace(/\.ya?ml$/, ''),
+          scheduled: !!cronMatch,
+          cron: cronMatch ? cronMatch[1] : undefined,
+        })
+      }
+    } catch { /* skip */ }
+  }
+
+  return info
+}
+
+ipcMain.handle('projects:scan', async () => {
+  const projectsDir = path.join(os.homedir(), 'Projects')
+  if (!fs.existsSync(projectsDir)) return []
+  try {
+    const entries = fs.readdirSync(projectsDir, { withFileTypes: true })
+    const projects: ProjectInfo[] = []
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+      if (entry.name.startsWith('.')) continue
+      const dir = path.join(projectsDir, entry.name)
+      try {
+        // Resolve symlinks and verify it's a directory
+        const stat = fs.statSync(dir)
+        if (!stat.isDirectory()) continue
+        projects.push(scanProject(dir, entry.name))
+      } catch { /* skip broken symlinks */ }
+    }
+    return projects.sort((a, b) => a.name.localeCompare(b.name))
+  } catch (e) { console.error('[Cortex] projects:scan error:', e); return [] }
+})
+
 // ─── Data persistence (JSON files in project data/) ───────
 
 // In dev: data/ in project root (caught by hourly backup)
@@ -235,16 +472,30 @@ ipcMain.handle('data:read', async (_event, key: string) => {
     if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8'))
   } catch (e) {
     console.warn(`[Cortex] data:read: main file corrupt for "${key}", falling back to backup...`)
-    // Fallback: try the .bak.json from backups directory
+    // Fallback 1: try the .bak.json
     try {
       const bakFile = path.join(backupDir, `${key}.bak.json`)
       if (fs.existsSync(bakFile)) {
         const data = JSON.parse(fs.readFileSync(bakFile, 'utf-8'))
-        console.warn(`[Cortex] data:read: successfully recovered "${key}" from backup`)
+        console.warn(`[Cortex] data:read: recovered "${key}" from .bak`)
         return data
       }
-    } catch (bakErr) {
-      console.error(`[Cortex] data:read: backup also failed for "${key}":`, bakErr)
+    } catch { /* continue to versioned fallback */ }
+    // Fallback 2: try latest versioned backup
+    try {
+      const versionsDir = path.join(backupDir, 'versions', key)
+      if (fs.existsSync(versionsDir)) {
+        const versions = fs.readdirSync(versionsDir).sort().reverse()
+        for (const v of versions) {
+          try {
+            const data = JSON.parse(fs.readFileSync(path.join(versionsDir, v), 'utf-8'))
+            console.warn(`[Cortex] data:read: recovered "${key}" from version ${v}`)
+            return data
+          } catch { /* try next version */ }
+        }
+      }
+    } catch (vErr) {
+      console.error(`[Cortex] data:read: all fallbacks failed for "${key}":`, vErr)
     }
   }
   return null
@@ -254,12 +505,36 @@ ipcMain.handle('data:write', async (_event, key: string, data: unknown) => {
   const file = path.join(dataDir, `${key}.json`)
   const tmpFile = path.join(dataDir, `${key}.json.tmp`)
   try {
-    // Keep .bak of previous version
+    // Validate serialization before writing
+    let serialized: string
+    try {
+      serialized = JSON.stringify(data, null, 2)
+    } catch (serErr) {
+      console.error(`[Cortex] data:write: serialization failed for "${key}":`, serErr)
+      return false
+    }
+
+    if (serialized.length > 5 * 1024 * 1024) {
+      console.warn(`[Cortex] data:write: "${key}" is ${(serialized.length / 1024 / 1024).toFixed(1)}MB — consider cleanup`)
+    }
+
+    // Keep .bak + versioned backup of previous file
     if (fs.existsSync(file)) {
       fs.copyFileSync(file, path.join(backupDir, `${key}.bak.json`))
+      // Versioned backup: keep last 10
+      const versionsDir = path.join(backupDir, 'versions', key)
+      if (!fs.existsSync(versionsDir)) fs.mkdirSync(versionsDir, { recursive: true })
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      fs.copyFileSync(file, path.join(versionsDir, `${timestamp}.json`))
+      // Prune old versions
+      const versions = fs.readdirSync(versionsDir).sort().reverse()
+      for (const v of versions.slice(10)) {
+        try { fs.unlinkSync(path.join(versionsDir, v)) } catch { /* ignore */ }
+      }
     }
-    // Atomic write: write to .tmp first, then rename to prevent partial writes on crash
-    fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8')
+
+    // Atomic write: .tmp → rename
+    fs.writeFileSync(tmpFile, serialized, 'utf-8')
     fs.renameSync(tmpFile, file)
     return true
   } catch (e) { console.error(`data:write error for ${key}:`, e); return false }
@@ -310,6 +585,16 @@ ipcMain.handle('data:importAll', async (_event, json: string) => {
 
 ipcMain.handle('data:getPath', async () => dataDir)
 
+ipcMain.handle('data:getStats', async () => {
+  try {
+    const files = fs.readdirSync(dataDir).filter(f => f.endsWith('.json') && !f.includes('.tmp'))
+    return files.map(f => ({
+      key: f.replace('.json', ''),
+      size: fs.statSync(path.join(dataDir, f)).size,
+    }))
+  } catch { return [] }
+})
+
 // ─── Daily file cleanup ───────────────────────────────────
 
 function cleanupOldDailyFiles() {
@@ -353,8 +638,11 @@ function autoExport() {
       const key = f.replace('.json', '')
       try { bundle[key] = JSON.parse(fs.readFileSync(path.join(dataDir, f), 'utf-8')) } catch { /* skip corrupted */ }
     }
-    fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json'), JSON.stringify(bundle, null, 2), 'utf-8')
-    console.log(`[Cortex] Auto-export: ${files.length} stores saved to data/backups/cortex-backup-latest.json`)
+    const json = JSON.stringify(bundle, null, 2)
+    fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json'), json, 'utf-8')
+    // Also save compressed version
+    try { fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json.gz'), zlib.gzipSync(json)) } catch { /* compression optional */ }
+    console.log(`[Cortex] Auto-export: ${files.length} stores saved to data/backups/`)
   } catch (e) { console.error('[Cortex] Auto-export failed:', e) }
 }
 
@@ -365,6 +653,7 @@ let autoExportInterval: ReturnType<typeof setInterval> | null = null
 app.on('ready', () => {
   createWindow()
   createTray()
+  startWebServer() // Auto-start web server for iPhone/browser access
   cleanupOldDailyFiles()
   // Auto-export on startup + every 30 minutes
   setTimeout(autoExport, 5000)

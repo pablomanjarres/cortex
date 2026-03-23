@@ -1,14 +1,18 @@
+import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
-import { Sidebar } from './Sidebar'
+import { Sidebar, MobileSidebar } from './Sidebar'
 import { Header } from './Header'
 
 export function DashboardLayout() {
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <div className="ml-[220px] flex flex-1 flex-col">
-        <Header />
-        <main className="flex-1 p-6">
+      <MobileSidebar open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+      <div className="ml-0 md:ml-[220px] flex flex-1 flex-col">
+        <Header onMenuToggle={() => setMobileNavOpen((p) => !p)} />
+        <main className="flex-1 p-4 md:p-6">
           <Outlet />
         </main>
       </div>
