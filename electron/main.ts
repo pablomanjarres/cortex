@@ -537,8 +537,11 @@ ipcMain.handle('projects:scan', async () => {
 
 // ─── Data persistence (JSON files in project data/) ───────
 
-// data/ in project root (caught by hourly backup)
-const dataDir = path.join(__dirname, '..', 'data')
+// In dev: data/ in project root. In prod: ~/Projects/life-audit-dashboard/data/
+// Never write inside the asar archive.
+const dataDir = isDev
+  ? path.join(__dirname, '..', 'data')
+  : path.join(app.getPath('home'), 'Projects', 'life-audit-dashboard', 'data')
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
 
 const backupDir = path.join(dataDir, 'backups')
