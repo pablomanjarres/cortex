@@ -182,11 +182,11 @@ export function AutomationsPage() {
           <ChevronLeft className="h-4 w-4" /> Back to tasks
         </button>
 
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-semibold">{selectedRun.taskName}</h2>
-            {task && <p className="text-sm text-muted-foreground mt-0.5">{task.description}</p>}
-            <div className="flex items-center gap-3 mt-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-semibold break-words">{selectedRun.taskName}</h2>
+            {task && <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">{task.description}</p>}
+            <div className="flex items-center gap-2 sm:gap-3 mt-2 flex-wrap">
               <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${st.bg} ${st.color}`}>
                 <StatusIcon className="h-3 w-3" /> {st.label}
               </span>
@@ -197,11 +197,11 @@ export function AutomationsPage() {
           {selectedRun.status === 'pending-approval' && (
             <div className="flex gap-2 shrink-0">
               <button onClick={() => handleAction(selectedRun.id, 'approve')}
-                className="cursor-pointer flex items-center gap-1.5 text-sm text-green-400 bg-green-400/10 px-4 py-2 rounded-lg hover:bg-green-400/20 transition-colors font-medium">
+                className="cursor-pointer flex items-center gap-1.5 text-xs sm:text-sm text-green-400 bg-green-400/10 px-3 sm:px-4 py-2 rounded-lg hover:bg-green-400/20 transition-colors font-medium">
                 <CheckCircle2 className="h-4 w-4" /> Approve
               </button>
               <button onClick={() => handleAction(selectedRun.id, 'reject')}
-                className="cursor-pointer flex items-center gap-1.5 text-sm text-red-400 bg-red-400/10 px-4 py-2 rounded-lg hover:bg-red-400/20 transition-colors font-medium">
+                className="cursor-pointer flex items-center gap-1.5 text-xs sm:text-sm text-red-400 bg-red-400/10 px-3 sm:px-4 py-2 rounded-lg hover:bg-red-400/20 transition-colors font-medium">
                 <XCircle className="h-4 w-4" /> Reject
               </button>
             </div>
@@ -216,7 +216,7 @@ export function AutomationsPage() {
 
         {/* Full report rendered as markdown */}
         {selectedRun.fullOutput && (
-          <div className="rounded-xl border border-border bg-card px-5 py-5 md:px-8 md:py-6">
+          <div className="rounded-xl border border-border bg-card px-3 py-4 sm:px-5 sm:py-5 md:px-8 md:py-6 overflow-x-auto">
             <Markdown components={mdComponents}>{selectedRun.fullOutput}</Markdown>
           </div>
         )}
@@ -234,9 +234,9 @@ export function AutomationsPage() {
           <ChevronLeft className="h-4 w-4" /> Back to tasks
         </button>
 
-        <div>
-          <h2 className="text-xl font-semibold">{selectedTask}</h2>
-          {task && <p className="text-sm text-muted-foreground mt-0.5">{task.description} · {task.frequency}</p>}
+        <div className="min-w-0">
+          <h2 className="text-lg sm:text-xl font-semibold break-words">{selectedTask}</h2>
+          {task && <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">{task.description} · {task.frequency}</p>}
         </div>
 
         <div className="flex flex-col gap-3">
@@ -337,13 +337,13 @@ export function AutomationsPage() {
       )}
 
       {/* Search + Group filter */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative w-full sm:flex-1 sm:max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks..."
             className="h-8 w-full rounded-lg border border-border bg-input pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring" />
         </div>
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap overflow-x-auto">
           {groups.map((g) => {
             const cfg = groupConfig[g]
             return (
@@ -383,9 +383,9 @@ export function AutomationsPage() {
                     <div className="px-4 py-3">
                       <div className="flex items-start justify-between">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold truncate">{task.name}</span>
-                            <span className={`text-[8px] px-1 py-0.5 rounded ${
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold break-all">{task.name}</span>
+                            <span className={`text-[8px] px-1 py-0.5 rounded shrink-0 ${
                               task.type === 'claude' ? 'bg-purple-500/15 text-purple-400'
                               : task.type === 'launchd' ? 'bg-green-500/15 text-green-400'
                               : 'bg-yellow-500/15 text-yellow-400'
