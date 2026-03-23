@@ -116,7 +116,7 @@ export function HabitsPage() {
               <tbody>
                 {habits.map((habit) => (
                   <tr key={habit.id} className="border-t border-border/50 group">
-                    <td className="py-2.5 pr-4 text-sm text-foreground">
+                    <td className="py-2.5 pr-4 text-sm text-foreground max-w-[120px] sm:max-w-none">
                       {editingId === habit.id ? (
                         <div className="flex items-center gap-1.5">
                           <Input

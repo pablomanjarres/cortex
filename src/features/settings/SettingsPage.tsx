@@ -100,11 +100,18 @@ function KeyRow({ field }: { field: KeyField }) {
   )
 }
 
+function fmtSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
+}
+
 export function SettingsPage() {
   const isElectron = !!window.electronAPI?.keychain
   const hasData = !!window.electronAPI?.data
   const [dataPath, setDataPath] = useState('')
   const [dataKeys, setDataKeys] = useState<string[]>([])
+  const [dataStats, setDataStats] = useState<{ key: string; size: number }[]>([])
   const [exportStatus, setExportStatus] = useState('')
   const [importStatus, setImportStatus] = useState('')
 
@@ -112,6 +119,7 @@ export function SettingsPage() {
     if (hasData) {
       window.electronAPI!.data.getPath().then(setDataPath)
       window.electronAPI!.data.listKeys().then(setDataKeys)
+      window.electronAPI!.data.getStats().then(setDataStats)
     }
   }, [hasData])
 
@@ -182,12 +190,27 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Data stores list */}
-            <div className="flex items-center gap-3 rounded-lg bg-secondary/30 px-4 py-3">
-              <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
-              <div className="flex-1 min-w-0">
+            {/* Data stores list with sizes */}
+            <div className="rounded-lg bg-secondary/30 px-4 py-3">
+              <div className="flex items-center gap-3 mb-2">
+                <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
                 <p className="text-xs font-medium">{dataKeys.length} Data Stores</p>
-                <p className="text-[11px] text-muted-foreground">{dataKeys.join(', ')}</p>
+                <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
+                  {fmtSize(dataStats.reduce((s, f) => s + f.size, 0))} total
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                {dataStats
+                  .filter(f => !f.key.includes('.bak') && !f.key.includes('backup'))
+                  .sort((a, b) => b.size - a.size)
+                  .map((f) => (
+                    <div key={f.key} className="flex items-center justify-between px-1 py-0.5">
+                      <span className="text-[11px] text-muted-foreground truncate mr-2">{f.key}</span>
+                      <span className={`text-[10px] tabular-nums shrink-0 ${f.size > 1024 * 1024 ? 'text-red-400 font-medium' : 'text-muted-foreground/60'}`}>
+                        {fmtSize(f.size)}
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
 

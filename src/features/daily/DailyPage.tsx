@@ -10,11 +10,6 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Calendar,
-  RefreshCw,
-  Instagram,
-  Linkedin,
-  MessageCircle,
   Plus,
   Clock,
   Zap,
@@ -33,24 +28,6 @@ const emptyTargets: Target[] = [
   { id: '1', text: '', deadline: '18:00', done: false },
   { id: '2', text: '', deadline: '18:00', done: false },
   { id: '3', text: '', deadline: '18:00', done: false },
-]
-
-// ─── CONTENT TASKS ────────────────────────────────────────────
-
-interface ContentTask {
-  id: string
-  label: string
-  icon: typeof Instagram
-  done: boolean
-}
-
-const defaultContentTasks: ContentTask[] = [
-  { id: 'ig1', label: 'IG Reel #1', icon: Instagram, done: false },
-  { id: 'ig2', label: 'IG Reel #2', icon: Instagram, done: false },
-  { id: 'li', label: 'LinkedIn', icon: Linkedin, done: false },
-  { id: 'rd', label: 'Reddit', icon: MessageCircle, done: false },
-  { id: 'rd-eng', label: 'Reddit engage', icon: MessageCircle, done: false },
-  { id: 'li-eng', label: 'LinkedIn engage', icon: Linkedin, done: false },
 ]
 
 // ─── SHIPPING LOG ─────────────────────────────────────────────
@@ -98,11 +75,6 @@ export function DailyPage() {
   const [showCustomTime, setShowCustomTime] = useState(false)
   const [customTimeInput, setCustomTimeInput] = useState('')
 
-  // Content (persisted by day)
-  const [contentTasks, updateContentTasks] = useStore(`cortex-daily-content-${today}`, defaultContentTasks)
-  const setContentTasks = (v: typeof defaultContentTasks | ((p: typeof defaultContentTasks) => typeof defaultContentTasks)) => updateContentTasks(typeof v === 'function' ? v : () => v)
-  const contentDone = contentTasks.filter((t) => t.done).length
-
   // Shipping log (persisted by day)
   const [shipLog, updateShipLog] = useStore<ShipEntry[]>(`cortex-daily-shiplog-${today}`, [])
   const setShipLog = (v: ShipEntry[] | ((p: ShipEntry[]) => ShipEntry[])) => updateShipLog(typeof v === 'function' ? v : () => v)
@@ -112,11 +84,6 @@ export function DailyPage() {
   const [habitsDone, updateHabitsDone] = useStore<Record<string, boolean>>(`cortex-daily-habits-${today}`, {})
   const setHabitsDone = (v: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => updateHabitsDone(typeof v === 'function' ? v : () => v)
   const habitsCompleted = Object.values(habitsDone).filter(Boolean).length
-
-  // Calendar
-  const [calendarEvents, setCalendarEvents] = useState<{ title: string; startTime: string; endTime: string; calendar: string; isAllDay: boolean }[]>([])
-  const [calendarLoading, setCalendarLoading] = useState(false)
-  const isElectron = !!window.electronAPI
 
   // Score
   const [score, setScore] = useState(0)
@@ -137,16 +104,6 @@ export function DailyPage() {
   const secs = timeLeft % 60
   const resetTimer = () => { setIsRunning(false); setTimeLeft(timerDuration * 60) }
   const setDuration = (m: number) => { setTimerDuration(m); if (!isRunning) setTimeLeft(m * 60) }
-
-  // ─── Calendar ────────────────────────────────────────────
-  const fetchCalendar = async () => {
-    if (!window.electronAPI?.calendar) return
-    setCalendarLoading(true)
-    try { setCalendarEvents(await window.electronAPI.calendar.getTodayEvents()) }
-    catch { /* silent */ }
-    finally { setCalendarLoading(false) }
-  }
-  useEffect(() => { fetchCalendar() }, [])
 
   // ─── Tray navigation ────────────────────────────────────
   useEffect(() => {
@@ -180,10 +137,6 @@ export function DailyPage() {
       time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
     }, ...prev])
     setShipInput('')
-  }
-
-  const toggleContent = (id: string) => {
-    setContentTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t)))
   }
 
   // ─── Check deadline urgency ──────────────────────────────
@@ -283,7 +236,7 @@ export function DailyPage() {
               className="h-9 bg-input text-sm font-medium"
             />
             <div className="flex items-center justify-between">
-              <span className={`font-mono text-5xl font-bold tabular-nums tracking-tight ${isRunning ? 'text-foreground' : 'text-muted-foreground'}`}>
+              <span className={`font-mono text-4xl md:text-5xl font-bold tabular-nums tracking-tight ${isRunning ? 'text-foreground' : 'text-muted-foreground'}`}>
                 {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
               </span>
               <div className="flex gap-2">
@@ -361,31 +314,8 @@ export function DailyPage() {
           </div>
         </WidgetCard>
 
-        {/* Right column: Content + Shipping */}
-        <div className="flex flex-col gap-5">
-          {/* Content */}
-          <WidgetCard title="CONTENT" description={`${contentDone}/${contentTasks.length} done`} delay={0.15} compact>
-            <div className="grid grid-cols-2 gap-1">
-              {contentTasks.map((task) => (
-                <label
-                  key={task.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary"
-                >
-                  <Checkbox
-                    checked={task.done}
-                    onCheckedChange={() => toggleContent(task.id)}
-                  />
-                  <task.icon className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <span className={`text-xs ${task.done ? 'text-muted-foreground line-through' : ''}`}>
-                    {task.label}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </WidgetCard>
-
-          {/* Shipping Log */}
-          <WidgetCard title="SHIPPED TODAY" description={`${shipLog.length} outputs`} delay={0.2} compact>
+        {/* Shipping Log */}
+        <WidgetCard title="SHIPPED TODAY" description={`${shipLog.length} outputs`} delay={0.15} compact>
             <div className="flex gap-2 mb-3">
               <Input
                 value={shipInput}
@@ -417,11 +347,10 @@ export function DailyPage() {
               </div>
             )}
           </WidgetCard>
-        </div>
       </div>
 
       {/* ─── TIER 3: SUPPORT ────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Compact Habits */}
         <WidgetCard title="HABITS" description={`${habitsCompleted}/${habits.length}`} delay={0.25} compact>
           <div className="flex items-center justify-between">
@@ -439,39 +368,6 @@ export function DailyPage() {
               </button>
             ))}
           </div>
-        </WidgetCard>
-
-        {/* Schedule */}
-        <WidgetCard
-          title="SCHEDULE"
-          description={isElectron ? `${calendarEvents.length} events` : '—'}
-          delay={0.3}
-          compact
-        >
-          {isElectron && calendarEvents.length > 0 ? (
-            <div className="flex flex-col gap-0.5 max-h-28 overflow-y-auto">
-              {calendarEvents.slice(0, 4).map((evt, i) => (
-                <div key={`${evt.title}-${i}`} className="flex items-center gap-2 py-1">
-                  <span className="text-[10px] font-mono tabular-nums text-muted-foreground w-10 shrink-0">
-                    {evt.isAllDay ? 'ALL' : evt.startTime}
-                  </span>
-                  <span className="text-xs truncate">{evt.title}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 py-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">
-                {isElectron ? 'No events' : 'Desktop app only'}
-              </p>
-              {isElectron && (
-                <button onClick={fetchCalendar} className="ml-auto text-xs text-muted-foreground hover:text-foreground">
-                  <RefreshCw className={`h-3 w-3 ${calendarLoading ? 'animate-spin' : ''}`} />
-                </button>
-              )}
-            </div>
-          )}
         </WidgetCard>
 
         {/* Daily Score — minimal */}
@@ -498,7 +394,7 @@ export function DailyPage() {
 
       {/* ─── EVENING REFLECTION ─────────────────────────── */}
       <WidgetCard title="EVENING REFLECTION" delay={0.4} compact>
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               What went well?

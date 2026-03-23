@@ -365,9 +365,9 @@ function CourseDetail({ course, assignments, topics, onUpdateTopics }: {
         <Badge className={`text-[9px] px-1.5 py-0 ${diffColor[course.difficulty]}`}>{course.difficulty}</Badge>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         {/* Properties */}
-        <div className="flex flex-col border-r border-border/30 pr-6">
+        <div className="flex flex-col sm:border-r sm:border-border/30 sm:pr-6">
           <Prop label="Semester"><Badge variant="secondary" className="text-[10px]">{course.semester}</Badge></Prop>
           <Prop label="Credits"><span className="tabular-nums font-medium">{course.credits}</span></Prop>
           <Prop label="Status"><Badge variant="secondary" className="text-[10px]">{course.status}</Badge></Prop>

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   calendar: {
     getTodayEvents: () => ipcRenderer.invoke('calendar:getTodayEvents'),
+    syncBirthdays: (birthdays: { name: string; birthday: string }[]) => ipcRenderer.invoke('calendar:syncBirthdays', birthdays),
   },
 
   tray: {
@@ -27,6 +28,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     supabase: () => ipcRenderer.invoke('supabase:getStats'),
   },
 
+  projects: {
+    scan: () => ipcRenderer.invoke('projects:scan'),
+  },
+
   data: {
     read: (key: string) => ipcRenderer.invoke('data:read', key),
     write: (key: string, data: unknown) => ipcRenderer.invoke('data:write', key, data),
@@ -34,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exportAll: () => ipcRenderer.invoke('data:exportAll'),
     importAll: (json: string) => ipcRenderer.invoke('data:importAll', json),
     getPath: () => ipcRenderer.invoke('data:getPath'),
+    getStats: () => ipcRenderer.invoke('data:getStats'),
   },
 
   onNavigate: (callback: (route: string) => void) => {

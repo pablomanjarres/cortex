@@ -5,6 +5,8 @@ export interface GitHubStats {
   prsMerged: number
   latestCommit: string | null
   repoCount: number
+  streak: number
+  topRepos: { name: string; commits: number }[]
 }
 
 export interface LemonStats {

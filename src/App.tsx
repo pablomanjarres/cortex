@@ -8,6 +8,8 @@ import { FinancePage } from '@/features/finance/FinancePage'
 import { SocialPage } from '@/features/social/SocialPage'
 import { BooksPage } from '@/features/books/BooksPage'
 import { ThoughtsPage } from '@/features/thoughts/ThoughtsPage'
+import { ProjectsPage } from '@/features/projects/ProjectsPage'
+import { CrmPage } from '@/features/crm/CrmPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 
 export function App() {
@@ -19,8 +21,10 @@ export function App() {
         <Route path="habits" element={<HabitsPage />} />
         <Route path="founder" element={<FounderPage />} />
         <Route path="student" element={<StudentPage />} />
+        <Route path="projects" element={<ProjectsPage />} />
         <Route path="finance" element={<FinancePage />} />
         <Route path="social" element={<SocialPage />} />
+        <Route path="crm" element={<CrmPage />} />
         <Route path="books" element={<BooksPage />} />
         <Route path="thoughts" element={<ThoughtsPage />} />
         <Route path="settings" element={<SettingsPage />} />
