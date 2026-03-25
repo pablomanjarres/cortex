@@ -24,20 +24,39 @@ async function ghFetch(endpoint: string, token: string) {
 }
 
 async function getAccessibleRepos(token: string): Promise<string[]> {
-  // Works with both classic and fine-grained tokens
-  // Returns all repos the token has access to (personal + org)
-  const repos: string[] = []
+  // Returns all repos: personal + org (works with classic and fine-grained tokens)
+  const repoSet = new Set<string>()
+
+  // 1. User repos (personal + collaborator + org member)
   let page = 1
   while (true) {
-    const batch = await ghFetch(`/user/repos?sort=pushed&per_page=100&page=${page}`, token)
-    if (!batch.length) break
-    for (const repo of batch) {
-      repos.push(repo.full_name)
-    }
-    if (batch.length < 100) break
-    page++
+    try {
+      const batch = await ghFetch(`/user/repos?sort=pushed&per_page=100&visibility=all&affiliation=owner,collaborator,organization_member&page=${page}`, token)
+      if (!batch.length) break
+      for (const repo of batch) repoSet.add(repo.full_name)
+      if (batch.length < 100) break
+      page++
+    } catch { break }
   }
-  return repos
+
+  // 2. Also fetch org repos directly (in case fine-grained token has org access but /user/repos misses them)
+  try {
+    const orgs = await ghFetch('/user/orgs?per_page=100', token)
+    for (const org of orgs) {
+      try {
+        let orgPage = 1
+        while (true) {
+          const batch = await ghFetch(`/orgs/${org.login}/repos?sort=pushed&per_page=100&type=all&page=${orgPage}`, token)
+          if (!batch.length) break
+          for (const repo of batch) repoSet.add(repo.full_name)
+          if (batch.length < 100) break
+          orgPage++
+        }
+      } catch { /* org access denied, skip */ }
+    }
+  } catch { /* no org access */ }
+
+  return [...repoSet]
 }
 
 export async function getGitHubStats(token: string): Promise<GitHubStats> {
