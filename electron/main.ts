@@ -157,6 +157,7 @@ function getAllowedOrigin(req: http.IncomingMessage): string {
   const origin = req.headers.origin || ''
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin
   if (/^https?:\/\/(192\.168\.|10\.|100\.)/.test(origin)) return origin
+  if (/^https?:\/\/[a-z0-9-]+\.ts\.net(:\d+)?$/i.test(origin)) return origin
   return ''
 }
 
@@ -173,7 +174,7 @@ function isTailscaleOrLocal(ip: string): boolean {
 function startWebServer() {
   if (webServer) return
   const distPath = path.join(__dirname, '../dist')
-  webServer = http.createServer((req, res) => {
+  webServer = http.createServer(async (req, res) => {
     const remote = req.socket.remoteAddress ?? ''
     if (!isTailscaleOrLocal(remote)) {
       res.writeHead(403); res.end('Forbidden'); return
@@ -296,6 +297,94 @@ function startWebServer() {
         }
         res.writeHead(404); res.end('Run not found')
       } catch { res.writeHead(500); res.end('Error') }
+      return
+    }
+
+    // ─── HTTP API: Electron-only features (for PWA/browser) ───
+    const corsHeaders = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) }
+
+    if (url.pathname === '/api/calendar/today' && req.method === 'GET') {
+      try {
+        const events = await getTodayEvents()
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(events))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/calendar/sync-birthdays' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', async () => {
+        try {
+          const birthdays = JSON.parse(body)
+          const calEmail = getKey('calendar-email') || undefined
+          const result = await syncBirthdays(birthdays, calEmail)
+          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+        } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      })
+      return
+    }
+
+    if (url.pathname === '/api/integrations/github' && req.method === 'GET') {
+      try {
+        const token = getKey('github-token')
+        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No GitHub token saved' })); return }
+        const stats = await getGitHubStats(token)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/integrations/lemon' && req.method === 'GET') {
+      try {
+        const apiKey = getKey('lemon-api-key')
+        const storeId = getKey('lemon-store-id')
+        if (!apiKey || !storeId) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No Lemon credentials saved' })); return }
+        const stats = await getLemonStats(apiKey, storeId)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/integrations/vercel' && req.method === 'GET') {
+      try {
+        const token = getKey('vercel-token')
+        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify(null)); return }
+        const stats = await getVercelStats(token)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/integrations/supabase' && req.method === 'GET') {
+      try {
+        const sbUrl = getKey('supabase-url')
+        const sbKey = getKey('supabase-service-key')
+        if (!sbUrl || !sbKey) { res.writeHead(200, corsHeaders); res.end(JSON.stringify(null)); return }
+        const stats = await getSupabaseStats(sbUrl, sbKey)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/projects/scan' && req.method === 'GET') {
+      try {
+        const projectsDir = path.join(os.homedir(), 'Projects')
+        if (!fs.existsSync(projectsDir)) { res.writeHead(200, corsHeaders); res.end('[]'); return }
+        const entries = fs.readdirSync(projectsDir, { withFileTypes: true })
+        const projects: ProjectInfo[] = []
+        for (const entry of entries) {
+          if (!entry.isDirectory() && !entry.isSymbolicLink()) continue
+          if (entry.name.startsWith('.')) continue
+          try {
+            const dir = path.join(projectsDir, entry.name)
+            if (!fs.statSync(dir).isDirectory()) continue
+            projects.push(scanProject(dir, entry.name))
+          } catch { /* skip */ }
+        }
+        projects.sort((a, b) => a.name.localeCompare(b.name))
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(projects))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
       return
     }
 

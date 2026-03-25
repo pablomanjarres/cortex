@@ -113,11 +113,14 @@ export function ProjectsPage() {
   const isElectron = !!window.electronAPI?.projects
 
   const fetchProjects = async () => {
-    if (!window.electronAPI?.projects) return
     setLoading(true)
     try {
-      const data = await window.electronAPI.projects.scan()
-      setProjects(data)
+      if (window.electronAPI?.projects) {
+        setProjects(await window.electronAPI.projects.scan())
+      } else {
+        const res = await fetch('/api/projects/scan')
+        if (res.ok) setProjects(await res.json())
+      }
     } catch (e) {
       console.error('Failed to scan projects:', e)
     } finally {
