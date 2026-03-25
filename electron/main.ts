@@ -78,6 +78,7 @@ function buildTrayMenu() {
       submenu: [
         { label: 'Daily Overview', click: () => showAndNavigate('/daily') },
         { label: 'Habits', click: () => showAndNavigate('/habits') },
+        { label: 'Stats', click: () => showAndNavigate('/stats') },
         { label: 'Automations', click: () => showAndNavigate('/automations') },
       ],
     },
@@ -303,7 +304,7 @@ function startWebServer() {
       res.end(fs.readFileSync(filePath))
     } catch { res.writeHead(404); res.end('Not found') }
   })
-  webServer.listen(WEB_PORT, '0.0.0.0')
+  webServer.listen(WEB_PORT, '127.0.0.1')
 }
 
 function stopWebServer() { if (webServer) { webServer.close(); webServer = null } }
@@ -336,7 +337,11 @@ ipcMain.handle('keychain:list', async () => listKeys())
 ipcMain.handle('github:getStats', async () => {
   const token = getKey('github-token')
   if (!token) return { error: 'No GitHub token saved' }
-  try { return await getGitHubStats(token) } catch (e: any) { return { error: `GitHub: ${e.message}` } }
+  try {
+    const stats = await getGitHubStats(token)
+    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-github.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    return stats
+  } catch (e: any) { return { error: `GitHub: ${e.message}` } }
 })
 
 // ─── IPC: Lemon Squeezy ───────────────────────────────────
@@ -346,7 +351,11 @@ ipcMain.handle('lemon:getStats', async () => {
   const storeId = getKey('lemon-store-id')
   if (!apiKey) return { error: 'No Lemon API key saved' }
   if (!storeId) return { error: 'No Lemon Store ID saved' }
-  try { return await getLemonStats(apiKey, storeId) } catch (e: any) { return { error: `Lemon: ${e.message}` } }
+  try {
+    const stats = await getLemonStats(apiKey, storeId)
+    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-lemon.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    return stats
+  } catch (e: any) { return { error: `Lemon: ${e.message}` } }
 })
 
 // ─── IPC: Vercel ───────────────────────────────────────────
@@ -354,7 +363,11 @@ ipcMain.handle('lemon:getStats', async () => {
 ipcMain.handle('vercel:getStats', async () => {
   const token = getKey('vercel-token')
   if (!token) return null
-  try { return await getVercelStats(token) } catch (e) { console.error('Vercel error:', e); return null }
+  try {
+    const stats = await getVercelStats(token)
+    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-vercel.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    return stats
+  } catch (e) { console.error('Vercel error:', e); return null }
 })
 
 // ─── IPC: Supabase ─────────────────────────────────────────
@@ -363,7 +376,11 @@ ipcMain.handle('supabase:getStats', async () => {
   const url = getKey('supabase-url')
   const key = getKey('supabase-service-key')
   if (!url || !key) return null
-  try { return await getSupabaseStats(url, key) } catch (e) { console.error('Supabase error:', e); return null }
+  try {
+    const stats = await getSupabaseStats(url, key)
+    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-supabase.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    return stats
+  } catch (e) { console.error('Supabase error:', e); return null }
 })
 
 // ─── IPC: Projects scanner ────────────────────────────────
@@ -531,7 +548,9 @@ ipcMain.handle('projects:scan', async () => {
         projects.push(scanProject(dir, entry.name))
       } catch { /* skip broken symlinks */ }
     }
-    return projects.sort((a, b) => a.name.localeCompare(b.name))
+    const sorted = projects.sort((a, b) => a.name.localeCompare(b.name))
+    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-projects.json'), JSON.stringify({ data: sorted, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    return sorted
   } catch (e) { console.error('[Cortex] projects:scan error:', e); return [] }
 })
 
