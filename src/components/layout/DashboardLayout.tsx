@@ -10,9 +10,9 @@ export function DashboardLayout() {
     <div className="flex min-h-screen">
       <Sidebar />
       <MobileSidebar open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-      <div className="ml-0 md:ml-[220px] flex flex-1 flex-col">
+      <div className="ml-0 md:ml-[220px] flex flex-1 flex-col min-w-0">
         <Header onMenuToggle={() => setMobileNavOpen((p) => !p)} />
-        <main className="flex-1 p-4 md:p-6">
+        <main className="flex-1 p-4 md:p-6 overflow-x-hidden">
           <Outlet />
         </main>
       </div>

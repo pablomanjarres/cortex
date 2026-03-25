@@ -16,6 +16,7 @@ import {
   Timer,
   BarChart3,
   Settings,
+  Globe,
 } from 'lucide-react'
 
 const navGroups = [
@@ -102,7 +103,16 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <Separator className="bg-sidebar-border" />
 
-      <div className="px-5 py-4">
+      <div className="px-5 py-4 flex flex-col gap-2">
+        <a
+          href={`http://${window.location.hostname}:3456`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs text-sidebar-muted hover:text-sidebar-foreground transition-colors"
+        >
+          <Globe className="h-3.5 w-3.5" />
+          Localhost Mirror
+        </a>
         <p className="text-xs text-sidebar-muted">
           {new Date().toLocaleDateString('en-US', {
             weekday: 'long',
