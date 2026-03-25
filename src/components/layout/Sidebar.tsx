@@ -105,7 +105,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <div className="px-5 py-4 flex flex-col gap-2">
         <a
-          href="http://100.85.207.62:19100"
+          href="http://100.85.207.62:19100/lm"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 text-xs text-sidebar-muted hover:text-sidebar-foreground transition-colors"
