@@ -11,6 +11,7 @@ import { ThoughtsPage } from '@/features/thoughts/ThoughtsPage'
 import { ProjectsPage } from '@/features/projects/ProjectsPage'
 import { CrmPage } from '@/features/crm/CrmPage'
 import { AutomationsPage } from '@/features/automations/AutomationsPage'
+import { StatsPage } from '@/features/stats/StatsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 
 export function App() {
@@ -20,6 +21,7 @@ export function App() {
         <Route index element={<Navigate to="/daily" replace />} />
         <Route path="daily" element={<DailyPage />} />
         <Route path="habits" element={<HabitsPage />} />
+        <Route path="stats" element={<StatsPage />} />
         <Route path="automations" element={<AutomationsPage />} />
         <Route path="founder" element={<FounderPage />} />
         <Route path="student" element={<StudentPage />} />

@@ -14,6 +14,7 @@ import {
   FolderKanban,
   Briefcase,
   Timer,
+  BarChart3,
   Settings,
 } from 'lucide-react'
 
@@ -23,6 +24,7 @@ const navGroups = [
     items: [
       { to: '/daily', icon: LayoutDashboard, label: 'Daily' },
       { to: '/habits', icon: Target, label: 'Habits' },
+      { to: '/stats', icon: BarChart3, label: 'Stats' },
       { to: '/automations', icon: Timer, label: 'Automations' },
     ],
   },
