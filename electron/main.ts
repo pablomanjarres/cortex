@@ -150,6 +150,7 @@ const mimeTypes: Record<string, string> = {
   '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml', '.woff': 'font/woff', '.woff2': 'font/woff2',
+  '.webmanifest': 'application/manifest+json',
 }
 
 function getAllowedOrigin(req: http.IncomingMessage): string {
@@ -159,10 +160,24 @@ function getAllowedOrigin(req: http.IncomingMessage): string {
   return ''
 }
 
+function isTailscaleOrLocal(ip: string): boolean {
+  const clean = ip.replace(/^::ffff:/, '')
+  if (clean === '127.0.0.1' || clean === '::1') return true
+  const parts = clean.split('.')
+  if (parts.length !== 4) return false
+  const first = parseInt(parts[0], 10)
+  const second = parseInt(parts[1], 10)
+  return first === 100 && second >= 64 && second <= 127
+}
+
 function startWebServer() {
   if (webServer) return
   const distPath = path.join(__dirname, '../dist')
   webServer = http.createServer((req, res) => {
+    const remote = req.socket.remoteAddress ?? ''
+    if (!isTailscaleOrLocal(remote)) {
+      res.writeHead(403); res.end('Forbidden'); return
+    }
     const url = new URL(req.url!, `http://localhost:${WEB_PORT}`)
 
     // ─── JSON API for data sync (used by browser/iPhone) ──────
@@ -304,7 +319,7 @@ function startWebServer() {
       res.end(fs.readFileSync(filePath))
     } catch { res.writeHead(404); res.end('Not found') }
   })
-  webServer.listen(WEB_PORT, '127.0.0.1')
+  webServer.listen(WEB_PORT, '0.0.0.0')
 }
 
 function stopWebServer() { if (webServer) { webServer.close(); webServer = null } }
@@ -556,11 +571,11 @@ ipcMain.handle('projects:scan', async () => {
 
 // ─── Data persistence (JSON files in project data/) ───────
 
-// In dev: data/ in project root. In prod: ~/Projects/life-audit-dashboard/data/
+// In dev: data/ in project root. In prod: ~/Projects/cortex/data/
 // Never write inside the asar archive.
 const dataDir = isDev
   ? path.join(__dirname, '..', 'data')
-  : path.join(app.getPath('home'), 'Projects', 'life-audit-dashboard', 'data')
+  : path.join(app.getPath('home'), 'Projects', 'cortex', 'data')
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
 
 const backupDir = path.join(dataDir, 'backups')
