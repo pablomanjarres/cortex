@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useStore } from '@/lib/store'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -24,23 +24,63 @@ const defaultHabits: Habit[] = [
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+function getCurrentWeekDates(): string[] {
+  const now = new Date()
+  const day = now.getDay()
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - ((day + 6) % 7)) // Monday
+  const dates: string[] = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    dates.push(d.toISOString().slice(0, 10))
+  }
+  return dates
+}
+
 export function HabitsPage() {
   const [habits, updateHabits] = useStore<Habit[]>('cortex-habits', defaultHabits)
   const setHabits = (v: Habit[] | ((p: Habit[]) => Habit[])) => updateHabits(typeof v === 'function' ? v : () => v)
   const [grid, updateGrid] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-grid', {})
   const setGrid = (v: Record<string, Record<string, boolean>> | ((p: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>)) => updateGrid(typeof v === 'function' ? v : () => v)
+  const [habitHistory, updateHabitHistory] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
+  const setHabitHistory = (v: Record<string, Record<string, boolean>> | ((p: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>)) => updateHabitHistory(typeof v === 'function' ? v : () => v)
   const [newName, setNewName] = useState('')
   const [newEmoji, setNewEmoji] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editEmoji, setEditEmoji] = useState('')
 
-  const toggle = (habitId: string, day: string) => {
-    setGrid((prev) => ({
+  const weekDates = getCurrentWeekDates()
+
+  // One-time migration from old weekly grid to date-based history
+  useEffect(() => {
+    if (Object.keys(grid).length > 0 && Object.keys(habitHistory).length === 0) {
+      const weekDates = getCurrentWeekDates()
+      const migrated: Record<string, Record<string, boolean>> = {}
+      for (const [habitId, days] of Object.entries(grid)) {
+        for (const [dayName, done] of Object.entries(days as Record<string, boolean>)) {
+          const dayIndex = weekDays.indexOf(dayName)
+          if (dayIndex >= 0 && done) {
+            const date = weekDates[dayIndex]
+            if (!migrated[date]) migrated[date] = {}
+            migrated[date][habitId] = true
+          }
+        }
+      }
+      if (Object.keys(migrated).length > 0) {
+        setHabitHistory(() => migrated)
+      }
+    }
+  }, [])
+
+  const toggle = (habitId: string, dayIndex: number) => {
+    const date = weekDates[dayIndex]
+    setHabitHistory((prev) => ({
       ...prev,
-      [habitId]: {
-        ...prev[habitId],
-        [day]: !prev[habitId]?.[day],
+      [date]: {
+        ...prev[date],
+        [habitId]: !prev[date]?.[habitId],
       },
     }))
   }
@@ -62,6 +102,17 @@ export function HabitsPage() {
       delete next[id]
       return next
     })
+    // Also remove from history
+    setHabitHistory((prev) => {
+      const next = { ...prev }
+      for (const date of Object.keys(next)) {
+        if (next[date][id] !== undefined) {
+          const { [id]: _, ...rest } = next[date]
+          next[date] = rest
+        }
+      }
+      return next
+    })
   }
 
   const startEdit = (habit: Habit) => {
@@ -81,12 +132,23 @@ export function HabitsPage() {
   }
 
   const getStreak = (habitId: string) => {
-    const days = grid[habitId] || {}
-    return Object.values(days).filter(Boolean).length
+    let streak = 0
+    const today = new Date()
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today)
+      d.setDate(today.getDate() - i)
+      const dateStr = d.toISOString().slice(0, 10)
+      if (habitHistory[dateStr]?.[habitId]) {
+        streak++
+      } else {
+        break
+      }
+    }
+    return streak
   }
 
-  const totalCompleted = Object.values(grid).reduce(
-    (sum, days) => sum + Object.values(days).filter(Boolean).length,
+  const totalCompleted = weekDates.reduce(
+    (sum, date) => sum + Object.values(habitHistory[date] || {}).filter(Boolean).length,
     0
   )
   const totalPossible = habits.length * 7
@@ -139,17 +201,17 @@ export function HabitsPage() {
                         </>
                       )}
                     </td>
-                    {weekDays.map((day) => (
+                    {weekDays.map((day, dayIndex) => (
                       <td key={day} className="py-2.5 text-center">
                         <button
-                          onClick={() => toggle(habit.id, day)}
+                          onClick={() => toggle(habit.id, dayIndex)}
                           className={`h-7 w-7 rounded-md transition-all ${
-                            grid[habit.id]?.[day]
+                            habitHistory[weekDates[dayIndex]]?.[habit.id]
                               ? 'bg-foreground text-background'
                               : 'bg-secondary hover:bg-secondary/80'
                           }`}
                         >
-                          {grid[habit.id]?.[day] && (
+                          {habitHistory[weekDates[dayIndex]]?.[habit.id] && (
                             <span className="text-xs">✓</span>
                           )}
                         </button>
