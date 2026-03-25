@@ -159,6 +159,11 @@ export function StatsPage() {
     })
   }, [selectedDate, view])
 
+  // Merge both habit sources: old per-day store + new history store
+  const mergedHabitsCount = useMemo(() => {
+    return habits.filter(h => dayHabits[h.id] || habitHistory[selectedDate]?.[h.id]).length
+  }, [habits, dayHabits, habitHistory, selectedDate])
+
   const dayFounder = useMemo(() => founderHistory.find(h => h.date === selectedDate), [founderHistory, selectedDate])
 
   // --- Week View Data -------------------------------------
@@ -270,7 +275,7 @@ export function StatsPage() {
             {[
               { label: 'Sessions', value: daySessions.length.toString(), icon: Clock },
               { label: 'Deep work', value: formatMinutes(daySessions.reduce((s, x) => s + x.duration, 0)), icon: Zap },
-              { label: 'Habits', value: `${Object.values(dayHabits).filter(Boolean).length}/${habits.length}`, icon: Target },
+              { label: 'Habits', value: `${mergedHabitsCount}/${habits.length}`, icon: Target },
               { label: 'Day score', value: dayReflection.score > 0 ? `${dayReflection.score}/10` : '\u2014', icon: Flame },
             ].map((stat) => (
               <div key={stat.label} className="liquid-glass flex flex-col gap-1 rounded-xl px-4 py-3">
@@ -322,7 +327,7 @@ export function StatsPage() {
           </div>
 
           {/* Habits for the day */}
-          <WidgetCard title="HABITS" description={`${Object.values(dayHabits).filter(Boolean).length}/${habits.length}`} delay={0.15} compact>
+          <WidgetCard title="HABITS" description={`${mergedHabitsCount}/${habits.length}`} delay={0.15} compact>
             <div className="flex flex-wrap gap-2">
               {habits.map((h) => (
                 <div
