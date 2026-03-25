@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useStore } from '@/lib/store'
+import { useStore, readStore, writeStore } from '@/lib/store'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { PageShell } from '@/components/shared/PageShell'
@@ -40,6 +40,37 @@ interface ShipEntry {
   time: string
 }
 
+// ─── SPRINT SESSIONS ──────────────────────────────────────────
+
+interface SprintSession {
+  id: string
+  task: string
+  duration: number       // minutes
+  startedAt: string      // ISO timestamp
+  completedAt: string    // ISO timestamp
+}
+
+// ─── EVENING REFLECTION ───────────────────────────────────────
+
+interface DailyReflection {
+  score: number
+  wentWell: string
+  improve: string
+  learnings: string
+}
+
+// ─── FOUNDER HISTORY ──────────────────────────────────────────
+
+interface HistoryEntry {
+  date: string
+  commits: number
+  users: number
+  deploys: number
+  mrr: number
+  prsOpen: number
+  prsMerged: number
+}
+
 // ─── HABITS (read from same store as HabitsPage) ─────────────
 
 interface HabitDef {
@@ -77,11 +108,16 @@ export function DailyPage() {
   const [timerDuration, setTimerDuration] = useState(25)
   const [timeLeft, setTimeLeft] = useState(25 * 60)
   const [isRunning, setIsRunning] = useState(false)
-  const [sessions, setSessions] = useState(0)
+  const [timerStartedAt, setTimerStartedAt] = useState<string | null>(null)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerPresets = [15, 25, 45, 60, 90]
   const [showCustomTime, setShowCustomTime] = useState(false)
   const [customTimeInput, setCustomTimeInput] = useState('')
+
+  // Sprint sessions (persisted by day)
+  const [sprintSessions, updateSprintSessions] = useStore<SprintSession[]>(`cortex-daily-sessions-${today}`, [])
+  const sessionCount = sprintSessions.length
+  const totalDeepWorkMin = sprintSessions.reduce((sum, s) => sum + s.duration, 0)
 
   // Habits (from shared store — same as HabitsPage)
   const [habits] = useStore<HabitDef[]>('cortex-habits', defaultHabits)
@@ -96,8 +132,11 @@ export function DailyPage() {
   const setHabitsDone = (v: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => updateHabitsDone(typeof v === 'function' ? v : () => v)
   const habitsCompleted = Object.values(habitsDone).filter(Boolean).length
 
-  // Score
-  const [score, setScore] = useState(0)
+  // Habit history (dual-write)
+  const [, updateHabitHistory] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
+
+  // Evening reflection (persisted by day)
+  const [reflection, updateReflection] = useStore<DailyReflection>(`cortex-daily-reflection-${today}`, { score: 0, wentWell: '', improve: '', learnings: '' })
 
   // Calendar — auto-refresh every 5 min + on window focus
   const [calendarEvents, setCalendarEvents] = useState<{ title: string; startTime: string; endTime: string; calendar: string; isAllDay: boolean }[]>([])
@@ -125,7 +164,14 @@ export function DailyPage() {
     if (isRunning && timeLeft > 0) {
       intervalRef.current = setInterval(() => setTimeLeft((p) => p - 1), 1000)
     } else if (timeLeft === 0 && isRunning) {
-      setSessions((p) => p + 1)
+      updateSprintSessions((prev) => [...prev, {
+        id: Date.now().toString(),
+        task: timerTask || 'Untitled session',
+        duration: timerDuration,
+        startedAt: timerStartedAt || new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+      }])
+      setTimerStartedAt(null)
       setTimeLeft(timerDuration * 60)
       setIsRunning(false)
     }
@@ -150,10 +196,104 @@ export function DailyPage() {
       window.electronAPI.tray.updateStats({
         tasks: `${shippedCount}/3 shipped`,
         habits: `${habitsCompleted}/${habits.length}`,
-        score: score > 0 ? `${score}/10` : '—',
+        score: reflection.score > 0 ? `${reflection.score}/10` : '—',
       })
     }
   })
+
+  // ─── Weekly Audit Auto-Trigger ───────────────────────────
+  useEffect(() => {
+    const now = new Date()
+    if (now.getDay() !== 1) return // Only on Mondays
+
+    const lastMonday = new Date(now)
+    lastMonday.setDate(lastMonday.getDate() - 7)
+    const lastSunday = new Date(now)
+    lastSunday.setDate(lastSunday.getDate() - 1)
+
+    // Get ISO week number
+    const d = new Date(lastMonday)
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))
+    const week1 = new Date(d.getFullYear(), 0, 4)
+    const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7)
+    const weekId = `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
+
+    readStore(`cortex-weekly-audit-${weekId}`, null).then((existing) => {
+      if (existing) return // Already generated
+
+      // Generate audit for last week
+      const weekDates: string[] = []
+      for (let i = 0; i < 7; i++) {
+        const wd = new Date(lastMonday)
+        wd.setDate(wd.getDate() + i)
+        weekDates.push(wd.toISOString().slice(0, 10))
+      }
+
+      Promise.all([
+        ...weekDates.map(date => readStore<SprintSession[]>(`cortex-daily-sessions-${date}`, [])),
+        ...weekDates.map(date => readStore<ShipEntry[]>(`cortex-daily-shiplog-${date}`, [])),
+        ...weekDates.map(date => readStore<DailyReflection>(`cortex-daily-reflection-${date}`, { score: 0, wentWell: '', improve: '', learnings: '' })),
+        readStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {}),
+        readStore<HistoryEntry[]>('cortex-founder-history', []),
+      ]).then((results) => {
+        const sessionsByDay = results.slice(0, 7) as SprintSession[][]
+        const shipsByDay = results.slice(7, 14) as ShipEntry[][]
+        const reflectionsByDay = results.slice(14, 21) as DailyReflection[]
+        const habitHistory = results[21] as Record<string, Record<string, boolean>>
+        const founderHistory = results[22] as HistoryEntry[]
+
+        const allSessions = sessionsByDay.flat()
+        const totalSessions = allSessions.length
+        const totalDeepWork = allSessions.reduce((s, x) => s + x.duration, 0)
+
+        const dayCounts = sessionsByDay.map((s, i) => ({ date: weekDates[i], sessions: s.length }))
+        const bestDay = dayCounts.reduce((best, dc) => dc.sessions > best.sessions ? dc : best, { date: '', sessions: 0 })
+
+        // Habit stats
+        const weekHabits = weekDates.map(wd => habitHistory[wd] || {})
+        const totalHabitChecks = weekHabits.reduce((s, h) => s + Object.values(h).filter(Boolean).length, 0)
+        const totalHabitPossible = habits.length * 7
+        const habitConsistency = totalHabitPossible > 0 ? Math.round((totalHabitChecks / totalHabitPossible) * 100) : 0
+
+        // Founder stats for the week
+        const weekFounder = founderHistory.filter(h => weekDates.includes(h.date))
+        const totalCommits = weekFounder.reduce((s, h) => s + h.commits, 0)
+        const totalDeploys = weekFounder.reduce((s, h) => s + h.deploys, 0)
+        const lastUsers = weekFounder.length > 0 ? weekFounder[weekFounder.length - 1].users : 0
+        const lastMrr = weekFounder.length > 0 ? weekFounder[weekFounder.length - 1].mrr : 0
+
+        // Shipped items
+        const allShippedItems = shipsByDay.flat().map(s => s.text)
+
+        // Avg day score
+        const scores = reflectionsByDay.filter(r => r.score > 0).map(r => r.score)
+        const avgScore = scores.length > 0 ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length * 10) / 10 : 0
+
+        // Reflection highlights
+        const highlights = reflectionsByDay
+          .filter(r => r.wentWell || r.learnings)
+          .map(r => r.wentWell || r.learnings)
+          .filter(Boolean)
+          .slice(0, 5)
+
+        const audit = {
+          weekId,
+          weekStart: weekDates[0],
+          weekEnd: weekDates[6],
+          sprintStats: { totalSessions, totalDeepWork, avgPerDay: Math.round(totalSessions / 7 * 10) / 10, bestDay },
+          habitStats: { consistency: habitConsistency },
+          founderStats: { commits: totalCommits, users: lastUsers, mrr: lastMrr, deploys: totalDeploys },
+          shipped: allShippedItems,
+          avgDayScore: avgScore,
+          reflectionHighlights: highlights,
+          generatedAt: new Date().toISOString(),
+        }
+
+        writeStore(`cortex-weekly-audit-${weekId}`, audit)
+      })
+    })
+  }, [])
 
   // ─── Helpers ─────────────────────────────────────────────
   const updateTarget = (id: string, field: Partial<Target>) => {
@@ -205,6 +345,28 @@ export function DailyPage() {
           {shippedCount}/3
         </div>
       </motion.div>
+
+      {/* ─── QUICK STATS ──────────────────────────────────── */}
+      <WidgetCard title="TODAY" compact delay={0.02}>
+        <div className="grid grid-cols-4 gap-3">
+          <div className="text-center">
+            <p className="text-2xl font-bold tabular-nums">{sessionCount}</p>
+            <p className="text-[10px] text-muted-foreground">Sessions</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold tabular-nums">{totalDeepWorkMin >= 60 ? `${Math.floor(totalDeepWorkMin / 60)}h${totalDeepWorkMin % 60 > 0 ? `${totalDeepWorkMin % 60}m` : ''}` : `${totalDeepWorkMin}m`}</p>
+            <p className="text-[10px] text-muted-foreground">Deep work</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold tabular-nums">{habitsCompleted}/{habits.length}</p>
+            <p className="text-[10px] text-muted-foreground">Habits</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold tabular-nums">{shipLog.length}</p>
+            <p className="text-[10px] text-muted-foreground">Shipped</p>
+          </div>
+        </div>
+      </WidgetCard>
 
       {/* ─── TIER 1: NON-NEGOTIABLES ────────────────────── */}
       <WidgetCard
@@ -259,7 +421,7 @@ export function DailyPage() {
       {/* ─── TIER 2: EXECUTION ──────────────────────────── */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Sprint Timer */}
-        <WidgetCard title="SPRINT" description={`${sessions} sessions · ${Math.floor(sessions * timerDuration / 60)}h ${(sessions * timerDuration) % 60}m deep work`} delay={0.1}>
+        <WidgetCard title="SPRINT" description={`${sessionCount} sessions · ${Math.floor(totalDeepWorkMin / 60)}h ${totalDeepWorkMin % 60}m deep work`} delay={0.1}>
           <div className="flex flex-col gap-4">
             <Input
               value={timerTask}
@@ -273,7 +435,10 @@ export function DailyPage() {
               </span>
               <div className="flex gap-2">
                 <button
-                  onClick={() => setIsRunning(!isRunning)}
+                  onClick={() => {
+                    if (!isRunning) setTimerStartedAt(new Date().toISOString())
+                    setIsRunning(!isRunning)
+                  }}
                   className="flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background transition-opacity hover:opacity-80"
                 >
                   {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
@@ -341,6 +506,23 @@ export function DailyPage() {
                 >
                   Set
                 </button>
+              </div>
+            )}
+            {/* Session history */}
+            {sprintSessions.length > 0 && (
+              <div className="border-t border-border/30 pt-3 mt-1">
+                <p className="text-[10px] text-muted-foreground/60 mb-1.5">{sprintSessions.length} session{sprintSessions.length !== 1 ? 's' : ''} today</p>
+                <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
+                  {[...sprintSessions].reverse().map((s) => (
+                    <div key={s.id} className="flex items-center gap-2 text-[11px]">
+                      <span className="text-muted-foreground/50 font-mono tabular-nums shrink-0">
+                        {new Date(s.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className="truncate text-muted-foreground">{s.task}</span>
+                      <span className="ml-auto text-muted-foreground/50 shrink-0">{s.duration}m</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -422,7 +604,13 @@ export function DailyPage() {
             {habits.map((h) => (
               <button
                 key={h.id}
-                onClick={() => setHabitsDone((p) => ({ ...p, [h.id]: !p[h.id] }))}
+                onClick={() => {
+                  setHabitsDone((p) => ({ ...p, [h.id]: !p[h.id] }))
+                  updateHabitHistory((prev) => ({
+                    ...prev,
+                    [today]: { ...prev[today], [h.id]: !(habitsDone[h.id]) }
+                  }))
+                }}
                 className={`flex h-10 w-10 items-center justify-center rounded-full text-base transition-all ${
                   habitsDone[h.id]
                     ? 'bg-foreground/10 ring-1 ring-foreground/20'
@@ -441,9 +629,9 @@ export function DailyPage() {
             {Array.from({ length: 10 }, (_, i) => (
               <button
                 key={i}
-                onClick={() => setScore(i + 1)}
+                onClick={() => updateReflection((prev) => ({ ...prev, score: i + 1 }))}
                 className={`flex h-7 flex-1 items-center justify-center rounded text-[10px] font-bold transition-all ${
-                  i + 1 <= score
+                  i + 1 <= reflection.score
                     ? i + 1 >= 8
                       ? 'bg-yellow-400/20 text-yellow-400'
                       : 'bg-foreground text-background'
@@ -468,6 +656,8 @@ export function DailyPage() {
               className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
               rows={3}
               placeholder="Today's wins..."
+              value={reflection.wentWell}
+              onChange={(e) => updateReflection((prev) => ({ ...prev, wentWell: e.target.value }))}
             />
           </div>
           <div>
@@ -478,6 +668,8 @@ export function DailyPage() {
               className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
               rows={3}
               placeholder="Areas for growth..."
+              value={reflection.improve}
+              onChange={(e) => updateReflection((prev) => ({ ...prev, improve: e.target.value }))}
             />
           </div>
           <div>
@@ -488,6 +680,8 @@ export function DailyPage() {
               className="w-full rounded-lg border border-border bg-input px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
               rows={3}
               placeholder="What did you learn today..."
+              value={reflection.learnings}
+              onChange={(e) => updateReflection((prev) => ({ ...prev, learnings: e.target.value }))}
             />
           </div>
         </div>
