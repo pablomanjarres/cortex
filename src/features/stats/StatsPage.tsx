@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { useStore, readStore } from '@/lib/store'
+import { useDailyHabits } from '@/lib/use-daily-habits'
 import {
   ChevronLeft,
   ChevronRight,
@@ -135,34 +136,45 @@ export function StatsPage() {
 
   // Shared stores
   const [habits] = useStore<HabitDef[]>('cortex-habits', [])
-  const [habitHistory] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
   const [founderHistory] = useStore<HistoryEntry[]>('cortex-founder-history', [])
+
+  // Habits — single source of truth via shared hook (reactive, stays in sync)
+  const { completedCount: habitsCompletedToday, isCompleted: isHabitDone, habitHistory } = useDailyHabits(selectedDate)
 
   // --- Day View Data --------------------------------------
   const [daySessions, setDaySessions] = useState<SprintSession[]>([])
   const [dayShips, setDayShips] = useState<ShipEntry[]>([])
   const [dayReflection, setDayReflection] = useState<DailyReflection>({ score: 0, wentWell: '', improve: '', learnings: '' })
-  const [dayHabits, setDayHabits] = useState<Record<string, boolean>>({})
+
+  // Use useStore for today's data (reactive), readStore for past dates
+  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const isToday = selectedDate === todayStr
+  const [todaySessions] = useStore<SprintSession[]>(`cortex-daily-sessions-${todayStr}`, [])
+  const [todayShips] = useStore<ShipEntry[]>(`cortex-daily-shiplog-${todayStr}`, [])
+  const [todayReflection] = useStore<DailyReflection>(`cortex-daily-reflection-${todayStr}`, { score: 0, wentWell: '', improve: '', learnings: '' })
 
   useEffect(() => {
     if (view !== 'day') return
+    if (isToday) {
+      // Use reactive stores for today
+      setDaySessions(todaySessions)
+      setDayShips(todayShips)
+      setDayReflection(todayReflection)
+      return
+    }
+    // Fetch from store for past dates
     Promise.all([
       readStore<SprintSession[]>(`cortex-daily-sessions-${selectedDate}`, []),
       readStore<ShipEntry[]>(`cortex-daily-shiplog-${selectedDate}`, []),
       readStore<DailyReflection>(`cortex-daily-reflection-${selectedDate}`, { score: 0, wentWell: '', improve: '', learnings: '' }),
-      readStore<Record<string, boolean>>(`cortex-daily-habits-${selectedDate}`, {}),
-    ]).then(([sessions, ships, reflection, habDone]) => {
+    ]).then(([sessions, ships, reflection]) => {
       setDaySessions(sessions)
       setDayShips(ships)
       setDayReflection(reflection)
-      setDayHabits(habDone)
     })
-  }, [selectedDate, view])
+  }, [selectedDate, view, isToday, todaySessions, todayShips, todayReflection])
 
-  // Merge both habit sources: old per-day store + new history store
-  const mergedHabitsCount = useMemo(() => {
-    return habits.filter(h => dayHabits[h.id] || habitHistory[selectedDate]?.[h.id]).length
-  }, [habits, dayHabits, habitHistory, selectedDate])
+  const mergedHabitsCount = habitsCompletedToday
 
   const dayFounder = useMemo(() => founderHistory.find(h => h.date === selectedDate), [founderHistory, selectedDate])
 
@@ -333,7 +345,7 @@ export function StatsPage() {
                 <div
                   key={h.id}
                   className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs ${
-                    dayHabits[h.id] || habitHistory[selectedDate]?.[h.id]
+                    isHabitDone(h.id)
                       ? 'bg-foreground/10 text-foreground'
                       : 'bg-secondary/50 text-muted-foreground/40'
                   }`}
@@ -397,7 +409,7 @@ export function StatsPage() {
       {view === 'week' && (
         <>
           {/* Summary stats */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
             {[
               { label: 'Sessions', value: weekSessions.reduce((s, d) => s + d.sessions, 0).toString() },
               { label: 'Deep work', value: formatMinutes(weekSessions.reduce((s, d) => s + d.minutes, 0)) },
@@ -415,7 +427,7 @@ export function StatsPage() {
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {/* Sprint trend */}
             <WidgetCard title="SPRINT SESSIONS" description="Sessions per day" delay={0.05}>
-              <div style={{ height: 180 }}>
+              <div className="h-[140px] sm:h-[180px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={weekSessions.map((d, i) => ({ day: weekDayNames[i], sessions: d.sessions, minutes: d.minutes }))}>
                     <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} />
@@ -429,7 +441,7 @@ export function StatsPage() {
 
             {/* Deep work trend */}
             <WidgetCard title="DEEP WORK" description="Minutes per day" delay={0.1}>
-              <div style={{ height: 180 }}>
+              <div className="h-[140px] sm:h-[180px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={weekSessions.map((d, i) => ({ day: weekDayNames[i], minutes: d.minutes }))}>
                     <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} />

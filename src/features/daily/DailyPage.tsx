@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore, readStore, writeStore } from '@/lib/store'
+import { useDailyHabits } from '@/lib/use-daily-habits'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { PageShell } from '@/components/shared/PageShell'
@@ -127,13 +128,8 @@ export function DailyPage() {
   const setShipLog = (v: ShipEntry[] | ((p: ShipEntry[]) => ShipEntry[])) => updateShipLog(typeof v === 'function' ? v : () => v)
   const [shipInput, setShipInput] = useState('')
 
-  // Habits (persisted by day)
-  const [habitsDone, updateHabitsDone] = useStore<Record<string, boolean>>(`cortex-daily-habits-${today}`, {})
-  const setHabitsDone = (v: Record<string, boolean> | ((p: Record<string, boolean>) => Record<string, boolean>)) => updateHabitsDone(typeof v === 'function' ? v : () => v)
-  const habitsCompleted = Object.values(habitsDone).filter(Boolean).length
-
-  // Habit history (dual-write)
-  const [, updateHabitHistory] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
+  // Habits — single source of truth via shared hook
+  const { completedCount: habitsCompleted, isCompleted: isHabitDone, toggle: toggleHabit } = useDailyHabits(today)
 
   // Evening reflection (persisted by day)
   const [reflection, updateReflection] = useStore<DailyReflection>(`cortex-daily-reflection-${today}`, { score: 0, wentWell: '', improve: '', learnings: '' })
@@ -144,10 +140,15 @@ export function DailyPage() {
   const isElectron = !!window.electronAPI
 
   const fetchCalendar = async () => {
-    if (!window.electronAPI?.calendar) return
     setCalendarLoading(true)
-    try { setCalendarEvents(await window.electronAPI.calendar.getTodayEvents()) }
-    catch { /* silent */ }
+    try {
+      if (window.electronAPI?.calendar) {
+        setCalendarEvents(await window.electronAPI.calendar.getTodayEvents())
+      } else {
+        const res = await fetch('/api/calendar/today')
+        if (res.ok) setCalendarEvents(await res.json())
+      }
+    } catch { /* silent */ }
     finally { setCalendarLoading(false) }
   }
 
@@ -348,21 +349,21 @@ export function DailyPage() {
 
       {/* ─── QUICK STATS ──────────────────────────────────── */}
       <WidgetCard title="TODAY" compact delay={0.02}>
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="text-center">
-            <p className="text-2xl font-bold tabular-nums">{sessionCount}</p>
+            <p className="text-xl sm:text-2xl font-bold tabular-nums">{sessionCount}</p>
             <p className="text-[10px] text-muted-foreground">Sessions</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-bold tabular-nums">{totalDeepWorkMin >= 60 ? `${Math.floor(totalDeepWorkMin / 60)}h${totalDeepWorkMin % 60 > 0 ? `${totalDeepWorkMin % 60}m` : ''}` : `${totalDeepWorkMin}m`}</p>
+            <p className="text-xl sm:text-2xl font-bold tabular-nums">{totalDeepWorkMin >= 60 ? `${Math.floor(totalDeepWorkMin / 60)}h${totalDeepWorkMin % 60 > 0 ? `${totalDeepWorkMin % 60}m` : ''}` : `${totalDeepWorkMin}m`}</p>
             <p className="text-[10px] text-muted-foreground">Deep work</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-bold tabular-nums">{habitsCompleted}/{habits.length}</p>
+            <p className="text-xl sm:text-2xl font-bold tabular-nums">{habitsCompleted}/{habits.length}</p>
             <p className="text-[10px] text-muted-foreground">Habits</p>
           </div>
           <div className="text-center">
-            <p className="text-2xl font-bold tabular-nums">{shipLog.length}</p>
+            <p className="text-xl sm:text-2xl font-bold tabular-nums">{shipLog.length}</p>
             <p className="text-[10px] text-muted-foreground">Shipped</p>
           </div>
         </div>
@@ -604,15 +605,9 @@ export function DailyPage() {
             {habits.map((h) => (
               <button
                 key={h.id}
-                onClick={() => {
-                  setHabitsDone((p) => ({ ...p, [h.id]: !p[h.id] }))
-                  updateHabitHistory((prev) => ({
-                    ...prev,
-                    [today]: { ...prev[today], [h.id]: !(habitsDone[h.id]) }
-                  }))
-                }}
+                onClick={() => toggleHabit(h.id)}
                 className={`flex h-10 w-10 items-center justify-center rounded-full text-base transition-all ${
-                  habitsDone[h.id]
+                  isHabitDone(h.id)
                     ? 'bg-foreground/10 ring-1 ring-foreground/20'
                     : 'bg-secondary/80 opacity-40 hover:opacity-70'
                 }`}

@@ -523,7 +523,7 @@ export function FounderPage() {
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               {/* Commits */}
               <WidgetCard title="COMMITS (14D)" description={github?.topRepos.length ? `Across ${github.topRepos.map(r => r.name).join(', ')}` : 'Daily commit count'} delay={0.25}>
-                <div style={{ height: 180 }}>
+                <div className="h-[140px] sm:h-[180px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={last14}>
                       <XAxis
@@ -549,7 +549,7 @@ export function FounderPage() {
 
               {/* Users Growth — with gradient fill */}
               <WidgetCard title="USERS GROWTH" description="Total users over time" delay={0.3}>
-                <div style={{ height: 180 }}>
+                <div className="h-[140px] sm:h-[180px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={last14}>
                       <defs>
@@ -588,7 +588,7 @@ export function FounderPage() {
 
               {/* Deploys */}
               <WidgetCard title="DEPLOYS (14D)" description="Daily deployments" delay={0.35}>
-                <div style={{ height: 180 }}>
+                <div className="h-[140px] sm:h-[180px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={last14}>
                       <XAxis
@@ -615,7 +615,7 @@ export function FounderPage() {
               {/* MRR Trend — only shown when Lemon data exists in history */}
               {hasMrrHistory && (
                 <WidgetCard title="MRR TREND" description="Monthly recurring revenue" delay={0.4}>
-                  <div style={{ height: 180 }}>
+                  <div className="h-[140px] sm:h-[180px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={last14}>
                         <defs>
