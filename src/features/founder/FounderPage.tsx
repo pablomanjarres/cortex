@@ -210,7 +210,6 @@ export function FounderPage() {
     setErrors(errs)
     setLastUpdated(new Date())
     setLoading(false)
-    // Save snapshot to history
     saveSnapshot(ghData, lmData, vcData, sbData)
   }
 
