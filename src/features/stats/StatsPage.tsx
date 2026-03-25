@@ -213,18 +213,19 @@ export function StatsPage() {
     [founderHistory, weekDates]
   )
 
-  // Week habit data
+  // Week habit data — respects per-habit goals
   const weekHabitData = useMemo(() => {
-    return habits.map(h => ({
-      name: h.emoji + ' ' + h.name,
-      completed: weekDates.filter(d => habitHistory[d]?.[h.id]).length,
-    }))
+    return habits.map(h => {
+      const goal = (h as any).weeklyGoal ?? 7
+      const completed = weekDates.filter(d => habitHistory[d]?.[h.id]).length
+      return { name: h.emoji + ' ' + h.name, completed, goal }
+    })
   }, [habits, habitHistory, weekDates])
 
   const weekHabitConsistency = useMemo(() => {
-    const total = weekHabitData.reduce((s, h) => s + h.completed, 0)
-    const possible = habits.length * 7
-    return possible > 0 ? Math.round((total / possible) * 100) : 0
+    if (habits.length === 0) return 0
+    const avgPct = weekHabitData.reduce((s, h) => s + Math.min(h.completed / h.goal, 1), 0) / habits.length
+    return Math.round(avgPct * 100)
   }, [weekHabitData, habits])
 
   // --- Navigation -----------------------------------------
@@ -456,18 +457,22 @@ export function StatsPage() {
             {/* Habit consistency */}
             <WidgetCard title="HABIT CONSISTENCY" description={`${weekHabitConsistency}% this week`} delay={0.15}>
               <div className="flex flex-col gap-1.5">
-                {weekHabitData.map((h) => (
-                  <div key={h.name} className="flex items-center gap-2">
-                    <span className="text-xs w-32 sm:w-40 truncate">{h.name}</span>
-                    <div className="flex-1 h-4 rounded bg-secondary/50 overflow-hidden">
-                      <div
-                        className="h-full rounded bg-foreground/20"
-                        style={{ width: `${(h.completed / 7) * 100}%` }}
-                      />
+                {weekHabitData.map((h) => {
+                  const pct = Math.min(h.completed / h.goal, 1) * 100
+                  const met = h.completed >= h.goal
+                  return (
+                    <div key={h.name} className="flex items-center gap-2">
+                      <span className="text-xs w-32 sm:w-40 truncate">{h.name}</span>
+                      <div className="flex-1 h-4 rounded bg-secondary/50 overflow-hidden">
+                        <div
+                          className={`h-full rounded ${met ? 'bg-green-500/30' : 'bg-foreground/20'}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className={`text-[10px] font-mono tabular-nums w-8 text-right ${met ? 'text-green-400' : 'text-muted-foreground'}`}>{h.completed}/{h.goal}</span>
                     </div>
-                    <span className="text-[10px] font-mono tabular-nums text-muted-foreground w-8 text-right">{h.completed}/7</span>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </WidgetCard>
 

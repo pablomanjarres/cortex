@@ -143,13 +143,20 @@ export function SocialPage() {
   // Auto-sync birthdays to Calendar.app
   const syncedRef = useRef(false)
   useEffect(() => {
-    if (syncedRef.current || !window.electronAPI?.calendar?.syncBirthdays) return
+    if (syncedRef.current) return
     syncedRef.current = true
     const birthdays = contacts
       .filter((c) => c.birthday)
       .map((c) => ({ name: c.name, birthday: c.birthday }))
-    if (birthdays.length > 0) {
+    if (birthdays.length === 0) return
+    if (window.electronAPI?.calendar?.syncBirthdays) {
       window.electronAPI.calendar.syncBirthdays(birthdays)
+    } else {
+      fetch('/api/calendar/sync-birthdays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(birthdays),
+      }).catch(() => {})
     }
   }, [contacts])
 

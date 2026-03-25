@@ -10,6 +10,7 @@ interface Habit {
   id: string
   name: string
   emoji: string
+  weeklyGoal?: number // days per week needed for 100%, defaults to 7
 }
 
 const defaultHabits: Habit[] = [
@@ -47,9 +48,11 @@ export function HabitsPage() {
   const setHabitHistory = (v: Record<string, Record<string, boolean>> | ((p: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>)) => updateHabitHistory(typeof v === 'function' ? v : () => v)
   const [newName, setNewName] = useState('')
   const [newEmoji, setNewEmoji] = useState('')
+  const [newGoal, setNewGoal] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editEmoji, setEditEmoji] = useState('')
+  const [editGoal, setEditGoal] = useState('')
 
   const weekDates = getCurrentWeekDates()
 
@@ -87,12 +90,14 @@ export function HabitsPage() {
 
   const addHabit = () => {
     if (!newName.trim()) return
+    const goal = parseInt(newGoal) || 7
     setHabits((prev) => [
       ...prev,
-      { id: Date.now().toString(), name: newName.trim(), emoji: newEmoji || '⭐' },
+      { id: Date.now().toString(), name: newName.trim(), emoji: newEmoji || '⭐', weeklyGoal: Math.min(Math.max(goal, 1), 7) },
     ])
     setNewName('')
     setNewEmoji('')
+    setNewGoal('')
   }
 
   const removeHabit = (id: string) => {
@@ -119,13 +124,15 @@ export function HabitsPage() {
     setEditingId(habit.id)
     setEditName(habit.name)
     setEditEmoji(habit.emoji)
+    setEditGoal(String(habit.weeklyGoal ?? 7))
   }
 
   const saveEdit = () => {
     if (!editingId || !editName.trim()) return
+    const goal = parseInt(editGoal) || 7
     setHabits((prev) =>
       prev.map((h) =>
-        h.id === editingId ? { ...h, name: editName.trim(), emoji: editEmoji || h.emoji } : h
+        h.id === editingId ? { ...h, name: editName.trim(), emoji: editEmoji || h.emoji, weeklyGoal: Math.min(Math.max(goal, 1), 7) } : h
       )
     )
     setEditingId(null)
@@ -147,12 +154,17 @@ export function HabitsPage() {
     return streak
   }
 
-  const totalCompleted = weekDates.reduce(
-    (sum, date) => sum + Object.values(habitHistory[date] || {}).filter(Boolean).length,
-    0
-  )
-  const totalPossible = habits.length * 7
-  const weeklyScore = totalPossible > 0 ? Math.round((totalCompleted / totalPossible) * 100) : 0
+  // Weekly score respects per-habit goals (e.g. Train 3/week = 100% at 3)
+  const habitWeekProgress = habits.map((h) => {
+    const goal = h.weeklyGoal ?? 7
+    const done = weekDates.filter(d => habitHistory[d]?.[h.id]).length
+    return { done, goal, pct: Math.min(done / goal, 1) }
+  })
+  const weeklyScore = habits.length > 0
+    ? Math.round(habitWeekProgress.reduce((s, h) => s + h.pct, 0) / habits.length * 100)
+    : 0
+  const totalCompleted = habitWeekProgress.reduce((s, h) => s + h.done, 0)
+  const totalGoals = habitWeekProgress.reduce((s, h) => s + h.goal, 0)
 
   return (
     <PageShell>
@@ -169,8 +181,8 @@ export function HabitsPage() {
                       {day}
                     </th>
                   ))}
-                  <th className="pb-3 text-center text-xs font-medium text-muted-foreground w-12">
-                    <Flame className="mx-auto h-3.5 w-3.5" />
+                  <th className="pb-3 text-center text-xs font-medium text-muted-foreground w-14">
+                    Goal
                   </th>
                   <th className="pb-3 w-16" />
                 </tr>
@@ -192,6 +204,15 @@ export function HabitsPage() {
                             onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
                             className="h-7 bg-input text-sm"
                             autoFocus
+                          />
+                          <Input
+                            value={editGoal}
+                            onChange={(e) => setEditGoal(e.target.value)}
+                            className="h-7 w-12 bg-input px-1 text-center text-sm"
+                            placeholder="7"
+                            type="number"
+                            min={1}
+                            max={7}
                           />
                         </div>
                       ) : (
@@ -218,9 +239,16 @@ export function HabitsPage() {
                       </td>
                     ))}
                     <td className="py-2.5 text-center">
-                      <span className="text-sm font-semibold tabular-nums text-muted-foreground">
-                        {getStreak(habit.id)}
-                      </span>
+                      {(() => {
+                        const goal = habit.weeklyGoal ?? 7
+                        const done = weekDates.filter(d => habitHistory[d]?.[habit.id]).length
+                        const met = done >= goal
+                        return (
+                          <span className={`text-sm font-semibold tabular-nums ${met ? 'text-green-400' : 'text-muted-foreground'}`}>
+                            {done}/{goal}
+                          </span>
+                        )
+                      })()}
                     </td>
                     <td className="py-2.5 text-center">
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -268,6 +296,16 @@ export function HabitsPage() {
               placeholder="New habit..."
               className="h-8 bg-input text-sm flex-1"
             />
+            <Input
+              value={newGoal}
+              onChange={(e) => setNewGoal(e.target.value)}
+              placeholder="7"
+              type="number"
+              min={1}
+              max={7}
+              className="h-8 w-14 bg-input px-1 text-center text-sm"
+              title="Days per week goal"
+            />
             <button
               onClick={addHabit}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-foreground transition-colors hover:bg-secondary/80"
@@ -283,22 +321,28 @@ export function HabitsPage() {
             <div className="flex flex-col items-center gap-3 py-4">
               <span className="text-4xl font-bold tabular-nums">{weeklyScore}%</span>
               <p className="text-xs text-muted-foreground">
-                {totalCompleted} of {totalPossible} habits completed
+                {totalCompleted} of {totalGoals} goal completions
               </p>
             </div>
           </WidgetCard>
 
           <WidgetCard title="Streaks" delay={0.2}>
             <div className="flex flex-col gap-2">
-              {habits.map((habit) => (
-                <div key={habit.id} className="flex items-center justify-between rounded-lg px-2 py-1.5">
-                  <span className="text-sm text-foreground">{habit.emoji} {habit.name}</span>
-                  <Badge variant="secondary" className="tabular-nums">
-                    <Flame className="mr-1 h-3 w-3" />
-                    {getStreak(habit.id)}d
-                  </Badge>
-                </div>
-              ))}
+              {habits.map((habit) => {
+                const goal = habit.weeklyGoal ?? 7
+                return (
+                  <div key={habit.id} className="flex items-center justify-between rounded-lg px-2 py-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-sm text-foreground truncate">{habit.emoji} {habit.name}</span>
+                      {goal < 7 && <span className="text-[9px] text-muted-foreground/50 shrink-0">{goal}x/wk</span>}
+                    </div>
+                    <Badge variant="secondary" className="tabular-nums shrink-0">
+                      <Flame className="mr-1 h-3 w-3" />
+                      {getStreak(habit.id)}d
+                    </Badge>
+                  </div>
+                )
+              })}
             </div>
           </WidgetCard>
 
