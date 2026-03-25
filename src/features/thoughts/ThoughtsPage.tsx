@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
-import { Search, Plus, Trash2, Star, Lightbulb } from 'lucide-react'
+import { Search, Plus, Trash2, Star, Lightbulb, BookOpen } from 'lucide-react'
+import { useStore } from '@/lib/store'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -84,7 +85,15 @@ const DEFAULT_THOUGHTS: Thought[] = [
   { id: 't53', name: 'Use the towel method while working to improve your jawline', subline: '', topic: 'Health', book: '', highValue: false },
 ]
 
-import { useStore } from '@/lib/store'
+// ── Books type (from shared store) ───────────────────────────────────────────
+
+interface Book {
+  id: string
+  title: string
+  author: string
+}
+
+const defaultBooks: Book[] = []
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,8 +111,10 @@ const topicColor: Record<string, string> = {
 
 export function ThoughtsPage() {
   const [thoughts, updateThoughts] = useStore<Thought[]>('cortex-thoughts', DEFAULT_THOUGHTS)
+  const [books] = useStore<Book[]>('cortex-books', defaultBooks)
   const [search, setSearch] = useState('')
   const [filterTopic, setFilterTopic] = useState<string | null>(null)
+  const [filterBook, setFilterBook] = useState<string | null>(null)
   const [filterHV, setFilterHV] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
 
@@ -118,9 +129,13 @@ export function ThoughtsPage() {
 
   const filtered = useMemo(() =>
     thoughts
-      .filter((t) => (!filterTopic || t.topic === filterTopic) && (!filterHV || t.highValue))
+      .filter((t) =>
+        (!filterTopic || t.topic === filterTopic) &&
+        (!filterHV || t.highValue) &&
+        (!filterBook || t.book === filterBook)
+      )
       .filter((t) => !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.subline.toLowerCase().includes(search.toLowerCase())),
-    [thoughts, filterTopic, filterHV, search],
+    [thoughts, filterTopic, filterHV, filterBook, search],
   )
 
   const topicCounts = useMemo(() => {
@@ -128,6 +143,18 @@ export function ThoughtsPage() {
     for (const t of thoughts) { m[t.topic || 'None'] = (m[t.topic || 'None'] || 0) + 1 }
     return m
   }, [thoughts])
+
+  // Books that have thoughts linked to them
+  const bookCounts = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const t of thoughts) { if (t.book) m[t.book] = (m[t.book] || 0) + 1 }
+    return m
+  }, [thoughts])
+
+  const booksWithThoughts = useMemo(() =>
+    Object.entries(bookCounts).sort((a, b) => b[1] - a[1]),
+    [bookCounts]
+  )
 
   return (
     <PageShell>
@@ -181,6 +208,23 @@ export function ThoughtsPage() {
         </button>
       </div>
 
+      {/* Book filter */}
+      {booksWithThoughts.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <BookOpen className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+          <div className="flex gap-1.5 flex-wrap">
+            {booksWithThoughts.map(([book, count]) => (
+              <button key={book} onClick={() => setFilterBook(filterBook === book ? null : book)}
+                className={`cursor-pointer text-[10px] px-2 py-1 rounded-full border transition-all ${
+                  filterBook === book ? 'bg-amber-500/15 text-amber-400 border-amber-400/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'
+                }`}>
+                {book} ({count})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Thoughts List */}
       <WidgetCard title="Ideas" description={`${filtered.length} thoughts`} delay={0.1}>
         <div className="flex flex-col gap-1">
@@ -222,7 +266,15 @@ export function ThoughtsPage() {
                           {ALL_TOPICS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
                         </select></div>
                       <div><label className="text-[10px] text-muted-foreground">Book source</label>
-                        <input value={t.book} onChange={(e) => setField(t.id, { book: e.target.value })} placeholder="Book name..." className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
+                        <select value={t.book} onChange={(e) => setField(t.id, { book: e.target.value })}
+                          className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                          <option value="">No book</option>
+                          {books.map((b) => <option key={b.id} value={b.title}>{b.title}</option>)}
+                          {/* Show current value if not in books list */}
+                          {t.book && !books.some((b) => b.title === t.book) && (
+                            <option value={t.book}>{t.book}</option>
+                          )}
+                        </select></div>
                     </div>
                   </div>
                 </div>
