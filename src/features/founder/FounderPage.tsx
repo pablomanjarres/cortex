@@ -133,6 +133,18 @@ function buildActivityFeed(
   return items
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function FounderPage() {
@@ -144,6 +156,10 @@ export function FounderPage() {
   const [loading, setLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [history, setHistory] = useStore<HistoryEntry[]>('cortex-founder-history', [])
+  const [cachedGithub] = useStore<{ data: GitHubStats; lastUpdated: string } | null>('cortex-cache-github', null)
+  const [cachedLemon] = useStore<{ data: LemonStats; lastUpdated: string } | null>('cortex-cache-lemon', null)
+  const [cachedVercel] = useStore<{ data: VercelStats; lastUpdated: string } | null>('cortex-cache-vercel', null)
+  const [cachedSupabase] = useStore<{ data: SupabaseStats; lastUpdated: string } | null>('cortex-cache-supabase', null)
   const isElectron = !!window.electronAPI?.integrations
 
   const saveSnapshot = (gh: GitHubStats | null, lm: LemonStats | null, vc: VercelStats | null, sb: SupabaseStats | null) => {
@@ -200,6 +216,19 @@ export function FounderPage() {
 
   useEffect(() => { fetchAll() }, [])
 
+  useEffect(() => {
+    if (isElectron) return
+    // Load from cache for browser clients
+    if (cachedGithub?.data) setGithub(cachedGithub.data)
+    if (cachedLemon?.data) setLemon(cachedLemon.data)
+    if (cachedVercel?.data) setVercel(cachedVercel.data)
+    if (cachedSupabase?.data) setSupabase(cachedSupabase.data)
+    const timestamps = [cachedGithub?.lastUpdated, cachedLemon?.lastUpdated, cachedVercel?.lastUpdated, cachedSupabase?.lastUpdated].filter(Boolean)
+    if (timestamps.length > 0) {
+      setLastUpdated(new Date(Math.max(...timestamps.map(t => new Date(t!).getTime()))))
+    }
+  }, [cachedGithub, cachedLemon, cachedVercel, cachedSupabase])
+
   const fmt = (n: number) => n >= 1000 ? `${(n/1000).toFixed(1)}k` : n.toString()
   const fmtMoney = (n: number) => `$${n.toFixed(0)}`
 
@@ -218,7 +247,11 @@ export function FounderPage() {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs text-muted-foreground">
-            {lastUpdated ? `Last updated ${lastUpdated.toLocaleTimeString()}` : 'Not loaded yet'}
+            {lastUpdated
+              ? isElectron
+                ? `Last updated ${lastUpdated.toLocaleTimeString()}`
+                : `Cached ${timeAgo(lastUpdated.toISOString())}`
+              : !isElectron && !cachedGithub ? 'No cached data — open desktop app first' : 'Not loaded yet'}
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={fetchAll} disabled={loading || !isElectron}>
@@ -235,13 +268,15 @@ export function FounderPage() {
         </div>
       )}
 
-      {!isElectron ? (
+      {!isElectron && !github && !lemon && !vercel && !supabase && (
         <WidgetCard title="CONNECT" delay={0}>
           <p className="text-sm text-muted-foreground py-6 text-center">
-            Open in the desktop app and add API keys in Settings to see real metrics.
+            No cached data available. Open the desktop app to fetch metrics.
           </p>
         </WidgetCard>
-      ) : (
+      )}
+
+      {(github || lemon || vercel || supabase || history.length > 0) && (
         <>
           {/* Row 1: Top-level KPIs */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

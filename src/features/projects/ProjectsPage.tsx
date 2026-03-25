@@ -81,6 +81,16 @@ function getGitHubUrl(remote: string): string | null {
   return null
 }
 
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
 function daysAgo(dateStr: string): string {
   const d = new Date(dateStr)
   const now = new Date()
@@ -94,6 +104,7 @@ function daysAgo(dateStr: string): string {
 export function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [meta] = useStore<Record<string, ProjectMeta>>('cortex-project-meta', {})
+  const [cachedProjects] = useStore<{ data: ProjectInfo[]; lastUpdated: string } | null>('cortex-cache-projects', null)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<ProjectType | null>(null)
@@ -115,6 +126,11 @@ export function ProjectsPage() {
   }
 
   useEffect(() => { fetchProjects() }, [])
+
+  useEffect(() => {
+    if (isElectron || !cachedProjects?.data) return
+    setProjects(cachedProjects.data)
+  }, [cachedProjects])
 
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {
@@ -160,7 +176,7 @@ export function ProjectsPage() {
       {/* Header stats */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <p className="text-xs text-muted-foreground">{projects.length} projects</p>
+          <p className="text-xs text-muted-foreground">{projects.length} projects{!isElectron && cachedProjects?.lastUpdated ? ` · cached ${timeAgo(cachedProjects.lastUpdated)}` : ''}</p>
           {activeCount > 0 && <p className="text-xs text-green-400">{activeCount} active</p>}
           {loginCount > 0 && <p className="text-xs text-blue-400"><Power className="inline h-3 w-3 -mt-px mr-0.5" />{loginCount} on login</p>}
           {alwaysOnCount > 0 && <p className="text-xs text-orange-400"><Zap className="inline h-3 w-3 -mt-px mr-0.5" />{alwaysOnCount} always on</p>}
@@ -171,10 +187,10 @@ export function ProjectsPage() {
         </Button>
       </div>
 
-      {!isElectron ? (
+      {!isElectron && projects.length === 0 ? (
         <WidgetCard title="PROJECTS" delay={0}>
           <p className="text-sm text-muted-foreground py-6 text-center">
-            Open in the desktop app to scan your Projects directory.
+            No cached data. Open the desktop app to scan your Projects directory.
           </p>
         </WidgetCard>
       ) : (
