@@ -73,6 +73,7 @@ const DEFAULT_CONTACTS: Contact[] = [
 ]
 
 import { useStore } from '@/lib/store'
+import { syncBirthdayToCalendar, reconcileBirthdays, detectExternalChanges } from '@/lib/calendar-sync'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -140,33 +141,56 @@ export function SocialPage() {
     }
   }, [expanded])
 
-  // Auto-sync birthdays to Calendar.app
-  const syncedRef = useRef(false)
+  // Bidirectional calendar sync for birthdays
+  const reconcileRef = useRef(false)
   useEffect(() => {
-    if (syncedRef.current) return
-    syncedRef.current = true
-    const birthdays = contacts
-      .filter((c) => c.birthday)
-      .map((c) => ({ name: c.name, birthday: c.birthday }))
-    if (birthdays.length === 0) return
-    if (window.electronAPI?.calendar?.syncBirthdays) {
-      window.electronAPI.calendar.syncBirthdays(birthdays)
-    } else {
-      fetch('/api/calendar/sync-birthdays', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(birthdays),
-      }).catch(() => {})
+    if (!reconcileRef.current) {
+      reconcileRef.current = true
+      reconcileBirthdays(contacts)
     }
+  }, [])
+
+  const prevContactsRef = useRef<Contact[] | null>(null)
+  useEffect(() => {
+    const prev = prevContactsRef.current
+    if (prev) {
+      for (const c of contacts) {
+        const old = prev.find((p) => p.id === c.id)
+        if (!old) continue
+        if (old.birthday !== c.birthday || old.name !== c.name) {
+          syncBirthdayToCalendar(c, 'upsert')
+        }
+      }
+    }
+    prevContactsRef.current = contacts
   }, [contacts])
+
+  // Pull external calendar changes every 5 min
+  useEffect(() => {
+    const poll = async () => {
+      const changes = await detectExternalChanges()
+      for (const ch of changes) {
+        if (ch.cortexType === 'birthday' && ch.field === 'birthday' && ch.newValue) {
+          update((p) => p.map((c) => c.id === ch.cortexId ? { ...c, birthday: ch.newValue! } : c))
+        }
+      }
+    }
+    const interval = setInterval(poll, 5 * 60 * 1000)
+    const timeout = setTimeout(poll, 5000)
+    return () => { clearInterval(interval); clearTimeout(timeout) }
+  }, [])
 
   const update = updateContacts
 
   const setField = (id: string, f: Partial<Contact>) => {
-    if ('birthday' in f) syncedRef.current = false // re-sync on birthday change
     update((p) => p.map((c) => c.id === id ? { ...c, ...f } : c))
   }
-  const deleteContact = (id: string) => { update((p) => p.filter((c) => c.id !== id)); if (expanded === id) setExpanded(null) }
+  const deleteContact = (id: string) => {
+    const c = contacts.find((x) => x.id === id)
+    if (c) syncBirthdayToCalendar(c, 'delete')
+    update((p) => p.filter((x) => x.id !== id))
+    if (expanded === id) setExpanded(null)
+  }
   const addContact = () => {
     const c: Contact = { id: `c-${Date.now()}`, name: 'New Contact', title: '', nickname: '', categories: [], fields: [], followUp: false, birthday: '', phone: '', lastContact: '', interval: 0, email: '', socialProfiles: '', address: '' }
     update((p) => [c, ...p]); setExpanded(c.id)

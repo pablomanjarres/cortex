@@ -5,8 +5,8 @@ import os from 'os'
 import fs from 'fs'
 import zlib from 'zlib'
 import { fileURLToPath } from 'url'
-import { getTodayEvents, syncBirthdays } from './calendar.js'
-import type { BirthdayEntry } from './calendar.js'
+import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
+import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { getGitHubStats } from './integrations/github.js'
 import { getLemonStats } from './integrations/lemon.js'
@@ -325,6 +325,52 @@ function startWebServer() {
       return
     }
 
+    if (url.pathname === '/api/calendar/create' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(body)
+          const result = await createCalendarEvent(payload)
+          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+        } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      })
+      return
+    }
+
+    if (url.pathname?.startsWith('/api/calendar/update/') && req.method === 'POST') {
+      const eventId = decodeURIComponent(url.pathname.slice('/api/calendar/update/'.length))
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', async () => {
+        try {
+          const payload = JSON.parse(body)
+          const result = await updateCalendarEvent(eventId, payload)
+          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+        } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      })
+      return
+    }
+
+    if (url.pathname?.startsWith('/api/calendar/delete/') && req.method === 'POST') {
+      const eventId = decodeURIComponent(url.pathname.slice('/api/calendar/delete/'.length))
+      try {
+        const result = await deleteCalendarEvent(eventId)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/calendar/events' && req.method === 'GET') {
+      try {
+        const start = url.searchParams.get('start') || new Date().toISOString().slice(0, 10)
+        const end = url.searchParams.get('end') || new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10)
+        const events = await getEventsInRange(start, end)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(events))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
     if (url.pathname === '/api/integrations/github' && req.method === 'GET') {
       try {
         const token = getKey('github-token')
@@ -420,6 +466,11 @@ ipcMain.handle('calendar:syncBirthdays', async (_event, birthdays: BirthdayEntry
   const calEmail = getKey('calendar-email') || undefined
   return syncBirthdays(birthdays, calEmail)
 })
+ipcMain.handle('calendar:createEvent', async (_event, payload: CreateEventPayload) => createCalendarEvent(payload))
+ipcMain.handle('calendar:updateEvent', async (_event, eventId: string, payload: Partial<CreateEventPayload>) => updateCalendarEvent(eventId, payload))
+ipcMain.handle('calendar:deleteEvent', async (_event, eventId: string) => deleteCalendarEvent(eventId))
+ipcMain.handle('calendar:getEventsInRange', async (_event, start: string, end: string) => getEventsInRange(start, end))
+ipcMain.handle('calendar:getEvent', async (_event, eventId: string) => getCalendarEvent(eventId))
 
 // ─── IPC: Tray stats ──────────────────────────────────────
 

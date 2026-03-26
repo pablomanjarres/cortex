@@ -16,13 +16,36 @@ interface ProjectInfo {
 }
 
 interface CalendarEvent {
+  id?: string
   title: string
   startTime: string
   endTime: string
-  startISO: string
-  endISO: string
+  startISO?: string
+  endISO?: string
   calendar: string
   isAllDay: boolean
+}
+
+interface CalendarEventFull {
+  id: string
+  title: string
+  startDate: string
+  endDate: string
+  calendar: string
+  isAllDay: boolean
+  notes: string
+  lastModified: string
+  recurrence: string
+}
+
+interface CreateEventPayload {
+  title: string
+  startDate: string
+  endDate?: string
+  isAllDay: boolean
+  calendar?: string
+  notes?: string
+  recurrence?: string
 }
 
 interface ElectronAPI {
@@ -30,6 +53,11 @@ interface ElectronAPI {
   calendar: {
     getTodayEvents: () => Promise<CalendarEvent[]>
     syncBirthdays: (birthdays: { name: string; birthday: string }[]) => Promise<{ created: number; skipped: number }>
+    createEvent: (payload: CreateEventPayload) => Promise<{ id: string; success: boolean }>
+    updateEvent: (eventId: string, payload: Partial<CreateEventPayload>) => Promise<{ success: boolean }>
+    deleteEvent: (eventId: string) => Promise<{ success: boolean }>
+    getEventsInRange: (start: string, end: string) => Promise<CalendarEventFull[]>
+    getEvent: (eventId: string) => Promise<CalendarEventFull | null>
   }
   tray: {
     updateStats: (stats: { tasks: string; habits: string; score: string }) => void
