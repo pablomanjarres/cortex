@@ -9,5 +9,5 @@
     "esModuleInterop": true,
     "skipLibCheck": true
   },
-  "include": ["main.ts", "calendar.ts"]
+  "include": ["main.ts", "calendar.ts", "crypto.ts"]
 }
