@@ -73,7 +73,7 @@ const DEFAULT_CONTACTS: Contact[] = [
 ]
 
 import { useStore } from '@/lib/store'
-import { syncBirthdayToCalendar, reconcileBirthdays, detectExternalChanges } from '@/lib/calendar-sync'
+import { syncBirthdayToCalendar } from '@/lib/calendar-sync'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -141,15 +141,7 @@ export function SocialPage() {
     }
   }, [expanded])
 
-  // Bidirectional calendar sync for birthdays
-  const reconcileRef = useRef(false)
-  useEffect(() => {
-    if (!reconcileRef.current) {
-      reconcileRef.current = true
-      reconcileBirthdays(contacts)
-    }
-  }, [])
-
+  // Calendar sync: push inline birthday/name edits
   const prevContactsRef = useRef<Contact[] | null>(null)
   useEffect(() => {
     const prev = prevContactsRef.current
@@ -164,21 +156,6 @@ export function SocialPage() {
     }
     prevContactsRef.current = contacts
   }, [contacts])
-
-  // Pull external calendar changes every 5 min
-  useEffect(() => {
-    const poll = async () => {
-      const changes = await detectExternalChanges()
-      for (const ch of changes) {
-        if (ch.cortexType === 'birthday' && ch.field === 'birthday' && ch.newValue) {
-          update((p) => p.map((c) => c.id === ch.cortexId ? { ...c, birthday: ch.newValue! } : c))
-        }
-      }
-    }
-    const interval = setInterval(poll, 5 * 60 * 1000)
-    const timeout = setTimeout(poll, 5000)
-    return () => { clearInterval(interval); clearTimeout(timeout) }
-  }, [])
 
   const update = updateContacts
 

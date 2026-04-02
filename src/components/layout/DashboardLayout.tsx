@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar, MobileSidebar } from './Sidebar'
 import { Header } from './Header'
+import { useCalendarSync } from '@/lib/use-calendar-sync'
 
 export function DashboardLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  useCalendarSync()
 
   return (
     <div className="flex min-h-screen">
