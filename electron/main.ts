@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
 import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
+import { initEncryption, encrypt, encryptAndWrite, readAndDecrypt, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
 import { getGitHubStats } from './integrations/github.js'
 import { getLemonStats } from './integrations/lemon.js'
 import { getVercelStats } from './integrations/vercel.js'
@@ -189,7 +190,7 @@ function startWebServer() {
       try {
         if (fs.existsSync(file)) {
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
-          res.end(fs.readFileSync(file, 'utf-8'))
+          res.end(readAndDecrypt(file))
         } else {
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
           res.end('null')
@@ -206,12 +207,10 @@ function startWebServer() {
           const { key, data } = JSON.parse(body)
           if (!key) { res.writeHead(400); res.end('Missing key'); return }
           const file = path.join(dataDir, `${key}.json`)
-          const tmpFile = path.join(dataDir, `${key}.json.tmp`)
           if (fs.existsSync(file)) {
             fs.copyFileSync(file, path.join(backupDir, `${key}.bak.json`))
           }
-          fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8')
-          fs.renameSync(tmpFile, file)
+          encryptAndWrite(file, JSON.stringify(data, null, 2))
           res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
           res.end('true')
         } catch { res.writeHead(500); res.end('Write error') }
@@ -240,7 +239,7 @@ function startWebServer() {
           if (!taskName) { res.writeHead(400); res.end('Missing taskName'); return }
           const automFile = path.join(dataDir, 'cortex-automations.json')
           let data: { runs: any[] } = { runs: [] }
-          try { if (fs.existsSync(automFile)) data = JSON.parse(fs.readFileSync(automFile, 'utf-8')) } catch { /* fresh */ }
+          try { if (fs.existsSync(automFile)) data = JSON.parse(readAndDecrypt(automFile)) } catch { /* fresh */ }
           const run = {
             id: `run-${Date.now()}`,
             taskName,
@@ -251,7 +250,7 @@ function startWebServer() {
           }
           data.runs.unshift(run)
           data.runs = data.runs.slice(0, 100) // keep last 100
-          fs.writeFileSync(automFile, JSON.stringify(data, null, 2), 'utf-8')
+          encryptAndWrite(automFile, JSON.stringify(data, null, 2))
 
           // Send Pushover notification for all runs
           try {
@@ -284,12 +283,12 @@ function startWebServer() {
       try {
         const automFile = path.join(dataDir, 'cortex-automations.json')
         if (fs.existsSync(automFile)) {
-          const data = JSON.parse(fs.readFileSync(automFile, 'utf-8'))
+          const data = JSON.parse(readAndDecrypt(automFile))
           const run = data.runs.find((r: any) => r.id === runId)
           if (run) {
             run.status = action === 'approve' ? 'success' : 'error'
             run.approved = action === 'approve'
-            fs.writeFileSync(automFile, JSON.stringify(data, null, 2), 'utf-8')
+            encryptAndWrite(automFile, JSON.stringify(data, null, 2))
             res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
             res.end(JSON.stringify({ ok: true, action }))
             return
@@ -494,7 +493,7 @@ ipcMain.handle('github:getStats', async () => {
   if (!token) return { error: 'No GitHub token saved' }
   try {
     const stats = await getGitHubStats(token)
-    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-github.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-github.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
     return stats
   } catch (e: any) { return { error: `GitHub: ${e.message}` } }
 })
@@ -508,7 +507,7 @@ ipcMain.handle('lemon:getStats', async () => {
   if (!storeId) return { error: 'No Lemon Store ID saved' }
   try {
     const stats = await getLemonStats(apiKey, storeId)
-    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-lemon.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-lemon.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
     return stats
   } catch (e: any) { return { error: `Lemon: ${e.message}` } }
 })
@@ -520,7 +519,7 @@ ipcMain.handle('vercel:getStats', async () => {
   if (!token) return null
   try {
     const stats = await getVercelStats(token)
-    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-vercel.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-vercel.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
     return stats
   } catch (e) { console.error('Vercel error:', e); return null }
 })
@@ -533,7 +532,7 @@ ipcMain.handle('supabase:getStats', async () => {
   if (!url || !key) return null
   try {
     const stats = await getSupabaseStats(url, key)
-    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-supabase.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-supabase.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
     return stats
   } catch (e) { console.error('Supabase error:', e); return null }
 })
@@ -704,7 +703,7 @@ ipcMain.handle('projects:scan', async () => {
       } catch { /* skip broken symlinks */ }
     }
     const sorted = projects.sort((a, b) => a.name.localeCompare(b.name))
-    try { fs.writeFileSync(path.join(dataDir, 'cortex-cache-projects.json'), JSON.stringify({ data: sorted, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-projects.json'), JSON.stringify({ data: sorted, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
     return sorted
   } catch (e) { console.error('[Cortex] projects:scan error:', e); return [] }
 })
@@ -724,14 +723,14 @@ if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
 ipcMain.handle('data:read', async (_event, key: string) => {
   const file = path.join(dataDir, `${key}.json`)
   try {
-    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf-8'))
+    if (fs.existsSync(file)) return JSON.parse(readAndDecrypt(file))
   } catch (e) {
     console.warn(`[Cortex] data:read: main file corrupt for "${key}", falling back to backup...`)
     // Fallback 1: try the .bak.json
     try {
       const bakFile = path.join(backupDir, `${key}.bak.json`)
       if (fs.existsSync(bakFile)) {
-        const data = JSON.parse(fs.readFileSync(bakFile, 'utf-8'))
+        const data = JSON.parse(readAndDecrypt(bakFile))
         console.warn(`[Cortex] data:read: recovered "${key}" from .bak`)
         return data
       }
@@ -743,7 +742,7 @@ ipcMain.handle('data:read', async (_event, key: string) => {
         const versions = fs.readdirSync(versionsDir).sort().reverse()
         for (const v of versions) {
           try {
-            const data = JSON.parse(fs.readFileSync(path.join(versionsDir, v), 'utf-8'))
+            const data = JSON.parse(readAndDecrypt(path.join(versionsDir, v)))
             console.warn(`[Cortex] data:read: recovered "${key}" from version ${v}`)
             return data
           } catch { /* try next version */ }
@@ -758,7 +757,6 @@ ipcMain.handle('data:read', async (_event, key: string) => {
 
 ipcMain.handle('data:write', async (_event, key: string, data: unknown) => {
   const file = path.join(dataDir, `${key}.json`)
-  const tmpFile = path.join(dataDir, `${key}.json.tmp`)
   try {
     // Validate serialization before writing
     let serialized: string
@@ -773,7 +771,7 @@ ipcMain.handle('data:write', async (_event, key: string, data: unknown) => {
       console.warn(`[Cortex] data:write: "${key}" is ${(serialized.length / 1024 / 1024).toFixed(1)}MB — consider cleanup`)
     }
 
-    // Keep .bak + versioned backup of previous file
+    // Keep .bak + versioned backup of previous file (copies encrypted bytes as-is)
     if (fs.existsSync(file)) {
       fs.copyFileSync(file, path.join(backupDir, `${key}.bak.json`))
       // Versioned backup: keep last 10
@@ -788,9 +786,8 @@ ipcMain.handle('data:write', async (_event, key: string, data: unknown) => {
       }
     }
 
-    // Atomic write: .tmp → rename
-    fs.writeFileSync(tmpFile, serialized, 'utf-8')
-    fs.renameSync(tmpFile, file)
+    // Encrypt + atomic write
+    encryptAndWrite(file, serialized)
     return true
   } catch (e) { console.error(`data:write error for ${key}:`, e); return false }
 })
@@ -811,7 +808,7 @@ ipcMain.handle('data:exportAll', async () => {
     }
     for (const f of files) {
       const key = f.replace('.json', '')
-      bundle[key] = JSON.parse(fs.readFileSync(path.join(dataDir, f), 'utf-8'))
+      bundle[key] = JSON.parse(readAndDecrypt(path.join(dataDir, f)))
     }
     return JSON.stringify(bundle, null, 2)
   } catch (e) { console.error('data:exportAll error:', e); return null }
@@ -827,11 +824,11 @@ ipcMain.handle('data:importAll', async (_event, json: string) => {
     for (const f of fs.readdirSync(dataDir).filter(f => f.endsWith('.json'))) {
       fs.copyFileSync(path.join(dataDir, f), path.join(importBackupDir, f))
     }
-    // Write imported data
+    // Write imported data (encrypted)
     let count = 0
     for (const [key, value] of Object.entries(bundle)) {
       if (key === '_meta') continue
-      fs.writeFileSync(path.join(dataDir, `${key}.json`), JSON.stringify(value, null, 2), 'utf-8')
+      encryptAndWrite(path.join(dataDir, `${key}.json`), JSON.stringify(value, null, 2))
       count++
     }
     return { success: true, count }
@@ -891,12 +888,19 @@ function autoExport() {
     }
     for (const f of files) {
       const key = f.replace('.json', '')
-      try { bundle[key] = JSON.parse(fs.readFileSync(path.join(dataDir, f), 'utf-8')) } catch { /* skip corrupted */ }
+      try { bundle[key] = JSON.parse(readAndDecrypt(path.join(dataDir, f))) } catch { /* skip corrupted */ }
     }
     const json = JSON.stringify(bundle, null, 2)
-    fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json'), json, 'utf-8')
-    // Also save compressed version
-    try { fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json.gz'), zlib.gzipSync(json)) } catch { /* compression optional */ }
+    encryptAndWrite(path.join(backupDir, 'cortex-backup-latest.json'), json)
+    // Also save compressed encrypted version
+    try {
+      if (isEncryptionEnabled()) {
+        const encrypted = encrypt(json)
+        fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json.gz'), zlib.gzipSync(encrypted))
+      } else {
+        fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json.gz'), zlib.gzipSync(json))
+      }
+    } catch { /* compression optional */ }
     console.log(`[Cortex] Auto-export: ${files.length} stores saved to data/backups/`)
   } catch (e) { console.error('[Cortex] Auto-export failed:', e) }
 }
@@ -906,6 +910,15 @@ let autoExportInterval: ReturnType<typeof setInterval> | null = null
 // ─── App lifecycle ─────────────────────────────────────────
 
 app.on('ready', () => {
+  // Initialize at-rest encryption before any data access
+  const encOk = initEncryption()
+  if (!encOk) {
+    console.warn('[Cortex] safeStorage unavailable — data will NOT be encrypted at rest')
+  } else {
+    migrateToEncrypted(dataDir, backupDir)
+    console.log('[Cortex] Data encryption active')
+  }
+
   createWindow()
   createTray()
   startWebServer() // Auto-start web server for iPhone/browser access
