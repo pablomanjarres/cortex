@@ -10,6 +10,9 @@ import {
   PiggyBank,
   Plus,
   Trash2,
+  Check,
+  Circle,
+  Wallet,
   CreditCard,
   Columns2,
   Search,
@@ -42,6 +45,7 @@ interface FinanceItem {
   name: string
   type: ItemType
   months: number[]
+  paid?: boolean[]
 }
 
 interface FinanceData {
@@ -94,7 +98,6 @@ const fmtCOP = (n: number) => {
 const fmtFull = (n: number) => `$${n.toLocaleString('es-CO')}`
 const typeColor: Record<ItemType, string> = { Income: 'bg-green-500/15 text-green-400', Expense: 'bg-red-500/15 text-red-400', Subscription: 'bg-blue-500/15 text-blue-400' }
 const CHART_COLORS = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#fb923c', '#2dd4bf', '#818cf8', '#e879f9']
-const currentMonth = new Date().getMonth()
 
 const fmtCell = (n: number) => `$${n.toLocaleString('es-CO')}`
 
@@ -127,8 +130,9 @@ function CurrencyCell({ value, onChange, className }: { value: number; onChange:
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function FinancePage() {
+  const currentMonth = new Date().getMonth()
   const [data, updateData] = useStore<FinanceData>('cortex-finances', DEFAULT_DATA)
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const [selectedMonth, setSelectedMonth] = useState(() => currentMonth)
   const [filterType, setFilterType] = useState<ItemType | null>(null)
   const [compact, setCompact] = useState(window.innerWidth < 768)
   const [searchTerm, setSearchTerm] = useState('')
@@ -156,10 +160,18 @@ export function FinancePage() {
     }) }))
 
   const addItem = (type: ItemType) =>
-    updateData((prev) => ({ ...prev, items: [...prev.items, { id: `fin-${Date.now()}`, name: 'New item', type, months: Array(12).fill(0) }] }))
+    updateData((prev) => ({ ...prev, items: [...prev.items, { id: `fin-${Date.now()}`, name: 'New item', type, months: Array(12).fill(0), paid: Array(12).fill(false) }] }))
 
   const deleteItem = (id: string) =>
     updateData((prev) => ({ ...prev, items: prev.items.filter((i) => i.id !== id) }))
+
+  const togglePaid = (id: string, monthIdx: number) =>
+    updateData((prev) => ({ ...prev, items: prev.items.map((i) => {
+      if (i.id !== id) return i
+      const paid = [...(i.paid || Array(12).fill(false))]
+      paid[monthIdx] = !paid[monthIdx]
+      return { ...i, paid }
+    }) }))
 
   const monthlyTotals = useMemo(() =>
     MONTHS.map((_, i) => {
@@ -171,6 +183,16 @@ export function FinancePage() {
   const cur = monthlyTotals[selectedMonth]
   const savingsRate = cur.income > 0 ? (cur.savings / cur.income) * 100 : 0
   const yearTotal = useMemo(() => ({ income: monthlyTotals.reduce((s, m) => s + m.income, 0), expenses: monthlyTotals.reduce((s, m) => s + m.expenses, 0) }), [monthlyTotals])
+
+  const balance = useMemo(() => {
+    const mi = selectedMonth
+    const income = data.items.filter(it => it.type === 'Income').reduce((s, it) => s + it.months[mi], 0)
+    const payable = data.items.filter(it => it.type !== 'Income' && it.months[mi] > 0)
+    const paid = payable.filter(it => it.paid?.[mi] ?? false)
+    const paidTotal = paid.reduce((s, it) => s + it.months[mi], 0)
+    const unpaidTotal = payable.filter(it => !(it.paid?.[mi] ?? false)).reduce((s, it) => s + it.months[mi], 0)
+    return { current: income - paidTotal, pending: unpaidTotal, paidCount: paid.length, totalPayable: payable.length }
+  }, [data.items, selectedMonth])
 
   const mask = (v: string) => hideIncome ? '•••' : v
 
@@ -257,6 +279,25 @@ export function FinancePage() {
             )}
           </div>
         ))}
+      </div>
+
+      {/* Balance */}
+      <div className="liquid-glass flex items-center gap-4 rounded-xl border border-border px-5 py-3">
+        <Wallet className={`h-5 w-5 shrink-0 ${hideIncome ? 'text-muted-foreground' : 'text-emerald-400'}`} />
+        <div className="flex-1">
+          <p className={`text-base font-bold tabular-nums ${hideIncome ? 'text-muted-foreground' : 'text-emerald-400'}`}>{mask(fmtFull(balance.current))}</p>
+          <p className="text-[10px] text-muted-foreground">Account Balance · {MONTHS[selectedMonth]}</p>
+        </div>
+        {balance.pending > 0 && (
+          <div className="text-right">
+            <p className="text-sm font-bold tabular-nums text-amber-400">{fmtFull(balance.pending)}</p>
+            <p className="text-[10px] text-muted-foreground">Pending</p>
+          </div>
+        )}
+        <div className="text-right">
+          <p className="text-sm tabular-nums font-medium">{balance.paidCount}/{balance.totalPayable}</p>
+          <p className="text-[10px] text-muted-foreground">Paid</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -397,10 +438,28 @@ export function FinancePage() {
                 return [
                   ...group.items.map((item, idx) => {
                     const total = item.months.reduce((a, b) => a + b, 0)
+                    const isPaidSelected = item.type !== 'Income' && item.months[selectedMonth] > 0 && (item.paid?.[selectedMonth] ?? false)
                     return (
-                      <tr key={item.id} className={`border-b border-border/20 hover:bg-secondary/30 group ${rowBorderColor[item.type]} ${idx % 2 === 1 ? 'bg-secondary/10' : ''}`}>
+                      <tr key={item.id} className={`border-b border-border/20 hover:bg-secondary/30 group ${rowBorderColor[item.type]} ${idx % 2 === 1 ? 'bg-secondary/10' : ''} ${isPaidSelected ? 'opacity-60' : ''}`}>
                         <td className="px-5 py-2 sticky left-0 bg-inherit z-10">
-                          <input value={item.name} onChange={(e) => setField(item.id, { name: e.target.value })} className="bg-transparent outline-none font-medium w-full" />
+                          <div className="flex items-center gap-1.5">
+                            {item.type !== 'Income' ? (
+                              item.months[selectedMonth] > 0 ? (
+                                <button onClick={() => togglePaid(item.id, selectedMonth)} className="cursor-pointer shrink-0">
+                                  {(item.paid?.[selectedMonth]) ? (
+                                    <div className="h-3.5 w-3.5 rounded-full bg-green-500 flex items-center justify-center">
+                                      <Check className="h-2 w-2 text-white" strokeWidth={3} />
+                                    </div>
+                                  ) : (
+                                    <Circle className="h-3.5 w-3.5 text-muted-foreground/30 hover:text-muted-foreground/50 transition-colors" />
+                                  )}
+                                </button>
+                              ) : (
+                                <span className="w-3.5 shrink-0" />
+                              )
+                            ) : null}
+                            <input value={item.name} onChange={(e) => setField(item.id, { name: e.target.value })} className="bg-transparent outline-none font-medium w-full" />
+                          </div>
                         </td>
                         <td className="py-2">
                           <select value={item.type} onChange={(e) => setField(item.id, { type: e.target.value as ItemType })}
@@ -408,23 +467,26 @@ export function FinancePage() {
                             <option value="Income">Income</option><option value="Expense">Expense</option><option value="Subscription">Sub</option>
                           </select>
                         </td>
-                        {!compact && item.months.map((val, mi) => (
-                          <td key={mi} className={`py-2 text-right ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>
-                            {hideIncome && item.type === 'Income' ? (
-                              <span className="text-muted-foreground/30 tabular-nums w-[70px] inline-block">•••</span>
-                            ) : (
-                              <CurrencyCell value={val} onChange={(v) => setAmount(item.id, mi, v)}
-                                className={item.type === 'Income' ? 'text-green-400/80' : 'text-muted-foreground'} />
-                            )}
-                          </td>
-                        ))}
+                        {!compact && item.months.map((val, mi) => {
+                          const cellPaid = item.type !== 'Income' && val > 0 && (item.paid?.[mi] ?? false)
+                          return (
+                            <td key={mi} className={`py-2 text-right ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''} ${cellPaid ? 'bg-green-500/10' : ''}`}>
+                              {hideIncome && item.type === 'Income' ? (
+                                <span className="text-muted-foreground/30 tabular-nums w-[70px] inline-block">•••</span>
+                              ) : (
+                                <CurrencyCell value={val} onChange={(v) => setAmount(item.id, mi, v)}
+                                  className={item.type === 'Income' ? 'text-green-400/80' : cellPaid ? 'text-green-400/70' : 'text-muted-foreground'} />
+                              )}
+                            </td>
+                          )
+                        })}
                         {compact && (
-                          <td className="py-2 text-right bg-foreground/[0.03]">
+                          <td className={`py-2 text-right ${isPaidSelected ? 'bg-green-500/10' : 'bg-foreground/[0.03]'}`}>
                             {hideIncome && item.type === 'Income' ? (
                               <span className="text-muted-foreground/30 tabular-nums w-[70px] inline-block">•••</span>
                             ) : (
                               <CurrencyCell value={item.months[selectedMonth]} onChange={(v) => setAmount(item.id, selectedMonth, v)}
-                                className={item.type === 'Income' ? 'text-green-400/80' : 'text-muted-foreground'} />
+                                className={item.type === 'Income' ? 'text-green-400/80' : isPaidSelected ? 'text-green-400/70' : 'text-muted-foreground'} />
                             )}
                           </td>
                         )}
