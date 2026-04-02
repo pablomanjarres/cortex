@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useStore } from '@/lib/store'
+import { localDate } from '@/lib/date-utils'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
@@ -34,7 +35,7 @@ function getCurrentWeekDates(): string[] {
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
-    dates.push(d.toISOString().slice(0, 10))
+    dates.push(localDate(d))
   }
   return dates
 }
@@ -144,7 +145,7 @@ export function HabitsPage() {
     for (let i = 0; i < 365; i++) {
       const d = new Date(today)
       d.setDate(today.getDate() - i)
-      const dateStr = d.toISOString().slice(0, 10)
+      const dateStr = localDate(d)
       if (habitHistory[dateStr]?.[habitId]) {
         streak++
       } else {
