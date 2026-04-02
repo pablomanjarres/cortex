@@ -4,6 +4,7 @@ import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Button } from '@/components/ui/button'
 import { useStore } from '@/lib/store'
+import { localDate } from '@/lib/date-utils'
 import {
   GitCommit,
   GitPullRequest,
@@ -55,7 +56,7 @@ function getWoWChange(history: HistoryEntry[], field: keyof Omit<HistoryEntry, '
   const today = history[history.length - 1]
   const sevenDaysAgo = new Date(today.date)
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-  const target = sevenDaysAgo.toISOString().slice(0, 10)
+  const target = localDate(sevenDaysAgo)
   const past = history.find((h) => h.date === target)
   if (!past || past[field] === 0) return null
   return ((today[field] - past[field]) / past[field]) * 100
@@ -163,7 +164,7 @@ export function FounderPage() {
   const isElectron = !!window.electronAPI?.integrations
 
   const saveSnapshot = (gh: GitHubStats | null, lm: LemonStats | null, vc: VercelStats | null, sb: SupabaseStats | null) => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDate()
     const entry: HistoryEntry = {
       date: today,
       commits: gh?.commitsToday ?? 0,
@@ -179,7 +180,7 @@ export function FounderPage() {
       // Keep last 90 days
       const cutoff = new Date()
       cutoff.setDate(cutoff.getDate() - 90)
-      const cutoffStr = cutoff.toISOString().slice(0, 10)
+      const cutoffStr = localDate(cutoff)
       return combined.filter((h) => h.date >= cutoffStr)
     })
   }
@@ -232,6 +233,10 @@ export function FounderPage() {
   const fmtMoney = (n: number) => `$${n.toFixed(0)}`
 
   const last14 = history.slice(-14)
+  const cumulativeCommits = useMemo(() => {
+    let total = 0
+    return last14.map(d => ({ ...d, totalCommits: (total += d.commits) }))
+  }, [last14])
   const wowCommits = getWoWChange(history, 'commits')
   const wowUsers = getWoWChange(history, 'users')
   const wowDeploys = getWoWChange(history, 'deploys')
@@ -521,11 +526,17 @@ export function FounderPage() {
           {/* Row 3: Trend charts — 2x2 grid */}
           {history.length > 1 && (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              {/* Commits */}
-              <WidgetCard title="COMMITS (14D)" description={github?.topRepos.length ? `Across ${github.topRepos.map(r => r.name).join(', ')}` : 'Daily commit count'} delay={0.25}>
+              {/* Commits — cumulative area */}
+              <WidgetCard title="COMMITS (14D)" description={github?.topRepos.length ? `Across ${github.topRepos.map(r => r.name).join(', ')}` : 'Cumulative total'} delay={0.25}>
                 <div className="h-[140px] sm:h-[180px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={last14}>
+                    <AreaChart data={cumulativeCommits}>
+                      <defs>
+                        <linearGradient id="commitsGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.3} />
+                          <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
                       <XAxis
                         dataKey="date"
                         tickFormatter={(d: string) => d.slice(5)}
@@ -538,11 +549,11 @@ export function FounderPage() {
                         tick={{ fontSize: 10, fill: '#888' }}
                         axisLine={false}
                         tickLine={false}
-                        width={30}
+                        width={40}
                       />
                       <Tooltip {...TOOLTIP_STYLE} />
-                      <Bar dataKey="commits" fill="#60a5fa" radius={[3, 3, 0, 0]} />
-                    </BarChart>
+                      <Area type="monotone" dataKey="totalCommits" name="Commits" stroke="#60a5fa" strokeWidth={2} fill="url(#commitsGradient)" dot={{ r: 2, fill: '#60a5fa' }} activeDot={{ r: 4 }} />
+                    </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </WidgetCard>
