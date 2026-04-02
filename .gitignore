@@ -1,27 +1,63 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+dist-ssr/
+dist-electron/
+release/
+build/
+*.tsbuildinfo
+.turbo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Data (local-only, never committed)
+data/
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+._*
+
 # Logs
-logs
 *.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-data
-dist
-dist-ssr
-dist-electron
-release
-*.local
+# Test/Coverage
+coverage/
+*.lcov
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# Private/Local
+.private/
+private/
+.archgraph/
+.project/
+.mcp.json
+
+# Claude Code
+.claude/
+CLAUDE.md
+.agents/
+tasks/
+
+# Misc
+*.code-workspace
+tmp/
+temp/
+*.tmp
