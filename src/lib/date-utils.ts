@@ -1,3 +1,8 @@
+/** Local YYYY-MM-DD (avoids UTC shift from toISOString) */
+export function localDate(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 /** Get the last N days as YYYY-MM-DD strings, ending at `from` (defaults to today) */
 export function getLastNDays(n: number, from?: string): string[] {
   const end = from ? new Date(from + 'T00:00:00') : new Date()
@@ -5,7 +10,7 @@ export function getLastNDays(n: number, from?: string): string[] {
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(end)
     d.setDate(end.getDate() - i)
-    days.push(d.toISOString().slice(0, 10))
+    days.push(localDate(d))
   }
   return days
 }
@@ -20,7 +25,7 @@ export function getWeekDates(isoDate: string): string[] {
   for (let i = 0; i < 7; i++) {
     const wd = new Date(monday)
     wd.setDate(monday.getDate() + i)
-    dates.push(wd.toISOString().slice(0, 10))
+    dates.push(localDate(wd))
   }
   return dates
 }
