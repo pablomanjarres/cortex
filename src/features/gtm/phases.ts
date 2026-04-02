@@ -80,7 +80,7 @@ export const PHASES: PhaseDefinition[] = [
     timeBlocks: [
       { duration: '45 min', task: 'Continue outbound (5 DMs/day instead of 10)' },
       { duration: '45 min', task: 'Talk to users. Ask: What works? What\'s broken? Would you recommend?' },
-      { duration: '45 min', task: 'Create 2 posts/week for X. Use real data from the product.' },
+      { duration: '45 min', task: 'Create 2 posts/week for X. Use real product data.' },
       { duration: '30 min', task: 'LinkedIn post 1x/week. Business angle content.' },
       { duration: '15 min', task: 'Log and review metrics.' },
     ],

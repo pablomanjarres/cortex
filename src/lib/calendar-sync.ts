@@ -65,7 +65,7 @@ interface CourseLike {
 
 const STORE_KEY = 'cortex-calendar-sync'
 const DEFAULT_STATE: CalendarSyncState = { mappings: [], lastPolled: '' }
-const TARGET_CALENDAR = 'user@example.com'
+const TARGET_CALENDAR = import.meta.env.VITE_CALENDAR_TARGET || ''
 
 // ─── Hash ─────────────────────────────────────────────────────────────────────
 

@@ -434,7 +434,7 @@ export function syncBirthdays(birthdays: BirthdayEntry[], calendarEmail?: string
 tell application "Calendar"
   set targetCal to missing value
   try
-    set targetCal to calendar "${(calendarEmail || 'user@example.com').replace(/"/g, '\\"')}"
+    set targetCal to calendar "${(calendarEmail || '').replace(/"/g, '\\"')}"
   end try
   if targetCal is missing value then
     set calNames to name of every calendar

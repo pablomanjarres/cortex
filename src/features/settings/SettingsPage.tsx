@@ -15,7 +15,7 @@ interface KeyField {
 const keyFields: KeyField[] = [
   { service: 'github-token', label: 'GitHub Token', placeholder: 'ghp_...', description: 'Personal access token with repos scope' },
   { service: 'vercel-token', label: 'Vercel Token', placeholder: 'Bearer token from account settings', description: 'Account → Settings → Tokens' },
-  { service: 'supabase-url', label: 'Supabase URL', placeholder: 'https://xxx.supabase.co', description: 'Your the product project URL' },
+  { service: 'supabase-url', label: 'Supabase URL', placeholder: 'https://xxx.supabase.co', description: 'Your Supabase project URL' },
   { service: 'supabase-service-key', label: 'Supabase Service Key', placeholder: 'eyJ...', description: 'Service role key (not anon key)' },
   { service: 'lemon-api-key', label: 'Lemon Squeezy API Key', placeholder: 'API key from Settings', description: 'Settings → API in Lemon Squeezy dashboard' },
   { service: 'lemon-store-id', label: 'Lemon Squeezy Store ID', placeholder: '12345', description: 'Your store ID number' },

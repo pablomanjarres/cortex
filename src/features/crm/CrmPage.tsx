@@ -49,7 +49,6 @@ interface CrmData {
 const DEFAULT_DATA: CrmData = {
   orgs: [
     { id: 'freelancing', name: 'Freelancing', contacts: [] },
-    { id: 'project', name: 'the product', contacts: [] },
   ],
   activeOrg: 'freelancing',
 }

@@ -42,9 +42,9 @@ interface TaskDef {
 // ── Task definitions ─────────────────────────────────────────────────────────
 
 const TASKS: TaskDef[] = [
-  { name: 'daily-dev-log', description: 'Daily dev log from the product repo activity', frequency: 'Daily', group: 'Dev & Business', type: 'claude' },
-  { name: 'daily-repo-inspection', description: 'the product Website repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude' },
-  { name: 'daily-repo-summary', description: 'the product core repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude' },
+  { name: 'daily-dev-log', description: 'Daily dev log from repo activity', frequency: 'Daily', group: 'Dev & Business', type: 'claude' },
+  { name: 'daily-repo-inspection', description: 'Website repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude' },
+  { name: 'daily-repo-summary', description: 'Core repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude' },
   { name: 'medellin-lead-gen', description: 'Freelance lead generation for Medellin area', frequency: 'Bimonthly', group: 'Dev & Business', type: 'claude' },
   { name: 'weekly-competition-scanner', description: 'Scan for competitions, grants, hackathons', frequency: 'Weekly', group: 'Dev & Business', type: 'claude' },
   { name: 'ai-intelligence-brief', description: 'AI developments & intelligence brief', frequency: 'Periodic', group: 'Intelligence', type: 'claude' },
