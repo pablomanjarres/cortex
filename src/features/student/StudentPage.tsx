@@ -138,11 +138,11 @@ const DEFAULT_ASSIGNMENTS: Assignment[] = [
 ]
 
 import { useStore } from '@/lib/store'
-import { syncAssignmentToCalendar, reconcileAssignments, detectExternalChanges } from '@/lib/calendar-sync'
+import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const TODAY = new Date().toISOString().slice(0, 10)
+const getToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
 const daysUntil = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86_400_000)
 const fmtDate = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 const courseMap = Object.fromEntries(COURSES.map((c) => [c.id, c]))
@@ -476,22 +476,14 @@ export function StudentPage() {
     if (a.deadline) syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'upsert')
   }
 
-  // ── Calendar sync: push changes & reconcile on mount ──
+  // ── Calendar sync: push inline edits (deadline/name changes) ──
   const prevAssignmentsRef = useRef<Assignment[] | null>(null)
-  const reconcileRef = useRef(false)
-
   useEffect(() => {
-    if (!reconcileRef.current) {
-      reconcileRef.current = true
-      reconcileAssignments(assignments, COURSES)
-      return
-    }
-    // Diff: find assignments that changed deadline or name since last render
     const prev = prevAssignmentsRef.current
     if (prev) {
       for (const a of assignments) {
         const old = prev.find((p) => p.id === a.id)
-        if (!old) continue // new items handled in addAssignment
+        if (!old) continue
         if (old.deadline !== a.deadline || old.name !== a.name) {
           syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'upsert')
         }
@@ -499,22 +491,6 @@ export function StudentPage() {
     }
     prevAssignmentsRef.current = assignments
   }, [assignments])
-
-  // ── Calendar sync: pull external changes every 5 min ──
-  useEffect(() => {
-    const poll = async () => {
-      const changes = await detectExternalChanges()
-      for (const ch of changes) {
-        if (ch.cortexType === 'assignment' && ch.field === 'deadline' && ch.newValue) {
-          update((p) => p.map((a) => a.id === ch.cortexId ? { ...a, deadline: ch.newValue } : a))
-        }
-      }
-    }
-    const interval = setInterval(poll, 5 * 60 * 1000)
-    // Initial pull after a short delay
-    const timeout = setTimeout(poll, 5000)
-    return () => { clearInterval(interval); clearTimeout(timeout) }
-  }, [])
 
   const toggleType = (t: AssignmentType) => {
     setSelectedTypes((prev) => { const next = new Set(prev); if (next.has(t)) { if (next.size > 1) next.delete(t) } else next.add(t); return next })
@@ -525,7 +501,7 @@ export function StudentPage() {
     sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const upcoming = useMemo(
-    () => assignments.filter((a) => a.deadline && a.deadline >= TODAY && !a.done).sort((a, b) => a.deadline!.localeCompare(b.deadline!)),
+    () => assignments.filter((a) => a.deadline && a.deadline >= getToday() && !a.done).sort((a, b) => a.deadline!.localeCompare(b.deadline!)),
     [assignments],
   )
 
@@ -754,7 +730,7 @@ export function StudentPage() {
             <tbody>
               {filtered.map((a) => {
                 const c = courseMap[a.courseId]
-                const isPast = a.deadline && a.deadline < TODAY && !a.done
+                const isPast = a.deadline && a.deadline < getToday() && !a.done
                 return (
                   <tr key={a.id} className={`border-b border-border/20 transition-colors hover:bg-secondary/30 group ${isPast ? 'opacity-40' : ''} ${a.done ? 'opacity-60' : ''}`}>
                     <td className="px-5 py-2.5">
