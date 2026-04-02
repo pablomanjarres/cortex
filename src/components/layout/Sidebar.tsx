@@ -18,6 +18,7 @@ import {
   Settings,
   Globe,
   Megaphone,
+  Camera,
 } from 'lucide-react'
 
 const navGroups = [
@@ -47,6 +48,7 @@ const navGroups = [
       { to: '/social', icon: Users, label: 'Social' },
       { to: '/books', icon: Library, label: 'Books' },
       { to: '/thoughts', icon: Lightbulb, label: 'Thoughts' },
+      { to: '/captures', icon: Camera, label: 'Captures' },
     ],
   },
   {

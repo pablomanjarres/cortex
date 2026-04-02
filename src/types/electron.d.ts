@@ -75,6 +75,11 @@ interface ElectronAPI {
     vercel: () => Promise<(VercelStats & { error?: undefined }) | { error: string } | null>
     supabase: () => Promise<(SupabaseStats & { error?: undefined }) | { error: string } | null>
   }
+  media: {
+    save: (id: string, base64: string) => Promise<boolean>
+    load: (id: string) => Promise<string | null>
+    delete: (id: string) => Promise<boolean>
+  }
   data: {
     read: (key: string) => Promise<unknown | null>
     write: (key: string, data: unknown) => Promise<boolean>

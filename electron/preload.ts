@@ -37,6 +37,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     scan: () => ipcRenderer.invoke('projects:scan'),
   },
 
+  media: {
+    save: (id: string, base64: string) => ipcRenderer.invoke('media:save', id, base64),
+    load: (id: string) => ipcRenderer.invoke('media:load', id),
+    delete: (id: string) => ipcRenderer.invoke('media:delete', id),
+  },
+
   data: {
     read: (key: string) => ipcRenderer.invoke('data:read', key),
     write: (key: string, data: unknown) => ipcRenderer.invoke('data:write', key, data),

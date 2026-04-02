@@ -792,6 +792,37 @@ ipcMain.handle('data:write', async (_event, key: string, data: unknown) => {
   } catch (e) { console.error(`data:write error for ${key}:`, e); return false }
 })
 
+// ── Media storage (images for captures) ────────────────────────────────────
+const mediaDir = path.join(dataDir, 'media')
+if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
+
+ipcMain.handle('media:save', async (_event, id: string, base64: string) => {
+  try {
+    const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+    fs.writeFileSync(path.join(mediaDir, id), buffer)
+    return true
+  } catch (e) { console.error('media:save error:', e); return false }
+})
+
+ipcMain.handle('media:load', async (_event, id: string) => {
+  try {
+    const file = path.join(mediaDir, id)
+    if (!fs.existsSync(file)) return null
+    const buffer = fs.readFileSync(file)
+    const ext = id.split('.').pop()?.toLowerCase() || 'png'
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/png'
+    return `data:${mime};base64,${buffer.toString('base64')}`
+  } catch (e) { console.error('media:load error:', e); return null }
+})
+
+ipcMain.handle('media:delete', async (_event, id: string) => {
+  try {
+    const file = path.join(mediaDir, id)
+    if (fs.existsSync(file)) fs.unlinkSync(file)
+    return true
+  } catch (e) { console.error('media:delete error:', e); return false }
+})
+
 ipcMain.handle('data:listKeys', async () => {
   try {
     return fs.readdirSync(dataDir)

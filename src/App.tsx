@@ -14,6 +14,7 @@ import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { StatsPage } from '@/features/stats/StatsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { GtmPage } from '@/features/gtm/GtmPage'
+import { CapturesPage } from '@/features/captures/CapturesPage'
 
 export function App() {
   return (
@@ -33,6 +34,7 @@ export function App() {
         <Route path="crm" element={<CrmPage />} />
         <Route path="books" element={<BooksPage />} />
         <Route path="thoughts" element={<ThoughtsPage />} />
+        <Route path="captures" element={<CapturesPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>
