@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { useStore, readStore } from '@/lib/store'
+import { localDate } from '@/lib/date-utils'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import {
   ChevronLeft,
@@ -14,6 +15,9 @@ import {
   Users,
   DollarSign,
   Flame,
+  MessageSquare,
+  MessageCircle,
+  Megaphone,
 } from 'lucide-react'
 import {
   BarChart,
@@ -61,6 +65,19 @@ interface HistoryEntry {
   mrr: number
   prsOpen: number
   prsMerged: number
+}
+
+interface GtmDailyLog {
+  date: string
+  dmsSent: number
+  dmResponses: number
+  demoCalls: number
+  xReplies: number
+  xFollowers: number
+  redditComments: number
+  linkedinMessages: number
+  channelOfSignup: string
+  notes: string
 }
 
 interface WeeklyAudit {
@@ -132,7 +149,7 @@ const weekDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function StatsPage() {
   const [view, setView] = useState<'day' | 'week'>('day')
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10))
+  const [selectedDate, setSelectedDate] = useState(localDate())
 
   // Shared stores
   const [habits] = useStore<HabitDef[]>('cortex-habits', [])
@@ -141,13 +158,17 @@ export function StatsPage() {
   // Habits — single source of truth via shared hook (reactive, stays in sync)
   const { completedCount: habitsCompletedToday, isCompleted: isHabitDone, habitHistory } = useDailyHabits(selectedDate)
 
+  // --- GTM Data -------------------------------------------
+  const [dayGtm, setDayGtm] = useState<GtmDailyLog | null>(null)
+  const [todayGtm] = useStore<GtmDailyLog | null>(`cortex-gtm-log-${localDate()}`, null)
+
   // --- Day View Data --------------------------------------
   const [daySessions, setDaySessions] = useState<SprintSession[]>([])
   const [dayShips, setDayShips] = useState<ShipEntry[]>([])
   const [dayReflection, setDayReflection] = useState<DailyReflection>({ score: 0, wentWell: '', improve: '', learnings: '' })
 
   // Use useStore for today's data (reactive), readStore for past dates
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const todayStr = useMemo(() => localDate(), [])
   const isToday = selectedDate === todayStr
   const [todaySessions] = useStore<SprintSession[]>(`cortex-daily-sessions-${todayStr}`, [])
   const [todayShips] = useStore<ShipEntry[]>(`cortex-daily-shiplog-${todayStr}`, [])
@@ -156,23 +177,24 @@ export function StatsPage() {
   useEffect(() => {
     if (view !== 'day') return
     if (isToday) {
-      // Use reactive stores for today
       setDaySessions(todaySessions)
       setDayShips(todayShips)
       setDayReflection(todayReflection)
+      setDayGtm(todayGtm)
       return
     }
-    // Fetch from store for past dates
     Promise.all([
       readStore<SprintSession[]>(`cortex-daily-sessions-${selectedDate}`, []),
       readStore<ShipEntry[]>(`cortex-daily-shiplog-${selectedDate}`, []),
       readStore<DailyReflection>(`cortex-daily-reflection-${selectedDate}`, { score: 0, wentWell: '', improve: '', learnings: '' }),
-    ]).then(([sessions, ships, reflection]) => {
+      readStore<GtmDailyLog | null>(`cortex-gtm-log-${selectedDate}`, null),
+    ]).then(([sessions, ships, reflection, gtm]) => {
       setDaySessions(sessions)
       setDayShips(ships)
       setDayReflection(reflection)
+      setDayGtm(gtm)
     })
-  }, [selectedDate, view, isToday, todaySessions, todayShips, todayReflection])
+  }, [selectedDate, view, isToday, todaySessions, todayShips, todayReflection, todayGtm])
 
   const mergedHabitsCount = habitsCompletedToday
 
@@ -185,6 +207,7 @@ export function StatsPage() {
   const [weekSessions, setWeekSessions] = useState<{ date: string; sessions: number; minutes: number }[]>([])
   const [weekShipCount, setWeekShipCount] = useState(0)
   const [weekReflections, setWeekReflections] = useState<DailyReflection[]>([])
+  const [weekGtm, setWeekGtm] = useState<GtmDailyLog[]>([])
   const [weeklyAudit] = useStore<WeeklyAudit | null>(`cortex-weekly-audit-${weekId}`, null)
 
   useEffect(() => {
@@ -193,10 +216,12 @@ export function StatsPage() {
       ...weekDates.map(d => readStore<SprintSession[]>(`cortex-daily-sessions-${d}`, [])),
       ...weekDates.map(d => readStore<ShipEntry[]>(`cortex-daily-shiplog-${d}`, [])),
       ...weekDates.map(d => readStore<DailyReflection>(`cortex-daily-reflection-${d}`, { score: 0, wentWell: '', improve: '', learnings: '' })),
+      ...weekDates.map(d => readStore<GtmDailyLog | null>(`cortex-gtm-log-${d}`, null)),
     ]).then((results) => {
       const sessions = results.slice(0, 7) as SprintSession[][]
       const ships = results.slice(7, 14) as ShipEntry[][]
       const reflections = results.slice(14, 21) as DailyReflection[]
+      const gtmLogs = results.slice(21, 28) as (GtmDailyLog | null)[]
 
       setWeekSessions(sessions.map((s, i) => ({
         date: weekDates[i],
@@ -205,6 +230,7 @@ export function StatsPage() {
       })))
       setWeekShipCount(ships.reduce((s, arr) => s + arr.length, 0))
       setWeekReflections(reflections)
+      setWeekGtm(gtmLogs.filter((g): g is GtmDailyLog => g !== null && (g.dmsSent > 0 || g.xReplies > 0 || g.demoCalls > 0)))
     })
   }, [weekDates, view])
 
@@ -232,10 +258,10 @@ export function StatsPage() {
   const navigate = (dir: number) => {
     const d = new Date(selectedDate + 'T00:00:00')
     d.setDate(d.getDate() + (view === 'day' ? dir : dir * 7))
-    setSelectedDate(d.toISOString().slice(0, 10))
+    setSelectedDate(localDate(d))
   }
 
-  const goToToday = () => setSelectedDate(new Date().toISOString().slice(0, 10))
+  const goToToday = () => setSelectedDate(localDate())
 
   return (
     <PageShell>
@@ -403,6 +429,35 @@ export function StatsPage() {
               </div>
             </WidgetCard>
           )}
+
+          {/* GTM snapshot */}
+          {dayGtm && (dayGtm.dmsSent > 0 || dayGtm.xReplies > 0 || dayGtm.demoCalls > 0) && (
+            <WidgetCard title="GTM SNAPSHOT" delay={0.3} compact>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { label: 'DMs sent', value: dayGtm.dmsSent, icon: MessageSquare, color: 'text-blue-400' },
+                  { label: 'Responses', value: dayGtm.dmResponses, icon: MessageCircle, color: 'text-green-400' },
+                  { label: 'Demo calls', value: dayGtm.demoCalls, icon: Megaphone, color: 'text-purple-400' },
+                  { label: 'X replies', value: dayGtm.xReplies, icon: MessageCircle, color: 'text-blue-400' },
+                  { label: 'X followers', value: dayGtm.xFollowers, icon: Users, color: 'text-blue-400' },
+                  { label: 'Reddit', value: dayGtm.redditComments, icon: MessageSquare, color: 'text-orange-400' },
+                  { label: 'LinkedIn', value: dayGtm.linkedinMessages, icon: MessageSquare, color: 'text-blue-300' },
+                ].map((m) => (
+                  <div key={m.label} className="flex items-center gap-2">
+                    <m.icon className={`h-3.5 w-3.5 ${m.color}`} />
+                    <span className="text-[10px] text-muted-foreground">{m.label}</span>
+                    <span className="ml-auto text-sm font-bold tabular-nums">{m.value}</span>
+                  </div>
+                ))}
+              </div>
+              {dayGtm.notes && (
+                <div className="mt-3 rounded-lg bg-secondary/30 px-3 py-2">
+                  <p className="text-[10px] text-muted-foreground">Notes</p>
+                  <p className="text-xs text-foreground/80">{dayGtm.notes}</p>
+                </div>
+              )}
+            </WidgetCard>
+          )}
         </>
       )}
 
@@ -497,6 +552,35 @@ export function StatsPage() {
                 </div>
               </WidgetCard>
             )}
+
+            {/* GTM weekly */}
+            {weekGtm.length > 0 && (() => {
+              const totalDms = weekGtm.reduce((s, g) => s + g.dmsSent, 0)
+              const totalResponses = weekGtm.reduce((s, g) => s + g.dmResponses, 0)
+              const responseRate = totalDms > 0 ? ((totalResponses / totalDms) * 100).toFixed(0) + '%' : '\u2014'
+              return (
+                <WidgetCard title="GTM METRICS" description="This week" delay={0.25}>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[
+                      { label: 'DMs sent', value: totalDms, icon: MessageSquare, color: 'text-blue-400' },
+                      { label: 'Response rate', value: responseRate, icon: MessageCircle, color: totalDms > 0 && totalResponses / totalDms >= 0.1 ? 'text-green-400' : 'text-red-400' },
+                      { label: 'Demo calls', value: weekGtm.reduce((s, g) => s + g.demoCalls, 0), icon: Megaphone, color: 'text-purple-400' },
+                      { label: 'X replies', value: weekGtm.reduce((s, g) => s + g.xReplies, 0), icon: MessageCircle, color: 'text-blue-400' },
+                      { label: 'Reddit', value: weekGtm.reduce((s, g) => s + g.redditComments, 0), icon: MessageSquare, color: 'text-orange-400' },
+                      { label: 'LinkedIn', value: weekGtm.reduce((s, g) => s + g.linkedinMessages, 0), icon: MessageSquare, color: 'text-blue-300' },
+                    ].map((m) => (
+                      <div key={m.label} className="flex items-center gap-2 rounded-lg bg-secondary/30 px-3 py-2.5">
+                        <m.icon className={`h-4 w-4 shrink-0 ${m.color}`} />
+                        <div>
+                          <p className="text-[10px] text-muted-foreground">{m.label}</p>
+                          <p className="text-lg font-bold tabular-nums">{m.value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </WidgetCard>
+              )
+            })()}
           </div>
 
           {/* Weekly Audit (if generated) */}
