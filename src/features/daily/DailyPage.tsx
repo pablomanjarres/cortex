@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore, readStore, writeStore } from '@/lib/store'
+import { localDate } from '@/lib/date-utils'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
@@ -95,8 +96,8 @@ const defaultHabits: HabitDef[] = [
 export function DailyPage() {
   const navigate = useNavigate()
 
-  // Date key for daily persistence
-  const today = new Date().toISOString().slice(0, 10)
+  // Date key for daily persistence (local date, not UTC)
+  const today = localDate()
 
   // Non-negotiables (persisted by day)
   const [targets, updateTargets] = useStore<Target[]>(`cortex-daily-targets-${today}`, emptyTargets)
@@ -104,12 +105,13 @@ export function DailyPage() {
   const shippedCount = targets.filter((t) => t.done).length
   const allShipped = shippedCount === 3 && targets.every((t) => t.text.trim())
 
-  // Sprint timer (ephemeral — no need to persist timer ticks)
+  // Sprint timer — timestamp-based so tab switching doesn't break it
   const [timerTask, setTimerTask] = useState('')
   const [timerDuration, setTimerDuration] = useState(25)
   const [timeLeft, setTimeLeft] = useState(25 * 60)
   const [isRunning, setIsRunning] = useState(false)
   const [timerStartedAt, setTimerStartedAt] = useState<string | null>(null)
+  const timerEndRef = useRef<number | null>(null) // absolute end timestamp (ms)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerPresets = [15, 25, 45, 60, 90]
   const [showCustomTime, setShowCustomTime] = useState(false)
@@ -160,28 +162,60 @@ export function DailyPage() {
     return () => { clearInterval(interval); window.removeEventListener('focus', onFocus) }
   }, [])
 
-  // ─── Timer logic ─────────────────────────────────────────
+  // ─── Timer logic (timestamp-based — survives tab switches) ─
   useEffect(() => {
-    if (isRunning && timeLeft > 0) {
-      intervalRef.current = setInterval(() => setTimeLeft((p) => p - 1), 1000)
-    } else if (timeLeft === 0 && isRunning) {
-      updateSprintSessions((prev) => [...prev, {
-        id: Date.now().toString(),
-        task: timerTask || 'Untitled session',
-        duration: timerDuration,
-        startedAt: timerStartedAt || new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-      }])
-      setTimerStartedAt(null)
-      setTimeLeft(timerDuration * 60)
-      setIsRunning(false)
+    if (!isRunning || !timerEndRef.current) return
+    const tick = () => {
+      const remaining = Math.max(0, Math.round((timerEndRef.current! - Date.now()) / 1000))
+      setTimeLeft(remaining)
+      if (remaining <= 0) {
+        updateSprintSessions((prev) => [...prev, {
+          id: Date.now().toString(),
+          task: timerTask || 'Untitled session',
+          duration: timerStartedAt ? Math.round((Date.now() - new Date(timerStartedAt).getTime()) / 60000) : timerDuration,
+          startedAt: timerStartedAt || new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+        }])
+        setTimerStartedAt(null)
+        timerEndRef.current = null
+        setTimeLeft(timerDuration * 60)
+        setIsRunning(false)
+      }
     }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [isRunning, timeLeft, timerDuration])
+    tick() // immediate sync (catches up after tab switch)
+    intervalRef.current = setInterval(tick, 1000)
+    // Also catch up immediately when tab regains focus
+    const onVisibility = () => { if (document.visibilityState === 'visible') tick() }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [isRunning, timerDuration])
 
   const mins = Math.floor(timeLeft / 60)
   const secs = timeLeft % 60
-  const resetTimer = () => { setIsRunning(false); setTimeLeft(timerDuration * 60) }
+
+  const savePartialSession = () => {
+    if (!timerStartedAt) return
+    const elapsedMin = Math.round((Date.now() - new Date(timerStartedAt).getTime()) / 60000)
+    if (elapsedMin < 1) return // don't save <1min sessions
+    updateSprintSessions((prev) => [...prev, {
+      id: Date.now().toString(),
+      task: timerTask || 'Untitled session',
+      duration: elapsedMin,
+      startedAt: timerStartedAt,
+      completedAt: new Date().toISOString(),
+    }])
+  }
+
+  const resetTimer = () => {
+    if (isRunning) savePartialSession()
+    setIsRunning(false)
+    setTimerStartedAt(null)
+    timerEndRef.current = null
+    setTimeLeft(timerDuration * 60)
+  }
   const setDuration = (m: number) => { setTimerDuration(m); if (!isRunning) setTimeLeft(m * 60) }
 
   // ─── Tray navigation ────────────────────────────────────
@@ -228,7 +262,7 @@ export function DailyPage() {
       for (let i = 0; i < 7; i++) {
         const wd = new Date(lastMonday)
         wd.setDate(wd.getDate() + i)
-        weekDates.push(wd.toISOString().slice(0, 10))
+        weekDates.push(localDate(wd))
       }
 
       Promise.all([
@@ -437,7 +471,16 @@ export function DailyPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    if (!isRunning) setTimerStartedAt(new Date().toISOString())
+                    if (!isRunning) {
+                      if (!timerStartedAt) setTimerStartedAt(new Date().toISOString())
+                      timerEndRef.current = Date.now() + timeLeft * 1000
+                    } else {
+                      // Pausing — snapshot remaining time, clear end ref
+                      if (timerEndRef.current) {
+                        setTimeLeft(Math.max(0, Math.round((timerEndRef.current - Date.now()) / 1000)))
+                      }
+                      timerEndRef.current = null
+                    }
                     setIsRunning(!isRunning)
                   }}
                   className="flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background transition-opacity hover:opacity-80"
