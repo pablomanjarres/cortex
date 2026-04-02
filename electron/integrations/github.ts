@@ -78,8 +78,8 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
     } catch {
       // skip repos we can't access
     }
-    // Cap at 20 most recent repos to stay within rate limits
-    if (recentRepos.length >= 20) break
+    // Cap at 50 most recent repos to stay within rate limits
+    if (recentRepos.length >= 50) break
   }
 
   let commitsToday = 0
@@ -91,16 +91,31 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
 
   for (const repo of recentRepos) {
     try {
-      const todayCommits = await ghFetch(`/repos/${repo}/commits?since=${todayStart}&per_page=100`, token)
-      commitsToday += todayCommits.length
-
-      const weekCommits = await ghFetch(`/repos/${repo}/commits?since=${weekStart}&per_page=100`, token)
-      commitsWeek += weekCommits.length
-      repoCommitCounts[repo.split('/').pop() || repo] = weekCommits.length
-
-      if (todayCommits.length > 0 && !latestCommit) {
-        latestCommit = todayCommits[0].commit?.message?.split('\n')[0] || null
+      // Paginate today's commits
+      let todayCount = 0
+      let commitPage = 1
+      while (true) {
+        const batch = await ghFetch(`/repos/${repo}/commits?since=${todayStart}&per_page=100&page=${commitPage}`, token)
+        todayCount += batch.length
+        if (!latestCommit && batch.length > 0) {
+          latestCommit = batch[0].commit?.message?.split('\n')[0] || null
+        }
+        if (batch.length < 100) break
+        commitPage++
       }
+      commitsToday += todayCount
+
+      // Paginate week's commits
+      let weekCount = 0
+      commitPage = 1
+      while (true) {
+        const batch = await ghFetch(`/repos/${repo}/commits?since=${weekStart}&per_page=100&page=${commitPage}`, token)
+        weekCount += batch.length
+        if (batch.length < 100) break
+        commitPage++
+      }
+      commitsWeek += weekCount
+      repoCommitCounts[repo.split('/').pop() || repo] = weekCount
 
       const openPrs = await ghFetch(`/repos/${repo}/pulls?state=open&per_page=100`, token)
       prsOpen += openPrs.length
