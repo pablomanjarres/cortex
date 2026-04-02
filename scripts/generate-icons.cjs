@@ -41,7 +41,7 @@ function roundedRect(ctx, x, y, w, h, r) {
  */
 function generateAppIcon(size) {
   // Step 1: Render "C" on a temp canvas to find its true pixel bounds
-  const fontSize = Math.round(size * 0.62);
+  const fontSize = Math.round(size * 0.72);
   const skew = -0.18;
   const tmp = createCanvas(size * 2, size * 2);
   const tmpCtx = tmp.getContext('2d');
