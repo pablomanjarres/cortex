@@ -13,6 +13,7 @@ import { CrmPage } from '@/features/crm/CrmPage'
 import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { StatsPage } from '@/features/stats/StatsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
+import { GtmPage } from '@/features/gtm/GtmPage'
 
 export function App() {
   return (
@@ -24,6 +25,7 @@ export function App() {
         <Route path="stats" element={<StatsPage />} />
         <Route path="automations" element={<AutomationsPage />} />
         <Route path="founder" element={<FounderPage />} />
+        <Route path="gtm" element={<GtmPage />} />
         <Route path="student" element={<StudentPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="finance" element={<FinancePage />} />
