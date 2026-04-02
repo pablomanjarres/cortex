@@ -233,10 +233,11 @@ export function FounderPage() {
   const fmtMoney = (n: number) => `$${n.toFixed(0)}`
 
   const last14 = history.slice(-14)
+  const last30 = history.slice(-30)
   const cumulativeCommits = useMemo(() => {
     let total = 0
-    return last14.map(d => ({ ...d, totalCommits: (total += d.commits) }))
-  }, [last14])
+    return last30.map(d => ({ ...d, totalCommits: (total += d.commits) }))
+  }, [last30])
   const wowCommits = getWoWChange(history, 'commits')
   const wowUsers = getWoWChange(history, 'users')
   const wowDeploys = getWoWChange(history, 'deploys')
@@ -527,7 +528,7 @@ export function FounderPage() {
           {history.length > 1 && (
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
               {/* Commits — cumulative area */}
-              <WidgetCard title="COMMITS (14D)" description={github?.topRepos.length ? `Across ${github.topRepos.map(r => r.name).join(', ')}` : 'Cumulative total'} delay={0.25}>
+              <WidgetCard title="COMMITS (30D)" description={github?.topRepos.length ? `Across ${github.topRepos.map(r => r.name).join(', ')}` : 'Cumulative total'} delay={0.25}>
                 <div className="h-[140px] sm:h-[180px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={cumulativeCommits}>
