@@ -169,10 +169,6 @@ export function GymPage() {
         </TabsContent>
 
         <TabsContent value="nutrition">
-          <MealPlan
-            nutrition={nutrition}
-            onUpdate={(n) => setNutrition(() => n)}
-          />
           <NutritionLog
             nutrition={nutrition}
             onUpdate={(n) => setNutrition(() => n)}
@@ -180,6 +176,10 @@ export function GymPage() {
             onUpdateBodyStats={(s) => setBodyStats(() => s)}
             targets={targets}
             onUpdateTargets={(t) => setTargets(() => t)}
+          />
+          <MealPlan
+            nutrition={nutrition}
+            onUpdate={(n) => setNutrition(() => n)}
           />
         </TabsContent>
 

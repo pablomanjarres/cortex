@@ -276,21 +276,42 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
               {/* Bottom actions */}
               <div className="flex items-center justify-between pt-1">
                 {isCompletedToday(day.id) ? (
-                  <div className="flex items-center gap-3">
-                    <span className="flex items-center gap-1.5 text-green-400 text-sm">
-                      <CheckCircle2 className="h-4 w-4" />
-                      Completed today
-                    </span>
-                    <button
-                      onClick={() => {
-                        if (confirm('This will start a new session and overwrite today\'s logged workout for ' + day.name + '. Continue?')) {
-                          onStartWorkout(day.id)
-                        }
-                      }}
-                      className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-                    >
-                      Redo
-                    </button>
+                  <div className="space-y-2">
+                    {(() => {
+                      const session = getSession(day.id)
+                      if (!session) return null
+                      const completedSets = session.exercises.reduce((s, ex) => s + ex.sets.filter(set => set.completed).length, 0)
+                      const totalSets = session.exercises.reduce((s, ex) => s + ex.sets.length, 0)
+                      const totalVolume = session.exercises.reduce(
+                        (s, ex) => s + ex.sets.filter(set => set.completed).reduce((v, set) => v + set.weight * set.reps, 0), 0
+                      )
+                      const duration = session.startedAt && session.finishedAt
+                        ? Math.round((new Date(session.finishedAt).getTime() - new Date(session.startedAt).getTime()) / 60000)
+                        : null
+                      return (
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums">
+                          <span>{completedSets}/{totalSets} sets</span>
+                          {totalVolume > 0 && <span>{Math.round(totalVolume)} kg</span>}
+                          {duration !== null && duration > 0 && <span>{duration} min</span>}
+                        </div>
+                      )
+                    })()}
+                    <div className="flex items-center gap-3">
+                      <span className="flex items-center gap-1.5 text-green-400 text-sm">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Completed today
+                      </span>
+                      <button
+                        onClick={() => {
+                          if (confirm('This will start a new session and overwrite today\'s logged workout for ' + day.name + '. Continue?')) {
+                            onStartWorkout(day.id)
+                          }
+                        }}
+                        className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                      >
+                        Redo
+                      </button>
+                    </div>
                   </div>
                 ) : todaySessions.length > 0 ? (
                   <button
