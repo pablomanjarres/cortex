@@ -276,9 +276,21 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
               {/* Bottom actions */}
               <div className="flex items-center justify-between pt-1">
                 {isCompletedToday(day.id) ? (
-                  <div className="flex items-center gap-1.5 text-green-400 text-sm">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Completed today
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1.5 text-green-400 text-sm">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Completed today
+                    </span>
+                    <button
+                      onClick={() => {
+                        if (confirm('This will start a new session and overwrite today\'s logged workout for ' + day.name + '. Continue?')) {
+                          onStartWorkout(day.id)
+                        }
+                      }}
+                      className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                    >
+                      Redo
+                    </button>
                   </div>
                 ) : (
                   <button
