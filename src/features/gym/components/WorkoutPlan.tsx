@@ -292,6 +292,19 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                       Redo
                     </button>
                   </div>
+                ) : todaySessions.length > 0 ? (
+                  <button
+                    onClick={() => {
+                      const done = todaySessions.map(s => s.workoutName).join(', ')
+                      if (confirm(`You already completed ${done} today. Starting ${day.name} will replace it. Continue?`)) {
+                        onStartWorkout(day.id)
+                      }
+                    }}
+                    className="flex items-center gap-1.5 rounded-lg bg-foreground/10 px-3 py-1.5 text-sm font-medium hover:bg-foreground/20 transition-colors opacity-50"
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    Start Workout
+                  </button>
                 ) : (
                   <button
                     onClick={() => onStartWorkout(day.id)}

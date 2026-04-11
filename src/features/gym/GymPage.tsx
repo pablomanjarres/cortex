@@ -98,10 +98,7 @@ export function GymPage() {
   }
 
   const finishWorkout = (session: WorkoutSession) => {
-    setTodaySessions(prev => {
-      const existing = normalizeSessions(prev)
-      return [...existing.filter(s => s.workoutDayId !== session.workoutDayId), session]
-    })
+    setTodaySessions(() => [session])
     setActiveWorkout(() => null)
   }
 
@@ -119,10 +116,7 @@ export function GymPage() {
       finishedAt: new Date().toISOString(),
       completedFully: true,
     }
-    setTodaySessions(prev => {
-      const existing = normalizeSessions(prev)
-      return [...existing.filter(s => s.workoutDayId !== dayId), session]
-    })
+    setTodaySessions(() => [session])
   }
 
   return (
