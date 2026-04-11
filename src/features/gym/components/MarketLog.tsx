@@ -1,0 +1,476 @@
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { motion } from 'framer-motion'
+import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { Input } from '@/components/ui/input'
+import { useStore, readStore, writeStore } from '@/lib/store'
+import { localDate, getWeekDates } from '@/lib/date-utils'
+import {
+  Plus,
+  Trash2,
+  ShoppingCart,
+  TrendingUp,
+  Store,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  X,
+  Pencil,
+  Bookmark,
+} from 'lucide-react'
+import type { MarketPreset } from '@/types/gym'
+import { DEFAULT_MARKET_PRESETS } from '@/types/gym'
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface GroceryItem {
+  id: string
+  name: string
+  price: number
+  quantity: number
+  store: string
+  category: string
+}
+
+interface WeeklyMarketLog {
+  weekStart: string
+  items: GroceryItem[]
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+const STORES = ['D1', 'Carulla', 'Exito', 'Rappi', 'Other']
+const CATEGORIES = ['Protein', 'Carbs', 'Snacks', 'Dairy', 'Produce', 'Hygiene', 'Other']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+const fmtCOP = (n: number) => {
+  if (Math.abs(n) >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (Math.abs(n) >= 1_000) return `$${Math.round(n / 1_000)}K`
+  return `$${n}`
+}
+const fmtFull = (n: number) => `$${n.toLocaleString('es-CO')}`
+
+/** Get all Monday dates for weeks in a given month */
+function getWeeksInMonth(year: number, month: number): string[] {
+  const weeks: string[] = []
+  const d = new Date(year, month, 1)
+  // Go to the Monday of the week containing the 1st
+  const day = d.getDay()
+  d.setDate(d.getDate() - ((day + 6) % 7))
+  while (true) {
+    const weekStart = localDate(d)
+    // Include this week if any day falls in our target month
+    const weekEnd = new Date(d)
+    weekEnd.setDate(d.getDate() + 6)
+    if (d.getMonth() > month && d.getFullYear() >= year) break
+    if (weekEnd.getMonth() >= month || weekEnd.getFullYear() > year || d.getMonth() === month || weekEnd.getMonth() === month) {
+      weeks.push(weekStart)
+    }
+    d.setDate(d.getDate() + 7)
+    if (weeks.length > 6) break // safety
+  }
+  return weeks
+}
+
+function getWeekLabel(weekStart: string): string {
+  const start = new Date(weekStart + 'T00:00:00')
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  const fmt = (d: Date) => `${d.getDate()} ${MONTHS[d.getMonth()]}`
+  return `${fmt(start)} – ${fmt(end)}`
+}
+
+// ── Component ────────────────────────────────────────────────────────────────
+
+export function MarketLog() {
+  const today = localDate()
+  const todayWeekStart = getWeekDates(today)[0]
+
+  // Current view state
+  const now = new Date()
+  const [viewYear, setViewYear] = useState(now.getFullYear())
+  const [viewMonth, setViewMonth] = useState(now.getMonth())
+  const [selectedWeek, setSelectedWeek] = useState(todayWeekStart)
+
+  const weeksInMonth = useMemo(() => getWeeksInMonth(viewYear, viewMonth), [viewYear, viewMonth])
+
+  // Data for selected week
+  const [log, setLogState] = useState<WeeklyMarketLog>({ weekStart: selectedWeek, items: [] })
+  const [budget, setBudget] = useStore<number>('cortex-market-budget', 646000)
+  const [editingBudget, setEditingBudget] = useState(false)
+  const [budgetInput, setBudgetInput] = useState('')
+
+  // All weeks' data for monthly totals
+  const [monthLogs, setMonthLogs] = useState<WeeklyMarketLog[]>([])
+
+  // Load selected week
+  useEffect(() => {
+    readStore<WeeklyMarketLog>(`cortex-market-${selectedWeek}`, { weekStart: selectedWeek, items: [] })
+      .then(setLogState)
+  }, [selectedWeek])
+
+  // Load all weeks in month for monthly total
+  useEffect(() => {
+    Promise.all(
+      weeksInMonth.map(w => readStore<WeeklyMarketLog>(`cortex-market-${w}`, { weekStart: w, items: [] }))
+    ).then(setMonthLogs)
+  }, [weeksInMonth, log]) // re-fetch when current log changes
+
+  const setLog = useCallback((fn: (prev: WeeklyMarketLog) => WeeklyMarketLog) => {
+    setLogState(prev => {
+      const next = fn(prev)
+      writeStore(`cortex-market-${selectedWeek}`, next)
+      return next
+    })
+  }, [selectedWeek])
+
+  const [newName, setNewName] = useState('')
+  const [newPrice, setNewPrice] = useState('')
+  const [newQty, setNewQty] = useState('1')
+  const [newStore, setNewStore] = useState('D1')
+  const [newCategory, setNewCategory] = useState('Protein')
+
+  // Quick-add presets
+  const [presets, setPresets] = useStore<MarketPreset[]>('cortex-market-presets', DEFAULT_MARKET_PRESETS)
+  const [showQuickAdd, setShowQuickAdd] = useState(true)
+  const [editingPresets, setEditingPresets] = useState(false)
+  const [newPresetName, setNewPresetName] = useState('')
+  const [newPresetPrice, setNewPresetPrice] = useState('')
+  const [newPresetStore, setNewPresetStore] = useState('D1')
+  const [newPresetCategory, setNewPresetCategory] = useState('Protein')
+
+  const weeklyTotal = useMemo(() => log.items.reduce((s, item) => s + item.price * item.quantity, 0), [log.items])
+  const monthlyTotal = useMemo(() => monthLogs.reduce((s, wl) => s + wl.items.reduce((ws, item) => ws + item.price * item.quantity, 0), 0), [monthLogs])
+  const byStore = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const item of log.items) map.set(item.store, (map.get(item.store) || 0) + item.price * item.quantity)
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1])
+  }, [log.items])
+
+  const byCategory = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const item of log.items) map.set(item.category, (map.get(item.category) || 0) + item.price * item.quantity)
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1])
+  }, [log.items])
+
+  const addItem = () => {
+    if (!newName.trim() || !newPrice) return
+    const item: GroceryItem = {
+      id: Date.now().toString(),
+      name: newName.trim(),
+      price: Number(newPrice) || 0,
+      quantity: Number(newQty) || 1,
+      store: newStore,
+      category: newCategory,
+    }
+    setLog(prev => ({ ...prev, items: [...prev.items, item] }))
+    setNewName('')
+    setNewPrice('')
+    setNewQty('1')
+  }
+
+  const removeItem = (id: string) => {
+    setLog(prev => ({ ...prev, items: prev.items.filter(i => i.id !== id) }))
+  }
+
+  const quickAddItem = (preset: MarketPreset) => {
+    const item = {
+      id: Date.now().toString(),
+      name: preset.name,
+      price: preset.price,
+      quantity: preset.quantity,
+      store: preset.store,
+      category: preset.category,
+    }
+    setLog(prev => ({ ...prev, items: [...prev.items, item] }))
+  }
+
+  const removePreset = (index: number) => {
+    setPresets(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const saveToPresets = () => {
+    if (!newPresetName.trim() || !newPresetPrice) return
+    setPresets(prev => [...prev, {
+      name: newPresetName.trim(),
+      price: Number(newPresetPrice),
+      quantity: 1,
+      store: newPresetStore,
+      category: newPresetCategory,
+    }])
+    setNewPresetName('')
+    setNewPresetPrice('')
+  }
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1) }
+    else setViewMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1) }
+    else setViewMonth(m => m + 1)
+  }
+
+  return (
+    <div className="mt-4 space-y-4">
+      {/* Month + Week navigation */}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+        {/* Month selector */}
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={prevMonth} className="p-1 rounded hover:bg-foreground/10 transition-colors">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="text-sm font-semibold">{MONTHS[viewMonth]} {viewYear}</span>
+          <button onClick={nextMonth} className="p-1 rounded hover:bg-foreground/10 transition-colors">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Week tabs */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {weeksInMonth.map((w, i) => {
+            const weekTotal = monthLogs.find(ml => ml.weekStart === w)?.items.reduce((s, item) => s + item.price * item.quantity, 0) || 0
+            return (
+              <button
+                key={w}
+                onClick={() => setSelectedWeek(w)}
+                className={`shrink-0 rounded-lg px-3 py-2 text-left transition-colors ${
+                  selectedWeek === w
+                    ? 'bg-foreground/10 border border-foreground/20'
+                    : 'bg-card border border-border hover:bg-foreground/5'
+                } ${w === todayWeekStart ? 'ring-1 ring-foreground/20' : ''}`}
+              >
+                <p className={`text-[10px] font-medium ${selectedWeek === w ? 'text-foreground' : 'text-muted-foreground'}`}>
+                  Week {i + 1}
+                </p>
+                <p className="text-[9px] text-muted-foreground/50 tabular-nums">{getWeekLabel(w)}</p>
+                {weekTotal > 0 && <p className="text-[9px] text-muted-foreground/50 tabular-nums mt-0.5">{fmtCOP(weekTotal)}</p>}
+              </button>
+            )
+          })}
+        </div>
+      </motion.div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="rounded-xl border border-border bg-card p-3 text-center">
+          <ShoppingCart className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
+          <p className="text-xl font-bold tabular-nums">{log.items.length}</p>
+          <p className="text-[10px] text-muted-foreground">Items this week</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 text-center">
+          <Store className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
+          <p className="text-xl font-bold tabular-nums">{fmtCOP(weeklyTotal)}</p>
+          <p className="text-[10px] text-muted-foreground">Week total</p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-3 text-center">
+          <TrendingUp className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
+          <p className="text-xl font-bold tabular-nums">{fmtCOP(monthlyTotal)}</p>
+          <p className="text-[10px] text-muted-foreground">Month total</p>
+        </div>
+        <div
+          className="rounded-xl border border-border bg-card p-3 text-center cursor-pointer hover:bg-foreground/5 transition-colors"
+          onClick={() => { setEditingBudget(true); setBudgetInput(String(budget)) }}
+        >
+          <p className="text-xs text-muted-foreground mb-1">Budget</p>
+          {editingBudget ? (
+            <input
+              value={budgetInput}
+              onChange={(e) => setBudgetInput(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setBudget(() => Number(budgetInput) || 646000); setEditingBudget(false) } }}
+              onBlur={() => { setBudget(() => Number(budgetInput) || 646000); setEditingBudget(false) }}
+              className="w-full text-center text-xl font-bold tabular-nums bg-transparent outline-none border-b border-foreground/20"
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <p className="text-xl font-bold tabular-nums">{fmtCOP(budget)}</p>
+          )}
+          <p className={`text-[10px] ${monthlyTotal <= budget ? 'text-green-400' : 'text-red-400'}`}>
+            {monthlyTotal <= budget ? `${fmtCOP(budget - monthlyTotal)} left` : `Over by ${fmtCOP(monthlyTotal - budget)}`}
+          </p>
+        </div>
+      </div>
+
+      {/* Quick Add */}
+      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setShowQuickAdd(!showQuickAdd)} className="flex items-center gap-2">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/50">Quick Add</h4>
+            <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground/40 transition-transform ${showQuickAdd ? 'rotate-180' : ''}`} />
+          </button>
+          {showQuickAdd && (
+            <button
+              onClick={() => setEditingPresets(!editingPresets)}
+              className={`p-1 rounded transition-colors ${editingPresets ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground/40 hover:text-muted-foreground'}`}
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+        {showQuickAdd && (
+          <>
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-1.5">
+              {presets.map((preset, i) => (
+                <div key={`${preset.name}-${i}`} className="relative group">
+                  <button
+                    onClick={() => !editingPresets && quickAddItem(preset)}
+                    className={`w-full rounded-lg border border-border bg-foreground/5 px-3 py-2.5 sm:px-2.5 sm:py-1.5 text-xs text-left transition-colors ${
+                      editingPresets ? 'pr-7 cursor-default' : 'hover:bg-foreground/10 active:bg-foreground/15'
+                    }`}
+                  >
+                    <span className="text-foreground">{preset.name}</span>
+                    <span className="text-muted-foreground/40 ml-1">{fmtCOP(preset.price)}</span>
+                  </button>
+                  {editingPresets && (
+                    <button
+                      onClick={() => removePreset(i)}
+                      className="absolute -top-1.5 -right-1.5 rounded-full bg-red-500/80 hover:bg-red-500 p-1 sm:p-0.5 transition-colors"
+                    >
+                      <X className="h-3 w-3 sm:h-2.5 sm:w-2.5 text-white" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {/* Custom preset form */}
+            <div className="flex gap-2 items-end flex-wrap">
+              <input placeholder="Name" value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
+                className="h-8 flex-1 min-w-[120px] rounded border border-border bg-background px-2 text-xs text-foreground outline-none" />
+              <input type="number" placeholder="Price" value={newPresetPrice} onChange={(e) => setNewPresetPrice(e.target.value)}
+                className="h-8 w-20 rounded border border-border bg-background px-2 text-xs text-foreground outline-none" />
+              <select value={newPresetStore} onChange={(e) => setNewPresetStore(e.target.value)}
+                className="h-8 rounded border border-border bg-background px-2 text-xs text-foreground outline-none">
+                {STORES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select value={newPresetCategory} onChange={(e) => setNewPresetCategory(e.target.value)}
+                className="h-8 rounded border border-border bg-background px-2 text-xs text-foreground outline-none">
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button onClick={saveToPresets}
+                className="rounded-lg bg-foreground/10 p-2 hover:bg-foreground/20 transition-colors shrink-0" title="Save preset">
+                <Bookmark className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Add item form — only for current or future weeks */}
+      <WidgetCard title={`Add Purchase — ${getWeekLabel(selectedWeek)}`} compact delay={0.05}>
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="flex-1 min-w-[120px]">
+            <label className="text-[10px] text-muted-foreground">Item</label>
+            <Input placeholder="Pollo, leche..." value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />
+          </div>
+          <div className="w-20">
+            <label className="text-[10px] text-muted-foreground">Price (COP)</label>
+            <Input type="number" placeholder="12000" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />
+          </div>
+          <div className="w-14">
+            <label className="text-[10px] text-muted-foreground">Qty</label>
+            <Input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} className="h-8 text-xs" min={1} />
+          </div>
+          <div className="w-20">
+            <label className="text-[10px] text-muted-foreground">Store</label>
+            <select value={newStore} onChange={(e) => setNewStore(e.target.value)} className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground">
+              {STORES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="w-20">
+            <label className="text-[10px] text-muted-foreground">Category</label>
+            <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground">
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <button onClick={addItem} className="rounded-lg bg-foreground/10 h-8 px-3 text-xs font-medium hover:bg-foreground/20 transition-colors shrink-0">
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </WidgetCard>
+
+      {/* Items list */}
+      {log.items.length > 0 ? (
+        <WidgetCard title={`Purchases — ${getWeekLabel(selectedWeek)}`} compact delay={0.1}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-muted-foreground/50">
+                  <th className="text-left font-medium pb-2">Item</th>
+                  <th className="text-left font-medium pb-2 w-16">Store</th>
+                  <th className="text-left font-medium pb-2 w-16">Category</th>
+                  <th className="text-right font-medium pb-2 w-16">Price</th>
+                  <th className="text-right font-medium pb-2 w-10">Qty</th>
+                  <th className="text-right font-medium pb-2 w-16">Total</th>
+                  <th className="w-8 pb-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {log.items.map((item) => (
+                  <tr key={item.id} className="border-t border-border/30 group">
+                    <td className="py-1.5 text-foreground">{item.name}</td>
+                    <td className="py-1.5 text-muted-foreground">{item.store}</td>
+                    <td className="py-1.5 text-muted-foreground">{item.category}</td>
+                    <td className="py-1.5 text-right text-muted-foreground tabular-nums">{fmtFull(item.price)}</td>
+                    <td className="py-1.5 text-right text-muted-foreground tabular-nums">{item.quantity}</td>
+                    <td className="py-1.5 text-right text-foreground tabular-nums font-medium">{fmtFull(item.price * item.quantity)}</td>
+                    <td className="py-1.5 text-right">
+                      <button onClick={() => removeItem(item.id)} className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 transition-all">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                <tr className="border-t border-border/50 font-medium">
+                  <td colSpan={5} className="py-2 text-muted-foreground">Total</td>
+                  <td className="py-2 text-right tabular-nums">{fmtFull(weeklyTotal)}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </WidgetCard>
+      ) : (
+        <div className="rounded-xl border border-border bg-card p-6 text-center">
+          <p className="text-sm text-muted-foreground">No purchases logged for this week.</p>
+        </div>
+      )}
+
+      {/* Breakdown */}
+      {log.items.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <WidgetCard title="By Store" compact delay={0.15}>
+            <div className="space-y-2">
+              {byStore.map(([store, total]) => (
+                <div key={store} className="flex items-center justify-between text-xs">
+                  <span className="text-foreground">{store}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 rounded-full bg-foreground/10 w-24">
+                      <div className="h-full rounded-full bg-foreground/40" style={{ width: `${(total / weeklyTotal) * 100}%` }} />
+                    </div>
+                    <span className="text-muted-foreground tabular-nums w-14 text-right">{fmtCOP(total)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </WidgetCard>
+
+          <WidgetCard title="By Category" compact delay={0.2}>
+            <div className="space-y-2">
+              {byCategory.map(([cat, total]) => (
+                <div key={cat} className="flex items-center justify-between text-xs">
+                  <span className="text-foreground">{cat}</span>
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 rounded-full bg-foreground/10 w-24">
+                      <div className="h-full rounded-full bg-foreground/40" style={{ width: `${(total / weeklyTotal) * 100}%` }} />
+                    </div>
+                    <span className="text-muted-foreground tabular-nums w-14 text-right">{fmtCOP(total)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </WidgetCard>
+        </div>
+      )}
+    </div>
+  )
+}
