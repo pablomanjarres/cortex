@@ -3,7 +3,7 @@
 // 2. HTTP API (/api/data) — browser/iPhone via web server (any port, any proxy)
 // 3. localStorage — dev mode fallback
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 const pending = new Map<string, ReturnType<typeof setTimeout>>()
 
@@ -128,26 +128,66 @@ if (typeof window !== 'undefined') {
   })
 }
 
-/** React hook for persistent state */
+// Track keys that were just written locally so we skip the next poll cycle
+const recentWrites = new Map<string, number>()
+const WRITE_COOLDOWN = 3000 // ms to skip polling after a local write
+
+/** React hook for persistent state with automatic sync */
 export function useStore<T>(key: string, fallback: T): [T, (fn: (prev: T) => T) => void] {
   const [data, setData] = useState<T>(fallback)
-  const [loaded, setLoaded] = useState(false)
+  const snapshotRef = useRef<string>('')
 
-  useEffect(() => {
-    readStore<T>(key, fallback).then((v) => { setData(v); setLoaded(true) })
+  const reload = useCallback(() => {
+    // Skip if we just wrote locally (avoid overwriting our own write with stale read)
+    const lastWrite = recentWrites.get(key)
+    if (lastWrite && Date.now() - lastWrite < WRITE_COOLDOWN) return
+
+    readStore<T>(key, fallback).then((v) => {
+      const json = JSON.stringify(v)
+      // Only update state if data actually changed (avoids unnecessary re-renders)
+      if (json !== snapshotRef.current) {
+        snapshotRef.current = json
+        setData(v)
+      }
+    })
   }, [key])
+
+  // Initial load (always runs, ignoring cooldown)
+  useEffect(() => {
+    readStore<T>(key, fallback).then((v) => {
+      snapshotRef.current = JSON.stringify(v)
+      setData(v)
+    })
+  }, [key])
+
+  // Auto-sync: poll every 2s for changes from other devices
+  useEffect(() => {
+    const interval = setInterval(reload, 2000)
+    return () => clearInterval(interval)
+  }, [reload])
+
+  // Also re-read on visibility/focus (immediate sync when switching back)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') reload()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [reload])
 
   const update = useCallback((fn: (prev: T) => T) => {
     setData((prev) => {
       const next = fn(prev)
+      snapshotRef.current = JSON.stringify(next)
+      recentWrites.set(key, Date.now())
       writeStore(key, next)
       return next
     })
   }, [key])
-
-  useEffect(() => {
-    if (loaded) writeStore(key, data)
-  }, [loaded])
 
   return [data, update]
 }

@@ -11,19 +11,6 @@ export interface SprintSession {
   completedAt: string
 }
 
-interface ShipEntry {
-  id: string
-  text: string
-  time: string
-}
-
-interface DailyReflection {
-  score: number
-  wentWell: string
-  improve: string
-  learnings: string
-}
-
 interface HistoryEntry {
   date: string
   commits: number
@@ -60,9 +47,6 @@ export interface WeeklyAudit {
     mrr: number
     deploys: number
   }
-  shipped: string[]
-  avgDayScore: number
-  reflectionHighlights: string[]
   generatedAt: string
 }
 
@@ -77,27 +61,15 @@ export async function generateWeeklyAudit(weekStartDate: string): Promise<Weekly
     habits,
     habitHistory,
     founderHistory,
-    ...dailyData
+    ...sessionData
   ] = await Promise.all([
     readStore<HabitDef[]>('cortex-habits', []),
     readStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {}),
     readStore<HistoryEntry[]>('cortex-founder-history', []),
-    ...dates.flatMap(date => [
-      readStore<SprintSession[]>(`cortex-daily-sessions-${date}`, []),
-      readStore<ShipEntry[]>(`cortex-daily-shiplog-${date}`, []),
-      readStore<DailyReflection>(`cortex-daily-reflection-${date}`, { score: 0, wentWell: '', improve: '', learnings: '' }),
-    ]),
+    ...dates.map(date => readStore<SprintSession[]>(`cortex-daily-sessions-${date}`, [])),
   ])
 
-  // Unpack daily data (3 items per day: sessions, ships, reflection)
-  const sessionsByDay: SprintSession[][] = []
-  const shipsByDay: ShipEntry[][] = []
-  const reflectionsByDay: DailyReflection[] = []
-  for (let i = 0; i < 7; i++) {
-    sessionsByDay.push(dailyData[i * 3] as SprintSession[])
-    shipsByDay.push(dailyData[i * 3 + 1] as ShipEntry[])
-    reflectionsByDay.push(dailyData[i * 3 + 2] as DailyReflection)
-  }
+  const sessionsByDay = sessionData as SprintSession[][]
 
   // Sprint stats
   const allSessions = sessionsByDay.flat()
@@ -121,19 +93,6 @@ export async function generateWeeklyAudit(weekStartDate: string): Promise<Weekly
   const totalDeploys = weekFounder.reduce((s, h) => s + h.deploys, 0)
   const lastEntry = weekFounder.length > 0 ? weekFounder[weekFounder.length - 1] : null
 
-  // Shipped
-  const shipped = shipsByDay.flat().map(s => s.text)
-
-  // Day scores
-  const scores = reflectionsByDay.filter(r => r.score > 0).map(r => r.score)
-  const avgDayScore = scores.length > 0 ? Math.round(scores.reduce((s, x) => s + x, 0) / scores.length * 10) / 10 : 0
-
-  // Reflection highlights
-  const reflectionHighlights = reflectionsByDay
-    .filter(r => r.wentWell || r.learnings)
-    .flatMap(r => [r.wentWell, r.learnings].filter(Boolean))
-    .slice(0, 5)
-
   return {
     weekId,
     weekStart: dates[0],
@@ -151,9 +110,6 @@ export async function generateWeeklyAudit(weekStartDate: string): Promise<Weekly
       mrr: lastEntry?.mrr ?? 0,
       deploys: totalDeploys,
     },
-    shipped,
-    avgDayScore,
-    reflectionHighlights,
     generatedAt: new Date().toISOString(),
   }
 }

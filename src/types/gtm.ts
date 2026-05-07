@@ -7,6 +7,7 @@ export interface GtmDailyLog {
   xFollowers: number
   redditComments: number
   linkedinMessages: number
+  postsPublished: number
   channelOfSignup: string
   notes: string
 }
@@ -26,6 +27,7 @@ export interface GtmHistoryEntry {
   xFollowers: number
   redditComments: number
   linkedinMessages: number
+  postsPublished: number
 }
 
 export const EMPTY_DAILY_LOG: GtmDailyLog = {
@@ -37,6 +39,7 @@ export const EMPTY_DAILY_LOG: GtmDailyLog = {
   xFollowers: 0,
   redditComments: 0,
   linkedinMessages: 0,
+  postsPublished: 0,
   channelOfSignup: '',
   notes: '',
 }

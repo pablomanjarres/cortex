@@ -3,6 +3,7 @@
 // Calendar.app syncs upstream to Google Calendar automatically
 
 import { readStore, writeStore } from './store'
+import { localDate } from './date-utils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -302,8 +303,8 @@ export async function detectExternalChanges(): Promise<ExternalChange[]> {
     if (state.mappings.length === 0) return []
 
     // Get events in a wide range covering all possible deadlines/birthdays
-    const start = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
-    const end = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10)
+    const start = localDate(new Date(Date.now() - 30 * 86400000))
+    const end = localDate(new Date(Date.now() + 365 * 86400000))
     const calendarEvents = await api.getEventsInRange(start, end)
 
     const calEventMap = new Map<string, CalendarEventResult>()
@@ -384,6 +385,9 @@ export async function reconcileAssignments(
   for (const a of assignments) {
     if (a.deadline && !a.done) {
       await syncAssignmentToCalendar(a, courseMap[a.courseId] || a.courseId, 'upsert')
+    } else if (a.done) {
+      // Remove calendar events for graded/done assignments (keeps deadline in app data)
+      await syncAssignmentToCalendar(a, courseMap[a.courseId] || a.courseId, 'delete')
     }
   }
 }
