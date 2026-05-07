@@ -15,6 +15,8 @@ import { StatsPage } from '@/features/stats/StatsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { GtmPage } from '@/features/gtm/GtmPage'
 import { CapturesPage } from '@/features/captures/CapturesPage'
+import { GymPage } from '@/features/gym/GymPage'
+import { SystemPage } from '@/features/system/SystemPage'
 
 export function App() {
   return (
@@ -25,11 +27,13 @@ export function App() {
         <Route path="habits" element={<HabitsPage />} />
         <Route path="stats" element={<StatsPage />} />
         <Route path="automations" element={<AutomationsPage />} />
+        <Route path="system" element={<SystemPage />} />
         <Route path="founder" element={<FounderPage />} />
         <Route path="gtm" element={<GtmPage />} />
         <Route path="student" element={<StudentPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="finance" element={<FinancePage />} />
+        <Route path="gym" element={<GymPage />} />
         <Route path="social" element={<SocialPage />} />
         <Route path="crm" element={<CrmPage />} />
         <Route path="books" element={<BooksPage />} />

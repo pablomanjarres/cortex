@@ -19,6 +19,8 @@ import {
   Globe,
   Megaphone,
   Camera,
+  Dumbbell,
+  Cpu,
 } from 'lucide-react'
 
 const navGroups = [
@@ -29,6 +31,7 @@ const navGroups = [
       { to: '/habits', icon: Target, label: 'Habits' },
       { to: '/stats', icon: BarChart3, label: 'Stats' },
       { to: '/automations', icon: Timer, label: 'Automations' },
+      { to: '/system', icon: Cpu, label: 'System' },
     ],
   },
   {
@@ -45,6 +48,7 @@ const navGroups = [
     label: 'Life',
     items: [
       { to: '/finance', icon: Wallet, label: 'Finance' },
+      { to: '/gym', icon: Dumbbell, label: 'Gym' },
       { to: '/social', icon: Users, label: 'Social' },
       { to: '/books', icon: Library, label: 'Books' },
       { to: '/thoughts', icon: Lightbulb, label: 'Thoughts' },
@@ -148,7 +152,7 @@ export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () =>
       {/* Backdrop */}
       <div className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       {/* Drawer */}
-      <aside className="md:hidden fixed left-0 top-0 z-50 h-screen w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col animate-in slide-in-from-left duration-200">
+      <aside className="md:hidden fixed left-0 top-0 z-50 h-screen w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col animate-in slide-in-from-left duration-200 pt-[env(safe-area-inset-top)]">
         <div className="h-4 shrink-0" />
         <SidebarContent onNavigate={onClose} />
       </aside>

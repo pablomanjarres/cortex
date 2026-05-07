@@ -19,11 +19,11 @@ export function WidgetCard({ title, description, children, className, delay = 0,
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay, ease: 'easeOut' }}
       className={cn(
-        'rounded-xl border bg-card',
+        'rounded-xl',
+        variant === 'default' && 'surface',
         compact ? 'p-4' : 'p-5',
-        variant === 'urgent' && 'border-red-500/30 bg-red-500/[0.03]',
-        variant === 'success' && 'border-green-500/30 bg-green-500/[0.03]',
-        variant === 'default' && 'border-border',
+        variant === 'urgent' && 'border border-red-500/40 bg-red-500/[0.06] shadow-[0_12px_28px_rgba(0,0,0,0.30),0_0_24px_rgba(239,68,68,0.10)]',
+        variant === 'success' && 'border border-green-500/40 bg-green-500/[0.06] shadow-[0_12px_28px_rgba(0,0,0,0.30),0_0_24px_rgba(34,197,94,0.10)]',
         className
       )}
     >
