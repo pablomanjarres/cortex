@@ -21,6 +21,7 @@ build/
 
 # Data (local-only, never committed)
 data/
+data.migrated-to-icloud/
 
 # Editor/IDE
 .vscode/
