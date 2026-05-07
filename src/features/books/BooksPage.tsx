@@ -174,25 +174,69 @@ export function BooksPage() {
         </button>
       </div>
 
-      {/* Table */}
-      <WidgetCard title="Library" description={`${filtered.length} books`} delay={0.1}>
+      {/* Mobile: Book cards */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {filtered.map((b) => (
+          <div key={b.id} className="liquid-glass rounded-xl border border-border p-4" onClick={() => setExpanded(expanded === b.id ? null : b.id)}>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="shrink-0">{statusIcon(b.status)}</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{b.title}</p>
+                  <p className="text-xs text-muted-foreground truncate">{b.author}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Stars score={b.score} />
+                <button onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }} className="cursor-pointer p-1.5 text-muted-foreground/40 active:text-red-400">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+            {b.genre && <div className="mt-1.5"><Badge variant="secondary" className="text-[9px]">{b.genre}</Badge></div>}
+            {expanded === b.id && (
+              <div className="mt-4 pt-3 border-t border-border/30 flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
+                <div><label className="text-[10px] text-muted-foreground">Title</label><input value={b.title} onChange={(e) => setField(b.id, { title: e.target.value })} className="w-full bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" /></div>
+                <div><label className="text-[10px] text-muted-foreground">Author</label><input value={b.author} onChange={(e) => setField(b.id, { author: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-[10px] text-muted-foreground">Status</label>
+                    <select value={b.status} onChange={(e) => setField(b.id, { status: e.target.value as Status })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                      {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select></div>
+                  <div><label className="text-[10px] text-muted-foreground">Score</label>
+                    <select value={b.score} onChange={(e) => setField(b.id, { score: e.target.value as Score })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                      {ALL_SCORES.map((s) => <option key={s} value={s}>{s || 'No rating'}</option>)}
+                    </select></div>
+                </div>
+                <div><label className="text-[10px] text-muted-foreground">Genre</label>
+                  <select value={b.genre} onChange={(e) => setField(b.id, { genre: e.target.value })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                    <option value="">None</option>
+                    {ALL_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </select></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-[10px] text-muted-foreground">Start date</label><input type="date" value={b.start} onChange={(e) => setField(b.id, { start: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
+                  <div><label className="text-[10px] text-muted-foreground">Finished</label><input type="date" value={b.finished} onChange={(e) => setField(b.id, { finished: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
+                </div>
+                <div><label className="text-[10px] text-muted-foreground">Notes</label>
+                  <textarea value={b.notes} onChange={(e) => setField(b.id, { notes: e.target.value })} rows={3} className="w-full bg-transparent outline-none text-xs border border-border/30 rounded-lg p-2 resize-none placeholder:text-muted-foreground/30" placeholder="Your thoughts..." />
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: Table */}
+      <WidgetCard title="Library" description={`${filtered.length} books`} delay={0.1} className="hidden md:block">
         <div className="overflow-x-auto -mx-5">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border/50 text-muted-foreground">
                 <th className="px-5 py-2 w-6"></th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('title')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Title <SortIcon k="title" /></button>
-                </th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('author')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Author <SortIcon k="author" /></button>
-                </th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('genre')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Genre <SortIcon k="genre" /></button>
-                </th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('score')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Rating <SortIcon k="score" /></button>
-                </th>
+                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('title')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Title <SortIcon k="title" /></button></th>
+                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('author')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Author <SortIcon k="author" /></button></th>
+                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('genre')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Genre <SortIcon k="genre" /></button></th>
+                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('score')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Rating <SortIcon k="score" /></button></th>
                 <th className="py-2 w-6"></th>
               </tr>
             </thead>
@@ -206,9 +250,7 @@ export function BooksPage() {
                     <td className="py-2.5 text-muted-foreground">{b.author}</td>
                     <td className="py-2.5">{b.genre ? <Badge variant="secondary" className="text-[9px]">{b.genre}</Badge> : <span className="text-muted-foreground/30">—</span>}</td>
                     <td className="py-2.5"><Stars score={b.score} /></td>
-                    <td className="py-2.5 pr-4">
-                      <button onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"><Trash2 className="h-3 w-3" /></button>
-                    </td>
+                    <td className="py-2.5 pr-4"><button onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"><Trash2 className="h-3 w-3" /></button></td>
                   </tr>
                   {expanded === b.id && (
                     <tr key={`${b.id}-edit`}>
@@ -218,22 +260,12 @@ export function BooksPage() {
                             <div><label className="text-[10px] text-muted-foreground">Title</label><input value={b.title} onChange={(e) => setField(b.id, { title: e.target.value })} className="w-full bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" /></div>
                             <div><label className="text-[10px] text-muted-foreground">Author</label><input value={b.author} onChange={(e) => setField(b.id, { author: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
                             <div className="grid grid-cols-2 gap-2">
-                              <div><label className="text-[10px] text-muted-foreground">Status</label>
-                                <select value={b.status} onChange={(e) => setField(b.id, { status: e.target.value as Status })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
-                                  {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                                </select></div>
-                              <div><label className="text-[10px] text-muted-foreground">Score</label>
-                                <select value={b.score} onChange={(e) => setField(b.id, { score: e.target.value as Score })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
-                                  {ALL_SCORES.map((s) => <option key={s} value={s}>{s || 'No rating'}</option>)}
-                                </select></div>
+                              <div><label className="text-[10px] text-muted-foreground">Status</label><select value={b.status} onChange={(e) => setField(b.id, { status: e.target.value as Status })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">{ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+                              <div><label className="text-[10px] text-muted-foreground">Score</label><select value={b.score} onChange={(e) => setField(b.id, { score: e.target.value as Score })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">{ALL_SCORES.map((s) => <option key={s} value={s}>{s || 'No rating'}</option>)}</select></div>
                             </div>
                           </div>
                           <div className="flex flex-col gap-2">
-                            <div><label className="text-[10px] text-muted-foreground">Genre</label>
-                              <select value={b.genre} onChange={(e) => setField(b.id, { genre: e.target.value })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
-                                <option value="">None</option>
-                                {ALL_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
-                              </select></div>
+                            <div><label className="text-[10px] text-muted-foreground">Genre</label><select value={b.genre} onChange={(e) => setField(b.id, { genre: e.target.value })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1"><option value="">None</option>{ALL_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
                             <div><label className="text-[10px] text-muted-foreground">Start date</label><input type="date" value={b.start} onChange={(e) => setField(b.id, { start: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
                             <div><label className="text-[10px] text-muted-foreground">Finished</label><input type="date" value={b.finished} onChange={(e) => setField(b.id, { finished: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
                           </div>

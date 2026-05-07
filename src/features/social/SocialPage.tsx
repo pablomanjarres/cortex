@@ -265,27 +265,80 @@ export function SocialPage() {
         </button>
       </div>
 
-      {/* Contacts Table */}
-      <WidgetCard title="Contacts" description={`${filtered.length} of ${contacts.length}`} delay={0.1}>
+      {/* Mobile: Contact cards */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {filtered.map((c) => (
+          <div key={c.id} className="liquid-glass rounded-xl border border-border p-4" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
+            <div className="flex items-start justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{c.name}{c.nickname ? <span className="ml-1 text-[10px] text-muted-foreground">({c.nickname})</span> : null}</p>
+                <p className="text-xs text-muted-foreground truncate">{c.title || 'No title'}</p>
+              </div>
+              <button onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }} className="cursor-pointer p-1.5 text-muted-foreground/40 active:text-red-400 shrink-0">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {c.categories.map((cat) => <Badge key={cat} className={`text-[8px] px-1.5 py-0 ${catColor[cat] ?? 'bg-secondary'}`}>{cat}</Badge>)}
+              {c.fields.map((f) => <Badge key={f} className={`text-[8px] px-1.5 py-0 ${fieldColor[f] ?? 'bg-secondary'}`}>{f}</Badge>)}
+            </div>
+            <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground">
+              {c.phone && <span>{c.phone}</span>}
+              {calcAge(c.birthday) != null && <span>Age {calcAge(c.birthday)}</span>}
+              {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
+            </div>
+            {expanded === c.id && (
+              <div className="mt-4 pt-3 border-t border-border/30 flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
+                <div><label className="text-[10px] text-muted-foreground">Name</label><input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className="w-full bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-[10px] text-muted-foreground">Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                  <div><label className="text-[10px] text-muted-foreground">Nickname</label><input value={c.nickname} onChange={(e) => setField(c.id, { nickname: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                  <div><label className="text-[10px] text-muted-foreground">Birthday</label><input type="date" value={c.birthday} onChange={(e) => setField(c.id, { birthday: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
+                  <div><label className="text-[10px] text-muted-foreground">Interval (days)</label><input type="number" value={c.interval || ''} onChange={(e) => setField(c.id, { interval: parseInt(e.target.value) || 0 })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 tabular-nums" /></div>
+                </div>
+                <div><label className="text-[10px] text-muted-foreground">Address</label><input value={c.address} onChange={(e) => setField(c.id, { address: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
+                <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
+                <div><label className="text-[10px] text-muted-foreground">Social Profiles</label><input value={c.socialProfiles} onChange={(e) => setField(c.id, { socialProfiles: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                <div><label className="text-[10px] text-muted-foreground">Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
+                <label className="text-[10px] text-muted-foreground">Categories</label>
+                <div className="flex flex-wrap gap-1">
+                  {ALL_CATEGORIES.map((cat) => {
+                    const on = c.categories.includes(cat)
+                    return <button key={cat} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })}
+                      className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${catColor[cat]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{cat}</button>
+                  })}
+                </div>
+                <label className="text-[10px] text-muted-foreground">Fields</label>
+                <div className="flex flex-wrap gap-1">
+                  {Object.keys(fieldColor).map((f) => {
+                    const on = c.fields.includes(f)
+                    return <button key={f} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}
+                      className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${fieldColor[f]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{f}</button>
+                  })}
+                </div>
+                <button onClick={() => deleteContact(c.id)} className="cursor-pointer flex items-center justify-center gap-1.5 text-xs text-red-400/60 active:text-red-400 px-3 py-2.5 rounded-lg border border-red-400/20">
+                  <Trash2 className="h-3 w-3" /> Delete contact
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: Table */}
+      <WidgetCard title="Contacts" description={`${filtered.length} of ${contacts.length}`} delay={0.1} className="hidden md:block">
         <div className="overflow-x-auto -mx-5">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="px-5 py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('name')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Name <SortIcon k="name" /></button>
-                </th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('title')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Title <SortIcon k="title" /></button>
-                </th>
+                <th className="px-5 py-2 text-left font-medium"><button onClick={() => toggleSort('name')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Name <SortIcon k="name" /></button></th>
+                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('title')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Title <SortIcon k="title" /></button></th>
                 <th className="py-2 text-left font-medium">Category</th>
                 <th className="py-2 text-left font-medium">Field</th>
-                <th className="py-2 text-center font-medium">
-                  <button onClick={() => toggleSort('birthday')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Age <SortIcon k="birthday" /></button>
-                </th>
+                <th className="py-2 text-center font-medium"><button onClick={() => toggleSort('birthday')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Age <SortIcon k="birthday" /></button></th>
                 <th className="py-2 text-left font-medium">Phone</th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('lastContact')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Last <SortIcon k="lastContact" /></button>
-                </th>
+                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('lastContact')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Last <SortIcon k="lastContact" /></button></th>
                 <th className="py-2 w-6"></th>
               </tr>
             </thead>
@@ -294,32 +347,14 @@ export function SocialPage() {
                 <>
                   <tr key={c.id} ref={(el) => { rowRefs.current[c.id] = el }} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
                     className={`cursor-pointer border-b border-border/20 transition-colors hover:bg-secondary/30 group ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                    <td className="px-5 py-2.5">
-                      <span className="font-medium">{c.name}</span>
-                      {c.nickname && <span className="ml-1.5 text-[10px] text-muted-foreground">({c.nickname})</span>}
-                    </td>
+                    <td className="px-5 py-2.5"><span className="font-medium">{c.name}</span>{c.nickname && <span className="ml-1.5 text-[10px] text-muted-foreground">({c.nickname})</span>}</td>
                     <td className="py-2.5 text-muted-foreground">{c.title}</td>
-                    <td className="py-2.5">
-                      <div className="flex gap-1 flex-wrap">
-                        {c.categories.slice(0, 2).map((cat) => (
-                          <Badge key={cat} className={`text-[8px] px-1 py-0 ${catColor[cat] ?? 'bg-secondary'}`}>{cat}</Badge>
-                        ))}
-                        {c.categories.length > 2 && <span className="text-[9px] text-muted-foreground">+{c.categories.length - 2}</span>}
-                      </div>
-                    </td>
-                    <td className="py-2.5">
-                      <div className="flex gap-1 flex-wrap">
-                        {c.fields.map((f) => <Badge key={f} className={`text-[8px] px-1 py-0 ${fieldColor[f] ?? 'bg-secondary'}`}>{f}</Badge>)}
-                      </div>
-                    </td>
+                    <td className="py-2.5"><div className="flex gap-1 flex-wrap">{c.categories.slice(0, 2).map((cat) => <Badge key={cat} className={`text-[8px] px-1 py-0 ${catColor[cat] ?? 'bg-secondary'}`}>{cat}</Badge>)}{c.categories.length > 2 && <span className="text-[9px] text-muted-foreground">+{c.categories.length - 2}</span>}</div></td>
+                    <td className="py-2.5"><div className="flex gap-1 flex-wrap">{c.fields.map((f) => <Badge key={f} className={`text-[8px] px-1 py-0 ${fieldColor[f] ?? 'bg-secondary'}`}>{f}</Badge>)}</div></td>
                     <td className="py-2.5 text-center tabular-nums text-muted-foreground">{calcAge(c.birthday) ?? '—'}</td>
                     <td className="py-2.5 text-muted-foreground">{c.phone || '—'}</td>
                     <td className="py-2.5 text-muted-foreground tabular-nums">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
-                    <td className="py-2.5 pr-4">
-                      <button onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </td>
+                    <td className="py-2.5 pr-4"><button onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"><Trash2 className="h-3 w-3" /></button></td>
                   </tr>
                   {expanded === c.id && (
                     <tr key={`${c.id}-edit`}>
@@ -345,29 +380,15 @@ export function SocialPage() {
                           <div className="flex flex-col gap-2">
                             <label className="text-[10px] text-muted-foreground">Categories</label>
                             <div className="flex flex-wrap gap-1">
-                              {ALL_CATEGORIES.map((cat) => {
-                                const on = c.categories.includes(cat)
-                                return <button key={cat} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })}
-                                  className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${catColor[cat]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{cat}</button>
-                              })}
+                              {ALL_CATEGORIES.map((cat) => { const on = c.categories.includes(cat); return <button key={cat} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })} className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${catColor[cat]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{cat}</button> })}
                             </div>
                             <label className="text-[10px] text-muted-foreground mt-1">Fields</label>
                             <div className="flex flex-wrap gap-1">
-                              {Object.keys(fieldColor).map((f) => {
-                                const on = c.fields.includes(f)
-                                return <button key={f} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}
-                                  className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${fieldColor[f]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{f}</button>
-                              })}
+                              {Object.keys(fieldColor).map((f) => { const on = c.fields.includes(f); return <button key={f} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })} className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${fieldColor[f]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{f}</button> })}
                             </div>
                           </div>
                           <div className="flex items-end justify-end lg:col-span-3 pt-2">
-                            <button
-                              onClick={() => deleteContact(c.id)}
-                              className="cursor-pointer flex items-center gap-1.5 text-xs text-red-400/60 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-red-400/20 hover:border-red-400/40 hover:bg-red-400/5"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                              Delete contact
-                            </button>
+                            <button onClick={() => deleteContact(c.id)} className="cursor-pointer flex items-center gap-1.5 text-xs text-red-400/60 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-red-400/20 hover:border-red-400/40 hover:bg-red-400/5"><Trash2 className="h-3 w-3" /> Delete contact</button>
                           </div>
                         </div>
                       </td>

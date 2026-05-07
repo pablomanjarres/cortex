@@ -11,6 +11,7 @@ import { GtmCharts } from './components/GtmCharts'
 import { TimeBlockSchedule } from './components/TimeBlockSchedule'
 import { WeeklyReview } from './components/WeeklyReview'
 import { HardRules } from './components/HardRules'
+import { ContentPipeline } from './components/ContentPipeline'
 
 export function GtmPage() {
   const today = localDate()
@@ -29,6 +30,7 @@ export function GtmPage() {
       xFollowers: data.xFollowers,
       redditComments: data.redditComments,
       linkedinMessages: data.linkedinMessages,
+      postsPublished: data.postsPublished,
     }
     setHistory((prev) => {
       const filtered = prev.filter((h) => h.date !== date)
@@ -44,7 +46,7 @@ export function GtmPage() {
   useEffect(() => {
     if (syncedRef.current) return
     const hasData = log.dmsSent > 0 || log.dmResponses > 0 || log.demoCalls > 0 ||
-      log.xReplies > 0 || log.xFollowers > 0 || log.redditComments > 0 || log.linkedinMessages > 0
+      log.xReplies > 0 || log.xFollowers > 0 || log.redditComments > 0 || log.linkedinMessages > 0 || log.postsPublished > 0
     if (hasData) {
       syncedRef.current = true
       upsertHistory(today, log)
@@ -61,11 +63,14 @@ export function GtmPage() {
       {/* Row 1: KPI cards */}
       <MetricsDashboard history={history} log={log} phaseState={phaseState} />
 
-      {/* Row 2: Phase tracker + daily log */}
+      {/* Row 2: Phase tracker + daily log + content pipeline */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <PhaseTracker phaseState={phaseState} onUpdate={(s) => setPhaseState(() => s)} />
         <DailyLogForm log={log} onUpdate={handleLogUpdate} />
       </div>
+
+      {/* Row 2.5: Content Pipeline (synced from content-pipeline app) */}
+      <ContentPipeline log={log} onUpdateLog={handleLogUpdate} />
 
       {/* Row 3: Trend charts */}
       {history.length > 1 && <GtmCharts history={history} />}

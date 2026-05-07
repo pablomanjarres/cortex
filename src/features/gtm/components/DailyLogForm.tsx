@@ -15,6 +15,7 @@ const NUMERIC_FIELDS: { key: keyof GtmDailyLog; label: string }[] = [
   { key: 'xFollowers', label: 'X Followers' },
   { key: 'redditComments', label: 'Reddit Comments' },
   { key: 'linkedinMessages', label: 'LinkedIn Messages' },
+  { key: 'postsPublished', label: 'Posts Published' },
 ]
 
 export function DailyLogForm({ log, onUpdate }: DailyLogFormProps) {

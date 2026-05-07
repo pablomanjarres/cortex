@@ -31,38 +31,91 @@ interface AutomationRun {
   approved?: boolean
 }
 
+type TaskType = 'claude' | 'launchd' | 'cron' | 'openclaw' | 'n8n' | 'hook'
+type TaskHost = 'mac-mini' | 'gcp-vm'
+
 interface TaskDef {
   name: string
   description: string
   frequency: string
   group: string
-  type: 'claude' | 'launchd' | 'cron'
+  type: TaskType
+  host: TaskHost
 }
 
 // ── Task definitions ─────────────────────────────────────────────────────────
+// type: how it runs (openclaw cron / n8n flow / launchd / Claude scheduled-task / hook)
+// host: where it runs (gcp-vm = openclaw-vm, mac-mini = local desktop)
 
 const TASKS: TaskDef[] = [
-  { name: 'daily-dev-log', description: 'Daily dev log from repo activity', frequency: 'Daily', group: 'Dev & Business', type: 'claude' },
-  { name: 'daily-repo-inspection', description: 'Website repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude' },
-  { name: 'daily-repo-summary', description: 'Core repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude' },
-  { name: 'medellin-lead-gen', description: 'Freelance lead generation for Medellin area', frequency: 'Bimonthly', group: 'Dev & Business', type: 'claude' },
-  { name: 'weekly-competition-scanner', description: 'Scan for competitions, grants, hackathons', frequency: 'Weekly', group: 'Dev & Business', type: 'claude' },
-  { name: 'ai-intelligence-brief', description: 'AI developments & intelligence brief', frequency: 'Periodic', group: 'Intelligence', type: 'claude' },
-  { name: 'weekly-reading-digest', description: 'Reading materials digest from Notes & files', frequency: 'Weekly', group: 'Intelligence', type: 'claude' },
-  { name: 'discipline-enforcer', description: 'Daily discipline summary — commits, content, outbound', frequency: 'Daily 9pm', group: 'Discipline & Content', type: 'claude' },
-  { name: 'discipline-check', description: 'Hourly commit & content check during work hours', frequency: 'Hourly 9am-10pm', group: 'Discipline & Content', type: 'cron' },
-  { name: 'social-pulse', description: 'Social media engagement metrics & inbound signals', frequency: 'Periodic', group: 'Discipline & Content', type: 'claude' },
-  { name: 'daily-file-watchdog', description: 'Workspace cleanup — Downloads, Desktop, Movies', frequency: 'Daily', group: 'System', type: 'claude' },
-  { name: 'backup-projects', description: 'Hourly OneDrive backup with smart pruning', frequency: 'Hourly', group: 'System', type: 'launchd' },
-  { name: 'infra-health', description: 'Health check for localhost-mirror, content-pipeline, cortex', frequency: 'Every 2 min', group: 'System', type: 'launchd' },
-  { name: 'content-pipeline', description: 'Content Pipeline app daemon (keep-alive)', frequency: 'Always', group: 'System', type: 'launchd' },
-  { name: 'localhost-mirror', description: 'Tunnel daemon for LAN/Tailscale access', frequency: 'Always', group: 'System', type: 'launchd' },
+  // Dev & Business (existing Claude scheduled-tasks)
+  { name: 'nella-daily-dev-log', description: 'Daily dev log from repo activity', frequency: 'Daily', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
+  { name: 'daily-repo-inspection', description: 'Website repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
+  { name: 'daily-repo-summary', description: 'Core repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
+  { name: 'medellin-lead-gen', description: 'Freelance lead generation for Medellin area', frequency: 'Bimonthly', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
+  { name: 'weekly-competition-scanner', description: 'Scan for competitions, grants, hackathons', frequency: 'Weekly', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
+
+  // Intelligence
+  { name: 'ai-intelligence-brief', description: 'AI developments & intelligence brief', frequency: 'Periodic', group: 'Intelligence', type: 'claude', host: 'mac-mini' },
+  { name: 'weekly-reading-digest', description: 'Reading materials digest from Notes & files', frequency: 'Weekly', group: 'Intelligence', type: 'claude', host: 'mac-mini' },
+
+  // Discovery (Nella ICP listeners + scoring)
+  { name: 'x-discovery', description: 'Bird CLI search of X for trigger phrases, upserts leads to Supabase', frequency: 'Every 20 min', group: 'Discovery', type: 'openclaw', host: 'gcp-vm' },
+  { name: 'mutuals-refresh', description: 'Refresh X mutuals list to filter discovery against existing follows', frequency: 'Weekly Sun 6am', group: 'Discovery', type: 'openclaw', host: 'gcp-vm' },
+  { name: 'classifier-stage1', description: 'Nano LLM scores new leads into ICP slots (n8n flow)', frequency: 'Every 5 min', group: 'Discovery', type: 'n8n', host: 'gcp-vm' },
+  { name: 'velocity-alerts', description: 'Detects 5x baseline spikes per keyword in 30-min windows (n8n)', frequency: 'Every 30 min', group: 'Discovery', type: 'n8n', host: 'gcp-vm' },
+
+  // Content & Knowledge
+  { name: 'content-draft-queue', description: 'Drafts 3-5 X posts daily in voice via voice-post + RAG over Mars', frequency: 'Daily 9am', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
+  { name: 'build-in-public-log', description: 'Drafts 1-2 sentence build-log post from git/Vercel activity', frequency: 'Daily 6pm', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
+  { name: 'thread-builder', description: 'Voice memo in Mars/transcripts/incoming/ produces 4-8 post X thread draft', frequency: 'On file land', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
+  { name: 'mars-rag-index', description: 'FAISS index over Mars + Cortex + journal; powers /recall Telegram cmd', frequency: 'Daily 3am', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
+  { name: 'course-companion', description: 'PDF in Mars/courses/incoming/ produces classify + flashcards', frequency: 'On file land', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
+
+  // Discipline & Content (existing)
+  { name: 'discipline-enforcer', description: 'Daily discipline summary: commits, content, outbound', frequency: 'Daily 9pm', group: 'Discipline & Content', type: 'claude', host: 'mac-mini' },
+
+  // Ops & Life
+  { name: 'uptime-flap-filter', description: 'Reads Uptime Kuma; pages Pushover only after 3 consecutive down checks + restart attempt', frequency: 'Every 5 min', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
+  { name: 'health-habit-tracker', description: 'PPL/swim/sleep/cal/journal Telegram check-in; Sun graph', frequency: 'Daily 9pm + Sun 8pm', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
+
+  // Security & Discipline
+  { name: 'cost-guardian', description: 'Sums LLM/cloud bills daily; Pushover at 50/80/100% thresholds (n8n)', frequency: 'Daily 8am', group: 'Security & Discipline', type: 'n8n', host: 'gcp-vm' },
+  { name: 'distraction-logger', description: 'Telegram /dw start <task>; mid-session pings; end-of-session honesty audit (n8n)', frequency: 'On /dw command', group: 'Security & Discipline', type: 'n8n', host: 'gcp-vm' },
+
+  // System (existing launchd daemons, kept per user)
+  { name: 'daily-file-watchdog', description: 'Workspace cleanup: Downloads, Desktop, Movies', frequency: 'Daily', group: 'System', type: 'claude', host: 'mac-mini' },
+  { name: 'backup-projects', description: 'Hourly OneDrive backup with smart pruning', frequency: 'Hourly', group: 'System', type: 'launchd', host: 'mac-mini' },
+  { name: 'infra-health', description: 'Health check for localhost-mirror, content-pipeline, cortex', frequency: 'Every 2 min', group: 'System', type: 'launchd', host: 'mac-mini' },
+  { name: 'content-pipeline', description: 'Content Pipeline app daemon (keep-alive)', frequency: 'Always', group: 'System', type: 'launchd', host: 'mac-mini' },
+  { name: 'localhost-mirror', description: 'Tunnel daemon for LAN/Tailscale access', frequency: 'Always', group: 'System', type: 'launchd', host: 'mac-mini' },
 ]
 
+// Visual config per task TYPE (where the work runs).
+const typeConfig: Record<TaskType, { label: string; bg: string; color: string }> = {
+  openclaw: { label: 'openclaw', bg: 'bg-pink-500/15', color: 'text-pink-400' },
+  n8n:      { label: 'n8n',      bg: 'bg-rose-500/15', color: 'text-rose-300' },
+  launchd:  { label: 'launchd',  bg: 'bg-green-500/15', color: 'text-green-400' },
+  claude:   { label: 'claude',   bg: 'bg-purple-500/15', color: 'text-purple-400' },
+  hook:     { label: 'hook',     bg: 'bg-cyan-500/15', color: 'text-cyan-400' },
+  cron:     { label: 'cron',     bg: 'bg-yellow-500/15', color: 'text-yellow-400' },
+}
+
+// Visual config per HOST (where the runtime lives).
+const hostConfig: Record<TaskHost, { label: string; bg: string; color: string }> = {
+  'gcp-vm':   { label: 'GCP VM',   bg: 'bg-blue-500/10',  color: 'text-blue-300' },
+  'mac-mini': { label: 'Mac mini', bg: 'bg-slate-500/15', color: 'text-slate-300' },
+}
+
 const groupConfig: Record<string, { icon: typeof Code; color: string }> = {
+  'Foundation': { icon: Brain, color: 'text-cyan-400' },
   'Dev & Business': { icon: Code, color: 'text-blue-400' },
   'Intelligence': { icon: Brain, color: 'text-purple-400' },
+  'Discovery': { icon: Search, color: 'text-pink-400' },
+  'Content & Knowledge': { icon: FileText, color: 'text-amber-400' },
   'Discipline & Content': { icon: Flame, color: 'text-orange-400' },
+  'Ops & Life': { icon: Clock, color: 'text-emerald-400' },
+  'Security & Discipline': { icon: AlertTriangle, color: 'text-red-400' },
   'System': { icon: Server, color: 'text-green-400' },
 }
 
@@ -160,7 +213,7 @@ export function AutomationsPage() {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000
     return runs.filter((r) => new Date(r.timestamp).getTime() > cutoff)
   }, [runs])
-  const groups = ['Dev & Business', 'Intelligence', 'Discipline & Content', 'System']
+  const groups = ['Foundation', 'Dev & Business', 'Intelligence', 'Discovery', 'Content & Knowledge', 'Discipline & Content', 'Ops & Life', 'Security & Discipline', 'System']
 
   const filteredTasks = useMemo(() => {
     const lowerSearch = search.toLowerCase()
@@ -385,11 +438,16 @@ export function AutomationsPage() {
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-semibold break-all">{task.name}</span>
-                            <span className={`text-[8px] px-1 py-0.5 rounded shrink-0 ${
-                              task.type === 'claude' ? 'bg-purple-500/15 text-purple-400'
-                              : task.type === 'launchd' ? 'bg-green-500/15 text-green-400'
-                              : 'bg-yellow-500/15 text-yellow-400'
-                            }`}>{task.type}</span>
+                            {(() => {
+                              const tc = typeConfig[task.type]
+                              const hc = hostConfig[task.host]
+                              return (
+                                <>
+                                  <span className={`text-[8px] px-1 py-0.5 rounded shrink-0 ${tc.bg} ${tc.color}`}>{tc.label}</span>
+                                  <span className={`text-[8px] px-1 py-0.5 rounded shrink-0 ${hc.bg} ${hc.color}`}>{hc.label}</span>
+                                </>
+                              )
+                            })()}
                           </div>
                           <p className="text-[10px] text-muted-foreground mt-0.5">{task.description}</p>
                           <div className="flex items-center gap-2 mt-1.5">

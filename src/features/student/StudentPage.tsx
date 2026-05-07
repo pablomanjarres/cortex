@@ -476,7 +476,7 @@ export function StudentPage() {
     if (a.deadline) syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'upsert')
   }
 
-  // ── Calendar sync: push inline edits (deadline/name changes) ──
+  // ── Calendar sync: push inline edits (deadline/name changes, grade/done removal) ──
   const prevAssignmentsRef = useRef<Assignment[] | null>(null)
   useEffect(() => {
     const prev = prevAssignmentsRef.current
@@ -484,7 +484,13 @@ export function StudentPage() {
       for (const a of assignments) {
         const old = prev.find((p) => p.id === a.id)
         if (!old) continue
-        if (old.deadline !== a.deadline || old.name !== a.name) {
+        // When graded or marked done, remove from calendar (keep deadline in app data)
+        if (!old.done && a.done) {
+          syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'delete')
+        } else if (old.done && !a.done) {
+          // Un-done: re-add to calendar if it has a deadline
+          if (a.deadline) syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'upsert')
+        } else if (old.deadline !== a.deadline || old.name !== a.name) {
           syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'upsert')
         }
       }

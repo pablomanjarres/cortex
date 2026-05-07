@@ -268,8 +268,65 @@ export function CrmPage() {
         </button>
       </div>
 
-      {/* Table */}
-      <WidgetCard title={activeOrg?.name || 'CRM'} description={`${filtered.length} contacts`} delay={0.1}>
+      {/* Mobile: Contact cards */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            {contacts.length === 0 ? 'No contacts yet. Click Add to create one.' : 'No contacts match your filters.'}
+          </p>
+        ) : filtered.map((c) => (
+          <div key={c.id} className="liquid-glass rounded-xl border border-border p-4">
+            <div className="flex items-start justify-between" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{c.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{[c.company, c.role].filter(Boolean).join(' · ') || 'No company'}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${statusConfig[c.status].color}`}>{statusConfig[c.status].label}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+              {c.value > 0 && <span className="tabular-nums">{fmtMoney(c.value)}</span>}
+              {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
+              {c.tags.length > 0 && <span className="truncate">{c.tags.join(', ')}</span>}
+            </div>
+            {expanded === c.id && (
+              <div className="mt-4 pt-3 border-t border-border/30 flex flex-col gap-3">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] text-muted-foreground">Name</label>
+                  <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className="bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-[10px] text-muted-foreground">Company</label><input value={c.company} onChange={(e) => setField(c.id, { company: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                  <div><label className="text-[10px] text-muted-foreground">Role</label><input value={c.role} onChange={(e) => setField(c.id, { role: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                </div>
+                <div><label className="text-[10px] text-muted-foreground">Status</label>
+                  <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                    {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
+                <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
+                <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.website} onChange={(e) => setField(c.id, { website: e.target.value })} placeholder="Website" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
+                <div className="flex items-center gap-2"><DollarSign className="h-3.5 w-3.5 text-muted-foreground" /><input type="number" value={c.value || ''} onChange={(e) => setField(c.id, { value: parseInt(e.target.value) || 0 })} placeholder="Deal value" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30 tabular-nums" /></div>
+                <div><label className="text-[10px] text-muted-foreground">Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
+                <div><label className="text-[10px] text-muted-foreground">Notes</label>
+                  <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none" rows={3} placeholder="Notes..." />
+                </div>
+                <div><label className="text-[10px] text-muted-foreground">Tags (comma-separated)</label>
+                  <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" placeholder="vip, priority..." />
+                </div>
+                <button onClick={() => deleteContact(c.id)} className="cursor-pointer flex items-center justify-center gap-1.5 text-xs text-red-400/60 active:text-red-400 px-3 py-2.5 rounded-lg border border-red-400/20">
+                  <Trash2 className="h-3 w-3" /> Delete contact
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop: Table */}
+      <WidgetCard title={activeOrg?.name || 'CRM'} description={`${filtered.length} contacts`} delay={0.1} className="hidden md:block">
         <div className="overflow-x-auto -mx-5">
           <table className="w-full text-xs">
             <thead>
@@ -298,14 +355,10 @@ export function CrmPage() {
                 <>
                   <tr key={c.id} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
                     className={`cursor-pointer border-b border-border/20 transition-colors hover:bg-secondary/30 group ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                    <td className="px-5 py-2.5">
-                      <span className="font-medium">{c.name}</span>
-                    </td>
+                    <td className="px-5 py-2.5"><span className="font-medium">{c.name}</span></td>
                     <td className="py-2.5 text-muted-foreground">{c.company || '—'}</td>
                     <td className="py-2.5 text-muted-foreground">{c.role || '—'}</td>
-                    <td className="py-2.5">
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${statusConfig[c.status].color}`}>{statusConfig[c.status].label}</span>
-                    </td>
+                    <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${statusConfig[c.status].color}`}>{statusConfig[c.status].label}</span></td>
                     <td className="py-2.5 text-right tabular-nums text-muted-foreground">{fmtMoney(c.value) || '—'}</td>
                     <td className="py-2.5 text-right text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
                     <td className="py-2.5 pr-4">
@@ -325,10 +378,8 @@ export function CrmPage() {
                               <div><label className="text-[10px] text-muted-foreground">Company</label><input value={c.company} onChange={(e) => setField(c.id, { company: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
                               <div><label className="text-[10px] text-muted-foreground">Role</label><input value={c.role} onChange={(e) => setField(c.id, { role: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
                             </div>
-                            <div>
-                              <label className="text-[10px] text-muted-foreground">Status</label>
-                              <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })}
-                                className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                            <div><label className="text-[10px] text-muted-foreground">Status</label>
+                              <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
                                 {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
                               </select>
                             </div>
@@ -342,16 +393,12 @@ export function CrmPage() {
                           </div>
                           <div className="flex flex-col gap-2">
                             <label className="text-[10px] text-muted-foreground">Notes</label>
-                            <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })}
-                              className="w-full rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-                              rows={4} placeholder="Notes about this contact..." />
+                            <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none" rows={4} placeholder="Notes about this contact..." />
                             <label className="text-[10px] text-muted-foreground">Tags (comma-separated)</label>
-                            <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })}
-                              className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" placeholder="vip, priority, follow-up..." />
+                            <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" placeholder="vip, priority, follow-up..." />
                           </div>
                           <div className="flex items-end justify-end lg:col-span-3 pt-2">
-                            <button onClick={() => deleteContact(c.id)}
-                              className="cursor-pointer flex items-center gap-1.5 text-xs text-red-400/60 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-red-400/20 hover:border-red-400/40 hover:bg-red-400/5">
+                            <button onClick={() => deleteContact(c.id)} className="cursor-pointer flex items-center gap-1.5 text-xs text-red-400/60 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-red-400/20 hover:border-red-400/40 hover:bg-red-400/5">
                               <Trash2 className="h-3 w-3" /> Delete contact
                             </button>
                           </div>
