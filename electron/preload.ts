@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tray: {
     updateStats: (stats: { tasks: string; habits: string; score: string }) =>
       ipcRenderer.send('tray:updateStats', stats),
+    sprintSync: (data: { active: boolean; endTimeMs?: number; task?: string }) =>
+      ipcRenderer.send('sprint:sync', data),
+  },
+
+  onSprintAction: (callback: (action: string, data?: { duration?: number }) => void) => {
+    ipcRenderer.on('sprint:action', (_event, action, data) => callback(action, data))
   },
 
   keychain: {
@@ -41,6 +47,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     save: (id: string, base64: string) => ipcRenderer.invoke('media:save', id, base64),
     load: (id: string) => ipcRenderer.invoke('media:load', id),
     delete: (id: string) => ipcRenderer.invoke('media:delete', id),
+  },
+
+  notify: {
+    pushover: (category: string, message: string) => ipcRenderer.invoke('notify:pushover', category, message),
   },
 
   data: {

@@ -61,7 +61,9 @@ interface ElectronAPI {
   }
   tray: {
     updateStats: (stats: { tasks: string; habits: string; score: string }) => void
+    sprintSync: (data: { active: boolean; endTimeMs?: number; task?: string }) => void
   }
+  onSprintAction: (callback: (action: string, data?: { duration?: number }) => void) => void
   keychain: {
     save: (service: string, value: string) => Promise<boolean>
     get: (service: string) => Promise<string | null>
@@ -79,6 +81,9 @@ interface ElectronAPI {
     save: (id: string, base64: string) => Promise<boolean>
     load: (id: string) => Promise<string | null>
     delete: (id: string) => Promise<boolean>
+  }
+  notify: {
+    pushover: (category: string, message: string) => Promise<boolean>
   }
   data: {
     read: (key: string) => Promise<unknown | null>

@@ -1,5 +1,9 @@
 const GITHUB_API = 'https://api.github.com'
 
+function localDate(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 interface GitHubStats {
   commitsToday: number
   commitsWeek: number
@@ -149,7 +153,7 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
     // Count consecutive days backwards from today
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     while (true) {
-      const dateStr = day.toISOString().slice(0, 10)
+      const dateStr = localDate(day)
       if (pushDates.has(dateStr)) {
         streak++
         day.setDate(day.getDate() - 1)

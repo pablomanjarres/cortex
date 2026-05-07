@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, clipboard, globalShortcut, Notification } from 'electron'
 import path from 'path'
 import http from 'http'
 import os from 'os'
@@ -13,15 +13,42 @@ import { getGitHubStats } from './integrations/github.js'
 import { getLemonStats } from './integrations/lemon.js'
 import { getVercelStats } from './integrations/vercel.js'
 import { getSupabaseStats } from './integrations/supabase.js'
+import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+/** Local YYYY-MM-DD (avoids UTC shift from toISOString) */
+function localDate(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let webServer: http.Server | null = null
 let currentStats = { tasks: '0/0', habits: '0/0', score: '—' }
 const WEB_PORT = 3456
+
+// ─── Tray live data (events, sprint, habits) ─────────────
+let cachedEvents: { title: string; startTime: string; endTime: string; isAllDay: boolean }[] = []
+let cachedHabits: { id: string; name: string; emoji: string }[] = []
+let cachedHabitHistory: Record<string, boolean> = {}
+let traySprintEndMs: number | null = null
+let traySprintTask: string | null = null
+let traySprintInterval: ReturnType<typeof setInterval> | null = null
+let trayRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+// ─── Live system stats (from Glances on Mac mini + VM) ───
+interface HostStats {
+  cpu: number; mem: number; memUsed: number; memTotal: number
+  swap: number; load1: number; cores: number; uptime: string
+  rootFsPct?: number; rootFsUsed?: number; rootFsSize?: number
+}
+let cachedMacStats: HostStats | null = null
+let macStatsError: string | null = null
+let cachedVmStats: HostStats | null = null
+let vmStatsError: string | null = null
+let traySystemTimer: ReturnType<typeof setInterval> | null = null
 
 const isDev = !app.isPackaged
 
@@ -61,7 +88,241 @@ function showAndNavigate(route: string) {
   }
 }
 
+// ─── Tray data helpers ────────────────────────────────────
+
+async function refreshTrayData() {
+  try { cachedEvents = await getTodayEvents() } catch { cachedEvents = [] }
+  try {
+    const habitsFile = path.join(dataDir, 'cortex-habits.json')
+    if (fs.existsSync(habitsFile)) cachedHabits = JSON.parse(readAndDecrypt(habitsFile))
+    else cachedHabits = []
+  } catch { cachedHabits = [] }
+  try {
+    const today = localDate()
+    const historyFile = path.join(dataDir, 'cortex-habits-history.json')
+    if (fs.existsSync(historyFile)) {
+      const history = JSON.parse(readAndDecrypt(historyFile))
+      cachedHabitHistory = history[today] || {}
+    } else { cachedHabitHistory = {} }
+  } catch { cachedHabitHistory = {} }
+  if (tray) tray.setContextMenu(buildTrayMenu())
+}
+
+// ─── System stats refresh (Mac mini + VM via Glances) ─────
+// Pulls from local Glances on 127.0.0.1:61208 (Mac) and Tailscale
+// openclaw-vm:61208 (VM) every 5s. Updates tray title + menu.
+
+async function fetchHostStats(host: string): Promise<HostStats> {
+  const opts = { signal: AbortSignal.timeout(host === '127.0.0.1' ? 3000 : 5000) }
+  const base = `http://${host}:61208/api/4`
+  const [cpuR, memR, loadR, upR, fsR, swR] = await Promise.all([
+    fetch(`${base}/cpu`, opts),
+    fetch(`${base}/mem`, opts),
+    fetch(`${base}/load`, opts),
+    fetch(`${base}/uptime`, opts),
+    fetch(`${base}/fs`, opts),
+    fetch(`${base}/memswap`, opts).catch(() => null),
+  ])
+  if (!cpuR.ok || !memR.ok || !loadR.ok) {
+    throw new Error(`glances ${cpuR.status}/${memR.status}/${loadR.status}`)
+  }
+  const cpu = await cpuR.json() as { total: number }
+  const mem = await memR.json() as { percent: number; used: number; total: number }
+  const load = await loadR.json() as { min1: number; cpucore: number }
+  const upRaw = upR.ok ? await upR.json() : ''
+  const uptime = typeof upRaw === 'string' ? upRaw : (upRaw?.seconds != null ? `${Math.floor(upRaw.seconds / 86400)}d` : '')
+  let swap = 0
+  if (swR && swR.ok) {
+    try { const s = await swR.json(); swap = s?.percent ?? 0 } catch { /* ignore */ }
+  }
+  const fsList = fsR.ok ? (await fsR.json()) as Array<{ mnt_point: string; percent: number; used: number; size: number }> : []
+  const root = fsList.find((f) => f.mnt_point === '/')
+  return {
+    cpu: cpu.total ?? 0,
+    mem: mem.percent ?? 0,
+    memUsed: mem.used ?? 0,
+    memTotal: mem.total ?? 0,
+    swap,
+    load1: load.min1 ?? 0,
+    cores: load.cpucore ?? 1,
+    uptime,
+    rootFsPct: root?.percent,
+    rootFsUsed: root?.used,
+    rootFsSize: root?.size,
+  }
+}
+
+async function refreshSystemStats() {
+  const [macRes, vmRes] = await Promise.allSettled([
+    fetchHostStats('127.0.0.1'),
+    fetchHostStats('openclaw-vm'),
+  ])
+  if (macRes.status === 'fulfilled') { cachedMacStats = macRes.value; macStatsError = null }
+  else { macStatsError = (macRes.reason as Error)?.message ?? 'fetch failed' }
+  if (vmRes.status === 'fulfilled') { cachedVmStats = vmRes.value; vmStatsError = null }
+  else { vmStatsError = (vmRes.reason as Error)?.message ?? 'fetch failed' }
+  updateTraySystemTitle()
+  if (tray) tray.setContextMenu(buildTrayMenu())
+}
+
+function updateTraySystemTitle() {
+  if (!tray) return
+  // Sprint timer takes priority.
+  if (traySprintEndMs && traySprintEndMs > Date.now()) return
+  const parts: string[] = []
+  if (cachedMacStats) parts.push(`Mac ${Math.round(cachedMacStats.cpu)}·${Math.round(cachedMacStats.mem)}`)
+  if (cachedVmStats) parts.push(`VM ${Math.round(cachedVmStats.cpu)}·${Math.round(cachedVmStats.mem)}`)
+  tray.setTitle(parts.join('  '))
+}
+
+// ─── Tray sprint title (synced from renderer) ───────────
+
+function updateTraySprintTitle() {
+  if (!traySprintEndMs) return
+  const remaining = Math.max(0, Math.round((traySprintEndMs - Date.now()) / 1000))
+  if (remaining <= 0) {
+    clearTraySprintState()
+    new Notification({ title: 'Cortex', body: 'Sprint complete!' }).show()
+    return
+  }
+  const m = Math.floor(remaining / 60)
+  const s = remaining % 60
+  tray?.setTitle(`${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`)
+}
+
+function startTraySprintSync(endTimeMs: number, task: string) {
+  traySprintEndMs = endTimeMs
+  traySprintTask = task
+  if (traySprintInterval) clearInterval(traySprintInterval)
+  updateTraySprintTitle()
+  traySprintInterval = setInterval(updateTraySprintTitle, 1000)
+  tray?.setToolTip(`Cortex — Sprint: ${task}`)
+  if (tray) tray.setContextMenu(buildTrayMenu())
+}
+
+function clearTraySprintState() {
+  traySprintEndMs = null
+  traySprintTask = null
+  if (traySprintInterval) { clearInterval(traySprintInterval); traySprintInterval = null }
+  tray?.setTitle('')
+  tray?.setToolTip('Cortex')
+  // Restore system stats title if we have data.
+  updateTraySystemTitle()
+  if (tray) tray.setContextMenu(buildTrayMenu())
+}
+
+function saveSession(session: { id: string; task: string; duration: number; startedAt: string; completedAt: string }) {
+  const today = localDate()
+  const file = path.join(dataDir, `cortex-daily-sessions-${today}.json`)
+  let sessions: any[] = []
+  try { if (fs.existsSync(file)) sessions = JSON.parse(readAndDecrypt(file)) } catch { /* fresh */ }
+  sessions.push(session)
+  if (fs.existsSync(file)) fs.copyFileSync(file, path.join(backupDir, `cortex-daily-sessions-${today}.bak.json`))
+  encryptAndWrite(file, JSON.stringify(sessions, null, 2))
+}
+
+
+function toggleHabitFromTray(habitId: string) {
+  const today = localDate()
+  const historyFile = path.join(dataDir, 'cortex-habits-history.json')
+  let history: Record<string, Record<string, boolean>> = {}
+  try { if (fs.existsSync(historyFile)) history = JSON.parse(readAndDecrypt(historyFile)) } catch { /* fresh */ }
+  if (!history[today]) history[today] = {}
+  history[today][habitId] = !history[today][habitId]
+  if (fs.existsSync(historyFile)) fs.copyFileSync(historyFile, path.join(backupDir, 'cortex-habits-history.bak.json'))
+  encryptAndWrite(historyFile, JSON.stringify(history, null, 2))
+  cachedHabitHistory = history[today]
+  if (tray) tray.setContextMenu(buildTrayMenu())
+}
+
+function fmtBytesShort(n: number): string {
+  if (!Number.isFinite(n) || n <= 0) return '0 B'
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.min(Math.floor(Math.log(n) / Math.log(1024)), u.length - 1)
+  return `${(n / Math.pow(1024, i)).toFixed(1)} ${u[i]}`
+}
+
+function buildHostStatsItems(label: string, s: HostStats | null, err: string | null): Electron.MenuItemConstructorOptions[] {
+  const items: Electron.MenuItemConstructorOptions[] = [{ label, enabled: false }]
+  if (!s) {
+    items.push({ label: err ? `· offline: ${err}` : '· connecting…', enabled: false })
+    return items
+  }
+  const loadPct = s.cores > 0 ? (s.load1 / s.cores) * 100 : 0
+  items.push(
+    { label: `· CPU  ${s.cpu.toFixed(1)}%  (${s.cores} cores)`, enabled: false },
+    { label: `· RAM  ${s.mem.toFixed(1)}%  ${fmtBytesShort(s.memUsed)} / ${fmtBytesShort(s.memTotal)}`, enabled: false },
+    { label: `· Load ${s.load1.toFixed(2)}  (${loadPct.toFixed(0)}% of ${s.cores}c)`, enabled: false },
+  )
+  if (s.swap > 0) items.push({ label: `· Swap ${s.swap.toFixed(1)}%`, enabled: false })
+  if (s.rootFsPct != null && s.rootFsSize != null && s.rootFsUsed != null) {
+    items.push({ label: `· Disk /  ${s.rootFsPct.toFixed(1)}%  ${fmtBytesShort(s.rootFsUsed)} / ${fmtBytesShort(s.rootFsSize)}`, enabled: false })
+  }
+  if (s.uptime) items.push({ label: `· Uptime ${s.uptime}`, enabled: false })
+  return items
+}
+
+function buildMacStatsMenuItems(): Electron.MenuItemConstructorOptions[] {
+  return [
+    ...buildHostStatsItems('Mac mini', cachedMacStats, macStatsError),
+    ...buildHostStatsItems('OpenClaw VM', cachedVmStats, vmStatsError),
+    { label: 'Open System page', click: () => showAndNavigate('/system') },
+  ]
+}
+
 function buildTrayMenu() {
+  // Sprint section (synced from renderer)
+  const sprintItems: Electron.MenuItemConstructorOptions[] = []
+  if (traySprintEndMs && traySprintEndMs > Date.now()) {
+    const remaining = Math.max(0, Math.ceil((traySprintEndMs - Date.now()) / 60000))
+    sprintItems.push(
+      { label: `⏱ Sprint: ${remaining}m left${traySprintTask ? ` — ${traySprintTask}` : ''}`, enabled: false },
+      { label: 'Stop Sprint', click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('sprint:action', 'stop')
+        }
+        clearTraySprintState()
+      }},
+    )
+  } else {
+    sprintItems.push(
+      { label: '⏱ Start Sprint (60m)', click: () => {
+        if (mainWindow) {
+          mainWindow.webContents.send('sprint:action', 'start', { duration: 60 })
+          mainWindow.show()
+          mainWindow.focus()
+        } else {
+          createWindow()
+        }
+      }},
+    )
+  }
+
+  // Events section
+  const eventItems: Electron.MenuItemConstructorOptions[] = []
+  if (cachedEvents.length > 0) {
+    for (const ev of cachedEvents.slice(0, 8)) {
+      const time = ev.isAllDay ? 'All day' : ev.startTime
+      eventItems.push({ label: `${time} — ${ev.title}`, enabled: false })
+    }
+  } else {
+    eventItems.push({ label: 'No events today', enabled: false })
+  }
+
+  // Habits section
+  const habitItems: Electron.MenuItemConstructorOptions[] = []
+  if (cachedHabits.length > 0) {
+    for (const h of cachedHabits) {
+      const done = cachedHabitHistory[h.id] ?? false
+      habitItems.push({
+        label: `${done ? '✅' : '☐'} ${h.emoji} ${h.name}`,
+        click: () => toggleHabitFromTray(h.id),
+      })
+    }
+  } else {
+    habitItems.push({ label: 'No habits configured', enabled: false })
+  }
+
   return Menu.buildFromTemplate([
     {
       label: 'Open Cortex',
@@ -73,6 +334,15 @@ function buildTrayMenu() {
     { label: `Tasks: ${currentStats.tasks}`, enabled: false },
     { label: `Habits: ${currentStats.habits}`, enabled: false },
     { label: `Score: ${currentStats.score}`, enabled: false },
+    { type: 'separator' },
+    ...buildMacStatsMenuItems(),
+    { type: 'separator' },
+    ...sprintItems,
+    { type: 'separator' },
+    { label: 'Today', enabled: false },
+    ...eventItems,
+    { type: 'separator' },
+    { label: 'Habits', submenu: habitItems },
     { type: 'separator' },
     {
       label: 'Core',
@@ -133,6 +403,12 @@ function createTray() {
   tray = new Tray(icon)
   tray.setToolTip('Cortex')
   tray.setContextMenu(buildTrayMenu())
+  // Refresh tray data (events, habits) on startup + every 5 minutes
+  refreshTrayData()
+  trayRefreshTimer = setInterval(refreshTrayData, 5 * 60 * 1000)
+  // Live system stats: pull from local Glances + VM Glances every 5s
+  refreshSystemStats()
+  traySystemTimer = setInterval(refreshSystemStats, 5000)
 }
 
 // ─── Web server ────────────────────────────────────────────
@@ -362,8 +638,8 @@ function startWebServer() {
 
     if (url.pathname === '/api/calendar/events' && req.method === 'GET') {
       try {
-        const start = url.searchParams.get('start') || new Date().toISOString().slice(0, 10)
-        const end = url.searchParams.get('end') || new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10)
+        const start = url.searchParams.get('start') || localDate()
+        const end = url.searchParams.get('end') || localDate(new Date(Date.now() + 120 * 86400000))
         const events = await getEventsInRange(start, end)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(events))
       } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
@@ -412,6 +688,94 @@ function startWebServer() {
       return
     }
 
+    // ─── Mars (Obsidian vault) integration ──────────────────
+    if (url.pathname === '/api/mars/journal' && req.method === 'GET') {
+      try {
+        const date = url.searchParams.get('date') || undefined
+        const doc = date ? readJournalDay(date) : readJournalToday()
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(doc))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/mars/journal' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', () => {
+        try {
+          const { text, date, tag } = JSON.parse(body)
+          if (!text) { res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'Missing text' })); return }
+          const result = writeJournalLine(text, { date, tag })
+          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+        } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      })
+      return
+    }
+
+    if (url.pathname === '/api/mars/search' && req.method === 'GET') {
+      try {
+        const q = url.searchParams.get('q') || ''
+        const limit = parseInt(url.searchParams.get('limit') || '20')
+        const matches = searchVault(q, limit)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify({ query: q, matches }))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/mars/voice-anchors' && req.method === 'GET') {
+      try {
+        const anchors = readVoiceAnchors()
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify({ anchors }))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/mars/stats' && req.method === 'GET') {
+      try {
+        const stats = vaultStats()
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    // ─── System metrics (Glances proxy) ─────────────────────
+    // Mac mini: glances launchd service on 127.0.0.1:61208
+    // VM: glances Docker container on openclaw-vm:61208 (Tailscale MagicDNS)
+    if (url.pathname === '/api/system/mac' && req.method === 'GET') {
+      try {
+        const r = await fetch('http://127.0.0.1:61208/api/4/all', { signal: AbortSignal.timeout(4000) })
+        if (!r.ok) throw new Error(`glances ${r.status}`)
+        res.writeHead(200, corsHeaders); res.end(await r.text())
+      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    if (url.pathname === '/api/system/vm' && req.method === 'GET') {
+      try {
+        const r = await fetch('http://openclaw-vm:61208/api/4/all', { signal: AbortSignal.timeout(5000) })
+        if (!r.ok) throw new Error(`glances ${r.status}`)
+        res.writeHead(200, corsHeaders); res.end(await r.text())
+      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    // ─── Uptime Kuma proxy (status page on VM) ─────────────
+    if (url.pathname === '/api/uptime' && req.method === 'GET') {
+      const slug = url.searchParams.get('slug') || 'main'
+      try {
+        const opts = { signal: AbortSignal.timeout(5000) }
+        const [confR, hbR] = await Promise.all([
+          fetch(`http://openclaw-vm:3001/api/status-page/${slug}`, opts),
+          fetch(`http://openclaw-vm:3001/api/status-page/heartbeat/${slug}`, opts),
+        ])
+        if (!confR.ok || !hbR.ok) throw new Error(`uptime-kuma ${confR.status}/${hbR.status}`)
+        const config = await confR.json()
+        const heartbeat = await hbR.json()
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify({ config, heartbeat }))
+      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
     if (url.pathname === '/api/projects/scan' && req.method === 'GET') {
       try {
         const projectsDir = path.join(os.homedir(), 'Projects')
@@ -430,6 +794,59 @@ function startWebServer() {
         projects.sort((a, b) => a.name.localeCompare(b.name))
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(projects))
       } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    // ─── Media API (images for captures — sync from phone) ─────
+    if (url.pathname === '/api/media' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', () => {
+        try {
+          const { id, base64 } = JSON.parse(body)
+          if (!id || !base64) { res.writeHead(400); res.end('Missing id or base64'); return }
+          const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+          fs.writeFileSync(path.join(mediaDir, id), buffer)
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+          res.end('true')
+        } catch { res.writeHead(500); res.end('Save error') }
+      })
+      return
+    }
+
+    if (url.pathname === '/api/media' && req.method === 'GET') {
+      const id = url.searchParams.get('id')
+      if (!id) { res.writeHead(400); res.end('Missing id'); return }
+      try {
+        const file = path.join(mediaDir, id)
+        if (!fs.existsSync(file)) {
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+          res.end('null')
+          return
+        }
+        const buffer = fs.readFileSync(file)
+        const ext = id.split('.').pop()?.toLowerCase() || 'png'
+        const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/png'
+        const b64 = `data:${mime};base64,${buffer.toString('base64')}`
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+        res.end(JSON.stringify(b64))
+      } catch { res.writeHead(500); res.end('Load error') }
+      return
+    }
+
+    if (url.pathname === '/api/media/delete' && req.method === 'POST') {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', () => {
+        try {
+          const { id } = JSON.parse(body)
+          if (!id) { res.writeHead(400); res.end('Missing id'); return }
+          const file = path.join(mediaDir, id)
+          if (fs.existsSync(file)) fs.unlinkSync(file)
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+          res.end('true')
+        } catch { res.writeHead(500); res.end('Delete error') }
+      })
       return
     }
 
@@ -476,6 +893,16 @@ ipcMain.handle('calendar:getEvent', async (_event, eventId: string) => getCalend
 ipcMain.on('tray:updateStats', (_event, stats) => {
   currentStats = stats
   if (tray) tray.setContextMenu(buildTrayMenu())
+})
+
+// ─── IPC: Sprint sync (renderer → tray title) ────────────
+
+ipcMain.on('sprint:sync', (_event, data: { active: boolean; endTimeMs?: number; task?: string }) => {
+  if (data.active && data.endTimeMs) {
+    startTraySprintSync(data.endTimeMs, data.task || '')
+  } else {
+    clearTraySprintState()
+  }
 })
 
 // ─── IPC: Keychain ─────────────────────────────────────────
@@ -710,12 +1137,47 @@ ipcMain.handle('projects:scan', async () => {
 
 // ─── Data persistence (JSON files in project data/) ───────
 
-// In dev: data/ in project root. In prod: ~/Projects/cortex/data/
+// In dev: data/ in project root. In prod: iCloud Drive for cross-device sync.
 // Never write inside the asar archive.
+const iCloudDir = path.join(
+  app.getPath('home'),
+  'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Cortex'
+)
+const legacyDir = path.join(app.getPath('home'), 'Projects', 'cortex', 'data')
+
 const dataDir = isDev
   ? path.join(__dirname, '..', 'data')
-  : path.join(app.getPath('home'), 'Projects', 'cortex', 'data')
+  : iCloudDir
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
+
+// Migrate existing data from legacy location to iCloud
+if (!isDev && fs.existsSync(legacyDir) && legacyDir !== dataDir) {
+  const legacyFiles = fs.readdirSync(legacyDir)
+  if (legacyFiles.length > 0) {
+    console.log(`[Cortex] Migrating ${legacyFiles.length} items from legacy dir to iCloud...`)
+    for (const item of legacyFiles) {
+      const src = path.join(legacyDir, item)
+      const dest = path.join(dataDir, item)
+      if (!fs.existsSync(dest)) {
+        const stat = fs.statSync(src)
+        if (stat.isDirectory()) {
+          fs.cpSync(src, dest, { recursive: true })
+        } else {
+          fs.copyFileSync(src, dest)
+        }
+      }
+    }
+    // Rename legacy dir so migration doesn't re-run
+    const renamedDir = legacyDir + '.migrated-to-icloud'
+    if (fs.existsSync(renamedDir)) {
+      fs.rmSync(legacyDir, { recursive: true })
+      console.log('[Cortex] Migration complete. Legacy dir removed (backup already exists)')
+    } else {
+      fs.renameSync(legacyDir, renamedDir)
+      console.log('[Cortex] Migration complete. Legacy dir renamed to data.migrated-to-icloud')
+    }
+  }
+}
 
 const backupDir = path.join(dataDir, 'backups')
 if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
@@ -821,6 +1283,18 @@ ipcMain.handle('media:delete', async (_event, id: string) => {
     if (fs.existsSync(file)) fs.unlinkSync(file)
     return true
   } catch (e) { console.error('media:delete error:', e); return false }
+})
+
+ipcMain.handle('notify:pushover', async (_event, category: string, message: string) => {
+  try {
+    const { execFile: ef } = require('child_process')
+    const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
+    if (fs.existsSync(notifyScript)) {
+      ef(notifyScript, ['-c', category, '-m', message], { timeout: 10000 }, () => {})
+      return true
+    }
+    return false
+  } catch { return false }
 })
 
 ipcMain.handle('data:listKeys', async () => {
@@ -953,6 +1427,15 @@ app.on('ready', () => {
   createWindow()
   createTray()
   startWebServer() // Auto-start web server for iPhone/browser access
+
+  // Global hotkey: Cmd+Shift+Alt+S to start a 60-min sprint (sends to renderer)
+  globalShortcut.register('CommandOrControl+Shift+Alt+S', () => {
+    if (mainWindow) {
+      mainWindow.webContents.send('sprint:action', 'start', { duration: 60 })
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
   cleanupOldDailyFiles()
   // Auto-export on startup + every 30 minutes
   setTimeout(autoExport, 5000)
@@ -961,6 +1444,10 @@ app.on('ready', () => {
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (mainWindow === null) createWindow() })
 app.on('before-quit', () => {
+  globalShortcut.unregisterAll()
+  if (traySprintInterval) clearInterval(traySprintInterval)
+  if (trayRefreshTimer) clearInterval(trayRefreshTimer)
+  if (traySystemTimer) clearInterval(traySystemTimer)
   if (autoExportInterval) clearInterval(autoExportInterval)
   autoExport() // One final export on quit
 })
