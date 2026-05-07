@@ -44,8 +44,10 @@ interface FinanceItem {
   id: string
   name: string
   type: ItemType
+  category?: string
   months: number[]
   paid?: boolean[]
+  paidAmounts?: number[] // actual amount paid per month (for partial payments)
 }
 
 interface FinanceData {
@@ -63,27 +65,27 @@ const DEFAULT_DATA: FinanceData = {
     { id: 'i2', name: 'Mom', type: 'Income', months: [400000, 300000, 0, 0, 0, 0, 300000, 300000, 300000, 300000, 300000, 300000] },
     { id: 'i3', name: 'Others', type: 'Income', months: [800000, 450000, 0, 0, 0, 0, 2000000, 0, 0, 0, 0, 0] },
     // Subscriptions
-    { id: 's1', name: 'Claude', type: 'Subscription', months: [80000, 80000, 380000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000] },
-    { id: 's2', name: 'GitHub Copilot', type: 'Subscription', months: [135000, 135000, 0, 135000, 135000, 135000, 135000, 135000, 135000, 135000, 135000, 135000] },
-    { id: 's3', name: 'Todoist', type: 'Subscription', months: [20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000] },
-    { id: 's4', name: 'ChatGPT', type: 'Subscription', months: [0, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000] },
-    { id: 's5', name: 'Vercel', type: 'Subscription', months: [0, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000] },
-    { id: 's6', name: 'GitHub Team', type: 'Subscription', months: [16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000] },
-    { id: 's7', name: 'Adobe CC', type: 'Subscription', months: [0, 64000, 64000, 64000, 64000, 64000, 64000, 64000, 64000, 64000, 0, 0] },
-    { id: 's8', name: 'Grammarly', type: 'Subscription', months: [0, 0, 0, 0, 0, 0, 0, 300000, 0, 0, 0, 0] },
+    { id: 's1', name: 'Claude', type: 'Subscription', category: 'AI', months: [80000, 80000, 380000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000] },
+    { id: 's2', name: 'GitHub Copilot', type: 'Subscription', category: 'AI', months: [135000, 135000, 0, 135000, 135000, 135000, 135000, 135000, 135000, 135000, 135000, 135000] },
+    { id: 's3', name: 'Todoist', type: 'Subscription', category: 'Productivity', months: [20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000, 20000] },
+    { id: 's4', name: 'ChatGPT', type: 'Subscription', category: 'AI', months: [0, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000] },
+    { id: 's5', name: 'Vercel', type: 'Subscription', category: 'Infrastructure', months: [0, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000] },
+    { id: 's6', name: 'GitHub Team', type: 'Subscription', category: 'Infrastructure', months: [16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000, 16000] },
+    { id: 's7', name: 'Adobe CC', type: 'Subscription', category: 'Creative', months: [0, 64000, 64000, 64000, 64000, 64000, 64000, 64000, 64000, 64000, 0, 0] },
+    { id: 's8', name: 'Grammarly', type: 'Subscription', category: 'Productivity', months: [0, 0, 0, 0, 0, 0, 0, 300000, 0, 0, 0, 0] },
     // Expenses
-    { id: 'e1', name: 'Food', type: 'Expense', months: [300000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000] },
-    { id: 'e2', name: 'Hair cut', type: 'Expense', months: [75000, 120000, 80000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000] },
-    { id: 'e3', name: 'Washing', type: 'Expense', months: [80000, 40000, 40000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000] },
-    { id: 'e4', name: 'Mac Mini Debt', type: 'Expense', months: [0, 0, 0, 0, 0, 600000, 600000, 600000, 600000, 600000, 600000, 600000] },
-    { id: 'e5', name: 'Debt', type: 'Expense', months: [0, 600000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-    { id: 'e6', name: 'Gym', type: 'Expense', months: [0, 120000, 0, 0, 0, 0, 0, 0, 0, 0, 120000, 120000] },
-    { id: 'e7', name: 'Goodnotes', type: 'Expense', months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65000] },
-    { id: 'e8', name: 'Alarmy', type: 'Expense', months: [0, 0, 0, 40000, 0, 0, 0, 0, 0, 0, 0, 0] },
-    { id: 'e9', name: 'Hair products', type: 'Expense', months: [205000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-    { id: 'e10', name: 'Eggs', type: 'Expense', months: [0, 0, 100000, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-    { id: 'e11', name: 'Google Cloud', type: 'Expense', months: [0, 0, 0, 90000, 0, 0, 0, 0, 0, 0, 0, 0] },
-    { id: 'e12', name: 'Supabase', type: 'Expense', months: [0, 0, 0, 100000, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { id: 'e1', name: 'Food', type: 'Expense', category: 'Food', months: [300000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000, 500000] },
+    { id: 'e2', name: 'Hair cut', type: 'Expense', category: 'Personal Care', months: [75000, 120000, 80000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000] },
+    { id: 'e3', name: 'Washing', type: 'Expense', category: 'Home', months: [80000, 40000, 40000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000, 80000] },
+    { id: 'e4', name: 'Mac Mini Debt', type: 'Expense', category: 'Debt', months: [0, 0, 0, 0, 0, 600000, 600000, 600000, 600000, 600000, 600000, 600000] },
+    { id: 'e5', name: 'Debt', type: 'Expense', category: 'Debt', months: [0, 600000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { id: 'e6', name: 'Gym', type: 'Expense', category: 'Health', months: [0, 120000, 0, 0, 0, 0, 0, 0, 0, 0, 120000, 120000] },
+    { id: 'e7', name: 'Goodnotes', type: 'Expense', category: 'Apps', months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65000] },
+    { id: 'e8', name: 'Alarmy', type: 'Expense', category: 'Apps', months: [0, 0, 0, 40000, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { id: 'e9', name: 'Hair products', type: 'Expense', category: 'Personal Care', months: [205000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { id: 'e10', name: 'Eggs', type: 'Expense', category: 'Food', months: [0, 0, 100000, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { id: 'e11', name: 'Google Cloud', type: 'Expense', category: 'Infrastructure', months: [0, 0, 0, 90000, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { id: 'e12', name: 'Supabase', type: 'Expense', category: 'Infrastructure', months: [0, 0, 0, 100000, 0, 0, 0, 0, 0, 0, 0, 0] },
   ],
 }
 
@@ -98,6 +100,14 @@ const fmtCOP = (n: number) => {
 const fmtFull = (n: number) => `$${n.toLocaleString('es-CO')}`
 const typeColor: Record<ItemType, string> = { Income: 'bg-green-500/15 text-green-400', Expense: 'bg-red-500/15 text-red-400', Subscription: 'bg-blue-500/15 text-blue-400' }
 const CHART_COLORS = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#fb923c', '#2dd4bf', '#818cf8', '#e879f9']
+
+const CATEGORIES = ['AI', 'Infrastructure', 'Creative', 'Productivity', 'Apps', 'Food', 'Personal Care', 'Home', 'Debt', 'Health', 'Transport', 'Education', 'Entertainment', 'Other'] as const
+const CATEGORY_COLORS: Record<string, string> = {
+  'AI': '#a78bfa', 'Infrastructure': '#60a5fa', 'Creative': '#f472b6', 'Productivity': '#2dd4bf',
+  'Apps': '#818cf8', 'Food': '#f87171', 'Personal Care': '#fb923c', 'Home': '#fbbf24',
+  'Debt': '#ef4444', 'Health': '#34d399', 'Transport': '#38bdf8', 'Education': '#c084fc',
+  'Entertainment': '#e879f9', 'Other': '#94a3b8',
+}
 
 const fmtCell = (n: number) => `$${n.toLocaleString('es-CO')}`
 
@@ -140,6 +150,7 @@ export function FinancePage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [hideIncome, updateHideIncome] = useStore<boolean>('cortex-finance-hide-income', false)
   const toggleHideIncome = () => updateHideIncome((prev) => !prev)
+  const [categoryFilter, setCategoryFilter] = useState<string>('')
 
   const toggleSort = (field: 'name' | 'total') => {
     if (sortField === field) {
@@ -160,18 +171,35 @@ export function FinancePage() {
     }) }))
 
   const addItem = (type: ItemType) =>
-    updateData((prev) => ({ ...prev, items: [...prev.items, { id: `fin-${Date.now()}`, name: 'New item', type, months: Array(12).fill(0), paid: Array(12).fill(false) }] }))
+    updateData((prev) => ({ ...prev, items: [...prev.items, { id: `fin-${Date.now()}`, name: 'New item', type, category: type !== 'Income' ? 'Other' : undefined, months: Array(12).fill(0), paid: Array(12).fill(false) }] }))
 
   const deleteItem = (id: string) =>
     updateData((prev) => ({ ...prev, items: prev.items.filter((i) => i.id !== id) }))
 
-  const togglePaid = (id: string, monthIdx: number) =>
+  const [editingPaidId, setEditingPaidId] = useState<string | null>(null)
+  const [paidAmountInput, setPaidAmountInput] = useState('')
+
+  const setPaidAmount = (id: string, monthIdx: number, amount: number) =>
     updateData((prev) => ({ ...prev, items: prev.items.map((i) => {
       if (i.id !== id) return i
+      const paidAmounts = [...(i.paidAmounts || Array(12).fill(0))]
+      paidAmounts[monthIdx] = amount
       const paid = [...(i.paid || Array(12).fill(false))]
-      paid[monthIdx] = !paid[monthIdx]
-      return { ...i, paid }
+      paid[monthIdx] = amount >= i.months[monthIdx] && i.months[monthIdx] > 0
+      return { ...i, paidAmounts, paid }
     }) }))
+
+  const startEditPaid = (id: string, currentAmount: number, totalAmount: number) => {
+    setEditingPaidId(id)
+    setPaidAmountInput(String(currentAmount || totalAmount))
+  }
+
+  const commitPaidAmount = (id: string, monthIdx: number) => {
+    const amount = parseInt(paidAmountInput.replace(/\D/g, '')) || 0
+    setPaidAmount(id, monthIdx, amount)
+    setEditingPaidId(null)
+    setPaidAmountInput('')
+  }
 
   const monthlyTotals = useMemo(() =>
     MONTHS.map((_, i) => {
@@ -188,18 +216,28 @@ export function FinancePage() {
     const mi = selectedMonth
     const income = data.items.filter(it => it.type === 'Income').reduce((s, it) => s + it.months[mi], 0)
     const payable = data.items.filter(it => it.type !== 'Income' && it.months[mi] > 0)
-    const paid = payable.filter(it => it.paid?.[mi] ?? false)
-    const paidTotal = paid.reduce((s, it) => s + it.months[mi], 0)
-    const unpaidTotal = payable.filter(it => !(it.paid?.[mi] ?? false)).reduce((s, it) => s + it.months[mi], 0)
-    return { current: income - paidTotal, pending: unpaidTotal, paidCount: paid.length, totalPayable: payable.length }
+    const paidTotal = payable.reduce((s, it) => {
+      const pa = it.paidAmounts?.[mi] ?? (it.paid?.[mi] ? it.months[mi] : 0)
+      return s + pa
+    }, 0)
+    const unpaidTotal = payable.reduce((s, it) => s + it.months[mi], 0) - paidTotal
+    const paidCount = payable.filter(it => it.paid?.[mi] ?? false).length
+    return { current: income - paidTotal, pending: unpaidTotal, paidCount, totalPayable: payable.length }
   }, [data.items, selectedMonth])
 
   const mask = (v: string) => hideIncome ? '•••' : v
 
-  const expenseBreakdown = useMemo(() =>
-    data.items.filter((it) => it.type !== 'Income' && it.months[selectedMonth] > 0)
-      .map((it) => ({ name: it.name, value: it.months[selectedMonth] })).sort((a, b) => b.value - a.value),
-    [data.items, selectedMonth])
+  const expenseBreakdown = useMemo(() => {
+    const items = data.items.filter((it) => it.type !== 'Income' && it.months[selectedMonth] > 0)
+    const grouped = new Map<string, number>()
+    items.forEach((it) => {
+      const cat = it.category || 'Other'
+      grouped.set(cat, (grouped.get(cat) || 0) + it.months[selectedMonth])
+    })
+    return Array.from(grouped.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+  }, [data.items, selectedMonth])
 
   const subscriptions = useMemo(() => data.items.filter((it) => it.type === 'Subscription'), [data.items])
   const subMonthly = subscriptions.reduce((s, it) => s + it.months[selectedMonth], 0)
@@ -209,9 +247,10 @@ export function FinancePage() {
     const lowerSearch = searchTerm.toLowerCase()
     return data.items.filter((it) =>
       (!filterType || it.type === filterType) &&
+      (!categoryFilter || it.category === categoryFilter) &&
       (!searchTerm || it.name.toLowerCase().includes(lowerSearch))
     )
-  }, [data.items, filterType, searchTerm])
+  }, [data.items, filterType, categoryFilter, searchTerm])
 
   const sortItems = (items: FinanceItem[]) => {
     if (!sortField) return items
@@ -255,21 +294,21 @@ export function FinancePage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-4">
         {[
           { label: 'Income', value: mask(fmtCOP(cur.income)), icon: TrendingUp, color: hideIncome ? 'text-muted-foreground' : 'text-green-400' },
           { label: 'Expenses', value: fmtCOP(cur.expenses), icon: TrendingDown, color: 'text-red-400' },
           { label: 'Net Savings', value: mask(fmtCOP(cur.savings)), icon: PiggyBank, color: hideIncome ? 'text-muted-foreground' : cur.savings >= 0 ? 'text-green-400' : 'text-red-400', sparkline: !hideIncome },
           { label: 'Savings Rate', value: mask(`${savingsRate.toFixed(0)}%`), icon: DollarSign, color: hideIncome ? 'text-muted-foreground' : savingsRate >= 20 ? 'text-green-400' : 'text-yellow-400' },
         ].map((kpi) => (
-          <div key={kpi.label} className="liquid-glass flex items-center gap-3 rounded-xl border border-border px-4 py-3">
-            <kpi.icon className={`h-5 w-5 shrink-0 ${kpi.color}`} />
+          <div key={kpi.label} className="liquid-glass flex items-center gap-2 sm:gap-3 rounded-xl border border-border px-3 py-2.5 sm:px-4 sm:py-3">
+            <kpi.icon className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${kpi.color}`} />
             <div className="flex-1 min-w-0">
-              <p className={`text-lg font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
+              <p className={`text-base sm:text-lg font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
               <p className="text-[10px] text-muted-foreground">{kpi.label}</p>
             </div>
             {'sparkline' in kpi && kpi.sparkline && (
-              <div className="w-[60px] sm:w-[80px] h-[30px] shrink-0">
+              <div className="w-[50px] sm:w-[80px] h-[25px] sm:h-[30px] shrink-0 hidden min-[480px]:block">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={monthlyTotals}>
                     <Line type="monotone" dataKey="savings" stroke={cur.savings >= 0 ? '#34d399' : '#f87171'} strokeWidth={1.5} dot={false} />
@@ -282,53 +321,57 @@ export function FinancePage() {
       </div>
 
       {/* Balance */}
-      <div className="liquid-glass flex items-center gap-4 rounded-xl border border-border px-5 py-3">
-        <Wallet className={`h-5 w-5 shrink-0 ${hideIncome ? 'text-muted-foreground' : 'text-emerald-400'}`} />
-        <div className="flex-1">
-          <p className={`text-base font-bold tabular-nums ${hideIncome ? 'text-muted-foreground' : 'text-emerald-400'}`}>{mask(fmtFull(balance.current))}</p>
-          <p className="text-[10px] text-muted-foreground">Account Balance · {MONTHS[selectedMonth]}</p>
-        </div>
-        {balance.pending > 0 && (
-          <div className="text-right">
-            <p className="text-sm font-bold tabular-nums text-amber-400">{fmtFull(balance.pending)}</p>
-            <p className="text-[10px] text-muted-foreground">Pending</p>
+      <div className="liquid-glass rounded-xl border border-border px-4 py-3 sm:px-5">
+        <div className="flex items-center gap-3">
+          <Wallet className={`h-5 w-5 shrink-0 ${hideIncome ? 'text-muted-foreground' : 'text-emerald-400'}`} />
+          <div className="flex-1 min-w-0">
+            <p className={`text-base font-bold tabular-nums ${hideIncome ? 'text-muted-foreground' : 'text-emerald-400'}`}>{mask(fmtFull(balance.current))}</p>
+            <p className="text-[10px] text-muted-foreground">Account Balance · {MONTHS[selectedMonth]}</p>
           </div>
-        )}
-        <div className="text-right">
-          <p className="text-sm tabular-nums font-medium">{balance.paidCount}/{balance.totalPayable}</p>
-          <p className="text-[10px] text-muted-foreground">Paid</p>
+          <div className="flex items-center gap-3 sm:gap-4">
+            {balance.pending > 0 && (
+              <div className="text-right">
+                <p className="text-xs sm:text-sm font-bold tabular-nums text-amber-400">{fmtFull(balance.pending)}</p>
+                <p className="text-[10px] text-muted-foreground">Pending</p>
+              </div>
+            )}
+            <div className="text-right">
+              <p className="text-xs sm:text-sm tabular-nums font-medium">{balance.paidCount}/{balance.totalPayable}</p>
+              <p className="text-[10px] text-muted-foreground">Paid</p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-5">
         {/* Bar chart */}
-        <WidgetCard title={hideIncome ? 'Expenses' : 'Income vs Expenses'} description={hideIncome ? `${data.year}` : `${data.year} · Net: ${fmtCOP(yearTotal.income - yearTotal.expenses)}`} delay={0.1} className="lg:col-span-2">
-          <div className="h-[160px] sm:h-[220px] -mx-2">
+        <WidgetCard title={hideIncome ? 'Expenses' : 'Income vs Expenses'} description={hideIncome ? `${data.year}` : `${data.year} · Net: ${fmtCOP(yearTotal.income - yearTotal.expenses)}`} delay={0.1} className="lg:col-span-3">
+          <div className="h-[200px] sm:h-[280px] -mx-2">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={hideIncome ? monthlyTotals.map(m => ({ ...m, income: 0 })) : monthlyTotals} barGap={2}>
-                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#666' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 9, fill: '#666' }} axisLine={false} tickLine={false} tickFormatter={fmtCOP} width={50} />
+                <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#666' }} axisLine={false} tickLine={false} interval={0} />
+                <YAxis tick={{ fontSize: 9, fill: '#666' }} axisLine={false} tickLine={false} tickFormatter={fmtCOP} width={40} />
                 <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }} formatter={(v) => fmtFull(Number(v))} />
-                {!hideIncome && <Bar dataKey="income" fill="#34d399" radius={[4, 4, 0, 0]} maxBarSize={24} />}
-                <Bar dataKey="expenses" fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={24} />
+                {!hideIncome && <Bar dataKey="income" fill="#34d399" radius={[4, 4, 0, 0]} maxBarSize={20} />}
+                <Bar dataKey="expenses" fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={20} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </WidgetCard>
 
         {/* Pie chart */}
-        <WidgetCard title={`${MONTHS[selectedMonth]} Breakdown`} description={`${expenseBreakdown.length} items`} delay={0.15}>
+        <WidgetCard title={`${MONTHS[selectedMonth]} by Category`} description={`${expenseBreakdown.length} categories`} delay={0.15} className="lg:col-span-2">
           {expenseBreakdown.length === 0 ? (
             <p className="text-xs text-muted-foreground py-6 text-center">No expenses</p>
           ) : (
-            <div className="h-[160px] sm:h-[220px] -mx-2">
+            <div className="h-[200px] sm:h-[280px] -mx-2">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={expenseBreakdown} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
-                    {expenseBreakdown.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                  <Pie data={expenseBreakdown} dataKey="value" nameKey="name" cx="50%" cy="45%" innerRadius="30%" outerRadius="55%" paddingAngle={2}>
+                    {expenseBreakdown.map((entry, i) => <Cell key={i} fill={CATEGORY_COLORS[entry.name] || CHART_COLORS[i % CHART_COLORS.length]} />)}
                   </Pie>
                   <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }} formatter={(v) => fmtFull(Number(v))} />
-                  <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+                  <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -338,7 +381,7 @@ export function FinancePage() {
 
       {/* Subscriptions */}
       <WidgetCard title="Subscriptions" description={`${fmtCOP(subMonthly)}/mo · ${fmtCOP(subAnnual)}/yr`} delay={0.2}>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           {subscriptions.map((sub) => {
             const amt = sub.months[selectedMonth]
             const activeMonths = sub.months.filter((m) => m > 0).length
@@ -371,39 +414,46 @@ export function FinancePage() {
 
       {/* Budget Table */}
       <WidgetCard title="Budget" description={`${filtered.length} items`} delay={0.25}>
-        <div className="flex flex-col gap-3 mb-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1.5">
+        <div className="flex flex-col gap-2 sm:gap-3 mb-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto">
+              <div className="flex gap-1 sm:gap-1.5 shrink-0">
                 {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
                   <button key={t} onClick={() => setFilterType(filterType === t ? null : t)}
-                    className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${filterType === t ? `${typeColor[t]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-                    {t}
+                    className={`cursor-pointer text-[10px] px-2 sm:px-2.5 py-1 rounded-full border transition-all whitespace-nowrap ${filterType === t ? `${typeColor[t]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+                    {t === 'Subscription' ? 'Sub' : t}
                   </button>
                 ))}
               </div>
               <button onClick={() => setCompact(!compact)}
-                className={`cursor-pointer flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border transition-all ${compact ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-                <Columns2 className="h-3 w-3" /> Compact
+                className={`cursor-pointer flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border transition-all shrink-0 ${compact ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+                <Columns2 className="h-3 w-3" /> <span className="hidden sm:inline">Compact</span>
               </button>
             </div>
-            <div className="flex gap-1">
+            <div className="flex gap-1 shrink-0">
               {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
                 <button key={t} onClick={() => addItem(t)}
-                  className="cursor-pointer flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 rounded-lg border border-border hover:bg-secondary transition-all">
-                  <Plus className="h-3 w-3" /> {t}
+                  className="cursor-pointer flex items-center gap-0.5 sm:gap-1 text-[10px] text-muted-foreground hover:text-foreground px-1.5 sm:px-2 py-1 rounded-lg border border-border hover:bg-secondary transition-all whitespace-nowrap">
+                  <Plus className="h-3 w-3" /> <span className="hidden sm:inline">{t}</span><span className="sm:hidden">{t === 'Subscription' ? 'S' : t[0]}</span>
                 </button>
               ))}
             </div>
           </div>
-          <div className="relative max-w-xs">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
-            <Input
-              placeholder="Search items..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-7 pl-8 text-xs"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative max-w-xs flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+              <Input
+                placeholder="Search items..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="h-7 pl-8 text-xs"
+              />
+            </div>
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-7 text-xs rounded-md border border-border bg-transparent px-2 text-muted-foreground outline-none cursor-pointer">
+              <option value="">All Categories</option>
+              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
         </div>
         <div className="overflow-x-auto -mx-5">
@@ -417,6 +467,7 @@ export function FinancePage() {
                   </button>
                 </th>
                 <th className="py-2 text-left font-medium w-16">Type</th>
+                <th className="py-2 text-left font-medium w-24">Category</th>
                 {!compact && MONTHS.map((m, i) => (
                   <th key={m} className={`py-2 text-right font-medium min-w-[80px] ${i === selectedMonth ? 'text-foreground' : ''}`}>{m}</th>
                 ))}
@@ -445,15 +496,48 @@ export function FinancePage() {
                           <div className="flex items-center gap-1.5">
                             {item.type !== 'Income' ? (
                               item.months[selectedMonth] > 0 ? (
-                                <button onClick={() => togglePaid(item.id, selectedMonth)} className="cursor-pointer shrink-0">
-                                  {(item.paid?.[selectedMonth]) ? (
-                                    <div className="h-3.5 w-3.5 rounded-full bg-green-500 flex items-center justify-center">
-                                      <Check className="h-2 w-2 text-white" strokeWidth={3} />
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {editingPaidId === item.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        value={paidAmountInput}
+                                        onChange={(e) => setPaidAmountInput(e.target.value.replace(/\D/g, ''))}
+                                        onKeyDown={(e) => e.key === 'Enter' && commitPaidAmount(item.id, selectedMonth)}
+                                        onBlur={() => commitPaidAmount(item.id, selectedMonth)}
+                                        className="h-5 w-16 rounded bg-input px-1 text-[10px] outline-none tabular-nums"
+                                        autoFocus
+                                      />
                                     </div>
                                   ) : (
-                                    <Circle className="h-3.5 w-3.5 text-muted-foreground/30 hover:text-muted-foreground/50 transition-colors" />
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        onClick={() => {
+                                          const pa = item.paidAmounts?.[selectedMonth] ?? 0
+                                          startEditPaid(item.id, pa, item.months[selectedMonth])
+                                        }}
+                                        className="cursor-pointer shrink-0"
+                                        title="Click to set paid amount"
+                                      >
+                                        {(item.paid?.[selectedMonth]) ? (
+                                          <div className="h-3.5 w-3.5 rounded-full bg-green-500 flex items-center justify-center">
+                                            <Check className="h-2 w-2 text-white" strokeWidth={3} />
+                                          </div>
+                                        ) : (item.paidAmounts?.[selectedMonth] ?? 0) > 0 ? (
+                                          <div className="h-3.5 w-3.5 rounded-full bg-amber-500 flex items-center justify-center">
+                                            <span className="text-[6px] text-white font-bold">$</span>
+                                          </div>
+                                        ) : (
+                                          <Circle className="h-3.5 w-3.5 text-muted-foreground/30 hover:text-muted-foreground/50 transition-colors" />
+                                        )}
+                                      </button>
+                                      {(item.paidAmounts?.[selectedMonth] ?? 0) > 0 && (item.paidAmounts?.[selectedMonth] ?? 0) < item.months[selectedMonth] && (
+                                        <span className="text-[9px] text-amber-400 tabular-nums whitespace-nowrap">
+                                          {fmtCOP(item.paidAmounts![selectedMonth])}/{fmtCOP(item.months[selectedMonth])}
+                                        </span>
+                                      )}
+                                    </div>
                                   )}
-                                </button>
+                                </div>
                               ) : (
                                 <span className="w-3.5 shrink-0" />
                               )
@@ -466,6 +550,14 @@ export function FinancePage() {
                             className={`cursor-pointer bg-transparent outline-none text-[9px] rounded-full px-1.5 py-0.5 ${typeColor[item.type]}`}>
                             <option value="Income">Income</option><option value="Expense">Expense</option><option value="Subscription">Sub</option>
                           </select>
+                        </td>
+                        <td className="py-2">
+                          {item.type !== 'Income' ? (
+                            <select value={item.category || 'Other'} onChange={(e) => setField(item.id, { category: e.target.value })}
+                              className="cursor-pointer bg-transparent outline-none text-[9px] rounded-full px-1.5 py-0.5 text-muted-foreground hover:text-foreground">
+                              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          ) : null}
                         </td>
                         {!compact && item.months.map((val, mi) => {
                           const cellPaid = item.type !== 'Income' && val > 0 && (item.paid?.[mi] ?? false)
@@ -502,6 +594,7 @@ export function FinancePage() {
                   <tr key={`subtotal-${group.type}`} className="border-t border-border/40">
                     <td className="px-5 py-1.5 sticky left-0 bg-card z-10 text-muted-foreground font-semibold text-[10px]">{group.type} Subtotal</td>
                     <td></td>
+                    <td></td>
                     {!compact && groupSubtotals.map((val, mi) => (
                       <td key={mi} className={`py-1.5 text-right tabular-nums font-semibold text-muted-foreground text-[10px] ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{hideIncome && group.type === 'Income' ? '•••' : fmtCell(val)}</td>
                     ))}
@@ -513,6 +606,7 @@ export function FinancePage() {
               })}
               <tr className="border-t border-border/50 font-medium">
                 <td className="px-5 py-2.5 sticky left-0 bg-card z-10">Net</td>
+                <td></td>
                 <td></td>
                 {!compact && MONTHS.map((_, mi) => {
                   const net = monthlyTotals[mi].savings

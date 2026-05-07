@@ -1,9 +1,14 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import ReactDOM from 'react-dom'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
+import Markdown from 'react-markdown'
+import TurndownService from 'turndown'
+
+const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
 import {
   Search,
   Plus,
@@ -11,8 +16,21 @@ import {
   Image as ImageIcon,
   Link,
   X,
+  Minus,
+  Maximize2,
   ClipboardPaste,
   Camera,
+  ChevronLeft,
+  ChevronRight,
+  Bold,
+  Italic,
+  List,
+  Heading2,
+  Quote,
+  Code,
+  Eye,
+  Pencil,
+  Check,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -25,8 +43,17 @@ interface Capture {
   content: string
   source: CaptureSource
   url: string
-  imageId: string
+  imageIds: string[]
   createdAt: string
+}
+
+/** Migrate legacy captures that had a single `imageId` string */
+function migrateCapture(raw: any): Capture {
+  if ('imageId' in raw && !('imageIds' in raw)) {
+    const { imageId, ...rest } = raw
+    return { ...rest, imageIds: imageId ? [imageId] : [] }
+  }
+  return raw
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -48,12 +75,30 @@ const sourceColor: Record<CaptureSource, string> = {
   other: 'bg-yellow-500/15 text-yellow-400',
 }
 
+const sourceBorder: Record<CaptureSource, string> = {
+  x: 'border-l-gray-500/40',
+  tiktok: 'border-l-pink-500/40',
+  linkedin: 'border-l-blue-500/40',
+  reddit: 'border-l-orange-500/40',
+  article: 'border-l-emerald-500/40',
+  screenshot: 'border-l-purple-500/40',
+  other: 'border-l-yellow-500/40',
+}
+
 // ── Media helpers ────────────────────────────────────────────────────────────
 
 async function saveImage(id: string, base64: string): Promise<boolean> {
   if (window.electronAPI?.media) {
     return window.electronAPI.media.save(id, base64)
   }
+  try {
+    const res = await fetch('/api/media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, base64 }),
+    })
+    if (res.ok) return true
+  } catch { /* fall through */ }
   try { localStorage.setItem(`cortex-capture-img-${id}`, base64); return true } catch { return false }
 }
 
@@ -61,6 +106,13 @@ async function loadImage(id: string): Promise<string | null> {
   if (window.electronAPI?.media) {
     return window.electronAPI.media.load(id)
   }
+  try {
+    const res = await fetch(`/api/media?id=${encodeURIComponent(id)}`)
+    if (res.ok) {
+      const data = await res.json()
+      if (data) return data
+    }
+  } catch { /* fall through */ }
   return localStorage.getItem(`cortex-capture-img-${id}`)
 }
 
@@ -68,8 +120,169 @@ async function deleteImage(id: string): Promise<void> {
   if (window.electronAPI?.media) {
     await window.electronAPI.media.delete(id)
   } else {
+    try {
+      await fetch('/api/media/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+    } catch { /* fall through */ }
     localStorage.removeItem(`cortex-capture-img-${id}`)
   }
+}
+
+// ── Fullscreen Editor ────────────────────────────────────────────────────────
+
+function FullscreenEditor({ title, content, onChangeTitle, onChangeContent, onClose, onAddImage, images }: {
+  title: string; content: string;
+  onChangeTitle: (v: string) => void; onChangeContent: (v: string) => void; onClose: () => void
+  onAddImage: (base64s: string[]) => Promise<string[]>; images: Record<string, string>
+}) {
+  const [preview, setPreview] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const html = e.clipboardData.getData('text/html')
+    if (!html) return // plain text — let browser handle it
+    e.preventDefault()
+    const md = turndown.turndown(html).trim()
+    const ta = textareaRef.current
+    if (!ta) { onChangeContent(content + md); return }
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const newText = content.slice(0, start) + md + content.slice(end)
+    onChangeContent(newText)
+    setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = start + md.length }, 0)
+  }
+
+  const insertMarkdown = (prefix: string, suffix = '') => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart
+    const end = ta.selectionEnd
+    const selected = content.slice(start, end)
+    const newText = content.slice(0, start) + prefix + selected + suffix + content.slice(end)
+    onChangeContent(newText)
+    setTimeout(() => {
+      ta.focus()
+      ta.selectionStart = start + prefix.length
+      ta.selectionEnd = start + prefix.length + selected.length
+    }, 0)
+  }
+
+  const handleInlineImage = async () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.multiple = true
+    input.onchange = async () => {
+      if (!input.files?.length) return
+      const b64s = await Promise.all(Array.from(input.files).map(f => fileToBase64(f)))
+      const ids = await onAddImage(b64s)
+      const tags = ids.map(id => `![](img:${id})`).join('\n')
+      const ta = textareaRef.current
+      const pos = ta ? ta.selectionStart : content.length
+      const newText = content.slice(0, pos) + '\n' + tags + '\n' + content.slice(pos)
+      onChangeContent(newText)
+    }
+    input.click()
+  }
+
+  // Custom renderer for inline images
+  const markdownComponents = {
+    img: ({ src, alt, ...props }: any) => {
+      if (src?.startsWith('img:')) {
+        const imgId = src.slice(4)
+        const data = images[imgId]
+        if (data) return <img src={data} alt={alt || ''} className="max-w-full rounded-lg my-2 ring-1 ring-white/10" {...props} />
+        return <span className="text-muted-foreground/50 text-sm italic">[image loading...]</span>
+      }
+      return <img src={src} alt={alt} className="max-w-full rounded-lg my-2" {...props} />
+    },
+  }
+
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-[9998] bg-background flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 md:pl-20 py-3 border-b border-border">
+        <button onClick={onClose} className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors [-webkit-app-region:no-drag]">
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
+          <button onClick={() => setPreview(false)} className={`cursor-pointer px-2.5 py-1 rounded-md text-xs transition-colors ${!preview ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground'}`}>
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button onClick={() => setPreview(true)} className={`cursor-pointer px-2.5 py-1 rounded-md text-xs transition-colors ${preview ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground'}`}>
+            <Eye className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="w-5" />
+      </div>
+
+      {/* Title */}
+      <input
+        value={title}
+        onChange={e => onChangeTitle(e.target.value)}
+        placeholder="Title"
+        className="px-4 md:px-8 pt-4 pb-2 text-xl md:text-2xl font-semibold bg-transparent outline-none border-none text-foreground placeholder:text-muted-foreground/30"
+      />
+
+      {preview ? (
+        /* Markdown preview */
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 prose prose-invert prose-sm md:prose-base max-w-none
+          prose-headings:text-foreground prose-headings:mt-6 prose-headings:mb-3
+          prose-p:text-foreground/90 prose-p:mb-4 prose-p:leading-relaxed
+          prose-strong:text-foreground
+          prose-code:text-purple-300 prose-code:bg-purple-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
+          prose-blockquote:border-l-purple-500/40 prose-blockquote:text-muted-foreground prose-blockquote:pl-4 prose-blockquote:my-4
+          prose-li:text-foreground/90 prose-li:my-1
+          prose-a:text-blue-400
+          prose-hr:border-border/50 prose-hr:my-6">
+          <Markdown components={markdownComponents} urlTransform={(url) => url}>{content || '*No content yet*'}</Markdown>
+        </div>
+      ) : (
+        <>
+          {/* Formatting toolbar */}
+          <div className="flex items-center gap-1 px-4 md:px-8 py-2 border-b border-border/50 overflow-x-auto">
+            <button onClick={() => insertMarkdown('**', '**')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Bold">
+              <Bold className="h-4 w-4" />
+            </button>
+            <button onClick={() => insertMarkdown('*', '*')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Italic">
+              <Italic className="h-4 w-4" />
+            </button>
+            <button onClick={() => insertMarkdown('## ')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Heading">
+              <Heading2 className="h-4 w-4" />
+            </button>
+            <button onClick={() => insertMarkdown('- ')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="List">
+              <List className="h-4 w-4" />
+            </button>
+            <button onClick={() => insertMarkdown('> ')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Quote">
+              <Quote className="h-4 w-4" />
+            </button>
+            <button onClick={() => insertMarkdown('`', '`')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Code">
+              <Code className="h-4 w-4" />
+            </button>
+            <div className="w-px h-4 bg-border/50 mx-1" />
+            <button onClick={handleInlineImage} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Insert Image">
+              <ImageIcon className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Editor */}
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={e => onChangeContent(e.target.value)}
+            placeholder="Write your notes here... (supports Markdown)"
+            className="flex-1 w-full px-4 md:px-8 py-3 text-sm md:text-base leading-relaxed bg-transparent outline-none resize-none text-foreground/90 placeholder:text-muted-foreground/30"
+            onPaste={handlePaste}
+            autoFocus
+          />
+        </>
+      )}
+    </div>,
+    document.body
+  )
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -84,21 +297,85 @@ function fileToBase64(file: File): Promise<string> {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function CapturesPage() {
-  const [captures, updateCaptures] = useStore<Capture[]>('cortex-captures', [])
+  const [rawCaptures, updateCaptures] = useStore<Capture[]>('cortex-captures', [])
+
+  // One-time migration: persist migrated data if any capture had old `imageId`
+  useEffect(() => {
+    const needsMigration = rawCaptures.some((c: any) => 'imageId' in c && !('imageIds' in c))
+    if (needsMigration) {
+      updateCaptures(() => rawCaptures.map(migrateCapture))
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const captures = useMemo(() => rawCaptures.map(migrateCapture), [rawCaptures])
   const [search, setSearch] = useState('')
   const [filterSource, setFilterSource] = useState<CaptureSource | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [imageCache, setImageCache] = useState<Record<string, string>>({})
   const [dragOver, setDragOver] = useState(false)
+  const [galleryIndex, setGalleryIndex] = useState<Record<string, number>>({})
+  const [lightbox, setLightbox] = useState<{ imageIds: string[]; index: number } | null>(null)
+  const [editorOpen, setEditorOpen] = useState<string | null>(null)
+  const [uploading, setUploading] = useState<string | null>(null) // capture id being uploaded to
+  const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const dropRef = useRef<HTMLDivElement>(null)
+
+  // Auto-clear upload status after 3s
+  useEffect(() => {
+    if (!uploadStatus) return
+    const t = setTimeout(() => setUploadStatus(null), 3000)
+    return () => clearTimeout(t)
+  }, [uploadStatus])
+
+  // Lightbox keyboard navigation
+  useEffect(() => {
+    if (!lightbox) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightbox(null)
+      if (e.key === 'ArrowLeft') setLightbox(prev => prev ? { ...prev, index: (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null)
+      if (e.key === 'ArrowRight') setLightbox(prev => prev ? { ...prev, index: (prev.index + 1) % prev.imageIds.length } : null)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [lightbox])
+
+  // Touch swipe helpers
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
+  }, [])
+
+  const makeSwipeHandler = useCallback((capId: string, count: number) => (e: React.TouchEvent) => {
+    if (!touchStartRef.current || count <= 1) return
+    const dx = e.changedTouches[0].clientX - touchStartRef.current.x
+    const dy = e.changedTouches[0].clientY - touchStartRef.current.y
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+      setGalleryIndex(prev => {
+        const cur = prev[capId] || 0
+        return { ...prev, [capId]: dx < 0 ? (cur + 1) % count : (cur - 1 + count) % count }
+      })
+    }
+    touchStartRef.current = null
+  }, [])
+
+  const onLightboxSwipe = useCallback((e: React.TouchEvent) => {
+    if (!touchStartRef.current || !lightbox || lightbox.imageIds.length <= 1) return
+    const dx = e.changedTouches[0].clientX - touchStartRef.current.x
+    const dy = e.changedTouches[0].clientY - touchStartRef.current.y
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+      setLightbox(prev => prev ? { ...prev, index: dx < 0 ? (prev.index + 1) % prev.imageIds.length : (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null)
+    }
+    touchStartRef.current = null
+  }, [lightbox])
 
   // Load images for visible captures
   useEffect(() => {
-    const toLoad = captures.filter(c => c.imageId && !imageCache[c.imageId])
+    const allIds = captures.flatMap(c => c.imageIds)
+    const toLoad = allIds.filter(id => id && !imageCache[id])
     if (toLoad.length === 0) return
-    Promise.all(toLoad.map(async c => {
-      const data = await loadImage(c.imageId)
-      return [c.imageId, data] as const
+    Promise.all(toLoad.map(async id => {
+      const data = await loadImage(id)
+      return [id, data] as const
     })).then(results => {
       const newCache: Record<string, string> = {}
       for (const [id, data] of results) {
@@ -110,20 +387,24 @@ export function CapturesPage() {
     })
   }, [captures])
 
-  const addCapture = useCallback(async (imageBase64?: string) => {
+  const addCapture = useCallback(async (images?: string[]) => {
     const id = `cap-${Date.now()}`
-    const imageId = imageBase64 ? `${id}.png` : ''
-    if (imageBase64 && imageId) {
-      await saveImage(imageId, imageBase64)
-      setImageCache(prev => ({ ...prev, [imageId]: imageBase64 }))
+    const imageIds: string[] = []
+    if (images?.length) {
+      for (let i = 0; i < images.length; i++) {
+        const imgId = `${id}-${i}.png`
+        await saveImage(imgId, images[i])
+        setImageCache(prev => ({ ...prev, [imgId]: images[i] }))
+        imageIds.push(imgId)
+      }
     }
     const capture: Capture = {
       id,
       title: '',
       content: '',
-      source: imageBase64 ? 'screenshot' : 'other',
+      source: images?.length ? 'screenshot' : 'other',
       url: '',
-      imageId,
+      imageIds,
       createdAt: new Date().toISOString(),
     }
     updateCaptures(prev => [capture, ...prev])
@@ -135,16 +416,48 @@ export function CapturesPage() {
 
   const deleteCapture = async (id: string) => {
     const cap = captures.find(c => c.id === id)
-    if (cap?.imageId) await deleteImage(cap.imageId)
+    if (cap) {
+      for (const imgId of cap.imageIds) await deleteImage(imgId)
+    }
     updateCaptures(prev => prev.filter(c => c.id !== id))
     if (expanded === id) setExpanded(null)
   }
 
-  const addImageToCapture = async (id: string, base64: string) => {
-    const imageId = `${id}.png`
-    await saveImage(imageId, base64)
-    setImageCache(prev => ({ ...prev, [imageId]: base64 }))
-    setField(id, { imageId })
+  const addImagesToCapture = async (id: string, base64s: string[]) => {
+    setUploading(id)
+    try {
+      const newIds: string[] = []
+      for (let i = 0; i < base64s.length; i++) {
+        const imgId = `${id}-${Date.now()}-${i}.png`
+        const ok = await saveImage(imgId, base64s[i])
+        if (!ok) throw new Error(`Failed to save image ${i + 1}`)
+        setImageCache(prev => ({ ...prev, [imgId]: base64s[i] }))
+        newIds.push(imgId)
+      }
+      // Use functional updater to avoid stale closure on imageIds
+      updateCaptures(prev => prev.map(c =>
+        c.id === id ? { ...c, imageIds: [...c.imageIds, ...newIds] } : c
+      ))
+      setUploadStatus({ type: 'success', msg: `${base64s.length} image${base64s.length > 1 ? 's' : ''} added` })
+    } catch {
+      setUploadStatus({ type: 'error', msg: 'Failed to upload images' })
+    } finally {
+      setUploading(null)
+    }
+  }
+
+  const removeImageFromCapture = async (captureId: string, imgId: string) => {
+    const cap = captures.find(c => c.id === captureId)
+    if (!cap) return
+    await deleteImage(imgId)
+    const newIds = cap.imageIds.filter(i => i !== imgId)
+    setField(captureId, { imageIds: newIds })
+    // Adjust gallery index if needed
+    setGalleryIndex(prev => {
+      const idx = prev[captureId] || 0
+      if (idx >= newIds.length) return { ...prev, [captureId]: Math.max(0, newIds.length - 1) }
+      return prev
+    })
   }
 
   // Paste handler
@@ -152,13 +465,16 @@ export function CapturesPage() {
     const handler = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items
       if (!items) return
+      const imageFiles: File[] = []
       for (const item of items) {
         if (item.type.startsWith('image/')) {
-          e.preventDefault()
           const file = item.getAsFile()
-          if (file) fileToBase64(file).then(b64 => addCapture(b64))
-          return
+          if (file) imageFiles.push(file)
         }
+      }
+      if (imageFiles.length > 0) {
+        e.preventDefault()
+        Promise.all(imageFiles.map(f => fileToBase64(f))).then(b64s => addCapture(b64s))
       }
     }
     document.addEventListener('paste', handler)
@@ -169,9 +485,13 @@ export function CapturesPage() {
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file?.type.startsWith('image/')) {
-      fileToBase64(file).then(b64 => addCapture(b64))
+    const imageFiles: File[] = []
+    for (let i = 0; i < e.dataTransfer.files.length; i++) {
+      const file = e.dataTransfer.files[i]
+      if (file.type.startsWith('image/')) imageFiles.push(file)
+    }
+    if (imageFiles.length > 0) {
+      Promise.all(imageFiles.map(f => fileToBase64(f))).then(b64s => addCapture(b64s))
     }
   }, [addCapture])
 
@@ -196,11 +516,11 @@ export function CapturesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">Captures</h1>
-          <p className="text-xs text-muted-foreground">{captures.length} items · Paste screenshot or drop image</p>
+          <p className="text-xs text-muted-foreground">{captures.length} <span className="text-purple-400/60">items</span> · Paste screenshot or drop image</p>
         </div>
         <button
           onClick={() => addCapture()}
-          className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-foreground text-background hover:opacity-80 transition-opacity"
+          className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-500/90 text-white hover:bg-indigo-500 transition-colors"
         >
           <Plus className="h-3.5 w-3.5" /> Add
         </button>
@@ -242,7 +562,7 @@ export function CapturesPage() {
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        className={`flex items-center justify-center gap-3 rounded-xl border-2 border-dashed py-6 transition-all ${dragOver ? 'border-foreground/40 bg-foreground/5' : 'border-border/40 hover:border-border'}`}
+        className={`flex items-center justify-center gap-3 rounded-xl border-2 border-dashed py-6 transition-all ${dragOver ? 'border-indigo-400/50 bg-indigo-500/5' : 'border-border/40 hover:border-purple-500/30'}`}
       >
         <ClipboardPaste className="h-4 w-4 text-muted-foreground/40" />
         <p className="text-xs text-muted-foreground/50">
@@ -254,7 +574,7 @@ export function CapturesPage() {
       {filtered.length === 0 ? (
         <WidgetCard title="No captures yet" description="Paste a screenshot or click Add to get started" delay={0.1}>
           <div className="flex flex-col items-center gap-3 py-8">
-            <Camera className="h-10 w-10 text-muted-foreground/20" />
+            <Camera className="h-10 w-10 text-purple-400/20" />
             <p className="text-xs text-muted-foreground/50">Your captured ideas, screenshots, and posts will appear here</p>
           </div>
         </WidgetCard>
@@ -262,20 +582,57 @@ export function CapturesPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map(cap => {
             const isExpanded = expanded === cap.id
-            const imgSrc = cap.imageId ? imageCache[cap.imageId] : null
+            const hasImages = cap.imageIds.length > 0
+            const currentIdx = galleryIndex[cap.id] || 0
+            const thumbSrc = hasImages ? imageCache[cap.imageIds[0]] : null
+            const currentSrc = hasImages ? imageCache[cap.imageIds[currentIdx]] : null
 
             return (
               <div
                 key={cap.id}
-                className={`liquid-glass rounded-xl border border-border overflow-hidden transition-all ${isExpanded ? 'sm:col-span-2 lg:col-span-3' : 'cursor-pointer hover:border-foreground/20'}`}
+                className={`liquid-glass rounded-xl border border-border border-l-2 ${sourceBorder[cap.source]} overflow-hidden transition-all ${isExpanded ? 'sm:col-span-2 lg:col-span-3' : 'cursor-pointer hover:border-foreground/20'}`}
                 onClick={() => !isExpanded && setExpanded(cap.id)}
               >
-                {/* Image */}
-                {imgSrc && (
-                  <div className={`bg-secondary/30 ${isExpanded ? 'max-h-[400px]' : 'max-h-[180px]'} overflow-hidden`}>
-                    <img src={imgSrc} alt="" className="w-full h-full object-cover" />
+                {/* Image(s) */}
+                {isExpanded && hasImages ? (
+                  <div className="relative bg-zinc-700/50 max-h-[400px] overflow-hidden border-b border-zinc-600/50" onTouchStart={onTouchStart} onTouchEnd={makeSwipeHandler(cap.id, cap.imageIds.length)}>
+                    {currentSrc && <img src={currentSrc} alt="" className="w-full h-full object-cover cursor-pointer" onClick={e => { e.stopPropagation(); setLightbox({ imageIds: cap.imageIds, index: currentIdx }) }} />}
+                    {cap.imageIds.length > 1 && (
+                      <>
+                        <button
+                          onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: (currentIdx - 1 + cap.imageIds.length) % cap.imageIds.length })) }}
+                          className="cursor-pointer absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 md:p-1 transition-colors"
+                        >
+                          <ChevronLeft className="h-5 w-5 md:h-4 md:w-4" />
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: (currentIdx + 1) % cap.imageIds.length })) }}
+                          className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 md:p-1 transition-colors"
+                        >
+                          <ChevronRight className="h-5 w-5 md:h-4 md:w-4" />
+                        </button>
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                          {cap.imageIds.map((_, i) => (
+                            <button
+                              key={i}
+                              onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: i })) }}
+                              className={`cursor-pointer h-1.5 rounded-full transition-all ${i === currentIdx ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
-                )}
+                ) : thumbSrc ? (
+                  <div className="bg-zinc-700/50 max-h-[180px] overflow-hidden relative border-b border-zinc-600/50">
+                    <img src={thumbSrc} alt="" className="w-full h-full object-cover" onClick={e => { e.stopPropagation(); setLightbox({ imageIds: cap.imageIds, index: 0 }) }} />
+                    {cap.imageIds.length > 1 && (
+                      <span className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                        {cap.imageIds.length}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
 
                 {/* Content */}
                 <div className="p-4">
@@ -283,32 +640,40 @@ export function CapturesPage() {
                     <div className="flex flex-col gap-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
+                          <button onClick={() => setExpanded(null)} className="cursor-pointer text-muted-foreground/40 hover:text-foreground transition-colors" title="Collapse">
+                            <Minus className="h-3.5 w-3.5" />
+                          </button>
                           <span className={`text-[9px] px-2 py-0.5 rounded-full ${sourceColor[cap.source]}`}>
                             {sourceLabel[cap.source]}
                           </span>
                           <span className="text-[10px] text-muted-foreground/50">{timeAgo(cap.createdAt)}</span>
                         </div>
-                        <div className="flex gap-1.5">
-                          <button onClick={() => setExpanded(null)} className="cursor-pointer text-muted-foreground/40 hover:text-foreground transition-colors">
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                          <button onClick={() => deleteCapture(cap.id)} className="cursor-pointer text-muted-foreground/40 hover:text-red-400 transition-colors">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                        <button onClick={() => deleteCapture(cap.id)} className="cursor-pointer text-muted-foreground/40 hover:text-red-400 transition-colors" title="Delete">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
                       <Input
                         value={cap.title}
                         onChange={e => setField(cap.id, { title: e.target.value })}
                         placeholder="Title"
-                        className="h-8 text-sm font-medium"
+                        className="h-9 text-base font-semibold"
                       />
-                      <textarea
-                        value={cap.content}
-                        onChange={e => setField(cap.id, { content: e.target.value })}
-                        placeholder="Notes, thoughts, context..."
-                        className="min-h-[80px] w-full rounded-md border border-border bg-input px-3 py-2 text-xs resize-y outline-none"
-                      />
+                      <div
+                        onClick={() => setEditorOpen(cap.id)}
+                        className="cursor-pointer group relative min-h-[80px] w-full rounded-md border border-border bg-input px-3 py-2 text-sm leading-relaxed hover:border-foreground/20 transition-colors"
+                      >
+                        {cap.content ? (
+                          <div className="prose prose-invert prose-sm max-w-none line-clamp-6
+                            prose-headings:text-foreground prose-p:text-foreground/80 prose-strong:text-foreground
+                            prose-code:text-purple-300 prose-code:bg-purple-500/10 prose-code:px-1 prose-code:rounded
+                            prose-blockquote:border-l-purple-500/40 prose-li:text-foreground/80">
+                            <Markdown urlTransform={(url) => url} components={{ img: ({ src, alt, ...props }: any) => { if (src?.startsWith('img:')) { const d = imageCache[src.slice(4)]; return d ? <img src={d} alt={alt||''} className="max-w-full rounded-lg my-1" {...props}/> : null } return <img src={src} alt={alt} className="max-w-full rounded-lg my-1" {...props}/> } }}>{cap.content}</Markdown>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground/40">Tap to edit notes...</span>
+                        )}
+                        <Maximize2 className="absolute top-2 right-2 h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors" />
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[10px] text-muted-foreground mb-1 block">Source</label>
@@ -333,34 +698,74 @@ export function CapturesPage() {
                           </div>
                         </div>
                       </div>
-                      {!cap.imageId && (
-                        <label className="cursor-pointer flex items-center justify-center gap-2 rounded-lg border border-dashed border-border/40 py-3 text-xs text-muted-foreground/50 hover:border-border hover:text-muted-foreground transition-all">
-                          <ImageIcon className="h-3.5 w-3.5" />
-                          Add image
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={async e => {
-                              const file = e.target.files?.[0]
-                              if (file) {
-                                const b64 = await fileToBase64(file)
-                                await addImageToCapture(cap.id, b64)
-                              }
-                            }}
-                          />
-                        </label>
+                      {/* Image thumbnails with remove */}
+                      {cap.imageIds.length > 0 && (
+                        <div className="flex gap-2 flex-wrap">
+                          {cap.imageIds.map((imgId, i) => (
+                            <div key={imgId} className="relative group">
+                              {imageCache[imgId] && (
+                                <img src={imageCache[imgId]} alt="" className="h-16 w-16 rounded-md object-cover border border-white/10 ring-1 ring-white/5 cursor-pointer" onClick={() => setLightbox({ imageIds: cap.imageIds, index: i })} />
+                              )}
+                              <button
+                                onClick={() => removeImageFromCapture(cap.id, imgId)}
+                                className="cursor-pointer absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <X className="h-2.5 w-2.5" />
+                              </button>
+                              <span className="absolute bottom-0.5 right-0.5 text-[8px] bg-black/50 text-white px-1 rounded">{i + 1}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <label className={`flex items-center justify-center gap-2 rounded-lg border border-dashed py-3 text-xs transition-all ${uploading === cap.id ? 'border-purple-500/40 text-purple-300/70 animate-pulse cursor-wait' : 'cursor-pointer border-purple-500/20 text-muted-foreground/50 hover:border-purple-500/40 hover:text-purple-300/70'}`}>
+                        {uploading === cap.id ? (
+                          <>
+                            <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" /><path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" /></svg>
+                            Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <ImageIcon className="h-3.5 w-3.5" />
+                            Add {cap.imageIds.length > 0 ? 'more ' : ''}photos
+                          </>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          disabled={uploading === cap.id}
+                          onChange={async e => {
+                            const files = e.target.files
+                            if (!files?.length) return
+                            const b64s = await Promise.all(Array.from(files).map(f => fileToBase64(f)))
+                            await addImagesToCapture(cap.id, b64s)
+                            e.target.value = ''
+                          }}
+                        />
+                      </label>
+                      {/* Upload status toast */}
+                      {uploadStatus && expanded === cap.id && (
+                        <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all ${uploadStatus.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                          {uploadStatus.type === 'success' ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                          {uploadStatus.msg}
+                        </div>
                       )}
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm font-medium truncate">{cap.title || 'Untitled'}</p>
-                      {cap.content && <p className="text-[11px] text-muted-foreground/60 line-clamp-2 mt-0.5">{cap.content}</p>}
+                      <p className="text-sm font-medium truncate">{cap.title || <span className="text-muted-foreground/40 italic">Untitled</span>}</p>
+                      {cap.content && <p className="text-xs text-muted-foreground/70 line-clamp-2 mt-0.5 leading-relaxed">{cap.content}</p>}
                       <div className="flex items-center gap-2 mt-2">
                         <span className={`text-[9px] px-2 py-0.5 rounded-full ${sourceColor[cap.source]}`}>
                           {sourceLabel[cap.source]}
                         </span>
                         <span className="text-[10px] text-muted-foreground/40">{timeAgo(cap.createdAt)}</span>
+                        {cap.imageIds.length > 0 && (
+                          <span className="text-[9px] text-purple-400/50 flex items-center gap-0.5">
+                            <ImageIcon className="h-2.5 w-2.5" /> {cap.imageIds.length}
+                          </span>
+                        )}
                       </div>
                     </>
                   )}
@@ -369,6 +774,94 @@ export function CapturesPage() {
             )
           })}
         </div>
+      )}
+      {/* Fullscreen editor */}
+      {editorOpen && (() => {
+        const cap = captures.find(c => c.id === editorOpen)
+        if (!cap) return null
+        return (
+          <FullscreenEditor
+            title={cap.title}
+            content={cap.content}
+            onChangeTitle={v => setField(cap.id, { title: v })}
+            onChangeContent={v => setField(cap.id, { content: v })}
+            onClose={() => setEditorOpen(null)}
+            images={imageCache}
+            onAddImage={async (b64s) => {
+              const ids: string[] = []
+              for (let i = 0; i < b64s.length; i++) {
+                const imgId = `${cap.id}-${Date.now()}-${i}.png`
+                await saveImage(imgId, b64s[i])
+                setImageCache(prev => ({ ...prev, [imgId]: b64s[i] }))
+                ids.push(imgId)
+              }
+              updateCaptures(prev => prev.map(c =>
+                c.id === cap.id ? { ...c, imageIds: [...c.imageIds, ...ids] } : c
+              ))
+              return ids
+            }}
+          />
+        )
+      })()}
+      {/* Fullscreen lightbox */}
+      {lightbox && ReactDOM.createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm [-webkit-app-region:no-drag]"
+          onClick={() => setLightbox(null)}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onLightboxSwipe}
+        >
+          {/* Close button */}
+          <button
+            onClick={(e) => { e.stopPropagation(); setLightbox(null) }}
+            className="cursor-pointer absolute right-4 text-white/70 hover:text-white transition-colors z-10 top-[calc(1rem+env(safe-area-inset-top))] [-webkit-app-region:no-drag]"
+          >
+            <X className="h-7 w-7" />
+          </button>
+
+          {/* Counter */}
+          {lightbox.imageIds.length > 1 && (
+            <span className="absolute left-1/2 -translate-x-1/2 text-white/70 text-sm top-[calc(1.25rem+env(safe-area-inset-top))]">
+              {lightbox.index + 1} / {lightbox.imageIds.length}
+            </span>
+          )}
+
+          {/* Image */}
+          <img
+            src={imageCache[lightbox.imageIds[lightbox.index]]}
+            alt=""
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
+            onClick={e => e.stopPropagation()}
+          />
+
+          {/* Navigation */}
+          {lightbox.imageIds.length > 1 && (
+            <>
+              <button
+                onClick={e => { e.stopPropagation(); setLightbox(prev => prev ? { ...prev, index: (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null) }}
+                className="cursor-pointer absolute left-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-3 md:p-2 transition-colors"
+              >
+                <ChevronLeft className="h-7 w-7 md:h-6 md:w-6" />
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); setLightbox(prev => prev ? { ...prev, index: (prev.index + 1) % prev.imageIds.length } : null) }}
+                className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-3 md:p-2 transition-colors"
+              >
+                <ChevronRight className="h-7 w-7 md:h-6 md:w-6" />
+              </button>
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2">
+                {lightbox.imageIds.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={e => { e.stopPropagation(); setLightbox(prev => prev ? { ...prev, index: i } : null) }}
+                    className={`cursor-pointer h-2 rounded-full transition-all ${i === lightbox.index ? 'w-6 bg-white' : 'w-2 bg-white/40'}`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>,
+        document.body
       )}
     </PageShell>
   )
