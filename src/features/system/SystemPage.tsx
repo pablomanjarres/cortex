@@ -3,6 +3,7 @@ import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, AlertCircle, Clock, ShieldCheck, ExternalLink } from 'lucide-react'
 import { SpendSection } from '@/features/spend/SpendPage'
+import { PaperclipSection } from '@/features/paperclip/PaperclipSection'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
 
@@ -543,6 +544,8 @@ export function SystemPage() {
       <UptimePanel delay={0.15} />
 
       <SpendSection />
+
+      <PaperclipSection />
     </PageShell>
   )
 }
