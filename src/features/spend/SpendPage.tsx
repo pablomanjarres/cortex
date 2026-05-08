@@ -77,7 +77,7 @@ const SERVICE_ICONS: Record<string, typeof Bot> = {
 // ── Section (renders inside SystemPage's PageShell) ──────────────────────────
 
 export function SpendSection() {
-  const { today, month, buckets24h, burnRate, vmStatus, loading, error, lastFetched, refresh } =
+  const { today, month, buckets24h, burnRate, vmStatus, claudeBuckets, loading, error, lastFetched, refresh } =
     useRealtimeSpend(30_000)
 
   // Total today across all services
@@ -204,6 +204,52 @@ export function SpendSection() {
               </div>
               <div className="mt-2 text-xs text-muted-foreground">
                 {rate?.usd_per_hour ? fmtRate(Number(rate.usd_per_hour)) : 'idle'}
+              </div>
+            </WidgetCard>
+          )
+        })}
+      </div>
+
+      {/* Claude bucket budgets — real-time monthly cap tracking for Vertex+Bedrock */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(['classifier', 'drafter'] as const).map((bucket, i) => {
+          const row = claudeBuckets.find((b) => b.bucket === bucket)
+          const cap = row?.budget_cap_usd ?? (bucket === 'classifier' ? 50 : 100)
+          const used = row?.usd ?? 0
+          const remaining = row?.budget_remaining_usd ?? cap - used
+          const pct = Math.min(100, Math.max(0, (used / cap) * 100))
+          const calls = row?.calls ?? 0
+          const exhausted = used >= cap
+          const warn = used >= cap * 0.8
+          const barColor = exhausted ? '#ef4444' : warn ? '#f59e0b' : '#10b981'
+          const titleSuffix = bucket === 'classifier' ? 'Stage 1+2 (Haiku)' : 'Stage 3 VM (Sonnet/Opus)'
+          return (
+            <WidgetCard
+              key={bucket}
+              title={`Claude bucket — ${bucket}`}
+              description={titleSuffix}
+              delay={0.18 + i * 0.04}
+              compact
+            >
+              <div className="flex items-baseline justify-between">
+                <div className="text-2xl font-bold tabular-nums" style={{ color: barColor }}>
+                  {fmtUSD(used)}
+                </div>
+                <div className="text-xs text-muted-foreground tabular-nums">
+                  / {fmtUSD(cap)} cap
+                </div>
+              </div>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${pct}%`, background: barColor }}
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>{calls.toLocaleString()} calls</span>
+                <span className="tabular-nums">
+                  {exhausted ? 'cap reached — fallback active' : `${fmtUSD(Math.max(0, remaining))} left`}
+                </span>
               </div>
             </WidgetCard>
           )

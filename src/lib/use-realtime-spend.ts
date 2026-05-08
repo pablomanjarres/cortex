@@ -37,12 +37,24 @@ export interface VmStatus {
   updated_at: string
 }
 
+// Real-time monthly spend per Vertex/Bedrock Anthropic budget bucket.
+// classifier bucket cap = $50, drafter bucket cap = $100. Single source of
+// truth: the public.vertex_anthropic_bucket_usage_month view.
+export interface ClaudeBucketUsage {
+  bucket: 'classifier' | 'drafter' | string
+  usd: number
+  calls: number
+  budget_remaining_usd: number | null
+  budget_cap_usd: number | null
+}
+
 export interface RealtimeSpendData {
   today: SpendToday[]
   month: SpendToday[]
   buckets24h: SpendBucket[]
   burnRate: BurnRate[]
   vmStatus: VmStatus[]
+  claudeBuckets: ClaudeBucketUsage[]
   loading: boolean
   error: string | null
   lastFetched: Date | null
@@ -55,6 +67,7 @@ export function useRealtimeSpend(intervalMs: number = 30_000): RealtimeSpendData
   const [buckets24h, setBuckets24h] = useState<SpendBucket[]>([])
   const [burnRate, setBurnRate] = useState<BurnRate[]>([])
   const [vmStatus, setVmStatus] = useState<VmStatus[]>([])
+  const [claudeBuckets, setClaudeBuckets] = useState<ClaudeBucketUsage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [lastFetched, setLastFetched] = useState<Date | null>(null)
@@ -67,12 +80,13 @@ export function useRealtimeSpend(intervalMs: number = 30_000): RealtimeSpendData
       return
     }
     try {
-      const [t, m, b, r, v] = await Promise.all([
+      const [t, m, b, r, v, cb] = await Promise.all([
         supabaseSelect<SpendToday>('costs_realtime_today', { select: '*' }),
         supabaseSelect<SpendToday>('costs_realtime_month', { select: '*' }),
         supabaseSelect<SpendBucket>('costs_realtime_24h', { select: '*' }),
         supabaseSelect<BurnRate>('costs_realtime_burn_rate', { select: '*' }),
         supabaseSelect<VmStatus>('costs_realtime_vm_status', { select: '*' }),
+        supabaseSelect<ClaudeBucketUsage>('vertex_anthropic_bucket_usage_month', { select: '*' }),
       ])
       if (!mountedRef.current) return
       setToday(t)
@@ -80,6 +94,7 @@ export function useRealtimeSpend(intervalMs: number = 30_000): RealtimeSpendData
       setBuckets24h(b)
       setBurnRate(r)
       setVmStatus(v)
+      setClaudeBuckets(cb)
       setError(null)
       setLastFetched(new Date())
     } catch (e) {
@@ -100,5 +115,5 @@ export function useRealtimeSpend(intervalMs: number = 30_000): RealtimeSpendData
     }
   }, [fetchAll, intervalMs])
 
-  return { today, month, buckets24h, burnRate, vmStatus, loading, error, lastFetched, refresh: fetchAll }
+  return { today, month, buckets24h, burnRate, vmStatus, claudeBuckets, loading, error, lastFetched, refresh: fetchAll }
 }
