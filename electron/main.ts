@@ -688,6 +688,31 @@ function startWebServer() {
       return
     }
 
+    if (url.pathname.startsWith('/api/integrations/paperclip') && req.method === 'GET') {
+      try {
+        const token = getKey('paperclip-token')
+        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No Paperclip token saved' })); return }
+        const baseUrl = getKey('paperclip-base-url') || 'http://openclaw-vm:3100'
+        const client = createPaperclipClient({ baseUrl, token })
+        const sub = url.pathname.replace('/api/integrations/paperclip', '')
+        let data: unknown
+        if (sub === '/companies') {
+          data = await client.listCompanies()
+        } else {
+          const m = sub.match(/^\/companies\/([^/]+)\/(agents|heartbeat-runs|activity|live-runs)$/)
+          if (!m) { res.writeHead(404, corsHeaders); res.end(JSON.stringify({ error: 'Unknown paperclip route' })); return }
+          const [, companyId, kind] = m
+          const limit = parseInt(url.searchParams.get('limit') || '20')
+          if (kind === 'agents') data = await client.listAgents(companyId)
+          else if (kind === 'heartbeat-runs') data = await client.listHeartbeatRuns(companyId, limit)
+          else if (kind === 'activity') data = await client.listActivity(companyId, limit)
+          else data = await client.liveRuns(companyId)
+        }
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(data))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
     // ─── Mars (Obsidian vault) integration ──────────────────
     if (url.pathname === '/api/mars/journal' && req.method === 'GET') {
       try {
