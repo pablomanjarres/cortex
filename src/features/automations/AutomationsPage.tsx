@@ -77,6 +77,8 @@ const TASKS: TaskDef[] = [
 
   // Ops & Life
   { name: 'uptime-flap-filter', description: 'Reads Uptime Kuma; pages Pushover only after 3 consecutive down checks + restart attempt', frequency: 'Every 5 min', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
+  { name: 'adc-health', description: 'Mints a token from openclaw-vm ADC; flags invalid_rapt to Pushover + Slack + Cortex', frequency: 'Every 5 min', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
+  { name: 'oracle-gmail-poll', description: 'Oracle reads Gmail, classifies via Vertex Gemini, posts Slack digest as @oracle, fires Pushover for urgent items', frequency: 'Every 30 min', group: 'Ops & Life', type: 'cron', host: 'gcp-vm' },
   { name: 'health-habit-tracker', description: 'PPL/swim/sleep/cal/journal Telegram check-in; Sun graph', frequency: 'Daily 9pm + Sun 8pm', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
 
   // Security & Discipline
