@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { Cpu, MemoryStick, HardDrive, Activity, Server, AlertCircle, Clock, ShieldCheck, ExternalLink } from 'lucide-react'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Cpu, MemoryStick, HardDrive, Activity, Server, AlertCircle, Clock, ShieldCheck, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
 import { SpendSection } from '@/features/spend/SpendPage'
 import { PaperclipSection } from '@/features/paperclip/PaperclipSection'
+import { HostHistory } from './HostHistory'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
 
@@ -137,6 +139,7 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   const [data, setData] = useState<GlancesPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [stale, setStale] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
   const cpuHistory = useRef<number[]>([])
   const memHistory = useRef<number[]>([])
 
@@ -356,6 +359,16 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
             </div>
           </div>
         )}
+
+        {/* History expander */}
+        <button
+          onClick={() => setShowHistory((v) => !v)}
+          className="flex items-center justify-center gap-1.5 mt-1 -mx-1 px-3 py-1.5 rounded-md border border-border bg-secondary/15 hover:bg-secondary/30 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {showHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          {showHistory ? 'Hide history' : 'Show history & averages'}
+        </button>
+        {showHistory && <HostHistory host={host.key} />}
       </div>
     </WidgetCard>
   )
@@ -524,28 +537,124 @@ function UptimePanel({ delay }: { delay: number }) {
   )
 }
 
+// ── ADC reauth tile ───────────────────────────────────────────────────────
+
+interface AdcRun {
+  id: string
+  taskName: string
+  timestamp: string
+  status: 'success' | 'error' | 'pending-approval'
+  summary: string
+  fullOutput: string
+}
+
+function AdcHealthTile({ delay }: { delay: number }) {
+  const [run, setRun] = useState<AdcRun | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const tick = async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/data?key=cortex-automations`, { cache: 'no-store' })
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const json = (await r.json()) as { runs?: AdcRun[] }
+        if (cancelled) return
+        const latest = (json.runs ?? []).find((x) => x.taskName === 'adc-health') ?? null
+        setRun(latest)
+        setError(null)
+      } catch (e: any) {
+        if (cancelled) return
+        setError(e?.message ?? 'fetch failed')
+      } finally {
+        if (!cancelled) timer = setTimeout(tick, 30_000)
+      }
+    }
+    tick()
+    return () => { cancelled = true; if (timer) clearTimeout(timer) }
+  }, [])
+
+  const status = run?.status
+  const ageMin = run ? Math.round((Date.now() - new Date(run.timestamp).getTime()) / 60_000) : null
+  const stale = ageMin != null && ageMin > 15
+  const isUrgent = status === 'error' || stale
+
+  let dotColor = 'bg-zinc-500'
+  let pulse = ''
+  if (status === 'success' && !stale) { dotColor = 'bg-emerald-400'; pulse = 'animate-pulse' }
+  else if (status === 'error') dotColor = 'bg-red-400'
+  else if (stale) dotColor = 'bg-yellow-400'
+
+  let body: string
+  if (error) body = error
+  else if (!run) body = 'Awaiting first watchdog tick (vm-watchdog every 5 min)'
+  else if (status === 'error') body = run.summary || 'Reauth needed: gcloud auth application-default login on VM (as openclaw)'
+  else if (stale) body = `Last check ${ageMin}m ago — vm-watchdog may be stuck`
+  else body = run.summary || 'Vertex/Gemini auth healthy'
+
+  return (
+    <WidgetCard
+      title="ADC reauth"
+      description={run ? `${status === 'success' ? 'Healthy' : 'Reauth needed'}${ageMin != null ? ` · ${ageMin}m ago` : ''}` : 'No data yet'}
+      variant={isUrgent ? 'urgent' : 'default'}
+      delay={delay}
+    >
+      <div className="flex items-start gap-3">
+        <div className={`h-2 w-2 rounded-full shrink-0 mt-1.5 ${dotColor} ${pulse}`} />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-foreground/90 break-words">{body}</p>
+          <p className="text-[10px] text-muted-foreground/60 mt-1">vm-watchdog: ADC token mint check, vertex/gemini auth on openclaw-vm</p>
+        </div>
+      </div>
+    </WidgetCard>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export function SystemPage() {
   return (
     <PageShell>
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Live host metrics · polled every 2s · powered by Glances
-        </p>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">System</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Hosts, uptime & spend</p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {HOSTS.map((host, i) => (
-          <HostCard key={host.key} host={host} delay={i * 0.05} />
-        ))}
-      </div>
+      <Tabs defaultValue="live">
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="live">Live</TabsTrigger>
+          <TabsTrigger value="spend">Spend</TabsTrigger>
+          <TabsTrigger value="paperclip">Paperclip</TabsTrigger>
+        </TabsList>
 
-      <UptimePanel delay={0.15} />
+        <TabsContent value="live">
+          <div className="flex flex-col gap-4">
+            <p className="text-xs text-muted-foreground">
+              Live host metrics · polled every 2s · history sampled every 5s · powered by Glances
+            </p>
 
-      <SpendSection />
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {HOSTS.map((host, i) => (
+                <HostCard key={host.key} host={host} delay={i * 0.05} />
+              ))}
+            </div>
 
-      <PaperclipSection />
+            <UptimePanel delay={0.15} />
+            <AdcHealthTile delay={0.20} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="spend">
+          <SpendSection />
+        </TabsContent>
+
+        <TabsContent value="paperclip">
+          <PaperclipSection />
+        </TabsContent>
+      </Tabs>
     </PageShell>
   )
 }

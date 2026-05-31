@@ -14,6 +14,7 @@ import { getLemonStats } from './integrations/lemon.js'
 import { getVercelStats } from './integrations/vercel.js'
 import { getSupabaseStats } from './integrations/supabase.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
+import { createPaperclipClient } from './integrations/paperclip.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -43,12 +44,36 @@ interface HostStats {
   cpu: number; mem: number; memUsed: number; memTotal: number
   swap: number; load1: number; cores: number; uptime: string
   rootFsPct?: number; rootFsUsed?: number; rootFsSize?: number
+  rxBps?: number; txBps?: number
 }
 let cachedMacStats: HostStats | null = null
 let macStatsError: string | null = null
 let cachedVmStats: HostStats | null = null
 let vmStatsError: string | null = null
 let traySystemTimer: ReturnType<typeof setInterval> | null = null
+
+// ─── System history (rolling 24h ring buffer per host) ───
+type SystemHostKey = 'mac' | 'vm'
+interface SystemHistorySample {
+  t: number       // epoch ms
+  cpu: number     // % 0–100
+  mem: number     // % 0–100
+  memUsed: number // bytes
+  memTotal: number
+  swap: number    // % 0–100
+  load1: number
+  cores: number
+  rxBps?: number
+  txBps?: number
+}
+
+// 7d at one sample per 5s → 120,960 entries (~12 MB per host as JSON).
+// Keep raw, downsample on read.
+const SYSTEM_HISTORY_MAX = 120_960
+const SYSTEM_HISTORY_RETAIN_MS = 7 * 24 * 3600 * 1000
+const systemHistory: Record<SystemHostKey, SystemHistorySample[]> = { mac: [], vm: [] }
+let systemHistoryDirty = false
+let systemHistoryPersistTimer: ReturnType<typeof setInterval> | null = null
 
 const isDev = !app.isPackaged
 
@@ -115,13 +140,14 @@ async function refreshTrayData() {
 async function fetchHostStats(host: string): Promise<HostStats> {
   const opts = { signal: AbortSignal.timeout(host === '127.0.0.1' ? 3000 : 5000) }
   const base = `http://${host}:61208/api/4`
-  const [cpuR, memR, loadR, upR, fsR, swR] = await Promise.all([
+  const [cpuR, memR, loadR, upR, fsR, swR, netR] = await Promise.all([
     fetch(`${base}/cpu`, opts),
     fetch(`${base}/mem`, opts),
     fetch(`${base}/load`, opts),
     fetch(`${base}/uptime`, opts),
     fetch(`${base}/fs`, opts),
     fetch(`${base}/memswap`, opts).catch(() => null),
+    fetch(`${base}/network`, opts).catch(() => null),
   ])
   if (!cpuR.ok || !memR.ok || !loadR.ok) {
     throw new Error(`glances ${cpuR.status}/${memR.status}/${loadR.status}`)
@@ -137,6 +163,24 @@ async function fetchHostStats(host: string): Promise<HostStats> {
   }
   const fsList = fsR.ok ? (await fsR.json()) as Array<{ mnt_point: string; percent: number; used: number; size: number }> : []
   const root = fsList.find((f) => f.mnt_point === '/')
+  let rxBps: number | undefined
+  let txBps: number | undefined
+  if (netR && netR.ok) {
+    try {
+      const nets = await netR.json() as Array<{ interface_name: string; bytes_recv_rate_per_sec?: number; bytes_sent_rate_per_sec?: number }>
+      let rx = 0, tx = 0
+      for (const n of nets) {
+        const name = n.interface_name || ''
+        if (name.startsWith('lo') || name.startsWith('utun') || name.startsWith('llw') ||
+            name.startsWith('awdl') || name.startsWith('anpi') || name.startsWith('veth') ||
+            name.startsWith('docker') || name.startsWith('br-')) continue
+        rx += n.bytes_recv_rate_per_sec ?? 0
+        tx += n.bytes_sent_rate_per_sec ?? 0
+      }
+      rxBps = rx
+      txBps = tx
+    } catch { /* ignore */ }
+  }
   return {
     cpu: cpu.total ?? 0,
     mem: mem.percent ?? 0,
@@ -149,7 +193,165 @@ async function fetchHostStats(host: string): Promise<HostStats> {
     rootFsPct: root?.percent,
     rootFsUsed: root?.used,
     rootFsSize: root?.size,
+    rxBps,
+    txBps,
   }
+}
+
+function pushHistorySample(host: SystemHostKey, s: HostStats) {
+  const sample: SystemHistorySample = {
+    t: Date.now(),
+    cpu: s.cpu,
+    mem: s.mem,
+    memUsed: s.memUsed,
+    memTotal: s.memTotal,
+    swap: s.swap,
+    load1: s.load1,
+    cores: s.cores,
+    rxBps: s.rxBps,
+    txBps: s.txBps,
+  }
+  const ring = systemHistory[host]
+  ring.push(sample)
+  if (ring.length > SYSTEM_HISTORY_MAX) ring.splice(0, ring.length - SYSTEM_HISTORY_MAX)
+  systemHistoryDirty = true
+}
+
+function getSystemHistoryDir(): string {
+  // Lives in non-iCloud app data — high-frequency churn shouldn't sync.
+  return isDev
+    ? path.join(__dirname, '..', 'data', 'system-history')
+    : path.join(app.getPath('userData'), 'system-history')
+}
+
+function loadSystemHistory() {
+  try {
+    const dir = getSystemHistoryDir()
+    if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); return }
+    const cutoff = Date.now() - SYSTEM_HISTORY_RETAIN_MS
+    for (const host of ['mac', 'vm'] as SystemHostKey[]) {
+      const file = path.join(dir, `${host}.json`)
+      if (!fs.existsSync(file)) continue
+      try {
+        const raw = JSON.parse(fs.readFileSync(file, 'utf-8')) as SystemHistorySample[]
+        if (Array.isArray(raw)) {
+          systemHistory[host] = raw.filter((s) => s && typeof s.t === 'number' && s.t > cutoff)
+        }
+      } catch (e) {
+        console.warn(`[Cortex] system-history: failed to load ${host}:`, (e as Error).message)
+      }
+    }
+  } catch (e) {
+    console.warn('[Cortex] system-history: load failed:', (e as Error).message)
+  }
+}
+
+function persistSystemHistory() {
+  if (!systemHistoryDirty) return
+  systemHistoryDirty = false
+  try {
+    const dir = getSystemHistoryDir()
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    for (const host of ['mac', 'vm'] as SystemHostKey[]) {
+      const file = path.join(dir, `${host}.json`)
+      const tmp = `${file}.tmp`
+      fs.writeFileSync(tmp, JSON.stringify(systemHistory[host]))
+      fs.renameSync(tmp, file)
+    }
+  } catch (e) {
+    console.warn('[Cortex] system-history: persist failed:', (e as Error).message)
+  }
+}
+
+interface HistoryBucket {
+  t: number
+  cpu: number; cpuMax: number
+  mem: number; memMax: number
+  load1: number; load1Max: number
+  rxBps: number
+  txBps: number
+}
+
+function buildHistoryResponse(host: SystemHostKey, windowMs: number) {
+  const ring = systemHistory[host]
+  const cutoff = Date.now() - windowMs
+  const samples = ring.filter((s) => s.t >= cutoff)
+
+  if (samples.length === 0) {
+    return {
+      host, windowMs, count: 0, samples: [] as HistoryBucket[],
+      stats: {
+        cpu: { avg: 0, min: 0, max: 0 },
+        mem: { avg: 0, min: 0, max: 0 },
+        load1: { avg: 0, min: 0, max: 0 },
+        swap: { avg: 0, min: 0, max: 0 },
+      },
+      latest: ring[ring.length - 1] ?? null,
+    }
+  }
+
+  // Bucket size: aim for ~80 points across the window (good for charts).
+  const bucketMs = Math.max(5000, Math.floor(windowMs / 80))
+  const buckets: HistoryBucket[] = []
+  let current: { t: number; cpu: number[]; mem: number[]; load1: number[]; rx: number[]; tx: number[] } | null = null
+  for (const s of samples) {
+    const bucketStart = Math.floor(s.t / bucketMs) * bucketMs
+    if (!current || current.t !== bucketStart) {
+      if (current) {
+        buckets.push({
+          t: current.t,
+          cpu: avg(current.cpu), cpuMax: Math.max(...current.cpu),
+          mem: avg(current.mem), memMax: Math.max(...current.mem),
+          load1: avg(current.load1), load1Max: Math.max(...current.load1),
+          rxBps: avg(current.rx),
+          txBps: avg(current.tx),
+        })
+      }
+      current = { t: bucketStart, cpu: [], mem: [], load1: [], rx: [], tx: [] }
+    }
+    current.cpu.push(s.cpu)
+    current.mem.push(s.mem)
+    current.load1.push(s.load1)
+    if (s.rxBps != null) current.rx.push(s.rxBps)
+    if (s.txBps != null) current.tx.push(s.txBps)
+  }
+  if (current) {
+    buckets.push({
+      t: current.t,
+      cpu: avg(current.cpu), cpuMax: Math.max(...current.cpu),
+      mem: avg(current.mem), memMax: Math.max(...current.mem),
+      load1: avg(current.load1), load1Max: Math.max(...current.load1),
+      rxBps: avg(current.rx),
+      txBps: avg(current.tx),
+    })
+  }
+
+  const cpuVals = samples.map((s) => s.cpu)
+  const memVals = samples.map((s) => s.mem)
+  const loadVals = samples.map((s) => s.load1)
+  const swapVals = samples.map((s) => s.swap)
+
+  return {
+    host,
+    windowMs,
+    count: samples.length,
+    bucketMs,
+    samples: buckets,
+    stats: {
+      cpu: { avg: avg(cpuVals), min: Math.min(...cpuVals), max: Math.max(...cpuVals) },
+      mem: { avg: avg(memVals), min: Math.min(...memVals), max: Math.max(...memVals) },
+      load1: { avg: avg(loadVals), min: Math.min(...loadVals), max: Math.max(...loadVals) },
+      swap: { avg: avg(swapVals), min: Math.min(...swapVals), max: Math.max(...swapVals) },
+    },
+    latest: samples[samples.length - 1],
+  }
+}
+
+function avg(arr: number[]): number {
+  if (arr.length === 0) return 0
+  let sum = 0
+  for (const v of arr) sum += v
+  return sum / arr.length
 }
 
 async function refreshSystemStats() {
@@ -157,10 +359,16 @@ async function refreshSystemStats() {
     fetchHostStats('127.0.0.1'),
     fetchHostStats('openclaw-vm'),
   ])
-  if (macRes.status === 'fulfilled') { cachedMacStats = macRes.value; macStatsError = null }
-  else { macStatsError = (macRes.reason as Error)?.message ?? 'fetch failed' }
-  if (vmRes.status === 'fulfilled') { cachedVmStats = vmRes.value; vmStatsError = null }
-  else { vmStatsError = (vmRes.reason as Error)?.message ?? 'fetch failed' }
+  if (macRes.status === 'fulfilled') {
+    cachedMacStats = macRes.value
+    macStatsError = null
+    pushHistorySample('mac', macRes.value)
+  } else { macStatsError = (macRes.reason as Error)?.message ?? 'fetch failed' }
+  if (vmRes.status === 'fulfilled') {
+    cachedVmStats = vmRes.value
+    vmStatsError = null
+    pushHistorySample('vm', vmRes.value)
+  } else { vmStatsError = (vmRes.reason as Error)?.message ?? 'fetch failed' }
   updateTraySystemTitle()
   if (tray) tray.setContextMenu(buildTrayMenu())
 }
@@ -407,8 +615,12 @@ function createTray() {
   refreshTrayData()
   trayRefreshTimer = setInterval(refreshTrayData, 5 * 60 * 1000)
   // Live system stats: pull from local Glances + VM Glances every 5s
+  loadSystemHistory()
   refreshSystemStats()
   traySystemTimer = setInterval(refreshSystemStats, 5000)
+  // Flush ring buffers to disk every minute (only if dirty).
+  if (systemHistoryPersistTimer) clearInterval(systemHistoryPersistTimer)
+  systemHistoryPersistTimer = setInterval(persistSystemHistory, 60_000)
 }
 
 // ─── Web server ────────────────────────────────────────────
@@ -781,6 +993,29 @@ function startWebServer() {
         if (!r.ok) throw new Error(`glances ${r.status}`)
         res.writeHead(200, corsHeaders); res.end(await r.text())
       } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      return
+    }
+
+    // Aggregated history bucketed for charts. Window: 1h | 6h | 24h.
+    if (url.pathname === '/api/system/history' && req.method === 'GET') {
+      try {
+        const hostParam = url.searchParams.get('host') as SystemHostKey | null
+        if (hostParam !== 'mac' && hostParam !== 'vm') {
+          res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'host must be mac or vm' })); return
+        }
+        const win = url.searchParams.get('window') ?? '1h'
+        const windowMs =
+          win === '7d'  ? 7 * 24 * 3600 * 1000 :
+          win === '3d'  ? 3 * 24 * 3600 * 1000 :
+          win === '24h' ? 24 * 3600 * 1000 :
+          win === '6h'  ? 6 * 3600 * 1000  :
+          win === '15m' ? 15 * 60 * 1000   :
+                          1 * 3600 * 1000
+        const payload = buildHistoryResponse(hostParam, windowMs)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(payload))
+      } catch (e: any) {
+        res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e?.message ?? 'history failed' }))
+      }
       return
     }
 
@@ -1473,6 +1708,10 @@ app.on('before-quit', () => {
   if (traySprintInterval) clearInterval(traySprintInterval)
   if (trayRefreshTimer) clearInterval(trayRefreshTimer)
   if (traySystemTimer) clearInterval(traySystemTimer)
+  if (systemHistoryPersistTimer) clearInterval(systemHistoryPersistTimer)
+  // Force-flush regardless of dirty flag so the latest 5s sample lands.
+  systemHistoryDirty = true
+  persistSystemHistory()
   if (autoExportInterval) clearInterval(autoExportInterval)
   autoExport() // One final export on quit
 })
