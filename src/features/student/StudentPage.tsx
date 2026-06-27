@@ -2,6 +2,8 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
+import { useStore } from '@/lib/store'
+import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 import {
   GraduationCap,
   FlaskConical,
@@ -16,6 +18,11 @@ import {
   Terminal,
   MessagesSquare,
   Network,
+  BookOpen,
+  Atom,
+  Globe,
+  PenTool,
+  Calculator,
   CalendarDays,
   AlertCircle,
   CheckCircle2,
@@ -33,18 +40,21 @@ type Difficulty = 'Hard' | 'Medium' | 'Easy'
 type AssignmentType = 'Exam' | 'Quiz' | 'Lab' | 'Project' | 'Presentation' | 'Attendance'
 type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
 type SortKey = 'deadline' | 'weight' | 'grade' | 'name'
+type CourseStatus = 'Normal' | 'At risk' | 'Under Control'
 
 type TopicStatus = 'Not seen' | 'Previewed' | 'Seen' | 'Practiced' | 'Mastered'
 
+// Courses are persisted as data (JSON), so the icon is stored as a string key
+// and resolved to a lucide component at render time.
 interface Course {
   id: string
   name: string
   difficulty: Difficulty
-  icon: typeof GraduationCap
+  iconKey: string
   color: string
   bg: string
   semester: string
-  status: 'Normal' | 'At risk' | 'Under Control'
+  status: CourseStatus
   credits: number
 }
 
@@ -73,39 +83,51 @@ interface Assignment {
   notes?: string
 }
 
-// ── Static Data ──────────────────────────────────────────────────────────────
+// ── Icons & styling palette ──────────────────────────────────────────────────
 
-// Semesters, newest first — the first entry is the default active view.
-const SEMESTERS = ['4th Semester', '3rd Semester'] as const
+const ICONS: Record<string, typeof GraduationCap> = {
+  grad: GraduationCap, flask: FlaskConical, code: Code2, database: Database,
+  chart: BarChart3, palette: Palette, file: FileCode, sigma: Sigma, blocks: Blocks,
+  cpu: Cpu, terminal: Terminal, messages: MessagesSquare, network: Network,
+  book: BookOpen, atom: Atom, globe: Globe, pen: PenTool, calc: Calculator,
+}
+const iconOf = (k: string) => ICONS[k] ?? GraduationCap
 
-const COURSES_3RD: Course[] = [
-  { id: 'formales', name: 'Formal Languages', difficulty: 'Hard', icon: FileCode, color: 'text-orange-400', bg: 'bg-orange-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'physics', name: 'Physics II', difficulty: 'Hard', icon: FlaskConical, color: 'text-pink-400', bg: 'bg-pink-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'algorithms', name: 'Algorithms', difficulty: 'Easy', icon: Code2, color: 'text-red-400', bg: 'bg-red-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'dbms', name: 'DB Management', difficulty: 'Medium', icon: Database, color: 'text-blue-400', bg: 'bg-blue-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'stats', name: 'Prob & Stats', difficulty: 'Easy', icon: BarChart3, color: 'text-green-400', bg: 'bg-green-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'imagination', name: 'Creativity', difficulty: 'Easy', icon: Palette, color: 'text-purple-400', bg: 'bg-purple-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
+// Cycled when auto-styling newly added courses so each looks distinct.
+const PALETTE: [string, string][] = [
+  ['text-blue-400', 'bg-blue-400'], ['text-orange-400', 'bg-orange-400'],
+  ['text-green-400', 'bg-green-400'], ['text-pink-400', 'bg-pink-400'],
+  ['text-purple-400', 'bg-purple-400'], ['text-cyan-400', 'bg-cyan-400'],
+  ['text-red-400', 'bg-red-400'], ['text-yellow-400', 'bg-yellow-400'],
+  ['text-amber-400', 'bg-amber-400'], ['text-teal-400', 'bg-teal-400'],
 ]
+const ICON_CYCLE = ['book', 'atom', 'globe', 'pen', 'calc', 'grad', 'sigma', 'blocks', 'cpu', 'terminal', 'messages', 'network']
+const ICON_OPTIONS = Object.keys(ICONS)
 
-// 4th Semester (2026-2, starts 2026-07-15) — seeded from the university class schedule
-// on Google Calendar. Difficulty/credits are initial estimates; edit as the term firms up.
-const COURSES_4TH: Course[] = [
-  { id: 'calculo3', name: 'Cálculo 3', difficulty: 'Hard', icon: Sigma, color: 'text-blue-400', bg: 'bg-blue-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'softeng', name: 'Ingeniería de Software', difficulty: 'Medium', icon: Blocks, color: 'text-orange-400', bg: 'bg-orange-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'comporg', name: 'Organización de Computadores', difficulty: 'Medium', icon: Cpu, color: 'text-cyan-400', bg: 'bg-cyan-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'os', name: 'Sistemas Operativos', difficulty: 'Hard', icon: Terminal, color: 'text-green-400', bg: 'bg-green-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'debates', name: 'Debates Humanísticos', difficulty: 'Easy', icon: MessagesSquare, color: 'text-purple-400', bg: 'bg-purple-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'sysinfo', name: 'Sistemas de Información', difficulty: 'Easy', icon: Network, color: 'text-pink-400', bg: 'bg-pink-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+// ── Default seed data ─────────────────────────────────────────────────────────
+
+const DEFAULT_SEMESTERS = ['4th Semester', '3rd Semester']
+
+const DEFAULT_COURSES: Course[] = [
+  // 3rd Semester
+  { id: 'formales', name: 'Formal Languages', difficulty: 'Hard', iconKey: 'file', color: 'text-orange-400', bg: 'bg-orange-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'physics', name: 'Physics II', difficulty: 'Hard', iconKey: 'flask', color: 'text-pink-400', bg: 'bg-pink-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'algorithms', name: 'Algorithms', difficulty: 'Easy', iconKey: 'code', color: 'text-red-400', bg: 'bg-red-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'dbms', name: 'DB Management', difficulty: 'Medium', iconKey: 'database', color: 'text-blue-400', bg: 'bg-blue-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'stats', name: 'Prob & Stats', difficulty: 'Easy', iconKey: 'chart', color: 'text-green-400', bg: 'bg-green-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'imagination', name: 'Creativity', difficulty: 'Easy', iconKey: 'palette', color: 'text-purple-400', bg: 'bg-purple-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  // 4th Semester (2026-2, starts 2026-07-15) — seeded from the Google Calendar class schedule
+  { id: 'calculo3', name: 'Cálculo 3', difficulty: 'Hard', iconKey: 'sigma', color: 'text-blue-400', bg: 'bg-blue-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'softeng', name: 'Ingeniería de Software', difficulty: 'Medium', iconKey: 'blocks', color: 'text-orange-400', bg: 'bg-orange-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'comporg', name: 'Organización de Computadores', difficulty: 'Medium', iconKey: 'cpu', color: 'text-cyan-400', bg: 'bg-cyan-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'os', name: 'Sistemas Operativos', difficulty: 'Hard', iconKey: 'terminal', color: 'text-green-400', bg: 'bg-green-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'debates', name: 'Debates Humanísticos', difficulty: 'Easy', iconKey: 'messages', color: 'text-purple-400', bg: 'bg-purple-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'sysinfo', name: 'Sistemas de Información', difficulty: 'Easy', iconKey: 'network', color: 'text-pink-400', bg: 'bg-pink-400', semester: '4th Semester', status: 'Normal', credits: 3 },
 ]
-
-// All courses across semesters — used for id→course lookups regardless of active view.
-const COURSES: Course[] = [...COURSES_3RD, ...COURSES_4TH]
 
 const DEFAULT_TOPICS: Topic[] = [
   { id: 't1', name: 'Kinetics', courseId: 'physics', chapter: 'Fray man 12.1-12.2', types: ['Concept'], mastery: 5, status: 'Seen', priority: 'High', week: 3 },
 ]
-
-// Topics also use useStore — see component below
 
 const DEFAULT_ASSIGNMENTS: Assignment[] = [
   // ── Formal Languages (6) ──
@@ -160,16 +182,14 @@ const DEFAULT_ASSIGNMENTS: Assignment[] = [
   { id: 's5', name: 'Test 2', courseId: 'stats', type: 'Exam', weight: 0.25, deadline: '2026-05-22', done: false, priority: 'High' },
 ]
 
-import { useStore } from '@/lib/store'
-import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const getToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
 const daysUntil = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86_400_000)
 const fmtDate = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-const courseMap = Object.fromEntries(COURSES.map((c) => [c.id, c]))
 const ALL_TYPES: AssignmentType[] = ['Exam', 'Quiz', 'Lab', 'Project', 'Presentation', 'Attendance']
+const ALL_DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
+const ALL_STATUSES: CourseStatus[] = ['Normal', 'At risk', 'Under Control']
 
 const diffColor: Record<Difficulty, string> = { Hard: 'bg-red-500/15 text-red-400', Medium: 'bg-yellow-500/15 text-yellow-400', Easy: 'bg-green-500/15 text-green-400' }
 const typeColor: Record<string, string> = { Exam: 'bg-red-500/15 text-red-400', Quiz: 'bg-orange-500/15 text-orange-400', Presentation: 'bg-yellow-500/15 text-yellow-400', Project: 'bg-blue-500/15 text-blue-400', Lab: 'bg-green-500/15 text-green-400', Attendance: 'bg-gray-500/15 text-gray-400' }
@@ -187,7 +207,7 @@ function cmp(a: Assignment, b: Assignment, key: SortKey, asc: boolean): number {
   return asc ? v : -v
 }
 
-// ── Inline Edit Cell ─────────────────────────────────────────────────────────
+// ── Inline Edit Cells ─────────────────────────────────────────────────────────
 
 function EditableGrade({ value, onChange }: { value?: number; onChange: (v?: number) => void }) {
   const [editing, setEditing] = useState(false)
@@ -244,7 +264,7 @@ function EditableNumber({ value, suffix, onChange }: { value: number; suffix?: s
 
   if (!editing) {
     return (
-      <button onClick={() => { setDraft(value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)); setEditing(true) }} className="cursor-pointer w-full text-right text-muted-foreground">
+      <button onClick={() => { setDraft(value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)); setEditing(true) }} className="cursor-pointer text-right text-muted-foreground">
         {value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)}{suffix}
       </button>
     )
@@ -263,7 +283,7 @@ function EditableNumber({ value, suffix, onChange }: { value: number; suffix?: s
   )
 }
 
-// ── Add Assignment Modal ─────────────────────────────────────────────────────
+// ── Add Assignment row ────────────────────────────────────────────────────────
 
 function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: Assignment) => void; onCancel: () => void }) {
   const [name, setName] = useState('')
@@ -325,30 +345,35 @@ function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: As
 
 // ── Course Detail Panel ──────────────────────────────────────────────────────
 
-function CourseDetail({ course, assignments, topics, onUpdateTopics }: {
+function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, onUpdateCourse, onDeleteCourse }: {
   course: Course
   assignments: Assignment[]
   topics: Topic[]
+  semesters: string[]
   onUpdateTopics: (fn: (prev: Topic[]) => Topic[]) => void
+  onUpdateCourse: (patch: Partial<Course>) => void
+  onDeleteCourse: () => void
 }) {
   const [addingTopic, setAddingTopic] = useState(false)
   const [newTopicName, setNewTopicName] = useState('')
+  const [editingName, setEditingName] = useState(false)
+  const [draftName, setDraftName] = useState(course.name)
   const newRef = useRef<HTMLInputElement>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (addingTopic) newRef.current?.focus() }, [addingTopic])
+  useEffect(() => { if (editingName) nameRef.current?.focus() }, [editingName])
 
+  const Icon = iconOf(course.iconKey)
   const mine = assignments.filter((a) => a.courseId === course.id)
   const myTopics = topics.filter((t) => t.courseId === course.id)
   const totalWeight = mine.reduce((s, a) => s + a.weight, 0)
   const graded = mine.filter((a) => a.grade !== undefined)
   const gradedWeight = graded.reduce((s, a) => s + a.weight, 0)
   const gradedPct = totalWeight > 0 ? (gradedWeight / totalWeight) * 100 : 0
-  // Current grade: weighted average of graded assignments (0-5 scale)
   const currentGrade = gradedWeight > 0 ? graded.reduce((s, a) => s + a.grade! * a.weight, 0) / gradedWeight : undefined
   const ungradedWeight = mine.filter((a) => a.grade === undefined).reduce((s, a) => s + a.weight, 0)
   const gradedSum = graded.reduce((s, a) => s + a.grade! * a.weight, 0)
-  // Max possible: if you get 5.0 on all remaining
   const maxGrade = totalWeight > 0 ? (gradedSum + 5.0 * ungradedWeight) / totalWeight : 5.0
-  // Min possible: if you get 0.0 on all remaining
   const minGrade = totalWeight > 0 ? gradedSum / totalWeight : 0
 
   const Prop = ({ label, children }: { label: string; children: React.ReactNode }) => (
@@ -357,6 +382,17 @@ function CourseDetail({ course, assignments, topics, onUpdateTopics }: {
       <span className="text-xs">{children}</span>
     </div>
   )
+
+  const commitName = () => {
+    setEditingName(false)
+    if (draftName.trim() && draftName.trim() !== course.name) onUpdateCourse({ name: draftName.trim() })
+    else setDraftName(course.name)
+  }
+
+  const cycleIcon = () => {
+    const idx = ICON_OPTIONS.indexOf(course.iconKey)
+    onUpdateCourse({ iconKey: ICON_OPTIONS[(idx + 1) % ICON_OPTIONS.length] })
+  }
 
   const addTopic = () => {
     if (!newTopicName.trim()) return
@@ -384,18 +420,56 @@ function CourseDetail({ course, assignments, topics, onUpdateTopics }: {
   return (
     <div className="rounded-xl border border-border bg-card p-5 animate-in fade-in slide-in-from-top-2 duration-300">
       <div className="flex items-center gap-3 mb-4">
-        <course.icon className={`h-5 w-5 ${course.color}`} />
-        <h2 className="text-base font-semibold">{course.name}</h2>
+        <button onClick={cycleIcon} title="Change icon" className="cursor-pointer"><Icon className={`h-5 w-5 ${course.color}`} /></button>
+        {editingName ? (
+          <input
+            ref={nameRef}
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setDraftName(course.name); setEditingName(false) } }}
+            className="text-base font-semibold bg-transparent border-b border-foreground/30 outline-none"
+          />
+        ) : (
+          <button onClick={() => { setDraftName(course.name); setEditingName(true) }} className="cursor-pointer text-base font-semibold hover:text-foreground/80">{course.name}</button>
+        )}
         <Badge className={`text-[9px] px-1.5 py-0 ${diffColor[course.difficulty]}`}>{course.difficulty}</Badge>
+        <button onClick={onDeleteCourse} className="cursor-pointer ml-auto text-muted-foreground/40 hover:text-red-400 transition-colors" title="Delete course">
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         {/* Properties */}
         <div className="flex flex-col sm:border-r sm:border-border/30 sm:pr-6">
-          <Prop label="Semester"><Badge variant="secondary" className="text-[10px]">{course.semester}</Badge></Prop>
-          <Prop label="Credits"><span className="tabular-nums font-medium">{course.credits}</span></Prop>
-          <Prop label="Status"><Badge variant="secondary" className="text-[10px]">{course.status}</Badge></Prop>
-          <Prop label="Difficulty"><Badge className={`text-[9px] px-1.5 py-0 ${diffColor[course.difficulty]}`}>{course.difficulty}</Badge></Prop>
+          <Prop label="Semester">
+            <select
+              value={course.semester}
+              onChange={(e) => onUpdateCourse({ semester: e.target.value })}
+              className="cursor-pointer bg-secondary/50 rounded px-1.5 py-0.5 text-[10px] outline-none"
+            >
+              {semesters.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Prop>
+          <Prop label="Credits"><EditableNumber value={course.credits} onChange={(v) => onUpdateCourse({ credits: v ?? course.credits })} /></Prop>
+          <Prop label="Status">
+            <select
+              value={course.status}
+              onChange={(e) => onUpdateCourse({ status: e.target.value as CourseStatus })}
+              className="cursor-pointer bg-secondary/50 rounded px-1.5 py-0.5 text-[10px] outline-none"
+            >
+              {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </Prop>
+          <Prop label="Difficulty">
+            <select
+              value={course.difficulty}
+              onChange={(e) => onUpdateCourse({ difficulty: e.target.value as Difficulty })}
+              className={`cursor-pointer rounded px-1.5 py-0.5 text-[10px] outline-none ${diffColor[course.difficulty]}`}
+            >
+              {ALL_DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Prop>
           <Prop label="Current Grade">
             {currentGrade !== undefined ? (
               <span className={`tabular-nums font-bold text-sm ${currentGrade >= 3 ? 'text-green-400' : 'text-red-400'}`}>{currentGrade.toFixed(2)}/5.0</span>
@@ -475,19 +549,31 @@ export function StudentPage() {
   }, [])
 
   const [assignments, updateAssignments] = useStore<Assignment[]>('cortex-student-assignments', DEFAULT_ASSIGNMENTS)
-  const [topics, updateTopicsStore] = useStore<Topic[]>('cortex-student-topics', DEFAULT_TOPICS)
+  const [topics, updateTopics] = useStore<Topic[]>('cortex-student-topics', DEFAULT_TOPICS)
+  const [courses, updateCourses] = useStore<Course[]>('cortex-student-courses', DEFAULT_COURSES)
+  const [semesters, updateSemesters] = useStore<string[]>('cortex-student-semesters', DEFAULT_SEMESTERS)
+  const [activeSemester, setActiveSemester] = useStore<string>('cortex-student-active-semester', DEFAULT_SEMESTERS[0])
+
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
   const [selectedTypes, setSelectedTypes] = useState<Set<AssignmentType>>(new Set(ALL_TYPES))
   const [sortKey, setSortKey] = useState<SortKey>('deadline')
   const [sortAsc, setSortAsc] = useState(true)
   const [adding, setAdding] = useState(false)
-  const [activeSemester, setActiveSemester] = useStore<string>('cortex-student-active-semester', SEMESTERS[0])
+  const [addingCourse, setAddingCourse] = useState(false)
+  const [newCourseName, setNewCourseName] = useState('')
+  const [addingSemester, setAddingSemester] = useState(false)
+  const [newSemesterName, setNewSemesterName] = useState('')
 
   const update = updateAssignments
-  const updateTopics = updateTopicsStore
+  const courseAddRef = useRef<HTMLInputElement>(null)
+  const semAddRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (addingCourse) courseAddRef.current?.focus() }, [addingCourse])
+  useEffect(() => { if (addingSemester) semAddRef.current?.focus() }, [addingSemester])
+
+  const courseMap = useMemo(() => Object.fromEntries(courses.map((c) => [c.id, c])) as Record<string, Course>, [courses])
 
   // ── Active semester scoping ──
-  const activeCourses = useMemo(() => COURSES.filter((c) => c.semester === activeSemester), [activeSemester])
+  const activeCourses = useMemo(() => courses.filter((c) => c.semester === activeSemester), [courses, activeSemester])
   const activeCourseIds = useMemo(() => new Set(activeCourses.map((c) => c.id)), [activeCourses])
   const semesterAssignments = useMemo(() => assignments.filter((a) => activeCourseIds.has(a.courseId)), [assignments, activeCourseIds])
 
@@ -496,8 +582,52 @@ export function StudentPage() {
     setSelectedCourse(null)
     setSelectedTypes(new Set(ALL_TYPES))
     setAdding(false)
+    setAddingCourse(false)
   }
 
+  // ── Semester management ──
+  const addSemester = () => {
+    const n = newSemesterName.trim()
+    setAddingSemester(false)
+    setNewSemesterName('')
+    if (!n) return
+    updateSemesters((p) => (p.includes(n) ? p : [n, ...p]))
+    changeSemester(n)
+  }
+  const deleteSemester = (name: string) => {
+    if (courses.some((c) => c.semester === name)) return // only delete empty semesters
+    updateSemesters((p) => p.filter((s) => s !== name))
+    if (activeSemester === name) {
+      const next = semesters.filter((s) => s !== name)[0] ?? ''
+      changeSemester(next)
+    }
+  }
+
+  // ── Course management ──
+  const updateCourse = (id: string, patch: Partial<Course>) =>
+    updateCourses((p) => p.map((c) => (c.id === id ? { ...c, ...patch } : c)))
+  const addCourse = () => {
+    const n = newCourseName.trim()
+    setAddingCourse(false)
+    setNewCourseName('')
+    if (!n) return
+    const idx = courses.length
+    const [color, bg] = PALETTE[idx % PALETTE.length]
+    const iconKey = ICON_CYCLE[idx % ICON_CYCLE.length]
+    const id = `course-${Date.now()}`
+    updateCourses((p) => [...p, { id, name: n, difficulty: 'Medium', iconKey, color, bg, semester: activeSemester, status: 'Normal', credits: 3 }])
+    setSelectedCourse(id)
+  }
+  const deleteCourse = (id: string) => {
+    const related = assignments.filter((a) => a.courseId === id)
+    related.forEach((a) => { if (a.deadline && !a.done) syncAssignmentToCalendar(a, courseMap[id]?.name || id, 'delete') })
+    update((p) => p.filter((a) => a.courseId !== id))
+    updateTopics((p) => p.filter((t) => t.courseId !== id))
+    updateCourses((p) => p.filter((c) => c.id !== id))
+    if (selectedCourse === id) setSelectedCourse(null)
+  }
+
+  // ── Assignment handlers ──
   const toggleDone = (id: string) => update((p) => p.map((a) => a.id === id ? { ...a, done: !a.done } : a))
   const setGrade = (id: string, grade?: number) => update((p) => p.map((a) => a.id === id ? { ...a, grade, done: grade !== undefined ? true : a.done } : a))
   const setField = (id: string, field: Partial<Assignment>) => update((p) => p.map((a) => a.id === id ? { ...a, ...field } : a))
@@ -520,11 +650,9 @@ export function StudentPage() {
       for (const a of assignments) {
         const old = prev.find((p) => p.id === a.id)
         if (!old) continue
-        // When graded or marked done, remove from calendar (keep deadline in app data)
         if (!old.done && a.done) {
           syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'delete')
         } else if (old.done && !a.done) {
-          // Un-done: re-add to calendar if it has a deadline
           if (a.deadline) syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'upsert')
         } else if (old.deadline !== a.deadline || old.name !== a.name) {
           syncAssignmentToCalendar(a, courseMap[a.courseId]?.name || a.courseId, 'upsert')
@@ -532,7 +660,7 @@ export function StudentPage() {
       }
     }
     prevAssignmentsRef.current = assignments
-  }, [assignments])
+  }, [assignments, courseMap])
 
   const toggleType = (t: AssignmentType) => {
     setSelectedTypes((prev) => { const next = new Set(prev); if (next.has(t)) { if (next.size > 1) next.delete(t) } else next.add(t); return next })
@@ -591,26 +719,51 @@ export function StudentPage() {
     return totalCredits > 0 ? weightedSum / totalCredits : 5.0
   }, [gradesByCourse, activeCourses])
 
+  const selected = selectedCourse ? courseMap[selectedCourse] : undefined
+  const activeIsEmpty = activeCourses.length === 0
+
   return (
     <PageShell>
       {/* Semester switcher */}
-      <div className="flex items-center gap-1.5">
-        {SEMESTERS.map((s) => {
+      <div className="flex flex-wrap items-center gap-1.5">
+        {semesters.map((s) => {
           const active = s === activeSemester
+          const empty = !courses.some((c) => c.semester === s)
           return (
-            <button
-              key={s}
-              onClick={() => changeSemester(s)}
-              className={`cursor-pointer text-xs px-3 py-1.5 rounded-lg border transition-all ${
-                active
-                  ? 'border-foreground/30 bg-foreground/[0.06] text-foreground font-medium'
-                  : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/20'
-              }`}
-            >
-              {s}
-            </button>
+            <div key={s} className={`group flex items-center rounded-lg border transition-all ${
+              active ? 'border-foreground/30 bg-foreground/[0.06]' : 'border-border hover:border-foreground/20'
+            }`}>
+              <button
+                onClick={() => changeSemester(s)}
+                className={`cursor-pointer text-xs pl-3 pr-2 py-1.5 ${active ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {s}
+              </button>
+              {empty && (
+                <button onClick={() => deleteSemester(s)} title="Delete empty semester" className="cursor-pointer pr-2 text-muted-foreground/40 hover:text-red-400">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           )
         })}
+        {addingSemester ? (
+          <div className="flex items-center rounded-lg border border-foreground/30 bg-foreground/[0.04] px-2 py-1">
+            <input
+              ref={semAddRef}
+              value={newSemesterName}
+              onChange={(e) => setNewSemesterName(e.target.value)}
+              onBlur={addSemester}
+              onKeyDown={(e) => { if (e.key === 'Enter') addSemester(); if (e.key === 'Escape') { setAddingSemester(false); setNewSemesterName('') } }}
+              placeholder="5th Semester..."
+              className="bg-transparent outline-none text-xs w-28 placeholder:text-muted-foreground/30"
+            />
+          </div>
+        ) : (
+          <button onClick={() => setAddingSemester(true)} className="cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all">
+            <Plus className="h-3 w-3" /> Semester
+          </button>
+        )}
       </div>
 
       {/* PREP */}
@@ -627,6 +780,7 @@ export function StudentPage() {
       {/* Course Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {activeCourses.map((c) => {
+          const Icon = iconOf(c.iconKey)
           const count = assignments.filter((a) => a.courseId === c.id).length
           const done = assignments.filter((a) => a.courseId === c.id && a.done).length
           const g = gradesByCourse[c.id]
@@ -640,7 +794,7 @@ export function StudentPage() {
               }`}
             >
               <div className="flex items-center gap-2">
-                <c.icon className={`h-4 w-4 ${c.color}`} />
+                <Icon className={`h-4 w-4 ${c.color}`} />
                 <Badge className={`text-[9px] px-1.5 py-0 ${diffColor[c.difficulty]}`}>{c.difficulty}</Badge>
               </div>
               <p className="text-xs font-medium leading-tight">{c.name}</p>
@@ -653,15 +807,42 @@ export function StudentPage() {
             </button>
           )
         })}
+
+        {/* Add course card */}
+        {addingCourse ? (
+          <div className="flex flex-col gap-2 rounded-xl border border-dashed border-foreground/30 bg-foreground/[0.03] px-4 py-3">
+            <Plus className="h-4 w-4 text-muted-foreground" />
+            <input
+              ref={courseAddRef}
+              value={newCourseName}
+              onChange={(e) => setNewCourseName(e.target.value)}
+              onBlur={addCourse}
+              onKeyDown={(e) => { if (e.key === 'Enter') addCourse(); if (e.key === 'Escape') { setAddingCourse(false); setNewCourseName('') } }}
+              placeholder="Course name..."
+              className="bg-transparent outline-none text-xs font-medium placeholder:text-muted-foreground/30"
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => setAddingCourse(true)}
+            className="cursor-pointer flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-4 py-3 text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all min-h-[88px]"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="text-[10px]">Add course</span>
+          </button>
+        )}
       </div>
 
       {/* Course Detail Panel */}
-      {selectedCourse && (
+      {selected && (
         <CourseDetail
-          course={courseMap[selectedCourse]}
+          course={selected}
           assignments={assignments}
           topics={topics}
+          semesters={semesters}
           onUpdateTopics={updateTopics}
+          onUpdateCourse={(patch) => updateCourse(selected.id, patch)}
+          onDeleteCourse={() => deleteCourse(selected.id)}
         />
       )}
 
@@ -696,46 +877,50 @@ export function StudentPage() {
         </WidgetCard>
 
         {/* Overview */}
-        <WidgetCard title={activeSemester} description="Semester overview" delay={0.15}>
-          <div className="flex flex-col gap-3 py-1">
-            <div className="flex items-center gap-3">
-              <GraduationCap className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className={`text-2xl font-bold tabular-nums ${overallGPA !== undefined ? (overallGPA >= 3 ? 'text-green-400' : 'text-red-400') : ''}`}>
-                  {overallGPA !== undefined ? overallGPA.toFixed(2) : '—'}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  Overall GPA · {activeCourses.reduce((s, c) => s + c.credits, 0)} credits
-                  {maxOverallGPA < 5.0 && <span className="ml-1">· max {maxOverallGPA.toFixed(2)}</span>}
-                </p>
+        <WidgetCard title={activeSemester || 'Semester'} description="Semester overview" delay={0.15}>
+          {activeIsEmpty ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No courses yet — add one above</p>
+          ) : (
+            <div className="flex flex-col gap-3 py-1">
+              <div className="flex items-center gap-3">
+                <GraduationCap className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className={`text-2xl font-bold tabular-nums ${overallGPA !== undefined ? (overallGPA >= 3 ? 'text-green-400' : 'text-red-400') : ''}`}>
+                    {overallGPA !== undefined ? overallGPA.toFixed(2) : '—'}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    Overall GPA · {activeCourses.reduce((s, c) => s + c.credits, 0)} credits
+                    {maxOverallGPA < 5.0 && <span className="ml-1">· max {maxOverallGPA.toFixed(2)}</span>}
+                  </p>
+                </div>
+              </div>
+              <div className="border-t border-border/50 pt-3 flex flex-col gap-2">
+                {activeCourses.map((c) => {
+                  const g = gradesByCourse[c.id]
+                  const courseGrade = g && g.gradedWeight > 0 ? g.gradeSum / g.gradedWeight : undefined
+                  const pct = g && g.totalWeight > 0 ? Math.round((g.gradedWeight / g.totalWeight) * 100) : 0
+                  return (
+                    <div key={c.id} className="flex items-center gap-2">
+                      <div className={`h-2 w-2 rounded-full ${c.bg}`} />
+                      <span className="text-xs flex-1 truncate">{c.name}</span>
+                      <div className="w-12 h-1.5 rounded-full bg-secondary overflow-hidden">
+                        <div className="h-full rounded-full bg-foreground/40 transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className={`text-[10px] font-bold tabular-nums w-8 text-right ${courseGrade !== undefined ? (courseGrade >= 3 ? 'text-green-400' : 'text-red-400') : 'text-muted-foreground'}`}>
+                        {courseGrade !== undefined ? courseGrade.toFixed(1) : '—'}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
-            <div className="border-t border-border/50 pt-3 flex flex-col gap-2">
-              {activeCourses.map((c) => {
-                const g = gradesByCourse[c.id]
-                const courseGrade = g && g.gradedWeight > 0 ? g.gradeSum / g.gradedWeight : undefined
-                const pct = g && g.totalWeight > 0 ? Math.round((g.gradedWeight / g.totalWeight) * 100) : 0
-                return (
-                  <div key={c.id} className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${c.bg}`} />
-                    <span className="text-xs flex-1 truncate">{c.name}</span>
-                    <div className="w-12 h-1.5 rounded-full bg-secondary overflow-hidden">
-                      <div className="h-full rounded-full bg-foreground/40 transition-all" style={{ width: `${pct}%` }} />
-                    </div>
-                    <span className={`text-[10px] font-bold tabular-nums w-8 text-right ${courseGrade !== undefined ? (courseGrade >= 3 ? 'text-green-400' : 'text-red-400') : 'text-muted-foreground'}`}>
-                      {courseGrade !== undefined ? courseGrade.toFixed(1) : '—'}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
+          )}
         </WidgetCard>
       </div>
 
       {/* All Assignments */}
       <WidgetCard
-        title={selectedCourse ? courseMap[selectedCourse]?.name : 'All Assignments'}
+        title={selected ? selected.name : 'All Assignments'}
         description={`${filtered.length} of ${semesterAssignments.length}`}
         delay={0.2}
       >
@@ -765,6 +950,12 @@ export function StudentPage() {
             </button>
           )}
         </div>
+
+        {!selectedCourse && filtered.length === 0 && (
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            No assignments in {activeSemester || 'this semester'} yet. Select a course above, then hit <span className="text-foreground/70">Add</span>.
+          </p>
+        )}
 
         {/* Table */}
         <div className="overflow-x-auto -mx-5">
