@@ -56,6 +56,7 @@ interface Course {
   semester: string
   status: CourseStatus
   credits: number
+  notes?: string
 }
 
 interface Topic {
@@ -345,7 +346,7 @@ function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: As
 
 // ── Course Detail Panel ──────────────────────────────────────────────────────
 
-function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, onUpdateCourse, onDeleteCourse }: {
+function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, onUpdateCourse, onDeleteCourse, onAddAssignment }: {
   course: Course
   assignments: Assignment[]
   topics: Topic[]
@@ -353,6 +354,7 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
   onUpdateTopics: (fn: (prev: Topic[]) => Topic[]) => void
   onUpdateCourse: (patch: Partial<Course>) => void
   onDeleteCourse: () => void
+  onAddAssignment: () => void
 }) {
   const [addingTopic, setAddingTopic] = useState(false)
   const [newTopicName, setNewTopicName] = useState('')
@@ -434,7 +436,10 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
           <button onClick={() => { setDraftName(course.name); setEditingName(true) }} className="cursor-pointer text-base font-semibold hover:text-foreground/80">{course.name}</button>
         )}
         <Badge className={`text-[9px] px-1.5 py-0 ${diffColor[course.difficulty]}`}>{course.difficulty}</Badge>
-        <button onClick={onDeleteCourse} className="cursor-pointer ml-auto text-muted-foreground/40 hover:text-red-400 transition-colors" title="Delete course">
+        <button onClick={onAddAssignment} className="cursor-pointer ml-auto flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border border-foreground/30 bg-foreground/[0.04] hover:bg-foreground/[0.08] transition-all">
+          <Plus className="h-3 w-3" /> Assignment
+        </button>
+        <button onClick={onDeleteCourse} className="cursor-pointer text-muted-foreground/40 hover:text-red-400 transition-colors" title="Delete course">
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
@@ -531,6 +536,17 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
             )}
           </div>
         </div>
+      </div>
+
+      {/* Notes */}
+      <div className="mt-5 border-t border-border/30 pt-4">
+        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Notes</h3>
+        <textarea
+          value={course.notes ?? ''}
+          onChange={(e) => onUpdateCourse({ notes: e.target.value })}
+          placeholder="Class notes, formulas, reminders… (autosaves)"
+          className="w-full min-h-[140px] resize-y rounded-lg border border-border bg-background/40 px-3 py-2 text-xs leading-relaxed outline-none focus:border-foreground/30 placeholder:text-muted-foreground/30"
+        />
       </div>
     </div>
   )
@@ -843,6 +859,7 @@ export function StudentPage() {
           onUpdateTopics={updateTopics}
           onUpdateCourse={(patch) => updateCourse(selected.id, patch)}
           onDeleteCourse={() => deleteCourse(selected.id)}
+          onAddAssignment={() => setAdding(true)}
         />
       )}
 
@@ -955,6 +972,15 @@ export function StudentPage() {
           <p className="text-sm text-muted-foreground py-6 text-center">
             No assignments in {activeSemester || 'this semester'} yet. Select a course above, then hit <span className="text-foreground/70">Add</span>.
           </p>
+        )}
+
+        {selectedCourse && filtered.length === 0 && !adding && (
+          <div className="py-6 text-center">
+            <p className="text-sm text-muted-foreground mb-2">No assignments for {selected?.name} yet.</p>
+            <button onClick={() => setAdding(true)} className="cursor-pointer inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-foreground/30 bg-foreground/[0.04] hover:bg-foreground/[0.08] transition-all">
+              <Plus className="h-3 w-3" /> Add your first assignment
+            </button>
+          </div>
         )}
 
         {/* Table */}
