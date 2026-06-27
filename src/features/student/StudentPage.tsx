@@ -10,6 +10,12 @@ import {
   BarChart3,
   Palette,
   FileCode,
+  Sigma,
+  Blocks,
+  Cpu,
+  Terminal,
+  MessagesSquare,
+  Network,
   CalendarDays,
   AlertCircle,
   CheckCircle2,
@@ -69,7 +75,10 @@ interface Assignment {
 
 // ── Static Data ──────────────────────────────────────────────────────────────
 
-const COURSES: Course[] = [
+// Semesters, newest first — the first entry is the default active view.
+const SEMESTERS = ['4th Semester', '3rd Semester'] as const
+
+const COURSES_3RD: Course[] = [
   { id: 'formales', name: 'Formal Languages', difficulty: 'Hard', icon: FileCode, color: 'text-orange-400', bg: 'bg-orange-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
   { id: 'physics', name: 'Physics II', difficulty: 'Hard', icon: FlaskConical, color: 'text-pink-400', bg: 'bg-pink-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
   { id: 'algorithms', name: 'Algorithms', difficulty: 'Easy', icon: Code2, color: 'text-red-400', bg: 'bg-red-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
@@ -77,6 +86,20 @@ const COURSES: Course[] = [
   { id: 'stats', name: 'Prob & Stats', difficulty: 'Easy', icon: BarChart3, color: 'text-green-400', bg: 'bg-green-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
   { id: 'imagination', name: 'Creativity', difficulty: 'Easy', icon: Palette, color: 'text-purple-400', bg: 'bg-purple-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
 ]
+
+// 4th Semester (2026-2, starts 2026-07-15) — seeded from the university class schedule
+// on Google Calendar. Difficulty/credits are initial estimates; edit as the term firms up.
+const COURSES_4TH: Course[] = [
+  { id: 'calculo3', name: 'Cálculo 3', difficulty: 'Hard', icon: Sigma, color: 'text-blue-400', bg: 'bg-blue-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'softeng', name: 'Ingeniería de Software', difficulty: 'Medium', icon: Blocks, color: 'text-orange-400', bg: 'bg-orange-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'comporg', name: 'Organización de Computadores', difficulty: 'Medium', icon: Cpu, color: 'text-cyan-400', bg: 'bg-cyan-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'os', name: 'Sistemas Operativos', difficulty: 'Hard', icon: Terminal, color: 'text-green-400', bg: 'bg-green-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'debates', name: 'Debates Humanísticos', difficulty: 'Easy', icon: MessagesSquare, color: 'text-purple-400', bg: 'bg-purple-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'sysinfo', name: 'Sistemas de Información', difficulty: 'Easy', icon: Network, color: 'text-pink-400', bg: 'bg-pink-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+]
+
+// All courses across semesters — used for id→course lookups regardless of active view.
+const COURSES: Course[] = [...COURSES_3RD, ...COURSES_4TH]
 
 const DEFAULT_TOPICS: Topic[] = [
   { id: 't1', name: 'Kinetics', courseId: 'physics', chapter: 'Fray man 12.1-12.2', types: ['Concept'], mastery: 5, status: 'Seen', priority: 'High', week: 3 },
@@ -458,9 +481,22 @@ export function StudentPage() {
   const [sortKey, setSortKey] = useState<SortKey>('deadline')
   const [sortAsc, setSortAsc] = useState(true)
   const [adding, setAdding] = useState(false)
+  const [activeSemester, setActiveSemester] = useStore<string>('cortex-student-active-semester', SEMESTERS[0])
 
   const update = updateAssignments
   const updateTopics = updateTopicsStore
+
+  // ── Active semester scoping ──
+  const activeCourses = useMemo(() => COURSES.filter((c) => c.semester === activeSemester), [activeSemester])
+  const activeCourseIds = useMemo(() => new Set(activeCourses.map((c) => c.id)), [activeCourses])
+  const semesterAssignments = useMemo(() => assignments.filter((a) => activeCourseIds.has(a.courseId)), [assignments, activeCourseIds])
+
+  const changeSemester = (s: string) => {
+    setActiveSemester(() => s)
+    setSelectedCourse(null)
+    setSelectedTypes(new Set(ALL_TYPES))
+    setAdding(false)
+  }
 
   const toggleDone = (id: string) => update((p) => p.map((a) => a.id === id ? { ...a, done: !a.done } : a))
   const setGrade = (id: string, grade?: number) => update((p) => p.map((a) => a.id === id ? { ...a, grade, done: grade !== undefined ? true : a.done } : a))
@@ -507,13 +543,13 @@ export function StudentPage() {
     sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const upcoming = useMemo(
-    () => assignments.filter((a) => a.deadline && a.deadline >= getToday() && !a.done).sort((a, b) => a.deadline!.localeCompare(b.deadline!)),
-    [assignments],
+    () => semesterAssignments.filter((a) => a.deadline && a.deadline >= getToday() && !a.done).sort((a, b) => a.deadline!.localeCompare(b.deadline!)),
+    [semesterAssignments],
   )
 
   const filtered = useMemo(
-    () => assignments.filter((a) => (!selectedCourse || a.courseId === selectedCourse) && selectedTypes.has(a.type)).sort((a, b) => cmp(a, b, sortKey, sortAsc)),
-    [assignments, selectedCourse, selectedTypes, sortKey, sortAsc],
+    () => semesterAssignments.filter((a) => (!selectedCourse || a.courseId === selectedCourse) && selectedTypes.has(a.type)).sort((a, b) => cmp(a, b, sortKey, sortAsc)),
+    [semesterAssignments, selectedCourse, selectedTypes, sortKey, sortAsc],
   )
 
   const gradesByCourse = useMemo(() => {
@@ -531,7 +567,7 @@ export function StudentPage() {
 
   const overallGPA = useMemo(() => {
     let totalCredits = 0, weightedSum = 0
-    for (const c of COURSES) {
+    for (const c of activeCourses) {
       const g = gradesByCourse[c.id]
       if (g && g.gradedWeight > 0) {
         const courseGrade = g.gradeSum / g.gradedWeight
@@ -540,11 +576,11 @@ export function StudentPage() {
       }
     }
     return totalCredits > 0 ? weightedSum / totalCredits : undefined
-  }, [gradesByCourse])
+  }, [gradesByCourse, activeCourses])
 
   const maxOverallGPA = useMemo(() => {
     let totalCredits = 0, weightedSum = 0
-    for (const c of COURSES) {
+    for (const c of activeCourses) {
       const g = gradesByCourse[c.id]
       if (!g) { weightedSum += 5.0 * c.credits; totalCredits += c.credits; continue }
       const ungradedW = g.totalWeight - g.gradedWeight
@@ -553,10 +589,30 @@ export function StudentPage() {
       totalCredits += c.credits
     }
     return totalCredits > 0 ? weightedSum / totalCredits : 5.0
-  }, [gradesByCourse])
+  }, [gradesByCourse, activeCourses])
 
   return (
     <PageShell>
+      {/* Semester switcher */}
+      <div className="flex items-center gap-1.5">
+        {SEMESTERS.map((s) => {
+          const active = s === activeSemester
+          return (
+            <button
+              key={s}
+              onClick={() => changeSemester(s)}
+              className={`cursor-pointer text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                active
+                  ? 'border-foreground/30 bg-foreground/[0.06] text-foreground font-medium'
+                  : 'border-border text-muted-foreground hover:text-foreground hover:border-foreground/20'
+              }`}
+            >
+              {s}
+            </button>
+          )
+        })}
+      </div>
+
       {/* PREP */}
       <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.03] px-5 py-4">
         <p className="text-xs font-bold text-orange-400 mb-1">P.R.E.P = Preview &rarr; Record &rarr; Exercise &rarr; Promote</p>
@@ -570,7 +626,7 @@ export function StudentPage() {
 
       {/* Course Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {COURSES.map((c) => {
+        {activeCourses.map((c) => {
           const count = assignments.filter((a) => a.courseId === c.id).length
           const done = assignments.filter((a) => a.courseId === c.id && a.done).length
           const g = gradesByCourse[c.id]
@@ -640,7 +696,7 @@ export function StudentPage() {
         </WidgetCard>
 
         {/* Overview */}
-        <WidgetCard title="3rd Semester" description="Semester overview" delay={0.15}>
+        <WidgetCard title={activeSemester} description="Semester overview" delay={0.15}>
           <div className="flex flex-col gap-3 py-1">
             <div className="flex items-center gap-3">
               <GraduationCap className="h-5 w-5 text-muted-foreground" />
@@ -649,13 +705,13 @@ export function StudentPage() {
                   {overallGPA !== undefined ? overallGPA.toFixed(2) : '—'}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
-                  Overall GPA · {COURSES.reduce((s, c) => s + c.credits, 0)} credits
+                  Overall GPA · {activeCourses.reduce((s, c) => s + c.credits, 0)} credits
                   {maxOverallGPA < 5.0 && <span className="ml-1">· max {maxOverallGPA.toFixed(2)}</span>}
                 </p>
               </div>
             </div>
             <div className="border-t border-border/50 pt-3 flex flex-col gap-2">
-              {COURSES.map((c) => {
+              {activeCourses.map((c) => {
                 const g = gradesByCourse[c.id]
                 const courseGrade = g && g.gradedWeight > 0 ? g.gradeSum / g.gradedWeight : undefined
                 const pct = g && g.totalWeight > 0 ? Math.round((g.gradedWeight / g.totalWeight) * 100) : 0
@@ -680,7 +736,7 @@ export function StudentPage() {
       {/* All Assignments */}
       <WidgetCard
         title={selectedCourse ? courseMap[selectedCourse]?.name : 'All Assignments'}
-        description={`${filtered.length} of ${assignments.length}`}
+        description={`${filtered.length} of ${semesterAssignments.length}`}
         delay={0.2}
       >
         {/* Type filter + Add button */}
@@ -688,7 +744,7 @@ export function StudentPage() {
           <div className="flex flex-wrap gap-1.5">
             {ALL_TYPES.map((t) => {
               const active = selectedTypes.has(t)
-              const count = assignments.filter((a) => a.type === t && (!selectedCourse || a.courseId === selectedCourse)).length
+              const count = semesterAssignments.filter((a) => a.type === t && (!selectedCourse || a.courseId === selectedCourse)).length
               if (count === 0) return null
               return (
                 <button
