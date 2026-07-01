@@ -15,6 +15,7 @@ import { StatsPage } from '@/features/stats/StatsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
 import { GtmPage } from '@/features/gtm/GtmPage'
 import { CapturesPage } from '@/features/captures/CapturesPage'
+import { CoursesPage } from '@/features/courses/CoursesPage'
 import { GymPage } from '@/features/gym/GymPage'
 import { SystemPage } from '@/features/system/SystemPage'
 
@@ -39,6 +40,7 @@ export function App() {
         <Route path="books" element={<BooksPage />} />
         <Route path="thoughts" element={<ThoughtsPage />} />
         <Route path="captures" element={<CapturesPage />} />
+        <Route path="courses" element={<CoursesPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
     </Routes>

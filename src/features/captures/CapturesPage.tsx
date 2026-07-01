@@ -2,13 +2,10 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import ReactDOM from 'react-dom'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { NotesField } from '@/components/shared/NotesField'
 import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
-import Markdown from 'react-markdown'
-import TurndownService from 'turndown'
-
-const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
 import {
   Search,
   Plus,
@@ -17,19 +14,10 @@ import {
   Link,
   X,
   Minus,
-  Maximize2,
   ClipboardPaste,
   Camera,
   ChevronLeft,
   ChevronRight,
-  Bold,
-  Italic,
-  List,
-  Heading2,
-  Quote,
-  Code,
-  Eye,
-  Pencil,
   Check,
 } from 'lucide-react'
 
@@ -131,159 +119,9 @@ async function deleteImage(id: string): Promise<void> {
   }
 }
 
-// ── Fullscreen Editor ────────────────────────────────────────────────────────
-
-function FullscreenEditor({ title, content, onChangeTitle, onChangeContent, onClose, onAddImage, images }: {
-  title: string; content: string;
-  onChangeTitle: (v: string) => void; onChangeContent: (v: string) => void; onClose: () => void
-  onAddImage: (base64s: string[]) => Promise<string[]>; images: Record<string, string>
-}) {
-  const [preview, setPreview] = useState(false)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const html = e.clipboardData.getData('text/html')
-    if (!html) return // plain text — let browser handle it
-    e.preventDefault()
-    const md = turndown.turndown(html).trim()
-    const ta = textareaRef.current
-    if (!ta) { onChangeContent(content + md); return }
-    const start = ta.selectionStart
-    const end = ta.selectionEnd
-    const newText = content.slice(0, start) + md + content.slice(end)
-    onChangeContent(newText)
-    setTimeout(() => { ta.focus(); ta.selectionStart = ta.selectionEnd = start + md.length }, 0)
-  }
-
-  const insertMarkdown = (prefix: string, suffix = '') => {
-    const ta = textareaRef.current
-    if (!ta) return
-    const start = ta.selectionStart
-    const end = ta.selectionEnd
-    const selected = content.slice(start, end)
-    const newText = content.slice(0, start) + prefix + selected + suffix + content.slice(end)
-    onChangeContent(newText)
-    setTimeout(() => {
-      ta.focus()
-      ta.selectionStart = start + prefix.length
-      ta.selectionEnd = start + prefix.length + selected.length
-    }, 0)
-  }
-
-  const handleInlineImage = async () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.multiple = true
-    input.onchange = async () => {
-      if (!input.files?.length) return
-      const b64s = await Promise.all(Array.from(input.files).map(f => fileToBase64(f)))
-      const ids = await onAddImage(b64s)
-      const tags = ids.map(id => `![](img:${id})`).join('\n')
-      const ta = textareaRef.current
-      const pos = ta ? ta.selectionStart : content.length
-      const newText = content.slice(0, pos) + '\n' + tags + '\n' + content.slice(pos)
-      onChangeContent(newText)
-    }
-    input.click()
-  }
-
-  // Custom renderer for inline images
-  const markdownComponents = {
-    img: ({ src, alt, ...props }: any) => {
-      if (src?.startsWith('img:')) {
-        const imgId = src.slice(4)
-        const data = images[imgId]
-        if (data) return <img src={data} alt={alt || ''} className="max-w-full rounded-lg my-2 ring-1 ring-white/10" {...props} />
-        return <span className="text-muted-foreground/50 text-sm italic">[image loading...]</span>
-      }
-      return <img src={src} alt={alt} className="max-w-full rounded-lg my-2" {...props} />
-    },
-  }
-
-  return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-[9998] bg-background flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-      {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 md:pl-20 py-3 border-b border-border">
-        <button onClick={onClose} className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors [-webkit-app-region:no-drag]">
-          <ChevronLeft className="h-5 w-5" />
-        </button>
-        <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
-          <button onClick={() => setPreview(false)} className={`cursor-pointer px-2.5 py-1 rounded-md text-xs transition-colors ${!preview ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground'}`}>
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-          <button onClick={() => setPreview(true)} className={`cursor-pointer px-2.5 py-1 rounded-md text-xs transition-colors ${preview ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground'}`}>
-            <Eye className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        <div className="w-5" />
-      </div>
-
-      {/* Title */}
-      <input
-        value={title}
-        onChange={e => onChangeTitle(e.target.value)}
-        placeholder="Title"
-        className="px-4 md:px-8 pt-4 pb-2 text-xl md:text-2xl font-semibold bg-transparent outline-none border-none text-foreground placeholder:text-muted-foreground/30"
-      />
-
-      {preview ? (
-        /* Markdown preview */
-        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 prose prose-invert prose-sm md:prose-base max-w-none
-          prose-headings:text-foreground prose-headings:mt-6 prose-headings:mb-3
-          prose-p:text-foreground/90 prose-p:mb-4 prose-p:leading-relaxed
-          prose-strong:text-foreground
-          prose-code:text-purple-300 prose-code:bg-purple-500/10 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded
-          prose-blockquote:border-l-purple-500/40 prose-blockquote:text-muted-foreground prose-blockquote:pl-4 prose-blockquote:my-4
-          prose-li:text-foreground/90 prose-li:my-1
-          prose-a:text-blue-400
-          prose-hr:border-border/50 prose-hr:my-6">
-          <Markdown components={markdownComponents} urlTransform={(url) => url}>{content || '*No content yet*'}</Markdown>
-        </div>
-      ) : (
-        <>
-          {/* Formatting toolbar */}
-          <div className="flex items-center gap-1 px-4 md:px-8 py-2 border-b border-border/50 overflow-x-auto">
-            <button onClick={() => insertMarkdown('**', '**')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Bold">
-              <Bold className="h-4 w-4" />
-            </button>
-            <button onClick={() => insertMarkdown('*', '*')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Italic">
-              <Italic className="h-4 w-4" />
-            </button>
-            <button onClick={() => insertMarkdown('## ')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Heading">
-              <Heading2 className="h-4 w-4" />
-            </button>
-            <button onClick={() => insertMarkdown('- ')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="List">
-              <List className="h-4 w-4" />
-            </button>
-            <button onClick={() => insertMarkdown('> ')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Quote">
-              <Quote className="h-4 w-4" />
-            </button>
-            <button onClick={() => insertMarkdown('`', '`')} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Code">
-              <Code className="h-4 w-4" />
-            </button>
-            <div className="w-px h-4 bg-border/50 mx-1" />
-            <button onClick={handleInlineImage} className="cursor-pointer p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-colors" title="Insert Image">
-              <ImageIcon className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* Editor */}
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={e => onChangeContent(e.target.value)}
-            placeholder="Write your notes here... (supports Markdown)"
-            className="flex-1 w-full px-4 md:px-8 py-3 text-sm md:text-base leading-relaxed bg-transparent outline-none resize-none text-foreground/90 placeholder:text-muted-foreground/30"
-            onPaste={handlePaste}
-            autoFocus
-          />
-        </>
-      )}
-    </div>,
-    document.body
-  )
-}
+// ── Notes editing ────────────────────────────────────────────────────────────
+// Notes now use the shared <NotesField>: inline quick-edit for short jots,
+// with an opt-in fullscreen mode for longer writing. See components/shared.
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -315,7 +153,6 @@ export function CapturesPage() {
   const [dragOver, setDragOver] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<Record<string, number>>({})
   const [lightbox, setLightbox] = useState<{ imageIds: string[]; index: number } | null>(null)
-  const [editorOpen, setEditorOpen] = useState<string | null>(null)
   const [uploading, setUploading] = useState<string | null>(null) // capture id being uploaded to
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -413,6 +250,20 @@ export function CapturesPage() {
 
   const setField = (id: string, field: Partial<Capture>) =>
     updateCaptures(prev => prev.map(c => c.id === id ? { ...c, ...field } : c))
+
+  // Persist images inserted from within the notes editor; returns their ids so
+  // NotesField can drop `![](img:id)` tags into the markdown.
+  const addInlineImagesToCapture = async (id: string, base64s: string[]): Promise<string[]> => {
+    const ids: string[] = []
+    for (let i = 0; i < base64s.length; i++) {
+      const imgId = `${id}-${Date.now()}-${i}.png`
+      await saveImage(imgId, base64s[i])
+      setImageCache(prev => ({ ...prev, [imgId]: base64s[i] }))
+      ids.push(imgId)
+    }
+    updateCaptures(prev => prev.map(c => c.id === id ? { ...c, imageIds: [...c.imageIds, ...ids] } : c))
+    return ids
+  }
 
   const deleteCapture = async (id: string) => {
     const cap = captures.find(c => c.id === id)
@@ -658,22 +509,16 @@ export function CapturesPage() {
                         placeholder="Title"
                         className="h-9 text-base font-semibold"
                       />
-                      <div
-                        onClick={() => setEditorOpen(cap.id)}
-                        className="cursor-pointer group relative min-h-[80px] w-full rounded-md border border-border bg-input px-3 py-2 text-sm leading-relaxed hover:border-foreground/20 transition-colors"
-                      >
-                        {cap.content ? (
-                          <div className="prose prose-invert prose-sm max-w-none line-clamp-6
-                            prose-headings:text-foreground prose-p:text-foreground/80 prose-strong:text-foreground
-                            prose-code:text-purple-300 prose-code:bg-purple-500/10 prose-code:px-1 prose-code:rounded
-                            prose-blockquote:border-l-purple-500/40 prose-li:text-foreground/80">
-                            <Markdown urlTransform={(url) => url} components={{ img: ({ src, alt, ...props }: any) => { if (src?.startsWith('img:')) { const d = imageCache[src.slice(4)]; return d ? <img src={d} alt={alt||''} className="max-w-full rounded-lg my-1" {...props}/> : null } return <img src={src} alt={alt} className="max-w-full rounded-lg my-1" {...props}/> } }}>{cap.content}</Markdown>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground/40">Tap to edit notes...</span>
-                        )}
-                        <Maximize2 className="absolute top-2 right-2 h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors" />
-                      </div>
+                      <NotesField
+                        value={cap.content}
+                        onChange={v => setField(cap.id, { content: v })}
+                        title={cap.title}
+                        onChangeTitle={v => setField(cap.id, { title: v })}
+                        images={imageCache}
+                        onAddImage={b64s => addInlineImagesToCapture(cap.id, b64s)}
+                        placeholder="Click to write notes… (Markdown, or paste rich text)"
+                        minHeight={80}
+                      />
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[10px] text-muted-foreground mb-1 block">Source</label>
@@ -775,34 +620,6 @@ export function CapturesPage() {
           })}
         </div>
       )}
-      {/* Fullscreen editor */}
-      {editorOpen && (() => {
-        const cap = captures.find(c => c.id === editorOpen)
-        if (!cap) return null
-        return (
-          <FullscreenEditor
-            title={cap.title}
-            content={cap.content}
-            onChangeTitle={v => setField(cap.id, { title: v })}
-            onChangeContent={v => setField(cap.id, { content: v })}
-            onClose={() => setEditorOpen(null)}
-            images={imageCache}
-            onAddImage={async (b64s) => {
-              const ids: string[] = []
-              for (let i = 0; i < b64s.length; i++) {
-                const imgId = `${cap.id}-${Date.now()}-${i}.png`
-                await saveImage(imgId, b64s[i])
-                setImageCache(prev => ({ ...prev, [imgId]: b64s[i] }))
-                ids.push(imgId)
-              }
-              updateCaptures(prev => prev.map(c =>
-                c.id === cap.id ? { ...c, imageIds: [...c.imageIds, ...ids] } : c
-              ))
-              return ids
-            }}
-          />
-        )
-      })()}
       {/* Fullscreen lightbox */}
       {lightbox && ReactDOM.createPortal(
         <div

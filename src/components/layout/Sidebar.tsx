@@ -21,6 +21,7 @@ import {
   Camera,
   Dumbbell,
   Cpu,
+  BookOpen,
 } from 'lucide-react'
 
 const navGroups = [
@@ -51,6 +52,7 @@ const navGroups = [
       { to: '/gym', icon: Dumbbell, label: 'Gym' },
       { to: '/social', icon: Users, label: 'Social' },
       { to: '/books', icon: Library, label: 'Books' },
+      { to: '/courses', icon: BookOpen, label: 'Courses' },
       { to: '/thoughts', icon: Lightbulb, label: 'Thoughts' },
       { to: '/captures', icon: Camera, label: 'Captures' },
     ],
