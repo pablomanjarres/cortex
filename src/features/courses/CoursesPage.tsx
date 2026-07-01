@@ -160,6 +160,14 @@ export function CoursesPage() {
     return () => document.removeEventListener('keydown', onKey)
   }, [lightbox])
 
+  // Close the PDF viewer on Esc
+  useEffect(() => {
+    if (!pdfView) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPdfView(null) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [pdfView])
+
   const setField = (id: string, patch: Partial<CourseItem>) =>
     updateItems(prev => prev.map(it => it.id === id ? { ...it, ...patch, updatedAt: new Date().toISOString() } : it))
 
@@ -437,7 +445,7 @@ export function CoursesPage() {
 
       {/* Lightbox */}
       {lightbox && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm" onClick={() => setLightbox(null)}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm [-webkit-app-region:no-drag]" onClick={() => setLightbox(null)}>
           <button onClick={e => { e.stopPropagation(); setLightbox(null) }} className="cursor-pointer absolute right-4 top-[calc(1rem+env(safe-area-inset-top))] text-white/70 hover:text-white z-10"><X className="h-7 w-7" /></button>
           {lightbox.ids.length > 1 && <span className="absolute left-1/2 -translate-x-1/2 top-[calc(1.25rem+env(safe-area-inset-top))] text-white/70 text-sm">{lightbox.index + 1} / {lightbox.ids.length}</span>}
           <img src={cache[lightbox.ids[lightbox.index]]} alt="" className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
@@ -453,8 +461,8 @@ export function CoursesPage() {
 
       {/* PDF viewer */}
       {pdfView && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[9999] flex flex-col bg-background/95 backdrop-blur-sm" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-          <div className="flex items-center justify-between px-4 md:pl-20 py-3 border-b border-border">
+        <div className="fixed inset-0 z-[9999] flex flex-col bg-background/95 backdrop-blur-sm [-webkit-app-region:no-drag]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          <div className="flex items-center justify-between px-4 md:pl-20 py-3 border-b border-border [-webkit-app-region:no-drag]">
             <button onClick={() => setPdfView(null)} className="cursor-pointer flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
               <ChevronLeft className="h-4 w-4" /> Close
             </button>
