@@ -17,7 +17,6 @@ import {
   BarChart3,
   Settings,
   Globe,
-  Megaphone,
   Camera,
   Dumbbell,
   Cpu,
@@ -39,7 +38,6 @@ const navGroups = [
     label: 'Roles',
     items: [
       { to: '/founder', icon: Rocket, label: 'Founder' },
-      { to: '/gtm', icon: Megaphone, label: 'GTM' },
       { to: '/student', icon: GraduationCap, label: 'Student' },
       { to: '/projects', icon: FolderKanban, label: 'Projects' },
       { to: '/crm', icon: Briefcase, label: 'CRM' },
