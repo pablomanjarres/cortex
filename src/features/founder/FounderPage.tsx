@@ -243,6 +243,12 @@ export function FounderPage() {
     let total = 0
     return series.map(d => ({ ...d, totalCommits: (total += d.commits) }))
   }, [github, last30])
+  // Real cumulative signup curve (by actual signup date); fall back to snapshots.
+  const userGrowth = useMemo(() => (
+    supabase?.signupTimeline?.length
+      ? supabase.signupTimeline.map(d => ({ date: d.date, users: d.users }))
+      : last14.map(d => ({ date: d.date, users: d.users }))
+  ), [supabase, last14])
   const wowCommits = getWoWChange(history, 'commits')
   const wowUsers = getWoWChange(history, 'users')
   const wowDeploys = getWoWChange(history, 'deploys')
@@ -565,10 +571,10 @@ export function FounderPage() {
               </WidgetCard>
 
               {/* Users Growth — with gradient fill */}
-              <WidgetCard title="USERS GROWTH" description="Total users over time" delay={0.3}>
+              <WidgetCard title="USERS GROWTH" description="Cumulative signups by date" delay={0.3}>
                 <div className="h-[140px] sm:h-[180px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={last14}>
+                    <AreaChart data={userGrowth}>
                       <defs>
                         <linearGradient id="usersGradient" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#34d399" stopOpacity={0.3} />
@@ -595,7 +601,7 @@ export function FounderPage() {
                         stroke="#34d399"
                         strokeWidth={2}
                         fill="url(#usersGradient)"
-                        dot={{ r: 2, fill: '#34d399' }}
+                        dot={false}
                         activeDot={{ r: 4 }}
                       />
                     </AreaChart>

@@ -31,4 +31,6 @@ export interface SupabaseStats {
   totalUsers: number
   signupsToday: number
   signupsWeek: number
+  /** Cumulative total users by actual signup date (real cohort curve). */
+  signupTimeline?: { date: string; users: number }[]
 }
