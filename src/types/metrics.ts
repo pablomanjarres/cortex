@@ -7,6 +7,8 @@ export interface GitHubStats {
   repoCount: number
   streak: number
   topRepos: { name: string; commits: number }[]
+  /** Real per-day commit counts for the last 30 days, across active repos. */
+  commitTimeline?: { date: string; commits: number }[]
 }
 
 export interface LemonStats {

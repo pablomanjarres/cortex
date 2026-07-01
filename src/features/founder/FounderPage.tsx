@@ -234,10 +234,15 @@ export function FounderPage() {
 
   const last14 = history.slice(-14)
   const last30 = history.slice(-30)
+  // Prefer the real 30-day commit series from GitHub; fall back to app-open
+  // history snapshots only when the API series isn't available.
   const cumulativeCommits = useMemo(() => {
+    const series = github?.commitTimeline?.length
+      ? github.commitTimeline.map(d => ({ date: d.date, commits: d.commits }))
+      : last30.map(d => ({ date: d.date, commits: d.commits }))
     let total = 0
-    return last30.map(d => ({ ...d, totalCommits: (total += d.commits) }))
-  }, [last30])
+    return series.map(d => ({ ...d, totalCommits: (total += d.commits) }))
+  }, [github, last30])
   const wowCommits = getWoWChange(history, 'commits')
   const wowUsers = getWoWChange(history, 'users')
   const wowDeploys = getWoWChange(history, 'deploys')
