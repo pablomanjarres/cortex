@@ -83,7 +83,9 @@ Output EXACTLY this JSON shape (no markdown fences, no prose outside it):
   "report": "A short plain-text digest: how many landed and from where, then 3-6 bullets of the highest-signal items with a one-line why-look-now."
 }
 
-Rules: leverageScore is 1-5 (5 = highest leverage for Pablo). priority "high" when
+Rules: If several hits describe the SAME opportunity (same program/deadline, possibly
+cross-posted on different platforms), emit it ONLY ONCE — pick the best apply/detail URL.
+leverageScore is 1-5 (5 = highest leverage for Pablo). priority "high" when
 leverageScore>=4 or deadline within ~14 days. Always copy sourceRef verbatim from the hit
 (it is the dedupe key). Pick the best apply/detail link from the hit's urls for "url".
 

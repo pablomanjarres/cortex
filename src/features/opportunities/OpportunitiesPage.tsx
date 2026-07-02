@@ -15,6 +15,8 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -62,6 +64,12 @@ interface OppData {
   lastRunId?: string
   /** Markdown digest written by the weekly routine: what landed + what to look at. */
   report?: string
+  /** Manual-run control (a launchd watcher executes the pipeline when set). */
+  runRequestedAt?: string
+  runStatus?: 'requested' | 'running' | 'done' | 'error'
+  runStartedAt?: string
+  runFinishedAt?: string
+  runError?: string
 }
 
 const DEFAULT_DATA: OppData = { items: [], lastRun: null }
@@ -212,6 +220,12 @@ export function OpportunitiesPage() {
   const deleteOpp = (id: string) => {
     setItems((prev) => prev.filter((o) => o.id !== id))
     if (expanded === id) setExpanded(null)
+  }
+
+  const running = data.runStatus === 'requested' || data.runStatus === 'running'
+  const requestRun = () => {
+    if (running) return
+    updateData((p) => ({ ...p, runRequestedAt: new Date().toISOString(), runStatus: 'requested', runError: undefined }))
   }
 
   const addOpp = () => {
@@ -399,10 +413,22 @@ export function OpportunitiesPage() {
           <option value="">All sources</option>
           {(Object.keys(sourceConfig) as Opportunity['source'][]).map((s) => <option key={s} value={s}>{sourceConfig[s].label}</option>)}
         </select>
-        <button onClick={addOpp} className="cursor-pointer ml-auto flex items-center gap-1 text-xs text-foreground bg-foreground/10 px-3 py-1.5 rounded-lg hover:bg-foreground/20 transition-colors">
-          <Plus className="h-3 w-3" /> Add
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={requestRun} disabled={running}
+            title={running ? 'Radar is running…' : 'Scrape all lanes now and refresh the page'}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${running ? 'text-muted-foreground bg-secondary cursor-default' : 'cursor-pointer text-foreground bg-violet-500/15 hover:bg-violet-500/25'}`}>
+            {running
+              ? <><Loader2 className="h-3 w-3 animate-spin" /> {data.runStatus === 'requested' ? 'Queued…' : 'Running…'}</>
+              : <><RefreshCw className="h-3 w-3" /> Run radar</>}
+          </button>
+          <button onClick={addOpp} className="cursor-pointer flex items-center gap-1 text-xs text-foreground bg-foreground/10 px-3 py-1.5 rounded-lg hover:bg-foreground/20 transition-colors">
+            <Plus className="h-3 w-3" /> Add
+          </button>
+        </div>
       </div>
+      {data.runStatus === 'error' && data.runError && (
+        <p className="text-[11px] text-red-400/80 -mt-2">Last radar run failed: {data.runError}</p>
+      )}
 
       {/* Category chips */}
       <div className="flex gap-1.5 flex-wrap">

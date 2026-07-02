@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Always-on watcher for the "Run radar" button in Cortex. Install:
+    cp scripts/com.pablo.opportunity-radar-control.plist ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.pablo.opportunity-radar-control.plist 2>/dev/null
+    launchctl load  ~/Library/LaunchAgents/com.pablo.opportunity-radar-control.plist
+  Logs: ~/Library/Logs/opportunity-radar-control.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.pablo.opportunity-radar-control</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>exec node /Users/pablo/projects/cortex/scripts/radar-control-watcher.mjs >> "$HOME/Library/Logs/opportunity-radar-control.log" 2>&1</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>

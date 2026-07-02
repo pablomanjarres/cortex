@@ -41,6 +41,32 @@ function clampScore(n) {
   if (!Number.isFinite(v)) return 3
   return Math.max(1, Math.min(5, v))
 }
+
+// ── identity-based dedup ─────────────────────────────────────────────────────
+// The SAME opportunity shows up across X / Reddit / Devpost / SERP with different post
+// URLs, so we key on the OPPORTUNITY (apply-URL + title+host), not the post sourceRef.
+function normUrl(u) {
+  if (!u) return ""
+  let s = String(u).trim().toLowerCase()
+  s = s.replace(/^https?:\/\//, "").replace(/^www\./, "")
+  s = s.split("#")[0].split("?")[0].replace(/\/+$/, "")
+  return s
+}
+function normText(s) {
+  return String(s || "")
+    .toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")
+    .replace(/\b20\d\d\b/g, " ")          // drop years so a recurring program matches across runs
+    .replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()
+}
+/** Identity keys for an opportunity; two items collide if they share ANY key. */
+function identityKeys(o) {
+  const keys = []
+  const u = normUrl(o.url)
+  if (u && u.length > 6) keys.push("u:" + u)
+  const t = normText(o.title)
+  if (t.length >= 4) keys.push("t:" + t + "|" + normText(o.host))
+  return keys
+}
 function pick(set, val, fallback) {
   return set.has(val) ? val : fallback
 }
@@ -97,32 +123,39 @@ async function main() {
   }
 
   const seen = new Set()
+
+  // pass 1: keep existing, dropping any pre-existing self-duplicates (cleans old dupes)
+  const existingKept = []
+  let existingDropped = 0
   for (const it of existing.items) {
-    if (it.sourceRef) seen.add(it.sourceRef.trim().toLowerCase())
-    if (it.url) seen.add(it.url.trim().toLowerCase())
+    const keys = identityKeys(it)
+    if (keys.some((k) => seen.has(k))) { existingDropped++; continue }
+    keys.forEach((k) => seen.add(k))
+    existingKept.push(it)
   }
 
+  // pass 2: add new classified records, skipping any that collide with a kept item
   const added = []
   for (const raw of classified) {
     const rec = normalizeRecord(raw, runId)
-    const refKey = (rec.sourceRef || rec.url || "").trim().toLowerCase()
-    if (refKey && seen.has(refKey)) continue // already tracked — skip
-    if (refKey) seen.add(refKey)
+    const keys = identityKeys(rec)
+    if (keys.length === 0 || keys.some((k) => seen.has(k))) continue
+    keys.forEach((k) => seen.add(k))
     added.push(rec)
   }
 
   const merged = {
     ...existing,
-    items: [...added, ...existing.items],
+    items: [...added, ...existingKept], // new on top, fully deduped
     lastRun: runId,
     lastRunId: runId,
     ...(report !== undefined ? { report } : {}),
   }
 
-  console.error(`radar-ingest: ${classified.length} classified, ${added.length} new (deduped), ${merged.items.length} total`)
+  console.error(`radar-ingest: ${classified.length} classified, ${added.length} new, ${existingDropped} existing dupes removed, ${merged.items.length} total`)
 
   if (dry) {
-    console.log(JSON.stringify({ runId, added: added.length, total: merged.items.length, sample: added.slice(0, 3) }, null, 2))
+    console.log(JSON.stringify({ runId, added: added.length, existingDropped, total: merged.items.length, sample: added.slice(0, 3) }, null, 2))
     return
   }
 
