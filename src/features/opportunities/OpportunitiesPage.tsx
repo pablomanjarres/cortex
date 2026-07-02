@@ -46,7 +46,7 @@ export interface Opportunity {
   eligibility: Eligibility
   reward: string
   url: string
-  source: 'x' | 'linkedin' | 'reddit' | 'instagram' | 'github' | 'manual'
+  source: 'x' | 'linkedin' | 'reddit' | 'instagram' | 'github' | 'web' | 'manual'
   sourceRef: string
   discoveredAt: string
   /** Which radar run surfaced this item (ISO stamp). 'manual' for hand-added. */
@@ -125,6 +125,7 @@ const sourceConfig: Record<Opportunity['source'], { label: string; color: string
   reddit: { label: 'Reddit', color: 'bg-orange-500/15 text-orange-400' },
   instagram: { label: 'Instagram', color: 'bg-pink-500/15 text-pink-400' },
   github: { label: 'GitHub', color: 'bg-purple-500/15 text-purple-400' },
+  web: { label: 'Web', color: 'bg-teal-500/15 text-teal-400' },
   manual: { label: 'Manual', color: 'bg-secondary text-muted-foreground' },
 }
 

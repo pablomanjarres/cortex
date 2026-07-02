@@ -74,7 +74,7 @@ Output EXACTLY this JSON shape (no markdown fences, no prose outside it):
       "eligibility": "remote-global|latam|us-eu|other|unknown",
       "reward": string,
       "url": string,
-      "source": "x|linkedin|reddit|instagram|github",
+      "source": "x|linkedin|reddit|instagram|github|web",
       "sourceRef": string,
       "notes": string,
       "tags": [string]

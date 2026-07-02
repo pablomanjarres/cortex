@@ -24,7 +24,7 @@ const GOALS = new Set(["internship","exchange","funding","social-growth","users"
 const ELIGIBILITY = new Set(["remote-global","latam","us-eu","other","unknown"])
 const STATUS = new Set(["new","pursuing","applied","won","lost","archived"])
 const PRIORITY = new Set(["low","medium","high"])
-const SOURCE = new Set(["x","linkedin","reddit","instagram","github","manual"])
+const SOURCE = new Set(["x","linkedin","reddit","instagram","github","web","manual"])
 
 const args = process.argv.slice(2)
 const dry = args.includes("--dry")
