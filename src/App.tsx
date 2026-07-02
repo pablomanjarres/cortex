@@ -10,6 +10,7 @@ import { BooksPage } from '@/features/books/BooksPage'
 import { ThoughtsPage } from '@/features/thoughts/ThoughtsPage'
 import { ProjectsPage } from '@/features/projects/ProjectsPage'
 import { CrmPage } from '@/features/crm/CrmPage'
+import { OpportunitiesPage } from '@/features/opportunities/OpportunitiesPage'
 import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { StatsPage } from '@/features/stats/StatsPage'
 import { SettingsPage } from '@/features/settings/SettingsPage'
@@ -35,6 +36,7 @@ export function App() {
         <Route path="gym" element={<GymPage />} />
         <Route path="social" element={<SocialPage />} />
         <Route path="crm" element={<CrmPage />} />
+        <Route path="opportunities" element={<OpportunitiesPage />} />
         <Route path="books" element={<BooksPage />} />
         <Route path="thoughts" element={<ThoughtsPage />} />
         <Route path="captures" element={<CapturesPage />} />

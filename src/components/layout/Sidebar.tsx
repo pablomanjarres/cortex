@@ -13,6 +13,7 @@ import {
   Lightbulb,
   FolderKanban,
   Briefcase,
+  Radar,
   Timer,
   BarChart3,
   Settings,
@@ -41,6 +42,7 @@ const navGroups = [
       { to: '/student', icon: GraduationCap, label: 'Student' },
       { to: '/projects', icon: FolderKanban, label: 'Projects' },
       { to: '/crm', icon: Briefcase, label: 'CRM' },
+      { to: '/opportunities', icon: Radar, label: 'Opportunities' },
     ],
   },
   {
