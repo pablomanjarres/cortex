@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Opportunity Radar weekly timer. Fires the local runner every Monday at 09:00
+  (launchd uses local time = America/Bogota). Copy to ~/Library/LaunchAgents/ and load:
+    cp scripts/com.pablo.opportunity-radar.plist ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.pablo.opportunity-radar.plist 2>/dev/null
+    launchctl load  ~/Library/LaunchAgents/com.pablo.opportunity-radar.plist
+  Run once now to test:  launchctl start com.pablo.opportunity-radar
+  Logs: ~/Library/Logs/opportunity-radar.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.pablo.opportunity-radar</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/pablo/projects/cortex/scripts/opportunity-radar-weekly.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>1</integer>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/pablo/Library/Logs/opportunity-radar.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/pablo/Library/Logs/opportunity-radar.err.log</string>
+</dict>
+</plist>
