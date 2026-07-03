@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://pablo-oss.vercel.app/cortex"><img src=".github/banner.png" alt="Cortex" width="100%" /></a>
+  <a href="https://pablomanjarres.com/oss/cortex"><img src=".github/banner.png" alt="Cortex" width="100%" /></a>
 </p>
 
 <h1 align="center">Cortex</h1>
@@ -16,7 +16,7 @@
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-c8542a?style=flat" />
   <img alt="status shipped" src="https://img.shields.io/badge/status-shipped-success?style=flat" />
   <a href="https://pablomanjarres.com/portfolio/projects/cortex"><img alt="Portfolio" src="https://img.shields.io/badge/portfolio-pablomanjarres.com-c8542a?style=flat" /></a>
-  <a href="https://pablo-oss.vercel.app/cortex"><img alt="Landing" src="https://img.shields.io/badge/landing-pablo--oss-c8542a?style=flat" /></a>
+  <a href="https://pablomanjarres.com/oss/cortex"><img alt="Landing" src="https://img.shields.io/badge/landing-pablo--oss-c8542a?style=flat" /></a>
 </p>
 
 <p align="center"><img src="https://pablomanjarres.com/portfolio/previews/cortex.png" alt="Cortex screenshot" width="720" /></p>
@@ -120,7 +120,7 @@ MIT.
 ---
 
 <p align="center">
-  <a href="https://pablo-oss.vercel.app/cortex">Landing</a> ·
+  <a href="https://pablomanjarres.com/oss/cortex">Landing</a> ·
   <a href="https://pablomanjarres.com/portfolio/projects/cortex">Portfolio write-up</a> ·
   Built by Pablo Manjarres
 </p>
