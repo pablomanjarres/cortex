@@ -50,7 +50,7 @@ Requires macOS on Apple Silicon and Node 20+ (Vite 8's floor).
 ```bash
 npm install
 
-# web only — fast HMR, no Electron features
+# web only: fast HMR, no Electron features
 npm run dev
 
 # full Electron + web dev
@@ -74,7 +74,7 @@ VITE_SUPABASE_ANON_KEY=sb_publishable_xxx
 
 ```bash
 cd mcp-server && npm install && npm run build
-# register with Claude (the Cortex app must be running — it hosts the API on :3456)
+# register with Claude (the Cortex app must be running; it hosts the API on :3456)
 claude mcp add cortex --scope user -- node "$PWD/dist/index.js"
 ```
 
