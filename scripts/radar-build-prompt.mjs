@@ -105,6 +105,7 @@ Output EXACTLY this JSON shape (no markdown fences, no prose outside it):
       "deadline": "YYYY-MM-DD" | null,
       "rolling": boolean,
       "location": string,
+      "modality": "remote|hybrid|in-person|unknown",
       "eligibility": "remote-global|latam|us-eu|other|unknown",
       "reward": string,
       "url": string,
@@ -122,6 +123,10 @@ cross-posted on different platforms), emit it ONLY ONCE — pick the best apply/
 leverageScore is 1-5 (5 = highest leverage for Pablo). priority "high" when
 leverageScore>=4 or deadline within ~14 days. Always copy sourceRef verbatim from the hit
 (it is the dedupe key). Pick the best apply/detail link from the hit's urls for "url".
+modality (how/where it physically happens — SEPARATE from eligibility): "remote" if fully
+online / virtual / remote-only; "hybrid" if it has a physical location AND an online option;
+"in-person" if it is physical-only (on-site, a named city/venue, travel required); "unknown"
+if the text doesn't say. Put the specific city/venue in "location" (or "Global" when remote).
 
 <DATA>
 ${JSON.stringify(slim)}
