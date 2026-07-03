@@ -2,7 +2,9 @@ import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Input } from '@/components/ui/input'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useStore } from '@/lib/store'
+import { GrowthProjectsPanel } from './GrowthProjectsPanel'
 import {
   Search,
   Plus,
@@ -392,6 +394,14 @@ export function OpportunitiesPage() {
 
   return (
     <PageShell>
+      <Tabs defaultValue="radar">
+        <TabsList>
+          <TabsTrigger value="radar">Radar</TabsTrigger>
+          <TabsTrigger value="growth">Fastest growing</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="radar">
+          <div className="flex flex-col gap-6">
       {/* Radar report — what landed + what to look at first */}
       {(data.report || data.lastRun || topPicks.length > 0) && (
         <WidgetCard
@@ -727,6 +737,13 @@ export function OpportunitiesPage() {
           )}
         </div>
       </WidgetCard>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="growth">
+          <GrowthProjectsPanel />
+        </TabsContent>
+      </Tabs>
     </PageShell>
   )
 }
