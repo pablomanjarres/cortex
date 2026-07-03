@@ -153,6 +153,14 @@ function getSessionStats(s: WorkoutSession) {
   return { sets, volume }
 }
 
+// Gym sessions are persisted as a 1-element array (`[session]`); collapse to a
+// single WorkoutSession so `.exercises` access is always valid.
+function firstWorkout(raw: unknown): WorkoutSession | null {
+  if (Array.isArray(raw)) return (raw[0] as WorkoutSession) ?? null
+  if (raw && typeof raw === 'object' && 'workoutDayId' in raw) return raw as WorkoutSession
+  return null
+}
+
 // --- Component --------------------------------------------
 
 export function StatsPage() {
@@ -173,7 +181,8 @@ export function StatsPage() {
   // --- Gym Data -------------------------------------------
   const [dayWorkout, setDayWorkout] = useState<WorkoutSession | null>(null)
   const [dayNutrition, setDayNutrition] = useState<DailyNutrition | null>(null)
-  const [todayWorkout] = useStore<WorkoutSession | null>(`cortex-gym-session-${localDate()}`, null)
+  const [todayWorkoutRaw] = useStore<unknown>(`cortex-gym-session-${localDate()}`, null)
+  const todayWorkout = useMemo(() => firstWorkout(todayWorkoutRaw), [todayWorkoutRaw])
   const [todayNutrition] = useStore<DailyNutrition | null>(`cortex-nutrition-${localDate()}`, null)
 
   // --- Day View Data --------------------------------------
@@ -201,7 +210,7 @@ export function StatsPage() {
     ]).then(([sessions, gtm, workout, nutrition]) => {
       setDaySessions(sessions)
       setDayGtm(gtm)
-      setDayWorkout(workout)
+      setDayWorkout(firstWorkout(workout))
       setDayNutrition(nutrition)
     })
   }, [selectedDate, view, isToday, todaySessions, todayGtm, todayWorkout, todayNutrition])
@@ -239,7 +248,7 @@ export function StatsPage() {
         minutes: s.reduce((sum, x) => sum + x.duration, 0),
       })))
       setWeekGtm(gtmLogs.filter((g): g is GtmDailyLog => g !== null && (g.dmsSent > 0 || g.xReplies > 0 || g.demoCalls > 0)))
-      setWeekWorkouts(workouts.filter((w): w is WorkoutSession => w !== null))
+      setWeekWorkouts(workouts.map(firstWorkout).filter((w): w is WorkoutSession => w !== null))
       setWeekNutrition(nutrition.filter((n): n is DailyNutrition => n !== null && n.meals.some(m => m.foods.length > 0)))
     })
   }, [weekDates, view])
