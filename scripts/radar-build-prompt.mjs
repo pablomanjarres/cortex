@@ -10,7 +10,7 @@ import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 
-const MAX_HITS = 140
+const MAX_HITS = 180
 const MAX_TEXT = 800
 
 const rawPath = process.argv[2]
@@ -25,12 +25,19 @@ try { profile = (await readFile(join(here, "radar-profile.md"), "utf8")).trim() 
 // running Cortex store; fail-open to "no orders" if the app isn't reachable.
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
 let objectivesBlock = ""
+// Terms from active orders (locations + keywords) — used to keep matching hits ahead of the
+// MAX_HITS cap so a city order (e.g. "Medellín") is never truncated away before classifying.
+let orderTerms = []
 try {
   const r = await fetch(`${API}/api/data?key=cortex-opportunities`)
   if (r.ok) {
     const store = await r.json()
     const active = Array.isArray(store?.objectives) ? store.objectives.filter((o) => o && o.active) : []
     if (active.length) {
+      orderTerms = active
+        .flatMap((o) => [...(o.parsed?.locations || []), ...(o.parsed?.keywords || [])])
+        .map((t) => String(t).toLowerCase().trim())
+        .filter((t) => t.length >= 3)
       const lines = active.map((o) => {
         const p = o.parsed || {}
         const bits = []
@@ -58,6 +65,16 @@ ${lines.join("\n")}
 
 const blob = JSON.parse(await readFile(rawPath, "utf8"))
 const hits = Array.isArray(blob) ? blob : Array.isArray(blob.hits) ? blob.hits : []
+
+// Order-matching hits (e.g. anything mentioning an active order's city) go FIRST so they
+// survive the MAX_HITS cap — otherwise a minority Colombia lane can be dropped unseen.
+if (orderTerms.length && hits.length > MAX_HITS) {
+  const hitMatches = (h) => {
+    const hay = `${h.text || ""} ${h.videoTranscript || ""} ${(h.matchedKeywords || []).join(" ")} ${(Array.isArray(h.urls) ? h.urls.join(" ") : "")} ${h.author || ""}`.toLowerCase()
+    return orderTerms.some((t) => hay.includes(t))
+  }
+  hits.sort((a, b) => (hitMatches(b) ? 1 : 0) - (hitMatches(a) ? 1 : 0)) // stable in V8: matches first, order otherwise preserved
+}
 
 const trim = (s) => (typeof s === "string" ? s.slice(0, MAX_TEXT) : "")
 const slim = hits.slice(0, MAX_HITS).map((h) => ({
