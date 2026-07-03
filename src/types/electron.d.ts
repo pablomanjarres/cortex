@@ -97,6 +97,9 @@ interface ElectronAPI {
   projects: {
     scan: () => Promise<ProjectInfo[]>
   }
+  automation: {
+    scheduledTasks: () => Promise<{ name: string; description: string }[]>
+  }
   onNavigate: (callback: (route: string) => void) => void
 }
 

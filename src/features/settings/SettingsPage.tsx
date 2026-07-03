@@ -20,7 +20,7 @@ const keyFields: KeyField[] = [
   { service: 'lemon-api-key', label: 'Lemon Squeezy API Key', placeholder: 'API key from Settings', description: 'Settings → API in Lemon Squeezy dashboard' },
   { service: 'lemon-store-id', label: 'Lemon Squeezy Store ID', placeholder: '12345', description: 'Your store ID number' },
   { service: 'paperclip-token', label: 'Paperclip Token', placeholder: 'pcp_board_...', description: 'Bearer token from ~/.paperclip/auth.json on the VM, or mint via paperclipai auth login' },
-  { service: 'paperclip-base-url', label: 'Paperclip Base URL', placeholder: 'http://openclaw-vm:3100', description: 'Override only if Paperclip is not on the default tailnet host' },
+  { service: 'paperclip-base-url', label: 'Paperclip Base URL', placeholder: 'http://100.121.121.114:3100', description: 'Override only if Paperclip is not on the default tailnet host' },
 ]
 
 function KeyRow({ field }: { field: KeyField }) {

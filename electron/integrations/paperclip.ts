@@ -1,7 +1,7 @@
 // Paperclip REST client. Mirrors github.ts: stateless fetch wrappers keyed
 // off a token + base URL. Token retrieval lives in main.ts (keychain).
 
-const DEFAULT_BASE_URL = 'http://openclaw-vm:3100'
+const DEFAULT_BASE_URL = 'http://100.121.121.114:3100'
 
 export interface PaperclipCompany { id: string; name: string; slug?: string; createdAt?: string }
 export interface PaperclipAgent { id: string; companyId: string; name: string; status?: string; lastHeartbeatAt?: string | null; createdAt?: string }

@@ -30,6 +30,11 @@ let webServer: http.Server | null = null
 let currentStats = { tasks: '0/0', habits: '0/0', score: '—' }
 const WEB_PORT = 3456
 
+// Self-host VM (Lima, tailnet node openclaw-vm-1). Bare MagicDNS name doesn't
+// resolve from the Mac, so we use the stable tailnet IP. Hosts glances (61208),
+// Uptime Kuma (3001), and Paperclip (3100).
+const VM_HOST = '100.121.121.114'
+
 // ─── Tray live data (events, sprint, habits) ─────────────
 let cachedEvents: { title: string; startTime: string; endTime: string; isAllDay: boolean }[] = []
 let cachedHabits: { id: string; name: string; emoji: string }[] = []
@@ -134,8 +139,8 @@ async function refreshTrayData() {
 }
 
 // ─── System stats refresh (Mac mini + VM via Glances) ─────
-// Pulls from local Glances on 127.0.0.1:61208 (Mac) and Tailscale
-// openclaw-vm:61208 (VM) every 5s. Updates tray title + menu.
+// Pulls from local Glances on 127.0.0.1:61208 (Mac) and the Lima VM
+// at VM_HOST:61208 every 5s. Updates tray title + menu.
 
 async function fetchHostStats(host: string): Promise<HostStats> {
   const opts = { signal: AbortSignal.timeout(host === '127.0.0.1' ? 3000 : 5000) }
@@ -357,7 +362,7 @@ function avg(arr: number[]): number {
 async function refreshSystemStats() {
   const [macRes, vmRes] = await Promise.allSettled([
     fetchHostStats('127.0.0.1'),
-    fetchHostStats('openclaw-vm'),
+    fetchHostStats(VM_HOST),
   ])
   if (macRes.status === 'fulfilled') {
     cachedMacStats = macRes.value
@@ -473,7 +478,7 @@ function buildHostStatsItems(label: string, s: HostStats | null, err: string | n
 function buildMacStatsMenuItems(): Electron.MenuItemConstructorOptions[] {
   return [
     ...buildHostStatsItems('Mac mini', cachedMacStats, macStatsError),
-    ...buildHostStatsItems('OpenClaw VM', cachedVmStats, vmStatsError),
+    ...buildHostStatsItems('Lima VM', cachedVmStats, vmStatsError),
     { label: 'Open System page', click: () => showAndNavigate('/system') },
   ]
 }
@@ -660,6 +665,37 @@ function isTailscaleOrLocal(ip: string): boolean {
   return first === 100 && second >= 64 && second <= 127
 }
 
+// ─── Claude scheduled-tasks discovery ─────────────────────────────
+// Live source of truth for Claude-type automation cards: read SKILL.md
+// frontmatter (name + description) from ~/.claude/scheduled-tasks/. New
+// tasks appear automatically; removed ones disappear. Dot-dirs (.trash)
+// are skipped, so trashed tasks stay gone.
+function readScheduledTasks(): { name: string; description: string }[] {
+  try {
+    const dir = path.join(os.homedir(), '.claude', 'scheduled-tasks')
+    if (!fs.existsSync(dir)) return []
+    const out: { name: string; description: string }[] = []
+    for (const entry of fs.readdirSync(dir)) {
+      if (entry.startsWith('.')) continue
+      const skill = path.join(dir, entry, 'SKILL.md')
+      if (!fs.existsSync(skill)) continue
+      let name = entry
+      let description = ''
+      try {
+        const fm = fs.readFileSync(skill, 'utf8').match(/^---\s*\n([\s\S]*?)\n---/)
+        if (fm) {
+          const nameM = fm[1].match(/^name:\s*(.+)$/m)
+          const descM = fm[1].match(/^description:\s*(.+)$/m)
+          if (nameM) name = nameM[1].trim()
+          if (descM) description = descM[1].trim()
+        }
+      } catch { /* use folder name */ }
+      out.push({ name, description })
+    }
+    return out.sort((a, b) => a.name.localeCompare(b.name))
+  } catch { return [] }
+}
+
 function startWebServer() {
   if (webServer) return
   const distPath = path.join(__dirname, '../dist')
@@ -761,6 +797,14 @@ function startWebServer() {
           res.end(JSON.stringify({ ok: true, id: run.id }))
         } catch { res.writeHead(500); res.end('Error') }
       })
+      return
+    }
+
+    if (url.pathname === '/api/automation/scheduled-tasks' && req.method === 'GET') {
+      try {
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+        res.end(JSON.stringify(readScheduledTasks()))
+      } catch { res.writeHead(500); res.end('[]') }
       return
     }
 
@@ -904,7 +948,7 @@ function startWebServer() {
       try {
         const token = getKey('paperclip-token')
         if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No Paperclip token saved' })); return }
-        const baseUrl = getKey('paperclip-base-url') || 'http://openclaw-vm:3100'
+        const baseUrl = getKey('paperclip-base-url') || `http://${VM_HOST}:3100`
         const client = createPaperclipClient({ baseUrl, token })
         const sub = url.pathname.replace('/api/integrations/paperclip', '')
         let data: unknown
@@ -977,7 +1021,7 @@ function startWebServer() {
 
     // ─── System metrics (Glances proxy) ─────────────────────
     // Mac mini: glances launchd service on 127.0.0.1:61208
-    // VM: glances Docker container on openclaw-vm:61208 (Tailscale MagicDNS)
+    // Lima VM: glances systemd service on VM_HOST:61208 (Tailscale)
     if (url.pathname === '/api/system/mac' && req.method === 'GET') {
       try {
         const r = await fetch('http://127.0.0.1:61208/api/4/all', { signal: AbortSignal.timeout(4000) })
@@ -989,7 +1033,7 @@ function startWebServer() {
 
     if (url.pathname === '/api/system/vm' && req.method === 'GET') {
       try {
-        const r = await fetch('http://openclaw-vm:61208/api/4/all', { signal: AbortSignal.timeout(5000) })
+        const r = await fetch(`http://${VM_HOST}:61208/api/4/all`, { signal: AbortSignal.timeout(5000) })
         if (!r.ok) throw new Error(`glances ${r.status}`)
         res.writeHead(200, corsHeaders); res.end(await r.text())
       } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
@@ -1019,14 +1063,14 @@ function startWebServer() {
       return
     }
 
-    // ─── Uptime Kuma proxy (status page on VM) ─────────────
+    // ─── Uptime Kuma proxy (status page on Lima VM) ─────────────
     if (url.pathname === '/api/uptime' && req.method === 'GET') {
       const slug = url.searchParams.get('slug') || 'main'
       try {
         const opts = { signal: AbortSignal.timeout(5000) }
         const [confR, hbR] = await Promise.all([
-          fetch(`http://openclaw-vm:3001/api/status-page/${slug}`, opts),
-          fetch(`http://openclaw-vm:3001/api/status-page/heartbeat/${slug}`, opts),
+          fetch(`http://${VM_HOST}:3001/api/status-page/${slug}`, opts),
+          fetch(`http://${VM_HOST}:3001/api/status-page/heartbeat/${slug}`, opts),
         ])
         if (!confR.ok || !hbR.ok) throw new Error(`uptime-kuma ${confR.status}/${hbR.status}`)
         const config = await confR.json()
@@ -1441,6 +1485,8 @@ if (!isDev && fs.existsSync(legacyDir) && legacyDir !== dataDir) {
 
 const backupDir = path.join(dataDir, 'backups')
 if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
+
+ipcMain.handle('automation:scheduledTasks', async () => readScheduledTasks())
 
 ipcMain.handle('data:read', async (_event, key: string) => {
   const file = path.join(dataDir, `${key}.json`)

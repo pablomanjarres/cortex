@@ -41,7 +41,7 @@ const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 
 
 const HOSTS: HostSpec[] = [
   { key: 'mac', label: 'Mac mini', path: '/api/system/mac', noteIfDown: 'glances launchd service not running' },
-  { key: 'vm',  label: 'OpenClaw VM', path: '/api/system/vm', noteIfDown: 'VM unreachable or glances container down' },
+  { key: 'vm',  label: 'Lima VM', path: '/api/system/vm', noteIfDown: 'VM unreachable or glances service down' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -455,7 +455,7 @@ function UptimePanel({ delay }: { delay: number }) {
           <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <p className="text-sm text-foreground">{error}</p>
-            <p className="text-[11px] text-muted-foreground/70 mt-1">openclaw-vm:3001 unreachable or status page unpublished</p>
+            <p className="text-[11px] text-muted-foreground/70 mt-1">Lima VM (100.121.121.114:3001) unreachable or status page unpublished</p>
           </div>
         </div>
       </WidgetCard>
@@ -486,7 +486,7 @@ function UptimePanel({ delay }: { delay: number }) {
             <span>polled every 10s</span>
           </div>
           <a
-            href="http://openclaw-vm:3001"
+            href="http://100.121.121.114:3001"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 hover:text-foreground transition-colors"
@@ -604,7 +604,7 @@ function AdcHealthTile({ delay }: { delay: number }) {
         <div className={`h-2 w-2 rounded-full shrink-0 mt-1.5 ${dotColor} ${pulse}`} />
         <div className="flex-1 min-w-0">
           <p className="text-xs text-foreground/90 break-words">{body}</p>
-          <p className="text-[10px] text-muted-foreground/60 mt-1">vm-watchdog: ADC token mint check, vertex/gemini auth on openclaw-vm</p>
+          <p className="text-[10px] text-muted-foreground/60 mt-1">vm-watchdog: ADC token mint check, vertex/gemini auth on Lima VM</p>
         </div>
       </div>
     </WidgetCard>

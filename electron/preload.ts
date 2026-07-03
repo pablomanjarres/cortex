@@ -63,6 +63,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getStats: () => ipcRenderer.invoke('data:getStats'),
   },
 
+  automation: {
+    scheduledTasks: () => ipcRenderer.invoke('automation:scheduledTasks'),
+  },
+
   onNavigate: (callback: (route: string) => void) => {
     ipcRenderer.on('navigate', (_event, route) => callback(route))
   },

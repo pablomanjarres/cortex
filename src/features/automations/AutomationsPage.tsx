@@ -47,18 +47,11 @@ interface TaskDef {
 // type: how it runs (openclaw cron / n8n flow / launchd / Claude scheduled-task / hook)
 // host: where it runs (gcp-vm = openclaw-vm, mac-mini = local desktop)
 
-const TASKS: TaskDef[] = [
-  // Dev & Business (existing Claude scheduled-tasks)
-  { name: 'nella-daily-dev-log', description: 'Daily dev log from repo activity', frequency: 'Daily', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
-  { name: 'daily-repo-inspection', description: 'Website repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
-  { name: 'daily-repo-summary', description: 'Core repo state summary', frequency: 'Daily 3am', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
-  { name: 'medellin-lead-gen', description: 'Freelance lead generation for Medellin area', frequency: 'Bimonthly', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
-  { name: 'weekly-competition-scanner', description: 'Scan for competitions, grants, hackathons', frequency: 'Weekly', group: 'Dev & Business', type: 'claude', host: 'mac-mini' },
-
-  // Intelligence
-  { name: 'ai-intelligence-brief', description: 'AI developments & intelligence brief', frequency: 'Periodic', group: 'Intelligence', type: 'claude', host: 'mac-mini' },
-  { name: 'weekly-reading-digest', description: 'Reading materials digest from Notes & files', frequency: 'Weekly', group: 'Intelligence', type: 'claude', host: 'mac-mini' },
-
+// Non-Claude automations are curated here — openclaw/n8n/launchd/cron live on
+// the VM or as local daemons and aren't discoverable from disk. Claude
+// scheduled-tasks are merged in LIVE from ~/.claude/scheduled-tasks/ (see
+// CLAUDE_TASK_META + the fetch in the component), so they self-sync.
+const STATIC_TASKS: TaskDef[] = [
   // Discovery (Nella ICP listeners + scoring)
   { name: 'x-discovery', description: 'Bird CLI search of X for trigger phrases, upserts leads to Supabase', frequency: 'Every 20 min', group: 'Discovery', type: 'openclaw', host: 'gcp-vm' },
   { name: 'mutuals-refresh', description: 'Refresh X mutuals list to filter discovery against existing follows', frequency: 'Weekly Sun 6am', group: 'Discovery', type: 'openclaw', host: 'gcp-vm' },
@@ -72,9 +65,6 @@ const TASKS: TaskDef[] = [
   { name: 'mars-rag-index', description: 'FAISS index over Mars + Cortex + journal; powers /recall Telegram cmd', frequency: 'Daily 3am', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
   { name: 'course-companion', description: 'PDF in Mars/courses/incoming/ produces classify + flashcards', frequency: 'On file land', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
 
-  // Discipline & Content (existing)
-  { name: 'discipline-enforcer', description: 'Daily discipline summary: commits, content, outbound', frequency: 'Daily 9pm', group: 'Discipline & Content', type: 'claude', host: 'mac-mini' },
-
   // Ops & Life
   { name: 'uptime-flap-filter', description: 'Reads Uptime Kuma; pages Pushover only after 3 consecutive down checks + restart attempt', frequency: 'Every 5 min', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
   { name: 'adc-health', description: 'Mints a token from openclaw-vm ADC; flags invalid_rapt to Pushover + Slack + Cortex', frequency: 'Every 5 min', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
@@ -85,13 +75,30 @@ const TASKS: TaskDef[] = [
   { name: 'cost-guardian', description: 'Sums LLM/cloud bills daily; Pushover at 50/80/100% thresholds (n8n)', frequency: 'Daily 8am', group: 'Security & Discipline', type: 'n8n', host: 'gcp-vm' },
   { name: 'distraction-logger', description: 'Telegram /dw start <task>; mid-session pings; end-of-session honesty audit (n8n)', frequency: 'On /dw command', group: 'Security & Discipline', type: 'n8n', host: 'gcp-vm' },
 
-  // System (existing launchd daemons, kept per user)
-  { name: 'daily-file-watchdog', description: 'Workspace cleanup: Downloads, Desktop, Movies', frequency: 'Daily', group: 'System', type: 'claude', host: 'mac-mini' },
+  // System (launchd daemons)
   { name: 'backup-projects', description: 'Hourly OneDrive backup with smart pruning', frequency: 'Hourly', group: 'System', type: 'launchd', host: 'mac-mini' },
   { name: 'infra-health', description: 'Health check for localhost-mirror, content-pipeline, cortex', frequency: 'Every 2 min', group: 'System', type: 'launchd', host: 'mac-mini' },
   { name: 'content-pipeline', description: 'Content Pipeline app daemon (keep-alive)', frequency: 'Always', group: 'System', type: 'launchd', host: 'mac-mini' },
   { name: 'localhost-mirror', description: 'Tunnel daemon for LAN/Tailscale access', frequency: 'Always', group: 'System', type: 'launchd', host: 'mac-mini' },
 ]
+
+// Curated group + frequency for known Claude scheduled-tasks. Existence and
+// description come LIVE from ~/.claude/scheduled-tasks/; this only enriches
+// the display (the disk frontmatter has no structured schedule/group). Any
+// task not listed here falls back to DEFAULT_CLAUDE_META, so brand-new
+// scheduled-tasks still show up — just in the default bucket until curated.
+const CLAUDE_TASK_META: Record<string, { group: string; frequency: string }> = {
+  'nella-daily-dev-log':        { group: 'Dev & Business', frequency: 'Daily' },
+  'daily-repo-inspection':      { group: 'Dev & Business', frequency: 'Daily 3am' },
+  'daily-repo-summary':         { group: 'Dev & Business', frequency: 'Daily 3am' },
+  'weekly-competition-scanner': { group: 'Dev & Business', frequency: 'Mon & Thu' },
+  'startup-events-radar':       { group: 'Dev & Business', frequency: '1st & 15th' },
+  'ai-intelligence-brief':      { group: 'Intelligence', frequency: 'Periodic' },
+  'weekly-reading-digest':      { group: 'Intelligence', frequency: 'Weekly' },
+  'discipline-enforcer':        { group: 'Discipline & Content', frequency: 'Daily 9pm' },
+  'daily-file-watchdog':        { group: 'System', frequency: 'Daily' },
+}
+const DEFAULT_CLAUDE_META = { group: 'Dev & Business', frequency: 'Scheduled' }
 
 // Visual config per task TYPE (where the work runs).
 const typeConfig: Record<TaskType, { label: string; bg: string; color: string }> = {
@@ -170,6 +177,7 @@ export function AutomationsPage() {
   const [groupFilter, setGroupFilter] = useState<string | null>(null)
   const [selectedRun, setSelectedRun] = useState<AutomationRun | null>(null)
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
+  const [scheduledTasks, setScheduledTasks] = useState<{ name: string; description: string }[]>([])
 
   const fetchRuns = async () => {
     setLoading(true)
@@ -187,7 +195,34 @@ export function AutomationsPage() {
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchRuns() }, [])
+  // Live-discover Claude scheduled-tasks from ~/.claude/scheduled-tasks/.
+  const fetchScheduledTasks = async () => {
+    try {
+      let list: { name: string; description: string }[] | null = null
+      try {
+        const res = await fetch('/api/automation/scheduled-tasks')
+        if (res.ok) list = await res.json()
+      } catch { /* try IPC */ }
+      if (!list && window.electronAPI?.automation) {
+        list = await window.electronAPI.automation.scheduledTasks()
+      }
+      setScheduledTasks(list || [])
+    } catch { /* empty */ }
+  }
+
+  const refreshAll = () => { fetchRuns(); fetchScheduledTasks() }
+
+  useEffect(() => { refreshAll() }, [])
+
+  // Claude tasks come live from disk; non-Claude tasks stay curated. Merge
+  // both into the single list the dashboard renders from.
+  const claudeTasks = useMemo<TaskDef[]>(() =>
+    scheduledTasks.map((t) => {
+      const meta = CLAUDE_TASK_META[t.name] || DEFAULT_CLAUDE_META
+      return { name: t.name, description: t.description || t.name, frequency: meta.frequency, group: meta.group, type: 'claude', host: 'mac-mini' }
+    }), [scheduledTasks])
+
+  const allTasks = useMemo<TaskDef[]>(() => [...claudeTasks, ...STATIC_TASKS], [claudeTasks])
 
   const handleAction = async (runId: string, action: 'approve' | 'reject') => {
     try {
@@ -219,15 +254,15 @@ export function AutomationsPage() {
 
   const filteredTasks = useMemo(() => {
     const lowerSearch = search.toLowerCase()
-    return TASKS.filter((t) =>
+    return allTasks.filter((t) =>
       (!groupFilter || t.group === groupFilter) &&
       (!search || t.name.toLowerCase().includes(lowerSearch) || t.description.toLowerCase().includes(lowerSearch))
     )
-  }, [search, groupFilter])
+  }, [search, groupFilter, allTasks])
 
   // ── Detail view: reading a specific run ─────────────────────────
   if (selectedRun) {
-    const task = TASKS.find((t) => t.name === selectedRun.taskName)
+    const task = allTasks.find((t) => t.name === selectedRun.taskName)
     const st = statusStyle[selectedRun.status] || statusStyle.success
     const StatusIcon = st.icon
 
@@ -281,7 +316,7 @@ export function AutomationsPage() {
 
   // ── Task history view: all runs for a specific task ─────────────
   if (selectedTask) {
-    const task = TASKS.find((t) => t.name === selectedTask)
+    const task = allTasks.find((t) => t.name === selectedTask)
 
     return (
       <PageShell>
@@ -331,10 +366,10 @@ export function AutomationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          {TASKS.length} tasks · {runs.length} runs
+          {allTasks.length} tasks · {runs.length} runs
           {pendingApprovals.length > 0 && ` · ${pendingApprovals.length} pending`}
         </p>
-        <Button variant="secondary" size="sm" onClick={fetchRuns} disabled={loading}>
+        <Button variant="secondary" size="sm" onClick={refreshAll} disabled={loading}>
           <RefreshCw className={`mr-2 h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
