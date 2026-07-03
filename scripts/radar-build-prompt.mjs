@@ -36,6 +36,7 @@ try {
         const bits = []
         if (p.targetCount) bits.push(`target ~${p.targetCount}`)
         if (p.category) bits.push(p.category)
+        if (Array.isArray(p.locations) && p.locations.length) bits.push(`in ${p.locations.join("/")}`)
         if (p.eligibility) bits.push(p.eligibility)
         if (p.salaryText) bits.push(`pay ${p.salaryText}`)
         if (p.deadlineBefore) bits.push(`deadline before ${p.deadlineBefore}`)

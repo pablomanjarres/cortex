@@ -75,6 +75,8 @@ export interface ObjectiveParsed {
   /** How many of these the user wants (drives the "N / target found" progress). */
   targetCount?: number | null
   eligibility?: Eligibility | null
+  /** Cities / regions / countries the order targets, e.g. ["Medellín", "Bogotá", "Colombia"]. */
+  locations?: string[]
   /** Freeform pay/reward ask, e.g. "$2k+/mo" (schema has no salary field, so kept as text). */
   salaryText?: string | null
   /** Only surface items whose deadline is on/before this (YYYY-MM-DD). */
@@ -247,6 +249,10 @@ function objectiveMatches(o: Opportunity, p?: ObjectiveParsed): boolean {
   if (p.category && o.category !== p.category) return false
   if (p.eligibility && o.eligibility !== p.eligibility) return false
   if (p.deadlineBefore && !o.rolling && o.deadline && o.deadline > p.deadlineBefore) return false
+  if (p.locations && p.locations.length) {
+    const where = `${o.location} ${o.title} ${o.host} ${o.notes} ${o.tags.join(' ')}`.toLowerCase()
+    if (!p.locations.some((l) => l && where.includes(l.toLowerCase()))) return false
+  }
   if (p.keywords && p.keywords.length) {
     const hay = `${o.title} ${o.host} ${o.tags.join(' ')} ${o.notes}`.toLowerCase()
     if (!p.keywords.some((k) => k && hay.includes(k.toLowerCase()))) return false
@@ -321,7 +327,7 @@ export function OpportunitiesPage() {
   // Jump the table to an objective's matches.
   const showObjectiveMatches = (p?: ObjectiveParsed) => {
     setCatFilter(p?.category ?? null)
-    setSearch(p?.keywords?.[0] ?? '')
+    setSearch(p?.locations?.[0] ?? p?.keywords?.[0] ?? '')
     setStatusFilter(null); setThisRunOnly(false); setDueBucket('all')
   }
 
@@ -362,7 +368,8 @@ export function OpportunitiesPage() {
       (!thisRunOnly || (data.lastRunId != null && o.runId === data.lastRunId)) &&
       matchesDueBucket(o, dueBucket) &&
       (!search || o.title.toLowerCase().includes(q) || o.host.toLowerCase().includes(q) ||
-        o.notes.toLowerCase().includes(q) || o.tags.some((t) => t.toLowerCase().includes(q)))
+        o.notes.toLowerCase().includes(q) || o.location.toLowerCase().includes(q) ||
+        o.tags.some((t) => t.toLowerCase().includes(q)))
     )
     list.sort((a, b) => {
       let v = 0
@@ -471,6 +478,7 @@ export function OpportunitiesPage() {
                 const pct = target ? Math.min(100, Math.round((found / target) * 100)) : 0
                 const chips: string[] = []
                 if (obj.parsed?.category) chips.push(categoryConfig[obj.parsed.category].label)
+                if (obj.parsed?.locations?.length) chips.push(`📍 ${obj.parsed.locations.join(' · ')}`)
                 if (obj.parsed?.eligibility) chips.push(eligibilityConfig[obj.parsed.eligibility])
                 if (obj.parsed?.salaryText) chips.push(obj.parsed.salaryText)
                 if (obj.parsed?.deadlineBefore) chips.push(`by ${fmtDate(obj.parsed.deadlineBefore)}`)
