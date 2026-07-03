@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Fastest-Growing-Projects weekly run. Fires every Monday at 09:30 (local time), just after
+  the opportunity radar. Deterministic GitHub scan -> posts the top ~100 growing projects of
+  the week to the Cortex Opportunities > Fastest growing tab. Requires the Cortex app open
+  (it POSTs to localhost:3456). Copy to ~/Library/LaunchAgents/ and load:
+    cp scripts/com.pablo.growth-radar.plist ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.pablo.growth-radar.plist 2>/dev/null
+    launchctl load  ~/Library/LaunchAgents/com.pablo.growth-radar.plist
+  Run once now to test:  launchctl start com.pablo.growth-radar
+  Logs: ~/Library/Logs/growth-radar.err.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.pablo.growth-radar</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>/opt/homebrew/bin/node /Users/pablo/projects/cortex/scripts/growth-fetch.mjs --limit 120</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>1</integer>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/pablo/Library/Logs/growth-radar.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/pablo/Library/Logs/growth-radar.err.log</string>
+</dict>
+</plist>
