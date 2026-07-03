@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, type ReactNode } from 'react'
+import { ComposedChart, Area, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import {
   Search, Star, GitFork, RefreshCw, Loader2, ExternalLink, TrendingUp,
-  ArrowUp, ArrowDown, ArrowUpDown, FlameKindling,
+  ArrowUp, ArrowDown, ArrowUpDown, FlameKindling, ChevronDown,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ export function GrowthProjectsPanel() {
   const [minForks, setMinForks] = useState(0)
   const [sortKey, setSortKey] = useState<SortKey>('starsDelta')
   const [sortAsc, setSortAsc] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const running = data.runStatus === 'requested' || data.runStatus === 'running'
   const runScan = () => {
@@ -240,27 +242,41 @@ export function GrowthProjectsPanel() {
             <tbody>
               {filtered.map((r) => {
                 const cat = CAT_META[r.category] || CAT_META.other
+                const open = expanded === r.id
                 return (
-                  <tr key={r.id} className="border-b border-border/20 transition-colors hover:bg-secondary/30 group">
-                    <td className="px-5 py-2.5">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{r.fullName}</span>
-                        {r.description && <span className="text-muted-foreground truncate max-w-[36rem]">{r.description}</span>}
-                      </div>
-                    </td>
-                    <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${cat.color}`}>{cat.label}</span></td>
-                    <td className="py-2.5 text-muted-foreground">{r.language || '—'}</td>
-                    <td className="py-2.5 tabular-nums">{r.starsDelta ? <span className={r.starsDelta > 0 ? 'text-green-400' : 'text-red-400/70'}>{fmtDelta(r.starsDelta)}</span> : <span className="text-muted-foreground/40">—</span>}</td>
-                    <td className="py-2.5 tabular-nums"><span className="inline-flex items-center gap-1"><Star className="h-3 w-3 text-amber-400/70" />{fmtNum(r.stars)}</span></td>
-                    <td className="py-2.5 tabular-nums">{r.forksDelta ? <span className={r.forksDelta > 0 ? 'text-green-400' : 'text-red-400/70'}>{fmtDelta(r.forksDelta)}</span> : <span className="text-muted-foreground/40">—</span>}</td>
-                    <td className="py-2.5 tabular-nums"><span className="inline-flex items-center gap-1"><GitFork className="h-3 w-3 text-sky-400/70" />{fmtNum(r.forks)}</span></td>
-                    <td className="py-2.5 text-muted-foreground">{fmtDate(r.createdAt)}</td>
-                    <td className="py-2.5 pr-4">
-                      <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-muted-foreground/40 hover:text-foreground opacity-0 group-hover:opacity-100 transition-all" title="Open on GitHub">
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={r.id} onClick={() => setExpanded(open ? null : r.id)}
+                      className={`cursor-pointer border-b border-border/20 transition-colors hover:bg-secondary/30 group ${open ? 'bg-secondary/20' : ''}`}>
+                      <td className="px-5 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <ChevronDown className={`h-3 w-3 shrink-0 text-muted-foreground/40 transition-transform ${open ? 'rotate-0' : '-rotate-90'}`} />
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-medium">{r.fullName}</span>
+                            {r.description && <span className="text-muted-foreground truncate max-w-[34rem]">{r.description}</span>}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${cat.color}`}>{cat.label}</span></td>
+                      <td className="py-2.5 text-muted-foreground">{r.language || '—'}</td>
+                      <td className="py-2.5 tabular-nums">{r.starsDelta ? <span className={r.starsDelta > 0 ? 'text-green-400' : 'text-red-400/70'}>{fmtDelta(r.starsDelta)}</span> : <span className="text-muted-foreground/40">—</span>}</td>
+                      <td className="py-2.5 tabular-nums"><span className="inline-flex items-center gap-1"><Star className="h-3 w-3 text-amber-400/70" />{fmtNum(r.stars)}</span></td>
+                      <td className="py-2.5 tabular-nums">{r.forksDelta ? <span className={r.forksDelta > 0 ? 'text-green-400' : 'text-red-400/70'}>{fmtDelta(r.forksDelta)}</span> : <span className="text-muted-foreground/40">—</span>}</td>
+                      <td className="py-2.5 tabular-nums"><span className="inline-flex items-center gap-1"><GitFork className="h-3 w-3 text-sky-400/70" />{fmtNum(r.forks)}</span></td>
+                      <td className="py-2.5 text-muted-foreground">{fmtDate(r.createdAt)}</td>
+                      <td className="py-2.5 pr-4">
+                        <a href={r.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-muted-foreground/40 hover:text-foreground opacity-0 group-hover:opacity-100 transition-all" title="Open on GitHub">
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr key={`${r.id}-chart`}>
+                        <td colSpan={9} className="px-5 py-4 border-b border-border/20 bg-foreground/[0.02]">
+                          <RepoGrowthDetail repo={r} />
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 )
               })}
             </tbody>
@@ -274,6 +290,87 @@ export function GrowthProjectsPanel() {
           )}
         </div>
       </WidgetCard>
+    </div>
+  )
+}
+
+// ── Per-repo growth detail (click-to-expand chart + meta) ─────────────────────
+function RepoGrowthDetail({ repo }: { repo: GrowthRepo }) {
+  const history = (repo.history || []).slice().sort((a, b) => (a.t || '').localeCompare(b.t || ''))
+  const chartData = history.map((h) => ({
+    label: new Date(h.t).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
+    stars: h.stars,
+    forks: h.forks,
+  }))
+  const first = history[0]
+  const starsSinceSeen = first ? repo.stars - first.stars : 0
+  const forksSinceSeen = first ? repo.forks - first.forks : 0
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,18rem)_1fr]">
+      {/* Meta */}
+      <div className="flex flex-col gap-2 text-xs">
+        <a href={repo.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-medium text-foreground hover:text-orange-400">
+          {repo.fullName} <ExternalLink className="h-3 w-3" />
+        </a>
+        {repo.description && <p className="text-muted-foreground leading-relaxed">{repo.description}</p>}
+        <div className="grid grid-cols-2 gap-2 mt-1">
+          <Meta label="Stars" value={<span className="inline-flex items-center gap-1"><Star className="h-3 w-3 text-amber-400" />{repo.stars.toLocaleString()}</span>} />
+          <Meta label="Forks" value={<span className="inline-flex items-center gap-1"><GitFork className="h-3 w-3 text-sky-400" />{repo.forks.toLocaleString()}</span>} />
+          <Meta label="Since tracked" value={<span className={starsSinceSeen > 0 ? 'text-green-400' : 'text-muted-foreground'}>{fmtDelta(starsSinceSeen) || '0'} ★ · {fmtDelta(forksSinceSeen) || '0'} ⑂</span>} />
+          <Meta label="Language" value={repo.language || '—'} />
+          <Meta label="Born" value={fmtDate(repo.createdAt)} />
+          <Meta label="First tracked" value={fmtDate(repo.firstSeen)} />
+        </div>
+        {repo.topics?.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {repo.topics.slice(0, 8).map((t) => <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">{t}</span>)}
+          </div>
+        )}
+      </div>
+
+      {/* Growth chart */}
+      <div className="rounded-lg border border-border bg-secondary/10 p-3">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2">
+          Stars &amp; forks over time · {history.length} snapshot{history.length === 1 ? '' : 's'}
+        </div>
+        {chartData.length < 2 ? (
+          <div className="h-40 flex items-center justify-center text-center text-xs text-muted-foreground/70 px-4">
+            Only one snapshot so far — the growth curve fills in after the next run (and each weekly Monday run).
+          </div>
+        ) : (
+          <>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 5, right: 8, left: 0, bottom: 0 }}>
+                  <XAxis dataKey="label" stroke="#666" fontSize={10} tickLine={false} minTickGap={30} />
+                  <YAxis yAxisId="stars" stroke="#f59e0b" fontSize={10} width={44} domain={['auto', 'auto']} tickFormatter={(v) => fmtNum(Number(v))} />
+                  <YAxis yAxisId="forks" orientation="right" stroke="#38bdf8" fontSize={10} width={40} domain={['auto', 'auto']} tickFormatter={(v) => fmtNum(Number(v))} />
+                  <Tooltip
+                    contentStyle={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 11 }}
+                    formatter={(v, name) => [Number(v).toLocaleString(), name === 'stars' ? 'Stars' : 'Forks']}
+                  />
+                  <Area yAxisId="stars" type="monotone" dataKey="stars" stroke="#f59e0b" strokeWidth={1.5} fill="#f59e0b" fillOpacity={0.2} />
+                  <Line yAxisId="forks" type="monotone" dataKey="forks" stroke="#38bdf8" strokeWidth={1.5} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex items-center gap-4 mt-2 text-[10px] text-muted-foreground/70">
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-400" /> Stars (left)</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-sky-400" /> Forks (right)</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Meta({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50">{label}</div>
+      <div className="tabular-nums">{value}</div>
     </div>
   )
 }
