@@ -9,6 +9,7 @@
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
+import { selectHits } from "./radar-lib.mjs"
 
 const MAX_HITS = 180
 const MAX_TEXT = 800
@@ -66,18 +67,14 @@ ${lines.join("\n")}
 const blob = JSON.parse(await readFile(rawPath, "utf8"))
 const hits = Array.isArray(blob) ? blob : Array.isArray(blob.hits) ? blob.hits : []
 
-// Order-matching hits (e.g. anything mentioning an active order's city) go FIRST so they
-// survive the MAX_HITS cap — otherwise a minority Colombia lane can be dropped unseen.
-if (orderTerms.length && hits.length > MAX_HITS) {
-  const hitMatches = (h) => {
-    const hay = `${h.text || ""} ${h.videoTranscript || ""} ${(h.matchedKeywords || []).join(" ")} ${(Array.isArray(h.urls) ? h.urls.join(" ") : "")} ${h.author || ""}`.toLowerCase()
-    return orderTerms.some((t) => hay.includes(t))
-  }
-  hits.sort((a, b) => (hitMatches(b) ? 1 : 0) - (hitMatches(a) ? 1 : 0)) // stable in V8: matches first, order otherwise preserved
-}
+// Pick which hits reach the classifier. Order-matching hits (e.g. an active order's city)
+// come FIRST so a minority Colombia lane is never truncated; the rest of the MAX_HITS
+// budget is filled round-robin ACROSS platforms so a firehose lane (X ~= 224/run) can't
+// crowd LinkedIn / Reddit / Instagram out before the model ever sees them. (radar-lib.mjs)
+const chosen = selectHits(hits, orderTerms, MAX_HITS)
 
 const trim = (s) => (typeof s === "string" ? s.slice(0, MAX_TEXT) : "")
-const slim = hits.slice(0, MAX_HITS).map((h) => ({
+const slim = chosen.map((h) => ({
   source: h.source,
   sourceRef: h.sourceRef,
   author: h.author,
@@ -107,7 +104,11 @@ For each real, still-open opportunity in the data, emit a record. Drop: expired 
 (before ${today}), spam/ads, MLM/"get rich", off-goal noise, vague "DM me" posts, and
 anything the PROFILE's eligibility filter excludes (age / location / degree level).
 Prefer 15-45 high-signal records over hundreds of weak ones. Fast-growing GitHub repos
-(source "github") use category "trending".
+(source "github") use category "trending". The data spans several platforms (X, LinkedIn,
+Reddit, Instagram, Devpost, web) — keep the STRONG finds from every platform; do not
+over-index on one. A real, eligible opportunity from LinkedIn/Reddit/Instagram is just as
+keep-worthy as one from X or Devpost. Set "source" to the platform the post was found on,
+using "devpost" (not "web") for *.devpost.com and "luma"/"eventbrite"/"meetup" for those.
 
 Output EXACTLY this JSON shape (no markdown fences, no prose outside it):
 {
@@ -127,7 +128,7 @@ Output EXACTLY this JSON shape (no markdown fences, no prose outside it):
       "eligibility": "remote-global|latam|us-eu|other|unknown",
       "reward": string,
       "url": string,
-      "source": "x|linkedin|reddit|instagram|github|web",
+      "source": "x|linkedin|reddit|instagram|github|devpost|luma|eventbrite|meetup|web",
       "sourceRef": string,
       "notes": string,
       "tags": [string]

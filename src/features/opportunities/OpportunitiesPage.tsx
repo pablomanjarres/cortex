@@ -58,7 +58,7 @@ export interface Opportunity {
   eligibility: Eligibility
   reward: string
   url: string
-  source: 'x' | 'linkedin' | 'reddit' | 'instagram' | 'github' | 'web' | 'manual'
+  source: 'x' | 'linkedin' | 'reddit' | 'instagram' | 'github' | 'devpost' | 'luma' | 'eventbrite' | 'meetup' | 'web' | 'manual'
   sourceRef: string
   discoveredAt: string
   /** Which radar run surfaced this item (ISO stamp). 'manual' for hand-added. */
@@ -193,8 +193,46 @@ const sourceConfig: Record<Opportunity['source'], { label: string; color: string
   reddit: { label: 'Reddit', color: 'bg-orange-500/15 text-orange-400' },
   instagram: { label: 'Instagram', color: 'bg-pink-500/15 text-pink-400' },
   github: { label: 'GitHub', color: 'bg-purple-500/15 text-purple-400' },
+  devpost: { label: 'Devpost', color: 'bg-blue-500/15 text-blue-400' },
+  luma: { label: 'Luma', color: 'bg-rose-500/15 text-rose-400' },
+  eventbrite: { label: 'Eventbrite', color: 'bg-red-500/15 text-red-400' },
+  meetup: { label: 'Meetup', color: 'bg-red-400/15 text-red-300' },
   web: { label: 'Web', color: 'bg-teal-500/15 text-teal-400' },
   manual: { label: 'Manual', color: 'bg-secondary text-muted-foreground' },
+}
+/** Safe lookup — a record from a newer radar build could carry a source this UI predates. */
+const sourceOf = (o: Opportunity) => sourceConfig[o.source] ?? sourceConfig.web
+
+// ── Region (geography) filter — the "click a tag to show only Colombia" axis ───────────
+// Distinct from modality (the venue axis) and eligibility (who-can-apply): this buckets an
+// item by WHERE in the world it is, read accent-insensitively from its location/title/tags.
+type Region = 'colombia' | 'latam' | 'usa' | 'europe' | 'asia' | 'online' | 'other'
+const regionConfig: Record<Region, { label: string; color: string; match: string[] }> = {
+  colombia: { label: '🇨🇴 Colombia', color: 'bg-amber-500/15 text-amber-400', match: ['colombia', 'medellin', 'bogota', 'cali', 'barranquilla', 'cartagena', 'bucaramanga', 'pereira', 'manizales'] },
+  latam: { label: 'LatAm', color: 'bg-emerald-500/15 text-emerald-400', match: ['latam', 'latin america', 'latinoamerica', 'mexico', 'brasil', 'brazil', 'argentina', 'chile', 'peru', 'ecuador', 'uruguay', 'bolivia', 'paraguay', 'venezuela', 'guatemala', 'costa rica', 'panama', 'dominican'] },
+  usa: { label: 'USA', color: 'bg-blue-500/15 text-blue-400', match: ['united states', ' usa', 'u.s.', 'san francisco', 'new york', 'boston', 'seattle', 'austin', 'silicon valley', 'california', 'chicago', 'los angeles'] },
+  europe: { label: 'Europe', color: 'bg-indigo-500/15 text-indigo-400', match: ['europe', 'london', 'berlin', 'paris', 'madrid', 'barcelona', 'amsterdam', 'lisbon', 'portugal', 'united kingdom', ' uk', 'germany', 'france', 'spain', 'netherlands', 'dublin', 'zurich', 'munich'] },
+  asia: { label: 'Asia', color: 'bg-fuchsia-500/15 text-fuchsia-400', match: ['asia', 'india', 'bangalore', 'bengaluru', 'singapore', 'tokyo', 'japan', 'china', 'shenzhen', 'hong kong', 'dubai', 'uae', 'seoul', 'jakarta'] },
+  online: { label: 'Online', color: 'bg-teal-500/15 text-teal-400', match: ['online', 'remote', 'virtual', 'global', 'worldwide', 'anywhere'] },
+  other: { label: 'Other', color: 'bg-secondary text-muted-foreground', match: [] },
+}
+/** Most-specific region wins: Colombia > LatAm > a named country > Online. */
+const REGION_ORDER: Region[] = ['colombia', 'latam', 'usa', 'europe', 'asia', 'online', 'other']
+const deburr = (s: string) => (s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+function regionOf(o: Opportunity): Region {
+  const hay = deburr(`${o.location} ${o.title} ${o.host} ${o.tags.join(' ')}`)
+  for (const r of REGION_ORDER) {
+    if (r !== 'other' && regionConfig[r].match.some((m) => hay.includes(m))) return r
+  }
+  return 'other'
+}
+/** Region a hunt order's locations point at (e.g. ["Medellín","Bogotá"] -> 'colombia'). */
+function regionForText(text: string): Region | null {
+  const hay = deburr(text)
+  for (const r of REGION_ORDER) {
+    if (r !== 'other' && regionConfig[r].match.some((m) => hay.includes(m))) return r
+  }
+  return null
 }
 
 type SortKey = 'deadline' | 'priority' | 'leverageScore' | 'discoveredAt' | 'title'
@@ -250,12 +288,12 @@ function objectiveMatches(o: Opportunity, p?: ObjectiveParsed): boolean {
   if (p.eligibility && o.eligibility !== p.eligibility) return false
   if (p.deadlineBefore && !o.rolling && o.deadline && o.deadline > p.deadlineBefore) return false
   if (p.locations && p.locations.length) {
-    const where = `${o.location} ${o.title} ${o.host} ${o.notes} ${o.tags.join(' ')}`.toLowerCase()
-    if (!p.locations.some((l) => l && where.includes(l.toLowerCase()))) return false
+    const where = deburr(`${o.location} ${o.title} ${o.host} ${o.notes} ${o.tags.join(' ')}`)
+    if (!p.locations.some((l) => l && where.includes(deburr(l)))) return false
   }
   if (p.keywords && p.keywords.length) {
-    const hay = `${o.title} ${o.host} ${o.tags.join(' ')} ${o.notes}`.toLowerCase()
-    if (!p.keywords.some((k) => k && hay.includes(k.toLowerCase()))) return false
+    const hay = deburr(`${o.title} ${o.host} ${o.tags.join(' ')} ${o.notes}`)
+    if (!p.keywords.some((k) => k && hay.includes(deburr(k)))) return false
   }
   return true
 }
@@ -283,6 +321,7 @@ export function OpportunitiesPage() {
   const [statusFilter, setStatusFilter] = useState<OppStatus | null>(null)
   const [goalFilter, setGoalFilter] = useState<Goal | null>(null)
   const [sourceFilter, setSourceFilter] = useState<Opportunity['source'] | null>(null)
+  const [regionFilter, setRegionFilter] = useState<Region | null>(null)
   const [dueBucket, setDueBucket] = useState<DueBucket>('all')
   const [thisRunOnly, setThisRunOnly] = useState(false)
   const [hideArchived, setHideArchived] = useState(true)
@@ -324,11 +363,16 @@ export function OpportunitiesPage() {
     updateData((p) => ({ ...p, objectives: (p.objectives || []).map((o) => (o.id === id ? { ...o, ...f } : o)) }))
   const deleteObjective = (id: string) =>
     updateData((p) => ({ ...p, objectives: (p.objectives || []).filter((o) => o.id !== id) }))
-  // Jump the table to an objective's matches.
+  // Jump the table to an objective's matches: filter to its region (so "1/20 found" lands
+  // on the actual Colombia rows), clear competing filters, newest first.
   const showObjectiveMatches = (p?: ObjectiveParsed) => {
+    const region = p?.locations?.length ? regionForText(p.locations.join(' ')) : null
     setCatFilter(p?.category ?? null)
-    setSearch(p?.locations?.[0] ?? p?.keywords?.[0] ?? '')
-    setStatusFilter(null); setThisRunOnly(false); setDueBucket('all')
+    setRegionFilter(region)
+    setSearch(region ? '' : (p?.locations?.[0] ?? p?.keywords?.[0] ?? ''))
+    setModalityFilter(null); setSourceFilter(null); setGoalFilter(null)
+    setStatusFilter(null); setThisRunOnly(false); setDueBucket('all'); setHideArchived(true)
+    setSortKey('discoveredAt'); setSortAsc(false)
   }
 
   const addOpp = () => {
@@ -365,6 +409,7 @@ export function OpportunitiesPage() {
       (!statusFilter || o.status === statusFilter) &&
       (!goalFilter || o.goals.includes(goalFilter)) &&
       (!sourceFilter || o.source === sourceFilter) &&
+      (!regionFilter || regionOf(o) === regionFilter) &&
       (!thisRunOnly || (data.lastRunId != null && o.runId === data.lastRunId)) &&
       matchesDueBucket(o, dueBucket) &&
       (!search || o.title.toLowerCase().includes(q) || o.host.toLowerCase().includes(q) ||
@@ -392,7 +437,13 @@ export function OpportunitiesPage() {
       return sortAsc ? v : -v
     })
     return list
-  }, [items, search, catFilter, modalityFilter, statusFilter, goalFilter, sourceFilter, dueBucket, thisRunOnly, hideArchived, sortKey, sortAsc, data.lastRunId])
+  }, [items, search, catFilter, modalityFilter, statusFilter, goalFilter, sourceFilter, regionFilter, dueBucket, thisRunOnly, hideArchived, sortKey, sortAsc, data.lastRunId])
+
+  // Regions actually present in the data — drives the geography chip row (no empty chips).
+  const availableRegions = useMemo(() => {
+    const present = new Set(items.map(regionOf))
+    return REGION_ORDER.filter((r) => present.has(r))
+  }, [items])
 
   // Stats (over non-archived)
   const live = items.filter((o) => o.status !== 'archived')
@@ -662,6 +713,18 @@ export function OpportunitiesPage() {
         ))}
       </div>
 
+      {/* Region chips — geography axis ("show only Colombia"). Only regions present in the data. */}
+      {availableRegions.length > 1 && (
+        <div className="flex gap-1.5 flex-wrap">
+          {availableRegions.map((r) => (
+            <button key={r} onClick={() => setRegionFilter(regionFilter === r ? null : r)}
+              className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${regionFilter === r ? `${regionConfig[r].color} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+              {regionConfig[r].label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Status chips */}
       <div className="flex gap-1.5 flex-wrap">
         {ALL_STATUSES.map((s) => (
@@ -697,7 +760,7 @@ export function OpportunitiesPage() {
                 {o.location && <span className="text-muted-foreground truncate max-w-[120px]">{o.location}</span>}
                 <Leverage score={o.leverageScore} />
                 <span className={dl.tone}>{dl.text}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceConfig[o.source].color}`}>{sourceConfig[o.source].label}</span>
+                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceOf(o).color}`}>{sourceOf(o).label}</span>
               </div>
               {expanded === o.id && <EditForm o={o} setField={setField} toggleGoal={toggleGoal} onDelete={() => deleteOpp(o.id)} />}
             </div>
@@ -752,7 +815,7 @@ export function OpportunitiesPage() {
                       <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${priorityConfig[o.priority].color}`}>{priorityConfig[o.priority].label}</span></td>
                       <td className="py-2.5"><Leverage score={o.leverageScore} /></td>
                       <td className={`py-2.5 ${dl.tone}`}>{dl.text}</td>
-                      <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceConfig[o.source].color}`}>{sourceConfig[o.source].label}</span></td>
+                      <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceOf(o).color}`}>{sourceOf(o).label}</span></td>
                       <td className="py-2.5 pr-4">
                         <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
                           {o.url && (
