@@ -1,43 +1,75 @@
-# Cortex
+<p align="center">
+  <a href="https://pablo-oss.vercel.app/cortex"><img src=".github/banner.png" alt="Cortex" width="100%" /></a>
+</p>
 
-> A private, encrypted desktop app for auditing your days as a founder, student, and human. Claude can read and write all of it.
+<h1 align="center">Cortex</h1>
 
-![TypeScript](https://img.shields.io/badge/TypeScript_5.9-3178C6?style=flat&logo=typescript&logoColor=white)
-![React](https://img.shields.io/badge/React_19-20232A?style=flat&logo=react&logoColor=61DAFB)
-![Electron](https://img.shields.io/badge/Electron_41-2C2E3B?style=flat&logo=electron&logoColor=9FEAF9)
-![Vite](https://img.shields.io/badge/Vite_8-646CFF?style=flat&logo=vite&logoColor=white)
-![Tailwind](https://img.shields.io/badge/Tailwind_v4-0B1120?style=flat&logo=tailwindcss&logoColor=38BDF8)
-![MCP](https://img.shields.io/badge/MCP-51_tools-c8542a?style=flat)
-![Status](https://img.shields.io/badge/status-shipped-success?style=flat)
-[![Portfolio](https://img.shields.io/badge/portfolio-pablomanjarres.com-c8542a?style=flat)](https://pablomanjarres.com/portfolio/projects/cortex)
+<p align="center"><em>A private, encrypted desktop dashboard that audits your days as a founder, student, and human. Claude reads and writes all of it.</em></p>
 
-Cortex is a macOS desktop app that pulls a founder's whole life into one private dashboard: habits, sprints, reading, CRM, calendar, coursework, finances, go-to-market state, and live founder metrics. Data stays on your machine, encrypted at rest. A local web server makes the same dashboard reachable from your phone over Tailscale, and a 51-tool MCP server lets Claude read and write all of it.
+<p align="center">
+  <img alt="TypeScript 5.9" src="https://img.shields.io/badge/TypeScript_5.9-3178C6?style=flat&logo=typescript&logoColor=white" />
+  <img alt="React 19" src="https://img.shields.io/badge/React_19-20232A?style=flat&logo=react&logoColor=61DAFB" />
+  <img alt="Electron 41" src="https://img.shields.io/badge/Electron_41-2C2E3B?style=flat&logo=electron&logoColor=9FEAF9" />
+  <img alt="Vite 8" src="https://img.shields.io/badge/Vite_8-646CFF?style=flat&logo=vite&logoColor=white" />
+  <img alt="Tailwind v4" src="https://img.shields.io/badge/Tailwind_v4-0B1120?style=flat&logo=tailwindcss&logoColor=38BDF8" />
+  <img alt="MCP 51 tools" src="https://img.shields.io/badge/MCP-51_tools-c8542a?style=flat" />
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-c8542a?style=flat" />
+  <img alt="status shipped" src="https://img.shields.io/badge/status-shipped-success?style=flat" />
+  <a href="https://pablomanjarres.com/portfolio/projects/cortex"><img alt="Portfolio" src="https://img.shields.io/badge/portfolio-pablomanjarres.com-c8542a?style=flat" /></a>
+  <a href="https://pablo-oss.vercel.app/cortex"><img alt="Landing" src="https://img.shields.io/badge/landing-pablo--oss-c8542a?style=flat" /></a>
+</p>
+
+<p align="center"><img src="https://pablomanjarres.com/portfolio/previews/cortex.png" alt="Cortex screenshot" width="720" /></p>
+
+Cortex is a macOS desktop app that pulls a founder's whole life into one private dashboard: habits, sprints, reading, CRM, calendar, coursework, finances, go-to-market state, and live founder metrics. The data stays on your machine, encrypted at rest. A local web server makes the same dashboard reachable from your phone over Tailscale, and a 51-tool MCP server lets Claude read and write all of it.
 
 ## Highlights
 
-- **Encrypted at rest.** Every data file is sealed with AES-256-GCM in a custom binary container (magic, version, per-write IV, auth tag). The 32-byte master key lives behind Electron `safeStorage` (Keychain-backed on macOS), and plaintext files are migrated to ciphertext once, behind a sentinel guard.
-- **51-tool MCP server.** An MCP server (18 groups) proxies the app's `localhost:3456` API, so Claude can read and write habits, journal, contacts, calendar, GTM, and founder metrics. Runs over stdio by default, with an optional `--http` transport for Tailscale access.
-- **Three-tier persistence.** A single `useStore` hook writes through Electron IPC, then the HTTP web API, then `localStorage`, with size-adaptive debounce (150/500/1000ms) and batched `queueMicrotask` flushes.
-- **Phone access over Tailscale.** A built-in web server serves the app as a PWA. The socket is IP-gated to localhost and the Tailscale CGNAT range (`100.64.0.0/10`); CORS echoes back only localhost, LAN, and `*.ts.net` origins.
-- **Opportunity Radar.** A launchd-scheduled pipeline scrapes feeds on a VM, then has a *tool-less* `claude -p` call classify and score them against an editable profile. The model runs no tools, so a prompt-injected post can't escalate. Survivors are validated and deduped by normalized apply-URL, title, and host across X, Reddit, and Devpost.
+- **Encrypted at rest.** Every data file is sealed with AES-256-GCM inside a small binary container: a `CTX1` magic header, a version byte, a fresh 12-byte IV per write, and the GCM auth tag. The 32-byte master key lives behind Electron `safeStorage`, backed by the macOS Keychain. Plaintext files migrate to ciphertext once, guarded by a sentinel so the migration never runs twice.
+- **A 51-tool MCP server.** One MCP server (18 tool groups) proxies the app's `localhost:3456` API, so Claude can read and write habits, journal, contacts, calendar, GTM state, and founder metrics. It runs over stdio by default, with an optional `--http` transport for Tailscale access.
+- **Three-tier persistence.** A single `useStore` hook writes through Electron IPC first, then the HTTP web API, then `localStorage`, with a size-adaptive debounce (150 / 500 / 1000 ms) and batched `queueMicrotask` flushes.
+- **Phone access over Tailscale.** A built-in web server serves the app as a PWA. The socket is gated to localhost and the Tailscale CGNAT range (`100.64.0.0/10`), so only your own devices on your tailnet can reach it.
+- **Opportunity Radar.** A launchd-scheduled pipeline scrapes feeds on a VM, then hands them to a tool-less `claude -p` call (`--allowedTools ""`) that classifies and scores each one against an editable profile. The model runs no tools, so a prompt-injected post cannot escalate. Survivors are validated and deduped by normalized apply-URL, title, and host across X, Reddit, and Devpost.
 - **Founder metrics, unified.** GitHub, Lemon Squeezy (MRR), Vercel, and Supabase integrations plus an Obsidian journal vault feed a weekly-audit rollup, visible in the UI and over MCP.
 
 ## How it works
 
-```
+```text
 cortex/
 ├── electron/            # main process: window, tray, IPC, :3456 web server
 │   ├── crypto.ts        # AES-256-GCM at rest (key via safeStorage / Keychain)
-│   ├── calendar.ts      # Swift EventKit calendar CRUD
-│   └── integrations/    # github · lemon · vercel · supabase · mars vault
+│   ├── calendar.ts      # native macOS calendar CRUD (embedded Swift + EventKit)
+│   └── integrations/    # github · lemon · vercel · supabase · mars vault · paperclip
 ├── src/
 │   ├── features/        # 20 feature modules (daily, habits, founder, crm, gym, …)
 │   └── lib/store.ts     # 3-tier persistence: IPC → HTTP → localStorage
 ├── mcp-server/          # 51-tool MCP over the localhost API (stdio | --http)
-└── scripts/             # Opportunity Radar: launchd + watcher + LLM classify
+└── scripts/             # Opportunity Radar: launchd + watcher + tool-less LLM classify
 ```
 
-The Electron main process owns the encrypted data directory, a tray menu, and the `:3456` web server. The React renderer talks to it through a context-isolated preload bridge. The MCP server is a thin proxy over that same web API, which is why one code path serves the desktop app, the phone, and the agent.
+The Electron main process owns the encrypted data directory, a tray menu, and the `:3456` web server. The React renderer talks to it through a context-isolated preload bridge. The MCP server is a thin proxy over that same web API, so one code path serves the desktop app, the phone, and the agent.
+
+## What's inside
+
+Cortex is one Electron plus React app with a standalone MCP package and a set of automation scripts beside it.
+
+| Path | What it is |
+|---|---|
+| `src/` | React 19 renderer built with Vite 8: 20 feature modules under `src/features`, shared state in `src/stores`, the persistence hook in `src/lib/store.ts` |
+| `electron/` | Main process: window, tray, the `:3456` web server, `crypto.ts` (AES-256-GCM), `calendar.ts` (Swift + EventKit), `keychain.ts`, and the context-isolated `preload.ts` |
+| `electron/integrations/` | One file per source: `github.ts`, `lemon.ts`, `vercel.ts`, `supabase.ts`, `mars.ts` (Obsidian vault), `paperclip.ts` |
+| `mcp-server/` | Standalone npm package `cortex-mcp-server`: 51 tools in 18 groups over the localhost API, stdio or `--http` |
+| `scripts/` | Opportunity Radar (`radar-*.mjs`, `opportunity-radar-weekly.sh`, and the launchd `*.plist` files) plus `growth-fetch.mjs` for the fastest-growing-repos tab |
+| `public/` | PWA shell: `manifest.webmanifest`, `sw.js` service worker, and app icons |
+
+The 20 feature modules under `src/features`, grouped:
+
+- **Days and routine:** `daily`, `habits`, `gym`, `thoughts`, `captures`
+- **People:** `crm`, `social`
+- **Founder and growth:** `founder`, `opportunities`, `automations`, `paperclip`, `stats`
+- **Money:** `finance`, `spend`
+- **Learning:** `student`, `courses`, `books`, `projects`
+- **App:** `system`, `settings`
 
 ## Tech stack
 
@@ -45,7 +77,7 @@ React 19 · TypeScript 5.9 · Electron 41 · Vite 8 · Tailwind CSS v4 (OKLCH, O
 
 ## Getting started
 
-Requires macOS on Apple Silicon and Node 20+ (Vite 8's floor).
+Requires macOS on Apple Silicon and Node 20 or newer (Vite 8's floor).
 
 ```bash
 npm install
@@ -53,7 +85,7 @@ npm install
 # web only: fast HMR, no Electron features
 npm run dev
 
-# full Electron + web dev
+# full Electron plus web dev
 npm run electron:dev
 
 # package the app into release/mac-arm64/Cortex.app
@@ -63,7 +95,7 @@ npm run electron:build
 npm run cortex:install
 ```
 
-Create `.env` from the example. The Supabase key is a **publishable/anon** key, safe to embed in the client since access is controlled by RLS:
+Copy `.env.example` to `.env` and fill it in. The Supabase key is a **publishable/anon** key, safe to embed in the client because access is controlled by RLS:
 
 ```bash
 VITE_SUPABASE_URL=https://your-project.supabase.co
@@ -72,12 +104,23 @@ VITE_SUPABASE_ANON_KEY=sb_publishable_xxx
 
 ### Wire up the MCP server
 
+The Cortex app must be running first, since the MCP server proxies the API it hosts on `:3456`.
+
 ```bash
 cd mcp-server && npm install && npm run build
-# register with Claude (the Cortex app must be running; it hosts the API on :3456)
+
+# register with Claude (user scope, local stdio)
 claude mcp add cortex --scope user -- node "$PWD/dist/index.js"
 ```
 
+## License
+
+MIT.
+
 ---
 
-Built by Pablo Manjarres. More at [pablomanjarres.com/portfolio/projects/cortex](https://pablomanjarres.com/portfolio/projects/cortex).
+<p align="center">
+  <a href="https://pablo-oss.vercel.app/cortex">Landing</a> ·
+  <a href="https://pablomanjarres.com/portfolio/projects/cortex">Portfolio write-up</a> ·
+  Built by Pablo Manjarres
+</p>
