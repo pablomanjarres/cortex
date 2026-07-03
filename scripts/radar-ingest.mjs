@@ -15,6 +15,7 @@
 
 import { readFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
+import { inferSource } from "./radar-lib.mjs"
 
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
 const KEY = "cortex-opportunities"
@@ -25,7 +26,7 @@ const ELIGIBILITY = new Set(["remote-global","latam","us-eu","other","unknown"])
 const MODALITY = new Set(["remote","hybrid","in-person","unknown"])
 const STATUS = new Set(["new","pursuing","applied","won","lost","archived"])
 const PRIORITY = new Set(["low","medium","high"])
-const SOURCE = new Set(["x","linkedin","reddit","instagram","github","web","manual"])
+const SOURCE = new Set(["x","linkedin","reddit","instagram","github","devpost","luma","eventbrite","meetup","web","manual"])
 
 const args = process.argv.slice(2)
 const dry = args.includes("--dry")
@@ -96,7 +97,9 @@ function normalizeRecord(raw, runId) {
     eligibility: pick(ELIGIBILITY, raw.eligibility, "unknown"),
     reward: String(raw.reward ?? ""),
     url,
-    source: pick(SOURCE, raw.source, "manual"),
+    // Trust the platform derived from where the post lives (fixes Devpost hits that the
+    // classifier tagged as the generic "web"); fall back to the model's validated source.
+    source: inferSource(url, sourceRef, pick(SOURCE, raw.source, "manual")),
     sourceRef,
     discoveredAt: raw.discoveredAt || runId,
     runId,
