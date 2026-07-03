@@ -7,6 +7,7 @@
 
 import { spawn } from "node:child_process"
 import { readFile } from "node:fs/promises"
+import { processPendingObjectives } from "./radar-objectives.mjs"
 
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
 const KEY = "cortex-opportunities"
@@ -79,6 +80,19 @@ async function tick() {
   }
 }
 
+// Hunt orders ("talk to radar"): read plain-language objectives the user typed and let a
+// tool-less Claude call reply + structure them. Guarded independently of the run `busy`
+// flag so a slow model response never delays run detection.
+let objBusy = false
+async function objTick() {
+  if (objBusy) return
+  objBusy = true
+  try { await processPendingObjectives(API, KEY) } catch { /* ignore */ }
+  finally { objBusy = false }
+}
+
 console.error(`[radar-control] watching ${API} every ${POLL_MS}ms`)
 setInterval(() => { tick().catch(() => {}) }, POLL_MS)
+setInterval(() => { objTick().catch(() => {}) }, POLL_MS)
 tick().catch(() => {})
+objTick().catch(() => {})
