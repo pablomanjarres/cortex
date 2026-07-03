@@ -17,6 +17,9 @@ import {
   ArrowUpDown,
   RefreshCw,
   Loader2,
+  Send,
+  X,
+  Crosshair,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -57,6 +60,41 @@ export interface Opportunity {
   tags: string[]
 }
 
+/** Structured reading of a natural-language hunt order (filled in by the radar agent). */
+export interface ObjectiveParsed {
+  /** One-line normalized restatement, e.g. "20 remote internships, $2k+/mo, deadline before 2026-09-01". */
+  summary?: string
+  category?: OpportunityCategory | null
+  /** How many of these the user wants (drives the "N / target found" progress). */
+  targetCount?: number | null
+  eligibility?: Eligibility | null
+  /** Freeform pay/reward ask, e.g. "$2k+/mo" (schema has no salary field, so kept as text). */
+  salaryText?: string | null
+  /** Only surface items whose deadline is on/before this (YYYY-MM-DD). */
+  deadlineBefore?: string | null
+  keywords?: string[]
+}
+
+/**
+ * A natural-language hunt order the user gives radar ("I need 20 remote internships,
+ * $2k+, deadline before Sept"). The radar agent reads it, replies conversationally, and
+ * fills `parsed`; the classifier then prioritizes + scores matching opportunities.
+ */
+export interface Objective {
+  id: string
+  /** Raw text the user typed. */
+  text: string
+  /** The agent's conversational acknowledgment (the "talk to radar" reply). */
+  reply?: string
+  parsed?: ObjectiveParsed
+  /** thinking = agent is reading it; ready = parsed; error = agent call failed. */
+  status: 'thinking' | 'ready' | 'error'
+  /** Active objectives steer the next radar run; inactive ones are paused. */
+  active: boolean
+  createdAt: string
+  error?: string
+}
+
 interface OppData {
   items: Opportunity[]
   lastRun: string | null
@@ -64,6 +102,8 @@ interface OppData {
   lastRunId?: string
   /** Markdown digest written by the weekly routine: what landed + what to look at. */
   report?: string
+  /** Natural-language hunt orders that steer radar (the "talk to radar" feature). */
+  objectives?: Objective[]
   /** Manual-run control (a launchd watcher executes the pipeline when set). */
   runRequestedAt?: string
   runStatus?: 'requested' | 'running' | 'done' | 'error'
@@ -182,6 +222,20 @@ function matchesDueBucket(o: Opportunity, bucket: DueBucket): boolean {
   if (bucket === 'month') return d <= 30
   return true
 }
+/** Does an opportunity satisfy a hunt order's parsed constraints? Drives progress counts. */
+function objectiveMatches(o: Opportunity, p?: ObjectiveParsed): boolean {
+  if (!p) return false
+  if (o.status === 'archived' || o.status === 'lost') return false
+  if (p.category && o.category !== p.category) return false
+  if (p.eligibility && o.eligibility !== p.eligibility) return false
+  if (p.deadlineBefore && !o.rolling && o.deadline && o.deadline > p.deadlineBefore) return false
+  if (p.keywords && p.keywords.length) {
+    const hay = `${o.title} ${o.host} ${o.tags.join(' ')} ${o.notes}`.toLowerCase()
+    if (!p.keywords.some((k) => k && hay.includes(k.toLowerCase()))) return false
+  }
+  return true
+}
+
 function Leverage({ score }: { score: number }) {
   const n = Math.max(0, Math.min(5, Math.round(score)))
   return (
@@ -226,6 +280,30 @@ export function OpportunitiesPage() {
   const requestRun = () => {
     if (running) return
     updateData((p) => ({ ...p, runRequestedAt: new Date().toISOString(), runStatus: 'requested', runError: undefined }))
+  }
+
+  // ── Hunt orders (talk to radar) ─────────────────────────────────────────────
+  const objectives = data.objectives || []
+  const [objInput, setObjInput] = useState('')
+  const addObjective = () => {
+    const text = objInput.trim()
+    if (!text) return
+    const o: Objective = {
+      id: `obj-${Date.now()}`, text, status: 'thinking', active: true,
+      createdAt: new Date().toISOString(),
+    }
+    updateData((p) => ({ ...p, objectives: [...(p.objectives || []), o] }))
+    setObjInput('')
+  }
+  const setObjective = (id: string, f: Partial<Objective>) =>
+    updateData((p) => ({ ...p, objectives: (p.objectives || []).map((o) => (o.id === id ? { ...o, ...f } : o)) }))
+  const deleteObjective = (id: string) =>
+    updateData((p) => ({ ...p, objectives: (p.objectives || []).filter((o) => o.id !== id) }))
+  // Jump the table to an objective's matches.
+  const showObjectiveMatches = (p?: ObjectiveParsed) => {
+    setCatFilter(p?.category ?? null)
+    setSearch(p?.keywords?.[0] ?? '')
+    setStatusFilter(null); setThisRunOnly(false); setDueBucket('all')
   }
 
   const addOpp = () => {
@@ -348,6 +426,103 @@ export function OpportunitiesPage() {
           </div>
         </WidgetCard>
       )}
+
+      {/* Hunt orders — talk to radar in plain language */}
+      <WidgetCard
+        title="Tell radar what to hunt"
+        description="Say it like you'd say it out loud — “I need 20 remote internships paying $2k+, deadline before Sept” or “5 AI competitions with cash prizes”. Radar reads it, then prioritizes those on every run."
+        delay={0.05}
+      >
+        <div className="flex flex-col gap-3">
+          {/* Existing objectives */}
+          {objectives.length > 0 && (
+            <div className="flex flex-col gap-2.5">
+              {objectives.map((obj) => {
+                const found = obj.parsed ? items.filter((o) => objectiveMatches(o, obj.parsed)).length : 0
+                const target = obj.parsed?.targetCount ?? null
+                const pct = target ? Math.min(100, Math.round((found / target) * 100)) : 0
+                const chips: string[] = []
+                if (obj.parsed?.category) chips.push(categoryConfig[obj.parsed.category].label)
+                if (obj.parsed?.eligibility) chips.push(eligibilityConfig[obj.parsed.eligibility])
+                if (obj.parsed?.salaryText) chips.push(obj.parsed.salaryText)
+                if (obj.parsed?.deadlineBefore) chips.push(`by ${fmtDate(obj.parsed.deadlineBefore)}`)
+                return (
+                  <div key={obj.id}
+                    className={`rounded-xl border p-3 transition-colors ${obj.active ? 'border-violet-500/25 bg-violet-500/[0.04]' : 'border-border bg-secondary/20 opacity-60'}`}>
+                    <div className="flex items-start gap-2">
+                      <Crosshair className="h-3.5 w-3.5 mt-0.5 shrink-0 text-violet-400" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium leading-snug">{obj.text}</p>
+                        {/* Radar's conversational reply */}
+                        {obj.status === 'thinking' && (
+                          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Radar is reading this…</p>
+                        )}
+                        {obj.status === 'error' && (
+                          <p className="mt-1 text-[11px] text-red-400/80">Couldn’t read this: {obj.error || 'agent error'} — it still steers the next run as written.</p>
+                        )}
+                        {obj.status === 'ready' && obj.reply && (
+                          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{obj.reply}</p>
+                        )}
+                        {/* Parsed constraint chips */}
+                        {chips.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {chips.map((c, i) => (
+                              <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">{c}</span>
+                            ))}
+                          </div>
+                        )}
+                        {/* Progress toward target */}
+                        {obj.status === 'ready' && (
+                          <button onClick={() => showObjectiveMatches(obj.parsed)}
+                            className="cursor-pointer mt-2 flex items-center gap-2 text-left group/prog w-full max-w-xs">
+                            {target ? (
+                              <>
+                                <span className="h-1.5 flex-1 rounded-full bg-secondary overflow-hidden">
+                                  <span className="block h-full rounded-full bg-violet-400 transition-all" style={{ width: `${pct}%` }} />
+                                </span>
+                                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground group-hover/prog:text-foreground">{found} / {target} found</span>
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground group-hover/prog:text-foreground">{found} match{found === 1 ? '' : 'es'} so far →</span>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                      {/* Controls */}
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button onClick={() => setObjective(obj.id, { active: !obj.active })}
+                          title={obj.active ? 'Pause (stop steering radar)' : 'Resume'}
+                          className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-colors ${obj.active ? 'border-violet-500/30 text-violet-400 hover:bg-violet-500/10' : 'border-border text-muted-foreground/50 hover:text-muted-foreground'}`}>
+                          {obj.active ? 'Active' : 'Paused'}
+                        </button>
+                        <button onClick={() => deleteObjective(obj.id)} title="Remove hunt order"
+                          className="cursor-pointer text-muted-foreground/40 hover:text-red-400"><X className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Composer */}
+          <div className="flex items-end gap-2">
+            <textarea
+              value={objInput}
+              onChange={(e) => setObjInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addObjective() } }}
+              rows={2}
+              placeholder="e.g. Find me 20 remote software internships paying $2k+/mo with deadlines before September…"
+              className="flex-1 resize-none rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <button onClick={addObjective} disabled={!objInput.trim()}
+              className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg transition-colors ${objInput.trim() ? 'cursor-pointer text-foreground bg-violet-500/15 hover:bg-violet-500/25' : 'text-muted-foreground bg-secondary cursor-default'}`}>
+              <Send className="h-3 w-3" /> Send
+            </button>
+          </div>
+          <p className="text-[10px] text-muted-foreground/60 -mt-1">⌘↵ to send · active orders steer the next “Run radar”.</p>
+        </div>
+      </WidgetCard>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
