@@ -33,12 +33,14 @@ You are given the current opportunity records as DATA. For EACH one decide:
   graduate/PhD/senior-only, expired before ${today}, or otherwise off-profile).
 - Otherwise KEEP it, and update priority + leverageScore for THIS profile, and add a short
   eligibility caveat to notes if there's any age/visa/degree question. Preserve the item's
-  id, sourceRef, url, source, title, host, and deadline unchanged.
+  id, sourceRef, url, source, title, host, deadline, location, and modality unchanged
+  (only set modality if it is missing: "remote" fully online, "hybrid" physical+online,
+  "in-person" physical-only, "unknown" if unclear).
 
 Output EXACTLY one JSON object, nothing else:
 { "opportunities": [ <the KEPT records, full objects, re-scored> ], "report": "<plain-text digest: how many kept vs dropped and why, then the top items to act on now for a 17-year-old Colombia-based sophomore>" }
 
-Each kept record keeps this shape: {id,title,host,category,goals,priority,leverageScore,leverageNote,deadline,rolling,location,eligibility,reward,url,source,sourceRef,notes,tags}.
+Each kept record keeps this shape: {id,title,host,category,goals,priority,leverageScore,leverageNote,deadline,rolling,location,modality,eligibility,reward,url,source,sourceRef,notes,tags}.
 Do not invent new opportunities. Do not call any tools.
 
 <DATA>

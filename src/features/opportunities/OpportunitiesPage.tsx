@@ -35,6 +35,9 @@ export type Goal = 'internship' | 'exchange' | 'funding' | 'social-growth' | 'us
 
 export type Eligibility = 'remote-global' | 'latam' | 'us-eu' | 'other' | 'unknown'
 
+/** How/where the opportunity actually happens (venue axis — distinct from `eligibility`, which is the region axis). */
+export type Modality = 'remote' | 'hybrid' | 'in-person' | 'unknown'
+
 export type OppStatus = 'new' | 'pursuing' | 'applied' | 'won' | 'lost' | 'archived'
 
 export interface Opportunity {
@@ -50,6 +53,8 @@ export interface Opportunity {
   deadline: string | null
   rolling: boolean
   location: string
+  /** Venue modality. Optional so records predating this field default to 'unknown' at render. */
+  modality?: Modality
   eligibility: Eligibility
   reward: string
   url: string
@@ -70,6 +75,8 @@ export interface ObjectiveParsed {
   /** How many of these the user wants (drives the "N / target found" progress). */
   targetCount?: number | null
   eligibility?: Eligibility | null
+  /** Cities / regions / countries the order targets, e.g. ["Medellín", "Bogotá", "Colombia"]. */
+  locations?: string[]
   /** Freeform pay/reward ask, e.g. "$2k+/mo" (schema has no salary field, so kept as text). */
   salaryText?: string | null
   /** Only surface items whose deadline is on/before this (YYYY-MM-DD). */
@@ -169,6 +176,17 @@ const eligibilityConfig: Record<Eligibility, string> = {
   unknown: 'Unknown',
 }
 
+const modalityConfig: Record<Modality, { label: string; color: string; dot: string }> = {
+  remote: { label: 'Remote', color: 'bg-green-500/15 text-green-400', dot: 'bg-green-400' },
+  hybrid: { label: 'Hybrid', color: 'bg-violet-500/15 text-violet-400', dot: 'bg-violet-400' },
+  'in-person': { label: 'In-person', color: 'bg-blue-500/15 text-blue-400', dot: 'bg-blue-400' },
+  unknown: { label: 'Unknown', color: 'bg-secondary text-muted-foreground', dot: 'bg-muted-foreground/40' },
+}
+/** Pills the user can filter by (the 'unknown' bucket isn't offered as a filter). */
+const MODALITY_FILTERS: Modality[] = ['remote', 'hybrid', 'in-person']
+/** Normalize possibly-absent modality (older records) to a valid key. */
+const modalityOf = (o: Opportunity): Modality => o.modality && modalityConfig[o.modality] ? o.modality : 'unknown'
+
 const sourceConfig: Record<Opportunity['source'], { label: string; color: string }> = {
   x: { label: 'X', color: 'bg-neutral-500/15 text-neutral-300' },
   linkedin: { label: 'LinkedIn', color: 'bg-sky-500/15 text-sky-400' },
@@ -231,6 +249,10 @@ function objectiveMatches(o: Opportunity, p?: ObjectiveParsed): boolean {
   if (p.category && o.category !== p.category) return false
   if (p.eligibility && o.eligibility !== p.eligibility) return false
   if (p.deadlineBefore && !o.rolling && o.deadline && o.deadline > p.deadlineBefore) return false
+  if (p.locations && p.locations.length) {
+    const where = `${o.location} ${o.title} ${o.host} ${o.notes} ${o.tags.join(' ')}`.toLowerCase()
+    if (!p.locations.some((l) => l && where.includes(l.toLowerCase()))) return false
+  }
   if (p.keywords && p.keywords.length) {
     const hay = `${o.title} ${o.host} ${o.tags.join(' ')} ${o.notes}`.toLowerCase()
     if (!p.keywords.some((k) => k && hay.includes(k.toLowerCase()))) return false
@@ -257,6 +279,7 @@ export function OpportunitiesPage() {
 
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState<OpportunityCategory | null>(null)
+  const [modalityFilter, setModalityFilter] = useState<Modality | null>(null)
   const [statusFilter, setStatusFilter] = useState<OppStatus | null>(null)
   const [goalFilter, setGoalFilter] = useState<Goal | null>(null)
   const [sourceFilter, setSourceFilter] = useState<Opportunity['source'] | null>(null)
@@ -304,7 +327,7 @@ export function OpportunitiesPage() {
   // Jump the table to an objective's matches.
   const showObjectiveMatches = (p?: ObjectiveParsed) => {
     setCatFilter(p?.category ?? null)
-    setSearch(p?.keywords?.[0] ?? '')
+    setSearch(p?.locations?.[0] ?? p?.keywords?.[0] ?? '')
     setStatusFilter(null); setThisRunOnly(false); setDueBucket('all')
   }
 
@@ -314,7 +337,7 @@ export function OpportunitiesPage() {
       id: `opp-${Date.now()}`, title: 'New opportunity', host: '',
       category: 'other', goals: [], priority: 'medium', leverageScore: 3,
       leverageNote: '', status: 'new', deadline: null, rolling: false,
-      location: '', eligibility: 'unknown', reward: '', url: '',
+      location: '', modality: 'unknown', eligibility: 'unknown', reward: '', url: '',
       source: 'manual', sourceRef: '', discoveredAt: now, notes: '', tags: [],
     }
     setItems((prev) => [o, ...prev])
@@ -338,13 +361,15 @@ export function OpportunitiesPage() {
     const list = items.filter((o) =>
       (!hideArchived || o.status !== 'archived') &&
       (!catFilter || o.category === catFilter) &&
+      (!modalityFilter || modalityOf(o) === modalityFilter) &&
       (!statusFilter || o.status === statusFilter) &&
       (!goalFilter || o.goals.includes(goalFilter)) &&
       (!sourceFilter || o.source === sourceFilter) &&
       (!thisRunOnly || (data.lastRunId != null && o.runId === data.lastRunId)) &&
       matchesDueBucket(o, dueBucket) &&
       (!search || o.title.toLowerCase().includes(q) || o.host.toLowerCase().includes(q) ||
-        o.notes.toLowerCase().includes(q) || o.tags.some((t) => t.toLowerCase().includes(q)))
+        o.notes.toLowerCase().includes(q) || o.location.toLowerCase().includes(q) ||
+        o.tags.some((t) => t.toLowerCase().includes(q)))
     )
     list.sort((a, b) => {
       let v = 0
@@ -367,7 +392,7 @@ export function OpportunitiesPage() {
       return sortAsc ? v : -v
     })
     return list
-  }, [items, search, catFilter, statusFilter, goalFilter, sourceFilter, dueBucket, thisRunOnly, hideArchived, sortKey, sortAsc, data.lastRunId])
+  }, [items, search, catFilter, modalityFilter, statusFilter, goalFilter, sourceFilter, dueBucket, thisRunOnly, hideArchived, sortKey, sortAsc, data.lastRunId])
 
   // Stats (over non-archived)
   const live = items.filter((o) => o.status !== 'archived')
@@ -453,6 +478,7 @@ export function OpportunitiesPage() {
                 const pct = target ? Math.min(100, Math.round((found / target) * 100)) : 0
                 const chips: string[] = []
                 if (obj.parsed?.category) chips.push(categoryConfig[obj.parsed.category].label)
+                if (obj.parsed?.locations?.length) chips.push(`📍 ${obj.parsed.locations.join(' · ')}`)
                 if (obj.parsed?.eligibility) chips.push(eligibilityConfig[obj.parsed.eligibility])
                 if (obj.parsed?.salaryText) chips.push(obj.parsed.salaryText)
                 if (obj.parsed?.deadlineBefore) chips.push(`by ${fmtDate(obj.parsed.deadlineBefore)}`)
@@ -625,6 +651,17 @@ export function OpportunitiesPage() {
         ))}
       </div>
 
+      {/* Modality chips — remote / hybrid / in-person */}
+      <div className="flex gap-1.5 flex-wrap">
+        {MODALITY_FILTERS.map((m) => (
+          <button key={m} onClick={() => setModalityFilter(modalityFilter === m ? null : m)}
+            className={`cursor-pointer inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border transition-all ${modalityFilter === m ? `${modalityConfig[m].color} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${modalityConfig[m].dot}`} />
+            {modalityConfig[m].label}
+          </button>
+        ))}
+      </div>
+
       {/* Status chips */}
       <div className="flex gap-1.5 flex-wrap">
         {ALL_STATUSES.map((s) => (
@@ -654,6 +691,10 @@ export function OpportunitiesPage() {
               </div>
               <div className="flex items-center gap-2 mt-2 flex-wrap text-xs">
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${categoryConfig[o.category].color}`}>{categoryConfig[o.category].label}</span>
+                <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full ${modalityConfig[modalityOf(o)].color}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${modalityConfig[modalityOf(o)].dot}`} />{modalityConfig[modalityOf(o)].label}
+                </span>
+                {o.location && <span className="text-muted-foreground truncate max-w-[120px]">{o.location}</span>}
                 <Leverage score={o.leverageScore} />
                 <span className={dl.tone}>{dl.text}</span>
                 <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceConfig[o.source].color}`}>{sourceConfig[o.source].label}</span>
@@ -674,6 +715,7 @@ export function OpportunitiesPage() {
                   <button onClick={() => toggleSort('title')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Opportunity <SortIcon k="title" /></button>
                 </th>
                 <th className="py-2 text-left font-medium">Category</th>
+                <th className="py-2 text-left font-medium">Where</th>
                 <th className="py-2 text-left font-medium">Goals</th>
                 <th className="py-2 text-left font-medium">
                   <button onClick={() => toggleSort('priority')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Priority <SortIcon k="priority" /></button>
@@ -700,6 +742,12 @@ export function OpportunitiesPage() {
                         {o.host && <span className="text-muted-foreground"> · {o.host}</span>}
                       </td>
                       <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${categoryConfig[o.category].color}`}>{categoryConfig[o.category].label}</span></td>
+                      <td className="py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full ${modalityConfig[modalityOf(o)].color}`}>{modalityConfig[modalityOf(o)].label}</span>
+                          {o.location && <span className="text-muted-foreground truncate max-w-[130px]" title={o.location}>{o.location}</span>}
+                        </div>
+                      </td>
                       <td className="py-2.5 text-muted-foreground">{o.goals.length ? o.goals.map((g) => goalConfig[g]).join(', ') : '—'}</td>
                       <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${priorityConfig[o.priority].color}`}>{priorityConfig[o.priority].label}</span></td>
                       <td className="py-2.5"><Leverage score={o.leverageScore} /></td>
@@ -720,7 +768,7 @@ export function OpportunitiesPage() {
                     </tr>
                     {expanded === o.id && (
                       <tr key={`${o.id}-edit`}>
-                        <td colSpan={8} className="px-5 py-4 border-b border-border/20 bg-foreground/[0.02]">
+                        <td colSpan={9} className="px-5 py-4 border-b border-border/20 bg-foreground/[0.02]">
                           <EditForm o={o} setField={setField} toggleGoal={toggleGoal} onDelete={() => deleteOpp(o.id)} />
                         </td>
                       </tr>
@@ -770,6 +818,11 @@ function EditForm({ o, setField, toggleGoal, onDelete }: {
           <div><label className="text-[10px] text-muted-foreground">Category</label>
             <select value={o.category} onChange={(e) => setField(o.id, { category: e.target.value as OpportunityCategory })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
               {ALL_CATEGORIES.map((c) => <option key={c} value={c}>{categoryConfig[c].label}</option>)}
+            </select>
+          </div>
+          <div><label className="text-[10px] text-muted-foreground">Modality</label>
+            <select value={modalityOf(o)} onChange={(e) => setField(o.id, { modality: e.target.value as Modality })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+              {(Object.keys(modalityConfig) as Modality[]).map((m) => <option key={m} value={m}>{modalityConfig[m].label}</option>)}
             </select>
           </div>
           <div><label className="text-[10px] text-muted-foreground">Eligibility</label>

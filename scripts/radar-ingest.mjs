@@ -22,6 +22,7 @@ const KEY = "cortex-opportunities"
 const CATEGORIES = new Set(["hackathon","grant","accelerator","fellowship","internship","exchange","competition","pitch","speaking","scholarship","community","launch","trending","other"])
 const GOALS = new Set(["internship","exchange","funding","social-growth","users"])
 const ELIGIBILITY = new Set(["remote-global","latam","us-eu","other","unknown"])
+const MODALITY = new Set(["remote","hybrid","in-person","unknown"])
 const STATUS = new Set(["new","pursuing","applied","won","lost","archived"])
 const PRIORITY = new Set(["low","medium","high"])
 const SOURCE = new Set(["x","linkedin","reddit","instagram","github","web","manual"])
@@ -91,6 +92,7 @@ function normalizeRecord(raw, runId) {
     deadline: raw.deadline ? String(raw.deadline).slice(0, 10) : null,
     rolling: Boolean(raw.rolling),
     location: String(raw.location ?? ""),
+    modality: pick(MODALITY, raw.modality, "unknown"),
     eligibility: pick(ELIGIBILITY, raw.eligibility, "unknown"),
     reward: String(raw.reward ?? ""),
     url,
