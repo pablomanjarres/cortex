@@ -160,10 +160,16 @@ export function DailyPage() {
         const dayCounts = sessionsByDay.map((s, i) => ({ date: weekDates[i], sessions: s.length }))
         const bestDay = dayCounts.reduce((best, dc) => dc.sessions > best.sessions ? dc : best, { date: '', sessions: 0 })
 
-        // Habit stats
+        // Habit stats — weekly cadence only (monthly habits are scored over the month)
+        const weeklyHabitIds = new Set(
+          habits.filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly').map(h => h.id)
+        )
         const weekHabits = weekDates.map(wd => habitHistory[wd] || {})
-        const totalHabitChecks = weekHabits.reduce((s, h) => s + Object.values(h).filter(Boolean).length, 0)
-        const totalHabitPossible = habits.length * 7
+        const totalHabitChecks = weekHabits.reduce(
+          (s, day) => s + Object.keys(day).filter(id => day[id] && weeklyHabitIds.has(id)).length,
+          0
+        )
+        const totalHabitPossible = weeklyHabitIds.size * 7
         const habitConsistency = totalHabitPossible > 0 ? Math.round((totalHabitChecks / totalHabitPossible) * 100) : 0
 
         // Founder stats for the week

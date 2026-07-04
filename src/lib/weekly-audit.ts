@@ -78,13 +78,14 @@ export async function generateWeeklyAudit(weekStartDate: string): Promise<Weekly
   const dayCounts = sessionsByDay.map((s, i) => ({ date: dates[i], sessions: s.length }))
   const bestDay = dayCounts.reduce((best, d) => d.sessions > best.sessions ? d : best, { date: '', sessions: 0 })
 
-  // Habit stats
-  const perHabit = habits.map(h => {
+  // Habit stats — weekly cadence only (monthly habits aren't measured over a single week)
+  const weeklyHabits = habits.filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly')
+  const perHabit = weeklyHabits.map(h => {
     const completed = dates.filter(d => habitHistory[d]?.[h.id]).length
     return { id: h.id, name: h.name, completed, total: 7 }
   })
   const totalHabitChecks = perHabit.reduce((s, h) => s + h.completed, 0)
-  const totalHabitPossible = habits.length * 7
+  const totalHabitPossible = weeklyHabits.length * 7
   const consistency = totalHabitPossible > 0 ? Math.round((totalHabitChecks / totalHabitPossible) * 100) : 0
 
   // Founder stats
