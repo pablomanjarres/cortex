@@ -258,20 +258,23 @@ export function StatsPage() {
     [founderHistory, weekDates]
   )
 
-  // Week habit data — respects per-habit goals
+  // Week habit data — respects per-habit goals. Monthly-cadence habits are tracked
+  // over the month, so they're excluded from this weekly view.
   const weekHabitData = useMemo(() => {
-    return habits.map(h => {
-      const goal = (h as any).weeklyGoal ?? 7
-      const completed = weekDates.filter(d => habitHistory[d]?.[h.id]).length
-      return { name: h.emoji + ' ' + h.name, completed, goal }
-    })
+    return habits
+      .filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly')
+      .map(h => {
+        const goal = (h as any).weeklyGoal ?? 7
+        const completed = weekDates.filter(d => habitHistory[d]?.[h.id]).length
+        return { name: h.emoji + ' ' + h.name, completed, goal }
+      })
   }, [habits, habitHistory, weekDates])
 
   const weekHabitConsistency = useMemo(() => {
-    if (habits.length === 0) return 0
-    const avgPct = weekHabitData.reduce((s, h) => s + Math.min(h.completed / h.goal, 1), 0) / habits.length
+    if (weekHabitData.length === 0) return 0
+    const avgPct = weekHabitData.reduce((s, h) => s + Math.min(h.completed / h.goal, 1), 0) / weekHabitData.length
     return Math.round(avgPct * 100)
-  }, [weekHabitData, habits])
+  }, [weekHabitData])
 
   // --- Navigation -----------------------------------------
   const navigate = (dir: number) => {
