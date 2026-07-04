@@ -91,8 +91,9 @@ const CLAUDE_TASK_META: Record<string, { group: string; frequency: string }> = {
   'nella-daily-dev-log':        { group: 'Dev & Business', frequency: 'Daily' },
   'daily-repo-inspection':      { group: 'Dev & Business', frequency: 'Daily 3am' },
   'daily-repo-summary':         { group: 'Dev & Business', frequency: 'Daily 3am' },
-  'weekly-competition-scanner': { group: 'Dev & Business', frequency: 'Mon & Thu' },
-  'startup-events-radar':       { group: 'Dev & Business', frequency: '1st & 15th' },
+  // weekly-competition-scanner + startup-events-radar retired — their opportunity
+  // intelligence now lives in the in-app Opportunity Radar (scripts/radar-seed.json +
+  // radar-profile.md). Routines moved to ~/.claude/scheduled-tasks/.trash/.
   'ai-intelligence-brief':      { group: 'Intelligence', frequency: 'Periodic' },
   'weekly-reading-digest':      { group: 'Intelligence', frequency: 'Weekly' },
   'discipline-enforcer':        { group: 'Discipline & Content', frequency: 'Daily 9pm' },

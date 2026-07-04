@@ -38,3 +38,53 @@ Goals (priority order): **internships** (early-career / sophomore, remote-friend
 - Lower the score for eligibility friction (age gate near 18, visa/relocation, degree level).
 - Whenever there's an age / visa / degree question, ADD a short caveat to `notes`
   (e.g. "Check: appears to require 18+" or "Verify LatAm eligibility").
+
+## Worthiness bar (quality over volume)
+
+Prefer 15-45 genuinely strong records over a padded list. Keep an **in-person / travel**
+opportunity only if it clears ONE of: (1) fully-paid / travel-covered, (2) prize or funding
+≥ ~US$3,000 (net-positive after ~US$500-900 flights from Colombia), or (3) elite prestige
+(YC, Thiel, Emergent Ventures, Hult Prize global, ETHGlobal majors, etc.). **Remote / online
+/ grant** opportunities have zero travel cost, so keep them if there is ANY real prize,
+funding, credential, or strong prestige — drop only exposure-only, pay-to-enter, or vanity
+items. A hackathon/competition physically in Colombia is exempt from the travel test (he can
+just show up) — keep and score it high.
+
+## Timing classes (never drop a good program just because it has no deadline)
+
+Classify each kept item into one of three timing classes and set fields accordingly:
+- **Open-now** — applications open with a future deadline. Set `deadline`; `priority` "high"
+  if ≤ ~14 days.
+- **Rolling / evergreen** — no deadline, apply anytime (many of the best young-founder
+  grants/fellowships). Set `rolling: true`, `deadline: null`. A rolling program is NEVER
+  "expired" — do not drop it for lacking a deadline.
+- **Plan-ahead** — a recurring flagship or a window that opens later within ~12 months. Keep
+  it with `rolling: false`, `deadline: null`, and a `notes` line stating the expected timing;
+  label any inferred date `[estimated]`. Never invent a date, prize, or URL.
+
+## AI-FIT priority
+
+Pablo builds AI agents / dev-tools / LLM apps — that is his edge. When an opportunity is
+squarely AI / dev-tools / developer-productivity / founder-relevant, add an `"ai-fit"` tag and
+lean the `leverageScore` up by ~1 (do NOT exclude non-AI opportunities — general business,
+social-impact, science, leadership and youth programs still count if they clear the bar).
+
+## Local Colombia ecosystem — recognize and up-rank
+
+If a scraped hit is a real competition/convocatoria/demo-day/accelerator open-call run by one
+of these local hosts, treat it as HIGH value (in-person Colombia = attendable) and score it
+4-5, `modality` "in-person", `eligibility` "latam": **Ruta N, Parque del Emprendimiento
+(Parque E), Créame, Comfama, Wayra, Rockstart, iNNpulsa**, and the university entrepreneurship
+centers **EAFIT, UPB, Universidad de Antioquia (UdeA)**. Valle de Aburrá (Medellín metro) ranks
+first, then Bogotá, then rest-of-Colombia. Drop pure meetups / mixers / talks / fairs with no
+competition, selection, or prize.
+
+## Curated seed (context — don't duplicate)
+
+A separate curated seed (`scripts/radar-seed.json`, merged deterministically at ingest) already
+carries the standing evergreen grants/fellowships (Emergent Ventures, Z Fellows, 1517, Thiel,
+EF, South Park Commons, Neo), the recurring plan-ahead flagships (Y Combinator, a16z Speedrun,
+ETHGlobal, Microsoft Imagine Cup, Hult Prize, MLH, Slush 100), and local organizers (Ruta N,
+Wayra). You do NOT need to reconstruct those from the feed — focus on FRESH, still-open finds in
+the scraped data. If the data does surface one of them with a concrete new deadline/edition,
+still emit it (the ingest dedupes by apply-URL + title, so a better/more-specific record is fine).

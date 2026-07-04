@@ -15,6 +15,8 @@
 
 import { readFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
+import { fileURLToPath } from "node:url"
+import { dirname, join } from "node:path"
 import { inferSource } from "./radar-lib.mjs"
 
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
@@ -109,9 +111,31 @@ function normalizeRecord(raw, runId) {
   return rec
 }
 
+// Curated evergreen/flagship/local opportunities (scripts/radar-seed.json). These are
+// standing programs the feed-scraper never surfaces on its own — rolling grants/fellowships
+// with no deadline (Emergent Ventures, Z Fellows…), recurring plan-ahead flagships (YC, Hult
+// Prize, ETHGlobal…), and local Colombian organizers to watch — distilled from the retired
+// weekly-competition-scanner + startup-events-radar Claude routines. Merged through the SAME
+// normalize + dedup path as scraped hits, so re-adding an existing seed is a no-op and a seed
+// never clobbers an item the user has edited/archived in the store.
+async function loadSeed() {
+  const here = dirname(fileURLToPath(import.meta.url))
+  try {
+    const arr = JSON.parse(await readFile(join(here, "radar-seed.json"), "utf8"))
+    return Array.isArray(arr) ? arr : []
+  } catch (e) {
+    if (e.code !== "ENOENT") console.error("warn: could not load radar-seed.json:", e.message)
+    return []
+  }
+}
+
 async function main() {
-  const classified = JSON.parse(await readFile(classifiedPath, "utf8"))
-  if (!Array.isArray(classified)) throw new Error("classified.json must be an array")
+  const classifiedRaw = JSON.parse(await readFile(classifiedPath, "utf8"))
+  if (!Array.isArray(classifiedRaw)) throw new Error("classified.json must be an array")
+  // Prepend the curated seed so a standing program wins the "new" slot over a same-run
+  // scraped duplicate (existing-store items still win over both in the dedup below).
+  const seed = await loadSeed()
+  const classified = [...seed, ...classifiedRaw]
   const report = reportPath ? await readFile(reportPath, "utf8") : undefined
   const runId = new Date().toISOString()
 
@@ -157,7 +181,7 @@ async function main() {
     ...(report !== undefined ? { report } : {}),
   }
 
-  console.error(`radar-ingest: ${classified.length} classified, ${added.length} new, ${existingDropped} existing dupes removed, ${merged.items.length} total`)
+  console.error(`radar-ingest: ${classifiedRaw.length} classified + ${seed.length} seed, ${added.length} new, ${existingDropped} existing dupes removed, ${merged.items.length} total`)
 
   if (dry) {
     console.log(JSON.stringify({ runId, added: added.length, existingDropped, total: merged.items.length, sample: added.slice(0, 3) }, null, 2))
