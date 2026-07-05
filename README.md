@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://pablomanjarres.com/oss/cortex"><img src=".github/banner.png" alt="Cortex" width="100%" /></a>
+  <a href="https://pablomanjarres.com/oss/cortex"><img src=".github/banner.webp" alt="Cortex" width="100%" /></a>
 </p>
 
 <h1 align="center">Cortex</h1>
