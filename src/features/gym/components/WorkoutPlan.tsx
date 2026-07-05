@@ -12,6 +12,7 @@ import {
   Waves,
   Square,
   ChevronDown,
+  X,
 } from 'lucide-react'
 
 interface WorkoutPlanProps {
@@ -28,6 +29,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
   const [swimStartedAt, setSwimStartedAt] = useState<number | null>(null)
   const [swimElapsed, setSwimElapsed] = useState(0)
   const swimTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [preview, setPreview] = useState<Exercise | null>(null)
   const [expandedEx, setExpandedEx] = useState<Set<string>>(new Set())
   const toggleExpand = (id: string) =>
     setExpandedEx((prev) => {
@@ -102,6 +104,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
   const getSession = (dayId: string) => todaySessions.find(s => s.workoutDayId === dayId)
 
   return (
+    <>
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 mt-4">
       {plans.map((day, idx) => (
         <WidgetCard
@@ -249,37 +252,45 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                   </table>
                 </div>
               ) : (
-                <div className="-mx-1 space-y-0.5">
+                <div className="-mx-1 space-y-1">
                   {day.exercises.map((ex) => {
                     const expanded = expandedEx.has(ex.id)
                     return (
-                      <div key={ex.id}>
-                        <button
-                          onClick={() => ex.notes && toggleExpand(ex.id)}
-                          className="flex w-full items-center gap-3 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-foreground/[0.04]"
-                        >
-                          <ExerciseImage name={ex.name} className="h-11 w-11 shrink-0" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-foreground">{ex.name}</p>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                              <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                                {ex.sets}×{ex.repsRange}
-                              </span>
-                              {ex.startWeight && (
-                                <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                                  {ex.startWeight}
+                      <div key={ex.id} className="rounded-xl transition-colors hover:bg-foreground/[0.04]">
+                        <div className="flex items-center gap-3 px-1.5 py-2">
+                          <button
+                            onClick={() => setPreview(ex)}
+                            aria-label={`Preview ${ex.name}`}
+                            className="shrink-0 overflow-hidden rounded-xl ring-1 ring-border/60 transition-transform active:scale-95"
+                          >
+                            <ExerciseImage name={ex.name} showBadge={false} className="h-14 w-14" />
+                          </button>
+                          <button
+                            onClick={() => ex.notes && toggleExpand(ex.id)}
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[15px] font-semibold text-foreground">{ex.name}</p>
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className="rounded-md bg-foreground/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground/90">
+                                  {ex.sets}×{ex.repsRange}
                                 </span>
-                              )}
+                                {ex.startWeight && (
+                                  <span className="rounded-md bg-foreground/10 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                    {ex.startWeight}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          {ex.notes && (
-                            <ChevronDown
-                              className={`h-4 w-4 shrink-0 text-muted-foreground/40 transition-transform ${expanded ? 'rotate-180' : ''}`}
-                            />
-                          )}
-                        </button>
+                            {ex.notes && (
+                              <ChevronDown
+                                className={`h-5 w-5 shrink-0 text-muted-foreground/50 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                              />
+                            )}
+                          </button>
+                        </div>
                         {expanded && ex.notes && (
-                          <p className="pb-2 pl-[3.75rem] pr-2 text-xs leading-relaxed text-muted-foreground/70">{ex.notes}</p>
+                          <p className="pb-2.5 pl-[4.75rem] pr-3 text-[13px] leading-relaxed text-muted-foreground/80">{ex.notes}</p>
                         )}
                       </div>
                     )
@@ -385,5 +396,39 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
         </WidgetCard>
       ))}
     </div>
+
+    {preview && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+        onClick={() => setPreview(null)}
+      >
+        <div
+          className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-4 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => setPreview(null)}
+            aria-label="Close preview"
+            className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white transition-transform active:scale-90"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <ExerciseImage name={preview.name} className="h-64 w-full" />
+          <h3 className="mt-3 text-lg font-bold text-foreground">{preview.name}</h3>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className="rounded-md bg-foreground/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground/90">
+              {preview.sets}×{preview.repsRange}
+            </span>
+            {preview.startWeight && (
+              <span className="rounded-md bg-foreground/10 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {preview.startWeight}
+              </span>
+            )}
+          </div>
+          {preview.notes && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{preview.notes}</p>}
+        </div>
+      </div>
+    )}
+    </>
   )
 }
