@@ -1257,6 +1257,149 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GROUP: Opportunity Radar
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Store key cortex-opportunities holds the whole OppData blob (items + hunt
+// orders + report + run flags). Always read-modify-write the whole object so
+// objectives/report/run state aren't clobbered. Shapes mirror
+// src/features/opportunities/OpportunitiesPage.tsx.
+
+interface McpOpportunity {
+  id: string; title: string; host: string; category: string; goals: string[];
+  priority: string; leverageScore: number; leverageNote: string; status: string;
+  deadline: string | null; rolling: boolean; location: string; modality?: string;
+  eligibility: string; reward: string; url: string; source: string; sourceRef: string;
+  discoveredAt: string; runId?: string; notes: string; tags: string[];
+}
+interface McpObjective { id: string; text: string; reply?: string; parsed?: unknown; status: string; active: boolean; createdAt: string; error?: string }
+interface McpOppData {
+  items: McpOpportunity[]; lastRun: string | null; lastRunId?: string; report?: string;
+  objectives?: McpObjective[]; runRequestedAt?: string; runStatus?: string;
+  runStartedAt?: string; runFinishedAt?: string; runError?: string;
+}
+
+const normOppUrl = (u: string): string => (u || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
+
+server.tool(
+  "get_opportunities",
+  "Read the Opportunity Radar: sourced opportunities, active hunt orders, the latest run report, and run status. Use before sourcing to avoid duplicates and to read what the user is hunting for.",
+  {
+    status: z.string().optional().describe("Filter by status: new|pursuing|applied|won|lost|archived"),
+    category: z.string().optional().describe("Filter by category"),
+    limit: z.number().optional().describe("Max items to return, default 50"),
+    includeArchived: z.boolean().optional().describe("Include archived items, default false"),
+  },
+  async ({ status, category, limit, includeArchived }) => run(async () => {
+    const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
+    let items = Array.isArray(data.items) ? data.items : [];
+    if (!includeArchived) items = items.filter(o => o.status !== "archived");
+    if (status) items = items.filter(o => o.status === status);
+    if (category) items = items.filter(o => o.category === category);
+    const total = items.length;
+    items = items.slice(0, limit && limit > 0 ? limit : 50);
+    const activeHuntOrders = (data.objectives || []).filter(o => o.active).map(o => ({ id: o.id, text: o.text, status: o.status }));
+    return { total, showing: items.length, items, activeHuntOrders, lastRun: data.lastRun, lastRunId: data.lastRunId, runStatus: data.runStatus, report: data.report };
+  })
+);
+
+server.tool(
+  "set_hunt_order",
+  "Add a natural-language hunt order that personalizes the radar (e.g. '20 remote AI internships paying $2k+/mo, deadline before Sept'). Active hunt orders steer the next radar run.",
+  { text: z.string().describe("What to hunt for, in plain language") },
+  async ({ text }) => run(async () => {
+    const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
+    if (!Array.isArray(data.objectives)) data.objectives = [];
+    const objective: McpObjective = { id: `obj-${Date.now()}`, text, status: "thinking", active: true, createdAt: new Date().toISOString() };
+    data.objectives.unshift(objective);
+    await writeKey("cortex-opportunities", data);
+    return { ok: true, objective, activeCount: data.objectives.filter(o => o.active).length };
+  })
+);
+
+server.tool(
+  "run_opportunity_radar",
+  "Trigger the native Opportunity Radar pipeline — the same as the app's 'Run radar' button. Requests a run that the local radar watcher executes (scrape → classify → ingest). Depends on the local watcher daemon + scraper VM being up. Optionally pass a hunt order to personalize this run. To source opportunities WITHOUT the external scraper (Claude Code does its own web research), use add_opportunities instead.",
+  { huntOrder: z.string().optional().describe("Optional plain-language focus for this run; added as an active hunt order first") },
+  async ({ huntOrder }) => run(async () => {
+    const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
+    if (data.runStatus === "requested" || data.runStatus === "running") {
+      return { ok: false, alreadyRunning: true, runStatus: data.runStatus, message: "A radar run is already in progress." };
+    }
+    if (huntOrder && huntOrder.trim()) {
+      if (!Array.isArray(data.objectives)) data.objectives = [];
+      data.objectives.unshift({ id: `obj-${Date.now()}`, text: huntOrder.trim(), status: "thinking", active: true, createdAt: new Date().toISOString() });
+    }
+    data.runRequestedAt = new Date().toISOString();
+    data.runStatus = "requested";
+    data.runError = undefined;
+    await writeKey("cortex-opportunities", data);
+    return { ok: true, runStatus: "requested", requestedAt: data.runRequestedAt, note: "The radar watcher (launchd) will run the pipeline. Poll runStatus via get_opportunities." };
+  })
+);
+
+server.tool(
+  "add_opportunities",
+  "Add opportunities YOU (Claude Code) sourced via your own web research directly into the Radar. This IS the personalized radar when the external scraper isn't used: first read the user's profile (scripts/radar-profile.md) and active hunt orders (get_opportunities), research matching opportunities on the web, then submit them here. Dedupes against existing items by URL and title+host, stamps them with a runId, and updates the run report.",
+  {
+    runId: z.string().optional().describe("Label/stamp for this radar run; defaults to an ISO timestamp"),
+    report: z.string().optional().describe("Optional markdown digest (what you found + top picks) shown on the Radar tab"),
+    opportunities: z.array(z.object({
+      title: z.string(),
+      host: z.string().describe("Organization / host"),
+      category: z.enum(["hackathon", "grant", "accelerator", "fellowship", "internship", "exchange", "competition", "pitch", "speaking", "scholarship", "community", "launch", "trending", "other"]),
+      url: z.string().describe("Direct link"),
+      goals: z.array(z.enum(["internship", "exchange", "funding", "social-growth", "users"])).optional(),
+      priority: z.enum(["low", "medium", "high"]).optional(),
+      leverageScore: z.number().min(1).max(5).optional().describe("1-5, how high-leverage for the user"),
+      leverageNote: z.string().optional().describe("Why it matters for the user"),
+      deadline: z.string().nullable().optional().describe("YYYY-MM-DD or null"),
+      rolling: z.boolean().optional().describe("Rolling / no fixed deadline"),
+      location: z.string().optional().describe("City/country, or 'Remote'"),
+      modality: z.enum(["remote", "hybrid", "in-person", "unknown"]).optional(),
+      eligibility: z.enum(["remote-global", "latam", "us-eu", "other", "unknown"]).optional(),
+      reward: z.string().optional().describe("Prize / stipend / reward"),
+      source: z.enum(["x", "linkedin", "reddit", "instagram", "github", "devpost", "luma", "eventbrite", "meetup", "web", "manual"]).optional(),
+      sourceRef: z.string().optional().describe("Where you found it (handle, post URL, search)"),
+      notes: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    })).describe("The opportunities you found"),
+  },
+  async ({ runId, report, opportunities }) => run(async () => {
+    const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
+    if (!Array.isArray(data.items)) data.items = [];
+    const stamp = runId || new Date().toISOString();
+    const now = new Date().toISOString();
+    const seenUrl = new Set(data.items.map(o => normOppUrl(o.url)).filter(Boolean));
+    const seenTitleHost = new Set(data.items.map(o => `${(o.title || "").trim().toLowerCase()}|${(o.host || "").trim().toLowerCase()}`));
+    const added: McpOpportunity[] = [];
+    const skipped: string[] = [];
+    for (const o of opportunities) {
+      const u = normOppUrl(o.url);
+      const th = `${o.title.trim().toLowerCase()}|${o.host.trim().toLowerCase()}`;
+      if ((u && seenUrl.has(u)) || seenTitleHost.has(th)) { skipped.push(o.title); continue; }
+      const rec: McpOpportunity = {
+        id: `opp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: o.title, host: o.host, category: o.category, goals: o.goals ?? [],
+        priority: o.priority ?? "medium", leverageScore: o.leverageScore ?? 3, leverageNote: o.leverageNote ?? "",
+        status: "new", deadline: o.deadline ?? null, rolling: o.rolling ?? false,
+        location: o.location ?? "", modality: o.modality ?? "unknown", eligibility: o.eligibility ?? "unknown",
+        reward: o.reward ?? "", url: o.url, source: o.source ?? "web", sourceRef: o.sourceRef ?? "",
+        discoveredAt: now, runId: stamp, notes: o.notes ?? "", tags: o.tags ?? [],
+      };
+      data.items.unshift(rec);
+      if (u) seenUrl.add(u);
+      seenTitleHost.add(th);
+      added.push(rec);
+    }
+    data.lastRun = now;
+    data.lastRunId = stamp;
+    if (report) data.report = report;
+    await writeKey("cortex-opportunities", data);
+    return { ok: true, added: added.length, skippedDuplicates: skipped.length, skipped, runId: stamp, totalItems: data.items.length };
+  })
+);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Start
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1279,7 +1422,7 @@ if (httpMode) {
       await transport.handleRequest(req, res);
     } else if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, tools: 56 }));
+      res.end(JSON.stringify({ ok: true, tools: 61 }));
     } else {
       res.writeHead(404); res.end("Not found");
     }
