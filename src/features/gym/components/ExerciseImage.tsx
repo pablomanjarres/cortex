@@ -5,10 +5,11 @@ import { findExerciseMedia, type ExerciseMedia } from '@/lib/exercise-media'
 interface ExerciseImageProps {
   name: string
   className?: string
+  showBadge?: boolean // muscle/equipment overlay — off for small thumbnails
 }
 
 /** Cycles the DB's start/end frames for a pseudo-GIF; falls back to a placeholder on miss/error. */
-export function ExerciseImage({ name, className = '' }: ExerciseImageProps) {
+export function ExerciseImage({ name, className = '', showBadge = true }: ExerciseImageProps) {
   const [media, setMedia] = useState<ExerciseMedia | null | undefined>(undefined) // undefined = loading
   const [frame, setFrame] = useState(0)
   const [failed, setFailed] = useState(false)
@@ -53,7 +54,7 @@ export function ExerciseImage({ name, className = '' }: ExerciseImageProps) {
         onError={() => setFailed(true)}
         className="h-full w-full object-contain"
       />
-      {media.primaryMuscles?.[0] && (
+      {showBadge && media.primaryMuscles?.[0] && (
         <span className="absolute left-2 top-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-medium capitalize text-white backdrop-blur-sm">
           {media.primaryMuscles[0]}
           {media.equipment ? ` · ${media.equipment}` : ''}
