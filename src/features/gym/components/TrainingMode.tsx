@@ -5,13 +5,14 @@ import type { WorkoutDay, ActiveWorkoutState, WorkoutSession, ExerciseLog, SetLo
 import { RestTimer } from './RestTimer'
 import { ExerciseImage } from './ExerciseImage'
 import { platesPerSide } from '@/lib/exercise-media'
-import { ChevronLeft, ChevronRight, Check, Plus, Minus, Dumbbell, Flag, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, Plus, Minus, Dumbbell, Flag, X, Trash2 } from 'lucide-react'
 
 interface TrainingModeProps {
   activeWorkout: ActiveWorkoutState
   plan: WorkoutDay
   onUpdate: (state: ActiveWorkoutState) => void
   onFinish: (session: WorkoutSession) => void
+  onCancel: () => void
   previousSession?: WorkoutSession | null
 }
 
@@ -24,9 +25,10 @@ const haptic = (p: number | number[] = 12) => {
   }
 }
 
-export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, previousSession }: TrainingModeProps) {
+export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel, previousSession }: TrainingModeProps) {
   const [restTimeLeft, setRestTimeLeft] = useState(0)
   const [confirmFinish, setConfirmFinish] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
   const [elapsed, setElapsed] = useState('')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerEndRef = useRef<number | null>(activeWorkout.restTimerEnd)
@@ -258,26 +260,50 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, previous
               </p>
             </div>
           </div>
-          {confirmFinish ? (
-            <button
-              onClick={() => finishSession(activeWorkout.exerciseLogs, completedSets === totalSets)}
-              className="flex h-10 items-center gap-1.5 rounded-xl bg-red-500 px-4 text-sm font-semibold text-white active:scale-95"
-            >
-              <Flag className="h-4 w-4" />
-              Confirm
-            </button>
-          ) : (
-            <button
-              onClick={() => {
-                setConfirmFinish(true)
-                setTimeout(() => setConfirmFinish(false), 3000)
-              }}
-              className="flex h-10 items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium text-muted-foreground active:scale-95"
-            >
-              <Flag className="h-4 w-4" />
-              Finish
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {confirmCancel ? (
+              <button
+                onClick={onCancel}
+                className="flex h-10 items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/15 px-3 text-sm font-semibold text-red-400 active:scale-95"
+              >
+                <Trash2 className="h-4 w-4" />
+                Discard?
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setConfirmCancel(true)
+                  setConfirmFinish(false)
+                  setTimeout(() => setConfirmCancel(false), 3000)
+                }}
+                aria-label="Cancel workout"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted-foreground active:scale-95"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            )}
+            {confirmFinish ? (
+              <button
+                onClick={() => finishSession(activeWorkout.exerciseLogs, completedSets === totalSets)}
+                className="flex h-10 items-center gap-1.5 rounded-xl bg-foreground px-4 text-sm font-semibold text-background active:scale-95"
+              >
+                <Flag className="h-4 w-4" />
+                Finish?
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setConfirmFinish(true)
+                  setConfirmCancel(false)
+                  setTimeout(() => setConfirmFinish(false), 3000)
+                }}
+                className="flex h-10 items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium text-muted-foreground active:scale-95"
+              >
+                <Flag className="h-4 w-4" />
+                Finish
+              </button>
+            )}
+          </div>
         </div>
         <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
           <div className="h-full rounded-full bg-green-400 transition-all duration-500" style={{ width: `${overallPct}%` }} />

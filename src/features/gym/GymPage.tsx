@@ -102,6 +102,11 @@ export function GymPage() {
     setActiveWorkout(() => null)
   }
 
+  // Abandon an in-progress workout without recording a session.
+  const cancelWorkout = () => {
+    setActiveWorkout(() => null)
+  }
+
   const logSwim = (dayId: string, duration: number) => {
     const session: WorkoutSession = {
       date: today,
@@ -151,6 +156,7 @@ export function GymPage() {
               plan={plans.find(p => p.id === activeWorkout.workoutDayId)!}
               onUpdate={(state) => setActiveWorkout(() => state)}
               onFinish={finishWorkout}
+              onCancel={cancelWorkout}
               previousSession={previousSession}
             />
           ) : (

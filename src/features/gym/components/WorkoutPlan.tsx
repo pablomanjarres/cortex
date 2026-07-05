@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
+import { ExerciseImage } from './ExerciseImage'
 import {
   Play,
   Plus,
@@ -10,6 +11,7 @@ import {
   CheckCircle2,
   Waves,
   Square,
+  ChevronDown,
 } from 'lucide-react'
 
 interface WorkoutPlanProps {
@@ -26,6 +28,13 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
   const [swimStartedAt, setSwimStartedAt] = useState<number | null>(null)
   const [swimElapsed, setSwimElapsed] = useState(0)
   const swimTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [expandedEx, setExpandedEx] = useState<Set<string>>(new Set())
+  const toggleExpand = (id: string) =>
+    setExpandedEx((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
 
   useEffect(() => {
     if (swimStartedAt) {
@@ -173,24 +182,22 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                 </div>
               )}
 
-              {/* Exercise table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-muted-foreground/60">
-                      <th className="text-left font-medium pb-1.5 pr-2">Exercise</th>
-                      <th className="text-left font-medium pb-1.5 pr-2 w-16">Sets</th>
-                      <th className="text-left font-medium pb-1.5 pr-2 w-20">Weight</th>
-                      {editingDay === day.id && (
+              {/* Exercises */}
+              {editingDay === day.id ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-muted-foreground/60">
+                        <th className="text-left font-medium pb-1.5 pr-2">Exercise</th>
+                        <th className="text-left font-medium pb-1.5 pr-2 w-16">Sets</th>
+                        <th className="text-left font-medium pb-1.5 pr-2 w-20">Weight</th>
                         <th className="w-8 pb-1.5"></th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {day.exercises.map((ex) => (
-                      <tr key={ex.id} className="group border-t border-border/30">
-                        <td className="py-1.5 pr-2">
-                          {editingDay === day.id ? (
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {day.exercises.map((ex) => (
+                        <tr key={ex.id} className="group border-t border-border/30">
+                          <td className="py-1.5 pr-2">
                             <div>
                               <input
                                 value={ex.name}
@@ -204,17 +211,8 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                                 className="mt-1 h-6 w-full rounded border border-border/50 bg-background px-2 text-[10px] text-muted-foreground outline-none focus:border-foreground/30"
                               />
                             </div>
-                          ) : (
-                            <div>
-                              <span className="text-foreground">{ex.name}</span>
-                              {ex.notes && (
-                                <span className="ml-1.5 text-muted-foreground/50">{ex.notes}</span>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-1.5 pr-2 text-muted-foreground">
-                          {editingDay === day.id ? (
+                          </td>
+                          <td className="py-1.5 pr-2 text-muted-foreground">
                             <div className="flex items-center gap-1">
                               <input
                                 type="number"
@@ -229,22 +227,14 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                                 className="h-7 w-16 rounded border border-border bg-background px-2 text-xs text-foreground outline-none"
                               />
                             </div>
-                          ) : (
-                            `${ex.sets}x${ex.repsRange}`
-                          )}
-                        </td>
-                        <td className="py-1.5 pr-2 text-muted-foreground/60">
-                          {editingDay === day.id ? (
+                          </td>
+                          <td className="py-1.5 pr-2 text-muted-foreground/60">
                             <input
                               value={ex.startWeight}
                               onChange={(e) => updateExercise(day.id, ex.id, { startWeight: e.target.value })}
                               className="h-7 w-full rounded border border-border bg-background px-2 text-xs text-foreground outline-none"
                             />
-                          ) : (
-                            ex.startWeight
-                          )}
-                        </td>
-                        {editingDay === day.id && (
+                          </td>
                           <td className="py-1.5">
                             <button
                               onClick={() => removeExercise(day.id, ex.id)}
@@ -253,12 +243,49 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                               <Trash2 className="h-3 w-3" />
                             </button>
                           </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="-mx-1 space-y-0.5">
+                  {day.exercises.map((ex) => {
+                    const expanded = expandedEx.has(ex.id)
+                    return (
+                      <div key={ex.id}>
+                        <button
+                          onClick={() => ex.notes && toggleExpand(ex.id)}
+                          className="flex w-full items-center gap-3 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-foreground/[0.04]"
+                        >
+                          <ExerciseImage name={ex.name} className="h-11 w-11 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-foreground">{ex.name}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                                {ex.sets}×{ex.repsRange}
+                              </span>
+                              {ex.startWeight && (
+                                <span className="rounded bg-foreground/10 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  {ex.startWeight}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          {ex.notes && (
+                            <ChevronDown
+                              className={`h-4 w-4 shrink-0 text-muted-foreground/40 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                            />
+                          )}
+                        </button>
+                        {expanded && ex.notes && (
+                          <p className="pb-2 pl-[3.75rem] pr-2 text-xs leading-relaxed text-muted-foreground/70">{ex.notes}</p>
                         )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
 
               {/* Edit mode actions */}
               {editingDay === day.id && (
