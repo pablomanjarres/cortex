@@ -65,11 +65,26 @@ async function run<T>(fn: () => Promise<T>): Promise<ToolResult> {
 
 // ─── Server ──────────────────────────────────────────────
 
-const server = new McpServer({
-  name: "cortex",
-  version: "1.0.0",
-  description: "Personal dashboard for auditing your days — habits, books, captures, CRM, calendar, GTM, finance, and more.",
-});
+const server = new McpServer(
+  {
+    name: "cortex",
+    version: "1.0.0",
+    description: "Personal dashboard for auditing your days — habits, books, captures, CRM, calendar, GTM, finance, gym, nutrition, opportunities, and more.",
+  },
+  {
+    instructions: [
+      "Cortex is Pablo's personal command-center dashboard (an Electron desktop app with a local web API). These tools read and write his REAL data, so the Cortex app must be running (it hosts the API on localhost:3456).",
+      "",
+      "Be proactive about capturing what Pablo says to the right surface — but ASK before writing unless he clearly told you to save it:",
+      "- When he shares a THOUGHT, idea, reflection, realization, or opinion worth keeping, offer to save it with add_thought (e.g. \"Want me to save that as a thought in Cortex?\"). Don't save silently.",
+      "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
+      "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
+      "- Opportunities (hackathons, grants, internships, fellowships): get_opportunities to read the radar + active hunt orders; add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it.",
+      "",
+      "Prefer domain-specific tools over the generic read_data / write_data. Confirm before overwriting existing data. Values are stored per calendar day/week under keys like cortex-nutrition-YYYY-MM-DD and cortex-market-<mondayDate>; today's date is the default when omitted.",
+    ].join("\n"),
+  },
+);
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP 1: Daily Workflow
