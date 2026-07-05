@@ -981,6 +981,282 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GROUP: Food pipeline (Market ↔ Nutrition ↔ Finances)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Store-key shapes are duplicated here (the MCP server shares no types with the
+// app); they must match src/features/gym/* and src/features/finance/FinancePage.
+
+interface McpFoodItem { name: string; protein: number; calories: number; quantity?: string }
+interface McpMealEntry { id: string; name: string; foods: McpFoodItem[] }
+interface McpDailyNutrition { date: string; meals: McpMealEntry[]; waterLiters: number; weight?: number; notes?: string }
+interface McpGroceryItem { id: string; name: string; price: number; quantity: number; store: string; category: string }
+interface McpWeeklyMarketLog { weekStart: string; items: McpGroceryItem[] }
+interface McpFinanceItem { id: string; name: string; type: string; category?: string; months: number[]; paid?: boolean[]; paidAmounts?: number[] }
+interface McpFinanceData { year: number; items: McpFinanceItem[] }
+interface McpPantryItem { id: string; name: string; protein: number; calories: number; serving?: string; quantity?: number; category?: string; source?: string; addedAt?: string }
+interface McpMarketListItem { name: string; price: number; quantity: number; store: string; category: string; timesBought?: number; lastBought?: string; checked?: boolean }
+interface McpMarketList { generatedAt: string; weeksAnalyzed?: number; items: McpMarketListItem[] }
+interface McpMealTemplate { id: string; name: string; description: string; meals: { id: string; name: string; foods: McpFoodItem[] }[] }
+interface McpNutritionTargets { protein: number; calories: number; water: number }
+
+const DEFAULT_TARGETS: McpNutritionTargets = { protein: 156, calories: 3150, water: 2.5 };
+
+function localDateOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+// Monday (YYYY-MM-DD) of the week containing dateStr — matches the app's getWeekDates()[0].
+function weekStartMonday(dateStr?: string): string {
+  const d = new Date((dateStr || today()) + "T00:00:00");
+  const day = d.getDay();
+  d.setDate(d.getDate() - ((day + 6) % 7));
+  return localDateOf(d);
+}
+function emptyDailyNutrition(date: string): McpDailyNutrition {
+  return {
+    date,
+    meals: [
+      { id: "breakfast", name: "Breakfast", foods: [] },
+      { id: "lunch", name: "Lunch", foods: [] },
+      { id: "dinner", name: "Dinner", foods: [] },
+      { id: "snack", name: "Snack", foods: [] },
+    ],
+    waterLiters: 0,
+  };
+}
+function nutritionTotals(day: McpDailyNutrition): { protein: number; calories: number; water: number } {
+  let protein = 0, calories = 0;
+  for (const m of day.meals || []) for (const f of m.foods || []) { protein += f.protein || 0; calories += f.calories || 0; }
+  return { protein, calories, water: day.waterLiters || 0 };
+}
+
+server.tool(
+  "add_bill",
+  "Add a grocery bill/receipt to Cortex. Parse the receipt first, then call this with the line items. It (1) appends the items to the current week's Market log, (2) creates Nutrition pantry objects for edible items so they're loggable later, and (3) deducts the bill total from the Food budget in Finances.",
+  {
+    store: z.string().optional().describe("Store for the bill (D1, Carulla, Exito, Rappi, Other). Default per-item store."),
+    date: z.string().optional().describe("YYYY-MM-DD of purchase, defaults to today. Picks the Market week and Finances month."),
+    total: z.number().optional().describe("Grand total in COP incl. tax. Defaults to sum(price*quantity). This is deducted from the Food budget."),
+    deductFromFinances: z.boolean().optional().describe("Deduct total from the Finances Food budget. Default true."),
+    items: z.array(z.object({
+      name: z.string(),
+      price: z.number().describe("Unit price in COP"),
+      quantity: z.number().optional().describe("Units bought, default 1"),
+      store: z.string().optional().describe("Overrides the bill store for this item"),
+      category: z.string().optional().describe("Protein | Carbs | Snacks | Dairy | Produce | Hygiene | Other"),
+      nutrition: z.object({
+        protein: z.number().describe("grams per serving"),
+        calories: z.number().describe("kcal per serving"),
+        serving: z.string().optional().describe('e.g. "1 egg", "100g", "1 scoop"'),
+        servings: z.number().optional().describe("servings on hand from this purchase"),
+      }).optional().describe("Include ONLY for edible items — creates a Nutrition pantry object. Omit for non-food (hygiene) items."),
+    })).describe("Line items from the receipt"),
+  },
+  async ({ store, date, total, deductFromFinances, items }) => run(async () => {
+    const d = date || today();
+
+    // 1) Market: append to the week's log
+    const wk = weekStartMonday(d);
+    const marketKey = `cortex-market-${wk}`;
+    const log: McpWeeklyMarketLog = ((await readKey(marketKey)) as McpWeeklyMarketLog | null) ?? { weekStart: wk, items: [] };
+    if (!Array.isArray(log.items)) log.items = [];
+    const addedGrocery: McpGroceryItem[] = [];
+    let computedTotal = 0;
+    for (const it of items) {
+      const qty = it.quantity ?? 1;
+      computedTotal += it.price * qty;
+      const g: McpGroceryItem = { id: uid("grc"), name: it.name, price: it.price, quantity: qty, store: it.store || store || "Other", category: it.category || "Other" };
+      log.items.push(g);
+      addedGrocery.push(g);
+    }
+    await writeKey(marketKey, log);
+
+    // 2) Nutrition pantry: create loggable objects for edible items
+    const pantry: McpPantryItem[] = ((await readKey("cortex-nutrition-pantry")) as McpPantryItem[] | null) ?? [];
+    const addedPantry: McpPantryItem[] = [];
+    for (const it of items) {
+      if (!it.nutrition) continue;
+      const p: McpPantryItem = { id: uid("pan"), name: it.name, protein: it.nutrition.protein, calories: it.nutrition.calories, serving: it.nutrition.serving, quantity: it.nutrition.servings, category: it.category, source: "bill", addedAt: new Date().toISOString() };
+      pantry.push(p);
+      addedPantry.push(p);
+    }
+    if (addedPantry.length) await writeKey("cortex-nutrition-pantry", pantry);
+
+    // 3) Finances: deduct the total from the Food budget (as spent this month)
+    const billTotal = total ?? computedTotal;
+    let finances: { deducted: boolean; month?: number; foodBudget?: number; foodSpent?: number; remaining?: number } = { deducted: false };
+    if (deductFromFinances !== false && billTotal > 0) {
+      const fin = (await readKey("cortex-finances")) as McpFinanceData | null;
+      if (fin && Array.isArray(fin.items)) {
+        const month = new Date(d + "T00:00:00").getMonth();
+        let food: McpFinanceItem | undefined =
+          fin.items.find(x => x.type === "Expense" && x.category === "Food" && x.name === "Food") ??
+          fin.items.find(x => x.type === "Expense" && x.category === "Food");
+        if (!food) {
+          food = { id: uid("fin"), name: "Food", type: "Expense", category: "Food", months: Array(12).fill(0) as number[], paid: Array(12).fill(false) as boolean[], paidAmounts: Array(12).fill(0) as number[] };
+          fin.items.push(food);
+        }
+        const months = (Array.isArray(food.months) && food.months.length === 12) ? food.months : (Array(12).fill(0) as number[]);
+        const paidAmounts = (Array.isArray(food.paidAmounts) && food.paidAmounts.length === 12) ? food.paidAmounts : (Array(12).fill(0) as number[]);
+        const paid = (Array.isArray(food.paid) && food.paid.length === 12) ? food.paid : (Array(12).fill(false) as boolean[]);
+        paidAmounts[month] = (paidAmounts[month] || 0) + billTotal;
+        paid[month] = paidAmounts[month] >= (months[month] || 0);
+        food.months = months; food.paidAmounts = paidAmounts; food.paid = paid;
+        await writeKey("cortex-finances", fin);
+        finances = { deducted: true, month, foodBudget: months[month] || 0, foodSpent: paidAmounts[month], remaining: (months[month] || 0) - paidAmounts[month] };
+      }
+    }
+
+    return { ok: true, week: wk, billTotal, market: { key: marketKey, added: addedGrocery.length, items: addedGrocery }, pantry: { created: addedPantry.length, items: addedPantry }, finances };
+  })
+);
+
+server.tool(
+  "log_ate",
+  "Log what the user ate into a day's Nutrition. Appends foods to a meal (Breakfast/Lunch/Dinner/Snack). If a food's macros are omitted they're resolved from the Nutrition pantry by name; otherwise pass your best estimate.",
+  {
+    date: z.string().optional().describe("YYYY-MM-DD, defaults to today"),
+    meal: z.string().optional().describe("Breakfast | Lunch | Dinner | Snack. Default Snack."),
+    foods: z.array(z.object({
+      name: z.string(),
+      protein: z.number().optional().describe("grams; resolved from pantry if omitted"),
+      calories: z.number().optional().describe("kcal; resolved from pantry if omitted"),
+      quantity: z.string().optional().describe('e.g. "3 eggs", "200g"'),
+    })).describe("Foods eaten"),
+  },
+  async ({ date, meal, foods }) => run(async () => {
+    const d = date || today();
+    const key = `cortex-nutrition-${d}`;
+    const day: McpDailyNutrition = ((await readKey(key)) as McpDailyNutrition | null) ?? emptyDailyNutrition(d);
+    if (!Array.isArray(day.meals) || day.meals.length === 0) day.meals = emptyDailyNutrition(d).meals;
+    const mealName = (meal || "Snack").toLowerCase();
+    let target: McpMealEntry | undefined = day.meals.find(m => m.name.toLowerCase() === mealName || m.id.toLowerCase() === mealName);
+    if (!target) { target = { id: uid("meal"), name: meal || "Snack", foods: [] }; day.meals.push(target); }
+    const pantry: McpPantryItem[] = ((await readKey("cortex-nutrition-pantry")) as McpPantryItem[] | null) ?? [];
+    const added: McpFoodItem[] = [];
+    for (const f of foods) {
+      let protein = f.protein, calories = f.calories;
+      if (protein === undefined || calories === undefined) {
+        const match = pantry.find(p => p.name.toLowerCase() === f.name.toLowerCase());
+        if (match) { protein = protein ?? match.protein; calories = calories ?? match.calories; }
+      }
+      const food: McpFoodItem = { name: f.name, protein: protein ?? 0, calories: calories ?? 0, quantity: f.quantity };
+      target.foods.push(food);
+      added.push(food);
+    }
+    await writeKey(key, day);
+    const targets = ((await readKey("cortex-nutrition-targets")) as McpNutritionTargets | null) ?? DEFAULT_TARGETS;
+    const totals = nutritionTotals(day);
+    return { ok: true, date: d, meal: target.name, added, totals, targets, remaining: { protein: targets.protein - totals.protein, calories: targets.calories - totals.calories } };
+  })
+);
+
+server.tool(
+  "get_nutrition",
+  "Get a day's Nutrition log (meals + totals vs targets) plus the pantry (loggable foods on hand).",
+  { date: z.string().optional().describe("YYYY-MM-DD, defaults to today") },
+  async ({ date }) => run(async () => {
+    const d = date || today();
+    const day: McpDailyNutrition = ((await readKey(`cortex-nutrition-${d}`)) as McpDailyNutrition | null) ?? emptyDailyNutrition(d);
+    const targets = ((await readKey("cortex-nutrition-targets")) as McpNutritionTargets | null) ?? DEFAULT_TARGETS;
+    const pantry: McpPantryItem[] = ((await readKey("cortex-nutrition-pantry")) as McpPantryItem[] | null) ?? [];
+    const totals = nutritionTotals(day);
+    return { date: d, meals: day.meals, waterLiters: day.waterLiters, totals, targets, remaining: { protein: targets.protein - totals.protein, calories: targets.calories - totals.calories }, pantry };
+  })
+);
+
+server.tool(
+  "get_market",
+  "Get a week's Market grocery log with totals (by store and category) and the monthly grocery budget.",
+  { date: z.string().optional().describe("Any date in the target week (YYYY-MM-DD), defaults to today") },
+  async ({ date }) => run(async () => {
+    const wk = weekStartMonday(date || today());
+    const log: McpWeeklyMarketLog = ((await readKey(`cortex-market-${wk}`)) as McpWeeklyMarketLog | null) ?? { weekStart: wk, items: [] };
+    const list = Array.isArray(log.items) ? log.items : [];
+    const weekTotal = list.reduce((s, it) => s + it.price * it.quantity, 0);
+    const byCategory: Record<string, number> = {};
+    const byStore: Record<string, number> = {};
+    for (const it of list) {
+      byCategory[it.category] = (byCategory[it.category] || 0) + it.price * it.quantity;
+      byStore[it.store] = (byStore[it.store] || 0) + it.price * it.quantity;
+    }
+    const monthlyBudget = ((await readKey("cortex-market-budget")) as number | null) ?? 646000;
+    return { weekStart: wk, items: list, weekTotal, byCategory, byStore, monthlyBudget };
+  })
+);
+
+server.tool(
+  "create_meal_template",
+  "Create a Nutrition meal template (appears on the Meal Plan tab and can be applied to a day).",
+  {
+    name: z.string().describe('e.g. "High Protein Weekday"'),
+    description: z.string().optional(),
+    meals: z.array(z.object({
+      name: z.string().describe("Breakfast | Lunch | Dinner | Snack"),
+      foods: z.array(z.object({
+        name: z.string(),
+        protein: z.number(),
+        calories: z.number(),
+        quantity: z.string().optional(),
+      })),
+    })).describe("The meals in this template"),
+  },
+  async ({ name, description, meals }) => run(async () => {
+    const templates: McpMealTemplate[] = ((await readKey("cortex-meal-templates")) as McpMealTemplate[] | null) ?? [];
+    const template: McpMealTemplate = {
+      id: uid("tmpl"),
+      name,
+      description: description || "",
+      meals: meals.map(m => ({ id: m.name.toLowerCase().replace(/\s+/g, "-"), name: m.name, foods: m.foods.map(f => ({ name: f.name, protein: f.protein, calories: f.calories, quantity: f.quantity })) })),
+    };
+    templates.push(template);
+    await writeKey("cortex-meal-templates", templates);
+    return { ok: true, template, totalTemplates: templates.length };
+  })
+);
+
+server.tool(
+  "build_market_list",
+  "Build a suggested shopping list from previous Market purchases (item frequency + typical price/store/category across recent weeks) and save it to the Shopping List on the Market tab.",
+  {
+    weeks: z.number().optional().describe("How many recent weeks of buys to analyze. Default 8."),
+    minTimes: z.number().optional().describe("Only include items bought at least this many times. Default 2."),
+  },
+  async ({ weeks, minTimes }) => run(async () => {
+    const nWeeks = weeks && weeks > 0 ? Math.min(weeks, 52) : 8;
+    const threshold = minTimes && minTimes > 0 ? minTimes : 2;
+    const startMonday = new Date(weekStartMonday(today()) + "T00:00:00");
+    interface Agg { name: string; prices: number[]; qtys: number[]; store: string; category: string; timesBought: number; lastBought: string }
+    const map = new Map<string, Agg>();
+    for (let i = 0; i < nWeeks; i++) {
+      const m = new Date(startMonday);
+      m.setDate(startMonday.getDate() - i * 7);
+      const wk = localDateOf(m);
+      const log = (await readKey(`cortex-market-${wk}`)) as McpWeeklyMarketLog | null;
+      if (!log || !Array.isArray(log.items)) continue;
+      for (const it of log.items) {
+        const norm = it.name.trim().toLowerCase();
+        const a = map.get(norm) ?? { name: it.name.trim(), prices: [], qtys: [], store: it.store, category: it.category, timesBought: 0, lastBought: wk };
+        a.prices.push(it.price);
+        a.qtys.push(it.quantity);
+        a.timesBought += 1;
+        if (it.store) a.store = it.store;
+        if (it.category) a.category = it.category;
+        if (wk > a.lastBought) a.lastBought = wk;
+        map.set(norm, a);
+      }
+    }
+    const median = (arr: number[]): number => { if (!arr.length) return 0; const s = [...arr].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+    const items: McpMarketListItem[] = [...map.values()]
+      .filter(a => a.timesBought >= threshold)
+      .sort((x, y) => y.timesBought - x.timesBought)
+      .map(a => ({ name: a.name, price: median(a.prices), quantity: Math.round(median(a.qtys)) || 1, store: a.store, category: a.category, timesBought: a.timesBought, lastBought: a.lastBought, checked: false }));
+    const marketList: McpMarketList = { generatedAt: new Date().toISOString(), weeksAnalyzed: nWeeks, items };
+    await writeKey("cortex-market-list", marketList);
+    return { ok: true, weeksAnalyzed: nWeeks, itemsFound: items.length, list: marketList };
+  })
+);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Start
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1003,7 +1279,7 @@ if (httpMode) {
       await transport.handleRequest(req, res);
     } else if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, tools: 50 }));
+      res.end(JSON.stringify({ ok: true, tools: 56 }));
     } else {
       res.writeHead(404); res.end("Not found");
     }
