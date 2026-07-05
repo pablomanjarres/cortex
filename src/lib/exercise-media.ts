@@ -28,6 +28,14 @@ const memo = new Map<string, ExerciseMedia | null>()
 // Expand common gym abbreviations; drop filler words that hurt matching.
 const ABBR: Record<string, string> = { db: 'dumbbell', bb: 'barbell', ohp: 'overhead press', rdl: 'romanian deadlift', bw: 'bodyweight' }
 const STOP = new Set(['the', 'a', 'with', 'and', 'to', 'per', 'each', 'hold', 'x', 'of', 'standing', 'seated'])
+// Generic modifier / equipment / common-movement words. A match that shares ONLY these
+// isn't meaningful (e.g. "Neck Flexion" must not match "Hip Flexion" on "flexion" alone).
+const GENERIC = new Set([
+  'barbell', 'dumbbell', 'cable', 'machine', 'smith', 'band', 'weighted', 'bodyweight', 'body', 'weight',
+  'lying', 'bent', 'incline', 'decline', 'flat', 'press', 'raise', 'raises', 'extension', 'flexion', 'lateral',
+  'fly', 'flyes', 'crossover', 'pushdown', 'pull', 'push', 'front', 'rear', 'side', 'reverse', 'close', 'wide',
+  'grip', 'medium', 'narrow', 'one', 'two', 'single', 'arm', 'arms', 'high', 'low', 'up', 'down', 'alternate', 'alternating',
+])
 
 function tokenize(s: string): string[] {
   return s
@@ -55,40 +63,61 @@ async function loadDb(): Promise<DbEntry[]> {
   return loadPromise
 }
 
-/** Best fuzzy match for a free-text exercise name → demo media, or null if none is confident. */
-export async function findExerciseMedia(name: string): Promise<ExerciseMedia | null> {
-  const key = name.trim().toLowerCase()
-  if (memo.has(key)) return memo.get(key)!
-  const entries = await loadDb()
+// Best DB entry for a single (non-compound) name, or null if no confident, MEANINGFUL match:
+// shared tokens must include a non-generic word, and cover ≥half the query's specific tokens.
+function bestMatch(entries: DbEntry[], name: string): { entry: DbEntry; score: number } | null {
   const q = tokenize(name)
-  if (!q.length || !entries.length) {
-    memo.set(key, null)
-    return null
-  }
+  if (!q.length) return null
+  const qSpecific = q.filter((t) => !GENERIC.has(t))
   let best: DbEntry | null = null
   let bestScore = 0
   for (const e of entries) {
     const n = tokenize(e.name)
     if (!n.length) continue
-    const inter = q.filter((t) => n.includes(t)).length
-    if (!inter) continue
+    const shared = q.filter((t) => n.includes(t))
+    if (!shared.length) continue
+    const sharedSpecific = shared.filter((t) => !GENERIC.has(t))
+    if (qSpecific.length > 0) {
+      if (sharedSpecific.length < 1) continue // must share a meaningful token
+      if (sharedSpecific.length / qSpecific.length < 0.5) continue // and cover half of them
+    } else if (shared.length < 2) {
+      continue // all-generic query: require ≥2 shared tokens
+    }
     const union = new Set([...q, ...n]).size
-    const score = inter / union + inter * 0.01 // Jaccard + tiny bonus for more shared tokens
+    const score = shared.length / union
     if (score > bestScore) {
       bestScore = score
       best = e
     }
   }
-  const result: ExerciseMedia | null =
-    best && bestScore >= 0.34 && best.images?.length
-      ? {
-          name: best.name,
-          images: best.images.map((i) => `${CDN}/exercises/${i}`),
-          primaryMuscles: best.primaryMuscles || [],
-          equipment: best.equipment || undefined,
-          level: best.level,
-        }
-      : null
+  return best && bestScore >= 0.3 ? { entry: best, score: bestScore } : null
+}
+
+/** Best fuzzy match for a free-text exercise name → demo media, or null if none is confident. */
+export async function findExerciseMedia(name: string): Promise<ExerciseMedia | null> {
+  const key = name.trim().toLowerCase()
+  if (memo.has(key)) return memo.get(key)!
+  const entries = await loadDb()
+  let result: ExerciseMedia | null = null
+  if (entries.length) {
+    // Compound "A / B" or "A or B" names: match each side, keep the best.
+    const parts = name.split(/\/| or /i).map((s) => s.trim()).filter(Boolean)
+    let picked: { entry: DbEntry; score: number } | null = null
+    for (const part of parts.length > 1 ? parts : [name]) {
+      const m = bestMatch(entries, part)
+      if (m && (!picked || m.score > picked.score)) picked = m
+    }
+    if (picked && picked.entry.images?.length) {
+      const best = picked.entry
+      result = {
+        name: best.name,
+        images: best.images.map((i) => `${CDN}/exercises/${i}`),
+        primaryMuscles: best.primaryMuscles || [],
+        equipment: best.equipment || undefined,
+        level: best.level,
+      }
+    }
+  }
   memo.set(key, result)
   return result
 }
