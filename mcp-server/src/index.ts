@@ -201,6 +201,126 @@ server.tool(
   })
 );
 
+interface HabitDef {
+  id: string;
+  name: string;
+  emoji: string;
+  category?: string;
+  cadence?: "weekly" | "monthly";
+  weeklyGoal?: number; // days per week for 100% (weekly cadence), clamped 1–7
+  monthlyGoal?: number; // days per month for 100% (monthly cadence), clamped 1–31
+}
+
+// Clamp a goal to the valid range for its cadence, mirroring the Habits UI.
+function clampHabitGoal(cadence: "weekly" | "monthly", raw: number | undefined): number {
+  if (cadence === "monthly") return Math.min(Math.max(Math.round(raw ?? 1), 1), 31);
+  return Math.min(Math.max(Math.round(raw ?? 7), 1), 7);
+}
+
+server.tool(
+  "add_habit",
+  "Create a new habit definition (mirrors the Habits page). Weekly habits use weeklyGoal (days/week, 1–7); monthly habits use monthlyGoal (days/month, 1–31).",
+  {
+    name: z.string().describe("Habit name"),
+    emoji: z.string().optional().describe("Emoji icon, defaults to ⭐"),
+    category: z.string().optional().describe("Category, e.g. Health, GTM, Mind"),
+    cadence: z.enum(["weekly", "monthly"]).optional().describe("Cadence, defaults to weekly"),
+    goal: z.number().optional().describe("Target completions per window (per week for weekly, per month for monthly). Weekly defaults to 7, monthly to 1."),
+  },
+  async ({ name, emoji, category, cadence, goal }) => run(async () => {
+    if (!name.trim()) throw new Error("Habit name is required.");
+    const habits = ((await readKey("cortex-habits")) || []) as HabitDef[];
+    const cad = cadence ?? "weekly";
+    const habit: HabitDef = {
+      id: Date.now().toString(),
+      name: name.trim(),
+      emoji: emoji || "⭐",
+      ...(category ? { category } : {}),
+      cadence: cad,
+      ...(cad === "monthly"
+        ? { monthlyGoal: clampHabitGoal("monthly", goal) }
+        : { weeklyGoal: clampHabitGoal("weekly", goal) }),
+    };
+    habits.push(habit);
+    await writeKey("cortex-habits", habits);
+    return { ok: true, habit };
+  })
+);
+
+server.tool(
+  "update_habit",
+  "Edit an existing habit definition by id. Only the fields you pass are changed. Changing cadence (or passing goal) re-normalizes the weekly/monthly goal. Pass an empty string for category to clear it.",
+  {
+    habitId: z.string().describe("Habit ID (from get_habits)"),
+    name: z.string().optional().describe("New name"),
+    emoji: z.string().optional().describe("New emoji"),
+    category: z.string().optional().describe("New category; empty string clears it"),
+    cadence: z.enum(["weekly", "monthly"]).optional().describe("Switch cadence (weekly/monthly)"),
+    goal: z.number().optional().describe("New target completions per window"),
+  },
+  async ({ habitId, name, emoji, category, cadence, goal }) => run(async () => {
+    const habits = ((await readKey("cortex-habits")) || []) as HabitDef[];
+    const idx = habits.findIndex((h) => h.id === habitId);
+    if (idx === -1) throw new Error(`No habit found with id "${habitId}". Use get_habits to list ids.`);
+    const habit = { ...habits[idx] };
+    if (name !== undefined) {
+      if (!name.trim()) throw new Error("Habit name cannot be empty.");
+      habit.name = name.trim();
+    }
+    if (emoji !== undefined && emoji) habit.emoji = emoji;
+    if (category !== undefined) {
+      if (category) habit.category = category;
+      else delete habit.category;
+    }
+    // Re-normalize goal fields only when cadence or goal is provided (matches the UI's edit save).
+    if (cadence !== undefined || goal !== undefined) {
+      const cad = cadence ?? habit.cadence ?? "weekly";
+      habit.cadence = cad;
+      if (cad === "monthly") {
+        habit.monthlyGoal = clampHabitGoal("monthly", goal ?? habit.monthlyGoal);
+        delete habit.weeklyGoal;
+      } else {
+        habit.weeklyGoal = clampHabitGoal("weekly", goal ?? habit.weeklyGoal);
+        delete habit.monthlyGoal;
+      }
+    }
+    habits[idx] = habit;
+    await writeKey("cortex-habits", habits);
+    return { ok: true, habit };
+  })
+);
+
+server.tool(
+  "delete_habit",
+  "Delete a habit definition by id and remove its completion history (mirrors removing a habit on the Habits page).",
+  {
+    habitId: z.string().describe("Habit ID (from get_habits)"),
+  },
+  async ({ habitId }) => run(async () => {
+    const habits = ((await readKey("cortex-habits")) || []) as HabitDef[];
+    const removed = habits.find((h) => h.id === habitId);
+    if (!removed) throw new Error(`No habit found with id "${habitId}". Use get_habits to list ids.`);
+    await writeKey("cortex-habits", habits.filter((h) => h.id !== habitId));
+    // Clean completion history so streaks/scores don't count a deleted habit.
+    const history = ((await readKey("cortex-habits-history")) || {}) as Record<string, Record<string, boolean>>;
+    let historyTouched = false;
+    for (const date of Object.keys(history)) {
+      if (history[date] && habitId in history[date]) {
+        delete history[date][habitId];
+        historyTouched = true;
+      }
+    }
+    if (historyTouched) await writeKey("cortex-habits-history", history);
+    // Clean the legacy weekly grid too, in case it still holds this id.
+    const grid = ((await readKey("cortex-habits-grid")) || {}) as Record<string, unknown>;
+    if (grid && habitId in grid) {
+      delete grid[habitId];
+      await writeKey("cortex-habits-grid", grid);
+    }
+    return { ok: true, deleted: removed };
+  })
+);
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP 3: Books
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
