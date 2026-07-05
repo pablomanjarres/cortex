@@ -10,6 +10,8 @@
 //   cortex-ban-violations         → BanViolation[]
 //   cortex-meal-templates         → MealTemplate[]
 //   cortex-market-presets         → MarketPreset[]
+//   cortex-nutrition-pantry       → PantryItem[]
+//   cortex-market-list            → MarketList
 
 // ── Workout Plan ─────────────────────────────────────────────────────────────
 
@@ -134,6 +136,20 @@ export const COMMON_FOODS: FoodItem[] = [
   { name: 'Aguacate', protein: 2, calories: 160, quantity: '1/2' },
   { name: 'Granola bar', protein: 3, calories: 150, quantity: '1 bar' },
 ]
+
+// ── Pantry (foods on hand, e.g. created from a grocery bill) ──────────────────
+// Loggable into the daily nutrition; macros are per one `serving`.
+export interface PantryItem {
+  id: string
+  name: string
+  protein: number          // grams per serving
+  calories: number         // kcal per serving
+  serving?: string         // e.g. "1 egg", "100g", "1 scoop"
+  quantity?: number        // servings on hand (optional)
+  category?: string        // Protein | Carbs | Dairy | Produce | Snacks | Other
+  source?: 'bill' | 'manual'
+  addedAt?: string         // ISO timestamp
+}
 
 export const DEFAULT_WORKOUT_PLANS: WorkoutDay[] = [
   {
@@ -326,6 +342,24 @@ export interface MarketPreset {
   quantity: number
   store: string
   category: string
+}
+
+// ── Suggested shopping list (generated from previous market buys) ─────────────
+export interface MarketListItem {
+  name: string
+  price: number            // typical unit price (COP)
+  quantity: number
+  store: string
+  category: string
+  timesBought?: number     // how often it appears across recent weeks
+  lastBought?: string      // week-start date it was last purchased
+  checked?: boolean        // ticked off while shopping
+}
+
+export interface MarketList {
+  generatedAt: string      // ISO timestamp
+  weeksAnalyzed?: number
+  items: MarketListItem[]
 }
 
 export const DEFAULT_MARKET_PRESETS: MarketPreset[] = [

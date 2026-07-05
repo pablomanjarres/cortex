@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Input } from '@/components/ui/input'
-import type { DailyNutrition, FoodItem, BodyStats, NutritionTargets } from '@/types/gym'
+import { WidgetCard } from '@/components/widgets/WidgetCard'
+import type { DailyNutrition, FoodItem, BodyStats, NutritionTargets, PantryItem } from '@/types/gym'
 import { COMMON_FOODS, EMPTY_DAILY_NUTRITION } from '@/types/gym'
 import { localDate } from '@/lib/date-utils'
 import { useStore, readStore, writeStore } from '@/lib/store'
@@ -16,7 +17,10 @@ import {
   Bookmark,
   Pencil,
   Check,
+  Trash2,
 } from 'lucide-react'
+
+const PANTRY_CATEGORIES = ['Protein', 'Carbs', 'Dairy', 'Produce', 'Snacks', 'Other']
 
 interface NutritionLogProps {
   nutrition: DailyNutrition
@@ -69,11 +73,17 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
 
   const [activeMeal, setActiveMeal] = useState(getDefaultMealIndex)
   const [quickFoods, setQuickFoods] = useStore<FoodItem[]>('cortex-quick-foods', COMMON_FOODS)
+  const [pantry, setPantry] = useStore<PantryItem[]>('cortex-nutrition-pantry', [])
   const [editingQuickAdd, setEditingQuickAdd] = useState(false)
   const [newFoodName, setNewFoodName] = useState('')
   const [newFoodProtein, setNewFoodProtein] = useState('')
   const [newFoodCalories, setNewFoodCalories] = useState('')
   const [newFoodQuantity, setNewFoodQuantity] = useState('')
+  const [newPantryName, setNewPantryName] = useState('')
+  const [newPantryProtein, setNewPantryProtein] = useState('')
+  const [newPantryCalories, setNewPantryCalories] = useState('')
+  const [newPantryServing, setNewPantryServing] = useState('')
+  const [newPantryCategory, setNewPantryCategory] = useState('Protein')
   const [weightInput, setWeightInput] = useState('')
   const [showQuickAdd, setShowQuickAdd] = useState(true)
   const [editingTargets, setEditingTargets] = useState(false)
@@ -138,6 +148,47 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
     setNewFoodProtein('')
     setNewFoodCalories('')
     setNewFoodQuantity('')
+  }
+
+  // ── Pantry ──────────────────────────────────────────────────────────────────
+  const addPantryToToday = (item: PantryItem) => {
+    const snackIndex = nutrition.meals.findIndex(m => m.id === 'snack')
+    addFood(snackIndex >= 0 ? snackIndex : activeMeal, {
+      name: item.name,
+      protein: item.protein,
+      calories: item.calories,
+      ...(item.serving ? { quantity: item.serving } : {}),
+    })
+    if (typeof item.quantity === 'number') {
+      setPantry(prev => prev.flatMap(p => {
+        if (p.id !== item.id) return [p]
+        const nextQty = (p.quantity ?? 0) - 1
+        return nextQty <= 0 ? [] : [{ ...p, quantity: nextQty }]
+      }))
+    }
+  }
+
+  const removePantryItem = (id: string) => {
+    setPantry(prev => prev.filter(p => p.id !== id))
+  }
+
+  const addPantryItem = () => {
+    if (!newPantryName.trim()) return
+    const item: PantryItem = {
+      id: 'pan-' + Date.now(),
+      name: newPantryName.trim(),
+      protein: Number(newPantryProtein) || 0,
+      calories: Number(newPantryCalories) || 0,
+      ...(newPantryServing.trim() ? { serving: newPantryServing.trim() } : {}),
+      category: newPantryCategory,
+      source: 'manual',
+      addedAt: new Date().toISOString(),
+    }
+    setPantry(prev => [...prev, item])
+    setNewPantryName('')
+    setNewPantryProtein('')
+    setNewPantryCalories('')
+    setNewPantryServing('')
   }
 
   const adjustWater = (delta: number) => {
@@ -473,6 +524,114 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
           </>
         )}
       </div>
+
+      {/* Pantry — foods on hand (populated from grocery bills via Claude) */}
+      <WidgetCard title="Pantry" description="Foods on hand — add straight to today's snack." delay={0.05}>
+        <div className="space-y-2">
+          {pantry.length === 0 ? (
+            <p className="text-sm sm:text-xs text-muted-foreground/40 py-2">
+              No pantry items yet — add a grocery bill via Claude and they'll show up here.
+            </p>
+          ) : (
+            pantry.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-2 text-sm sm:text-xs border-t border-border/30 pt-2.5 sm:pt-1.5 first:border-t-0 first:pt-0"
+              >
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                  <span className="truncate text-foreground">{item.name}</span>
+                  {item.serving && (
+                    <span className="text-muted-foreground/40 shrink-0">{item.serving}</span>
+                  )}
+                  {item.category && (
+                    <span className="shrink-0 rounded-full border border-border bg-foreground/5 px-1.5 py-0.5 text-[10px] text-muted-foreground/60">
+                      {item.category}
+                    </span>
+                  )}
+                  {typeof item.quantity === 'number' && (
+                    <span className="text-muted-foreground/40 shrink-0 tabular-nums">{item.quantity} on hand</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 sm:gap-2 shrink-0">
+                  <span className="text-muted-foreground tabular-nums">{item.protein}g P · {item.calories} kcal</span>
+                  <button
+                    onClick={() => addPantryToToday(item)}
+                    className="rounded-lg bg-foreground/10 p-1.5 sm:p-1 hover:bg-foreground/20 active:bg-foreground/25 transition-colors"
+                    title="Add to today's snack"
+                  >
+                    <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => removePantryItem(item.id)}
+                    className="text-red-400/60 hover:text-red-400 active:text-red-400 transition-colors p-1 -m-1"
+                    title="Remove from pantry"
+                  >
+                    <Trash2 className="h-4 w-4 sm:h-3 sm:w-3" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+
+          {/* Add pantry item */}
+          <div className="space-y-2 sm:space-y-0 sm:flex sm:gap-2 sm:items-end border-t border-border/30 pt-3 mt-1">
+            <div className="flex gap-2 sm:contents">
+              <div className="flex-1">
+                <Input
+                  placeholder="Item name"
+                  value={newPantryName}
+                  onChange={(e) => setNewPantryName(e.target.value)}
+                  className="h-9 sm:h-7 text-sm sm:text-xs"
+                  onKeyDown={(e) => e.key === 'Enter' && addPantryItem()}
+                />
+              </div>
+              <div className="w-20 sm:w-16">
+                <Input
+                  placeholder="Serving"
+                  value={newPantryServing}
+                  onChange={(e) => setNewPantryServing(e.target.value)}
+                  className="h-9 sm:h-7 text-sm sm:text-xs"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 sm:contents">
+              <div className="flex-1 sm:w-16 sm:flex-none">
+                <Input
+                  type="number"
+                  placeholder="Protein (g)"
+                  value={newPantryProtein}
+                  onChange={(e) => setNewPantryProtein(e.target.value)}
+                  className="h-9 sm:h-7 text-sm sm:text-xs"
+                />
+              </div>
+              <div className="flex-1 sm:w-16 sm:flex-none">
+                <Input
+                  type="number"
+                  placeholder="Calories"
+                  value={newPantryCalories}
+                  onChange={(e) => setNewPantryCalories(e.target.value)}
+                  className="h-9 sm:h-7 text-sm sm:text-xs"
+                  onKeyDown={(e) => e.key === 'Enter' && addPantryItem()}
+                />
+              </div>
+              <select
+                value={newPantryCategory}
+                onChange={(e) => setNewPantryCategory(e.target.value)}
+                className="h-9 sm:h-7 rounded-md border border-border bg-background px-2 text-sm sm:text-xs text-foreground outline-none"
+              >
+                {PANTRY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button
+                onClick={addPantryItem}
+                className="rounded-lg bg-foreground/10 p-2 sm:p-1.5 hover:bg-foreground/20 active:bg-foreground/25 transition-colors shrink-0"
+                title="Add to pantry"
+              >
+                <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </WidgetCard>
 
       {/* Weight logging */}
       <div className="rounded-xl border border-border bg-card p-4">
