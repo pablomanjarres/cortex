@@ -1044,6 +1044,34 @@ function nutritionTotals(day: McpDailyNutrition): { protein: number; calories: n
   return { protein, calories, water: day.waterLiters || 0 };
 }
 
+// Monday dates of the market weeks that touch a calendar month (mirrors the app's getWeeksInMonth).
+function mondaysInMonth(year: number, month: number): string[] {
+  const weeks: string[] = [];
+  const d = new Date(year, month, 1);
+  const day = d.getDay();
+  d.setDate(d.getDate() - ((day + 6) % 7));
+  for (let guard = 0; guard < 8; guard++) {
+    const weekEnd = new Date(d);
+    weekEnd.setDate(d.getDate() + 6);
+    if (d.getMonth() > month && d.getFullYear() >= year) break;
+    if (weekEnd.getMonth() >= month || weekEnd.getFullYear() > year || d.getMonth() === month || weekEnd.getMonth() === month) {
+      weeks.push(localDateOf(new Date(d)));
+    }
+    d.setDate(d.getDate() + 7);
+    if (weeks.length > 6) break;
+  }
+  return weeks;
+}
+// Total grocery spend in a calendar month — the single source of truth for the Food budget's "spent".
+async function marketMonthTotal(year: number, month: number): Promise<number> {
+  let total = 0;
+  for (const wk of mondaysInMonth(year, month)) {
+    const wl = (await readKey(`cortex-market-${wk}`)) as McpWeeklyMarketLog | null;
+    if (wl && Array.isArray(wl.items)) total += wl.items.reduce((s, it) => s + it.price * it.quantity, 0);
+  }
+  return total;
+}
+
 server.tool(
   "add_bill",
   "Add a grocery bill/receipt to Cortex. Parse the receipt first, then call this with the line items. It (1) appends the items to the current week's Market log, (2) creates Nutrition pantry objects for edible items so they're loggable later, and (3) deducts the bill total from the Food budget in Finances.",
@@ -1096,13 +1124,17 @@ server.tool(
     }
     if (addedPantry.length) await writeKey("cortex-nutrition-pantry", pantry);
 
-    // 3) Finances: deduct the total from the Food budget (as spent this month)
+    // 3) Finances: the Food budget's "spent" for the month = the month's total market spend
+    // (recomputed from the ledger, incl. the items we just added — never a blind increment,
+    // so it stays consistent with the Market tab's live sync and can't double-count).
     const billTotal = total ?? computedTotal;
     let finances: { deducted: boolean; month?: number; foodBudget?: number; foodSpent?: number; remaining?: number } = { deducted: false };
-    if (deductFromFinances !== false && billTotal > 0) {
+    if (deductFromFinances !== false) {
       const fin = (await readKey("cortex-finances")) as McpFinanceData | null;
       if (fin && Array.isArray(fin.items)) {
-        const month = new Date(d + "T00:00:00").getMonth();
+        const when = new Date(d + "T00:00:00");
+        const month = when.getMonth();
+        const monthSpent = await marketMonthTotal(when.getFullYear(), month);
         let food: McpFinanceItem | undefined =
           fin.items.find(x => x.type === "Expense" && x.category === "Food" && x.name === "Food") ??
           fin.items.find(x => x.type === "Expense" && x.category === "Food");
@@ -1113,11 +1145,11 @@ server.tool(
         const months = (Array.isArray(food.months) && food.months.length === 12) ? food.months : (Array(12).fill(0) as number[]);
         const paidAmounts = (Array.isArray(food.paidAmounts) && food.paidAmounts.length === 12) ? food.paidAmounts : (Array(12).fill(0) as number[]);
         const paid = (Array.isArray(food.paid) && food.paid.length === 12) ? food.paid : (Array(12).fill(false) as boolean[]);
-        paidAmounts[month] = (paidAmounts[month] || 0) + billTotal;
-        paid[month] = paidAmounts[month] >= (months[month] || 0);
+        paidAmounts[month] = monthSpent;
+        paid[month] = (months[month] || 0) > 0 && monthSpent >= months[month];
         food.months = months; food.paidAmounts = paidAmounts; food.paid = paid;
         await writeKey("cortex-finances", fin);
-        finances = { deducted: true, month, foodBudget: months[month] || 0, foodSpent: paidAmounts[month], remaining: (months[month] || 0) - paidAmounts[month] };
+        finances = { deducted: true, month, foodBudget: months[month] || 0, foodSpent: monthSpent, remaining: (months[month] || 0) - monthSpent };
       }
     }
 
