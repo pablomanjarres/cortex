@@ -330,14 +330,18 @@ export function DailyPage() {
         >
           {isElectron && calendarEvents.length > 0 ? (
             <div className="flex flex-col gap-0.5 max-h-36 overflow-y-auto">
-              {calendarEvents.map((evt, i) => (
-                <div key={`${evt.title}-${i}`} className="flex items-center gap-2 py-1">
-                  <span className="text-[10px] font-mono tabular-nums text-muted-foreground w-10 shrink-0">
-                    {evt.isAllDay ? 'ALL' : evt.startTime}
-                  </span>
-                  <span className="text-xs truncate">{evt.title}</span>
-                </div>
-              ))}
+              {calendarEvents.map((evt, i) => {
+                const isClass = evt.calendar === 'Classes (Cortex)' || evt.title.startsWith('Class:')
+                return (
+                  <div key={`${evt.title}-${i}`} className="flex items-center gap-2 py-1">
+                    <span className="text-[10px] font-mono tabular-nums text-muted-foreground w-10 shrink-0">
+                      {evt.isAllDay ? 'ALL' : evt.startTime}
+                    </span>
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isClass ? 'bg-purple-400' : 'bg-muted-foreground/25'}`} />
+                    <span className="text-xs truncate">{isClass ? evt.title.replace(/^Class:\s*/, '') : evt.title}</span>
+                  </div>
+                )
+              })}
             </div>
           ) : (
             <div className="flex items-center gap-2 py-2">
