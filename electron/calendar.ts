@@ -33,7 +33,9 @@ export interface CreateEventPayload {
   isAllDay: boolean
   calendar?: string    // calendar title to target
   notes?: string
-  recurrence?: string  // e.g. "FREQ=YEARLY"
+  recurrence?: string  // e.g. "FREQ=YEARLY", or "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261128"
+  calendarColor?: string          // hex (e.g. "#8B5CF6") for a calendar created on demand
+  createCalendarIfMissing?: boolean // create the target calendar (with calendarColor) if it doesn't exist
 }
 
 export interface BirthdayEntry {
@@ -46,6 +48,7 @@ export interface BirthdayEntry {
 const SWIFT_SOURCE = `
 import EventKit
 import Foundation
+import CoreGraphics
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
@@ -118,6 +121,53 @@ func findCalendar(_ title: String) -> EKCalendar? {
     return store.calendars(for: .event).first { $0.title == title }
 }
 
+func cgColorFromHex(_ hex: String) -> CGColor? {
+    var s = hex
+    if s.hasPrefix("#") { s = String(s.dropFirst()) }
+    guard s.count == 6, let v = Int(s, radix: 16) else { return nil }
+    let r = CGFloat((v >> 16) & 0xFF) / 255.0
+    let g = CGFloat((v >> 8) & 0xFF) / 255.0
+    let b = CGFloat(v & 0xFF) / 255.0
+    return CGColor(srgbRed: r, green: g, blue: b, alpha: 1.0)
+}
+
+// Find a calendar by title, creating it (in a writable source, optionally
+// colored) if it doesn't exist yet. Returns nil if creation fails.
+func ensureCalendar(_ title: String, _ hex: String?) -> EKCalendar? {
+    if let existing = findCalendar(title) { return existing }
+    let cal = EKCalendar(for: .event, eventStore: store)
+    cal.title = title
+    let source = store.sources.first { $0.sourceType == .local }
+        ?? store.defaultCalendarForNewEvents?.source
+        ?? store.sources.first { $0.sourceType == .calDAV }
+        ?? store.sources.first
+    guard let src = source else { return nil }
+    cal.source = src
+    if let hex = hex, let color = cgColorFromHex(hex) { cal.cgColor = color }
+    do { try store.saveCalendar(cal, commit: true); return cal }
+    catch { return nil }
+}
+
+func weekdayFromToken(_ t: String) -> EKWeekday? {
+    switch t.trimmingCharacters(in: .whitespaces).uppercased() {
+    case "SU": return .sunday
+    case "MO": return .monday
+    case "TU": return .tuesday
+    case "WE": return .wednesday
+    case "TH": return .thursday
+    case "FR": return .friday
+    case "SA": return .saturday
+    default: return nil
+    }
+}
+
+// Return the value after a "KEY=" token in an RFC5545-ish string, up to the next ";".
+func fieldAfter(_ src: String, _ key: String) -> String? {
+    guard let r = src.range(of: key) else { return nil }
+    let after = src[r.upperBound...]
+    return after.split(separator: ";").first.map(String.init) ?? String(after)
+}
+
 func readJsonFromStdin() -> [String: Any]? {
     let data = FileHandle.standardInput.readDataToEndOfFile()
     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -151,6 +201,8 @@ case "create":
     let notes = input["notes"] as? String ?? ""
     let recurrence = input["recurrence"] as? String
     let calTitle = input["calendar"] as? String
+    let calColorHex = input["calendarColor"] as? String
+    let createCalIfMissing = input["createCalendarIfMissing"] as? Bool ?? false
 
     guard let startStr = input["startDate"] as? String, let startDate = parseDate(startStr) else {
         print("{\\"success\\":false,\\"error\\":\\"Invalid startDate\\"}")
@@ -172,8 +224,14 @@ case "create":
     event.isAllDay = isAllDay
     event.notes = notes
 
-    if let calTitle = calTitle, let targetCal = findCalendar(calTitle) {
-        event.calendar = targetCal
+    if let calTitle = calTitle, !calTitle.isEmpty {
+        if let targetCal = findCalendar(calTitle) {
+            event.calendar = targetCal
+        } else if createCalIfMissing, let created = ensureCalendar(calTitle, calColorHex) {
+            event.calendar = created
+        } else {
+            event.calendar = store.defaultCalendarForNewEvents
+        }
     } else {
         event.calendar = store.defaultCalendarForNewEvents
     }
@@ -183,7 +241,26 @@ case "create":
         if recurrence.contains("DAILY") { freq = .daily }
         else if recurrence.contains("WEEKLY") { freq = .weekly }
         else if recurrence.contains("MONTHLY") { freq = .monthly }
-        event.addRecurrenceRule(EKRecurrenceRule(recurrenceWith: freq, interval: 1, end: nil))
+
+        // Optional BYDAY=MO,WE,FR — which weekdays a weekly event repeats on.
+        var days: [EKRecurrenceDayOfWeek]? = nil
+        if let byday = fieldAfter(recurrence, "BYDAY=") {
+            let parsed = byday.split(separator: ",").compactMap { weekdayFromToken(String($0)) }.map { EKRecurrenceDayOfWeek($0) }
+            if !parsed.isEmpty { days = parsed }
+        }
+
+        // Optional UNTIL=YYYYMMDD — bounds recurrence (e.g. term end).
+        var recEnd: EKRecurrenceEnd? = nil
+        if let until = fieldAfter(recurrence, "UNTIL=") {
+            let ymd = String(until.prefix(8))
+            let uf = DateFormatter()
+            uf.dateFormat = "yyyyMMdd"
+            uf.timeZone = TimeZone.current
+            if let untilDate = uf.date(from: ymd) { recEnd = EKRecurrenceEnd(end: untilDate) }
+        }
+
+        let rule = EKRecurrenceRule(recurrenceWith: freq, interval: 1, daysOfTheWeek: days, daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: recEnd)
+        event.addRecurrenceRule(rule)
     }
 
     do {
