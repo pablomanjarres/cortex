@@ -13,8 +13,8 @@ interface Habit {
   id: string
   name: string
   emoji: string
-  weeklyGoal?: number // days per week needed for 100%, defaults to 7 (weekly cadence)
-  monthlyGoal?: number // days per month needed for 100%, defaults to 1 (monthly cadence)
+  weeklyGoal?: number // days per week needed for 100% (0–7), defaults to 7; 0 = no target this week
+  monthlyGoal?: number // days per month needed for 100% (0–31), defaults to 1; 0 = no target this month
   cadence?: Cadence // defaults to 'weekly'
   category?: string
   context?: string // free-form note: what this habit really means + what counts as done
@@ -74,6 +74,20 @@ function getMonthDates(anchorDateStr: string): string[] {
 
 function getMonthLabel(anchorDateStr: string): string {
   return new Date(anchorDateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long' })
+}
+
+// Parse a goal input. A goal of 0 is allowed — it means the habit has no
+// required completions this week/month (paused / optional, still trackable).
+// A blank or invalid input falls back to the cadence default; an explicit 0 is
+// kept (note: `parseInt('0') || 7` would wrongly coerce 0 back to the default).
+function parseGoal(raw: string, cadence: Cadence): number {
+  const max = cadence === 'monthly' ? 31 : 7
+  const fallback = cadence === 'monthly' ? 1 : 7
+  const t = raw.trim()
+  if (t === '') return fallback
+  const n = parseInt(t, 10)
+  if (Number.isNaN(n)) return fallback
+  return Math.min(Math.max(n, 0), max)
 }
 
 export function HabitsPage() {
@@ -169,8 +183,8 @@ export function HabitsPage() {
       category: newCategory || undefined,
     }
     const habit: Habit = newCadence === 'monthly'
-      ? { ...base, cadence: 'monthly', monthlyGoal: Math.min(Math.max(parseInt(newGoal) || 1, 1), 31) }
-      : { ...base, cadence: 'weekly', weeklyGoal: Math.min(Math.max(parseInt(newGoal) || 7, 1), 7) }
+      ? { ...base, cadence: 'monthly', monthlyGoal: parseGoal(newGoal, 'monthly') }
+      : { ...base, cadence: 'weekly', weeklyGoal: parseGoal(newGoal, 'weekly') }
     setHabits((prev) => [...prev, habit])
     setNewName('')
     setNewEmoji('')
@@ -216,10 +230,10 @@ export function HabitsPage() {
         if (h.id !== editingId) return h
         const next: Habit = { ...h, name: editName.trim(), emoji: editEmoji || h.emoji, cadence: editCadence }
         if (editCadence === 'monthly') {
-          next.monthlyGoal = Math.min(Math.max(parseInt(editGoal) || 1, 1), 31)
+          next.monthlyGoal = parseGoal(editGoal, 'monthly')
           delete next.weeklyGoal
         } else {
-          next.weeklyGoal = Math.min(Math.max(parseInt(editGoal) || 7, 1), 7)
+          next.weeklyGoal = parseGoal(editGoal, 'weekly')
           delete next.monthlyGoal
         }
         return next
@@ -289,6 +303,7 @@ export function HabitsPage() {
   // Consecutive calendar months (back from now) whose completions met the monthly goal.
   // The current, still-in-progress month never breaks the streak — it just doesn't count yet.
   const getMonthlyStreak = (habitId: string, goal: number) => {
+    if (goal <= 0) return 0 // no target ⇒ no streak to earn
     let streak = 0
     const now = new Date()
     for (let i = 0; i < 120; i++) {
@@ -319,14 +334,17 @@ export function HabitsPage() {
 
   // Weekly score respects per-habit goals (e.g. Train 3/week = 100% at 3).
   // Monthly habits are tracked over the month, so they're excluded from the weekly rollup.
+  // Habits with a 0 goal are "not required this week" — excluded so they neither
+  // inflate the score (as a free 100%) nor divide by zero.
   const weeklyHabits = habits.filter(h => (h.cadence ?? 'weekly') === 'weekly')
-  const habitWeekProgress = weeklyHabits.map((h) => {
+  const scoredWeeklyHabits = weeklyHabits.filter(h => (h.weeklyGoal ?? 7) > 0)
+  const habitWeekProgress = scoredWeeklyHabits.map((h) => {
     const goal = h.weeklyGoal ?? 7
     const done = weekDates.filter(d => habitHistory[d]?.[h.id]).length
     return { done, goal, pct: Math.min(done / goal, 1) }
   })
-  const weeklyScore = weeklyHabits.length > 0
-    ? Math.round(habitWeekProgress.reduce((s, h) => s + h.pct, 0) / weeklyHabits.length * 100)
+  const weeklyScore = scoredWeeklyHabits.length > 0
+    ? Math.round(habitWeekProgress.reduce((s, h) => s + h.pct, 0) / scoredWeeklyHabits.length * 100)
     : 0
   const totalCompleted = habitWeekProgress.reduce((s, h) => s + Math.min(h.done, h.goal), 0)
   const totalGoals = habitWeekProgress.reduce((s, h) => s + h.goal, 0)
@@ -348,7 +366,7 @@ export function HabitsPage() {
               <option value="weekly">/wk</option>
               <option value="monthly">/mo</option>
             </select>
-            <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-7 w-12 bg-input px-1 text-center text-sm" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={1} max={editCadence === 'monthly' ? 31 : 7} />
+            <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-7 w-12 bg-input px-1 text-center text-sm" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
           </div>
         ) : (
           <span className="inline-flex items-center">
@@ -375,7 +393,7 @@ export function HabitsPage() {
         {(() => {
           const p = getProgress(habit)
           return (
-            <span className={`text-sm font-semibold tabular-nums ${p.met ? 'text-green-400' : 'text-muted-foreground'}`}>
+            <span className={`text-sm font-semibold tabular-nums ${p.goal === 0 ? 'text-muted-foreground/40' : p.met ? 'text-green-400' : 'text-muted-foreground'}`}>
               {Math.min(p.done, p.goal)}/{p.goal}
               {p.cadence === 'monthly' && <span className="ml-0.5 text-[9px] font-normal text-muted-foreground/50" title={`Monthly goal · ${monthLabel}`}>/mo</span>}
             </span>
@@ -460,7 +478,7 @@ export function HabitsPage() {
                       <option value="weekly">/wk</option>
                       <option value="monthly">/mo</option>
                     </select>
-                    <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-9 w-14 bg-input px-1 text-center" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={1} max={editCadence === 'monthly' ? 31 : 7} />
+                    <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-9 w-14 bg-input px-1 text-center" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
                   </div>
                   <div className="flex gap-2">
                     <button onClick={saveEdit} className="flex-1 h-9 rounded-lg bg-foreground/10 text-sm font-medium">Save</button>
@@ -481,7 +499,7 @@ export function HabitsPage() {
                           <Flame className="h-3 w-3" />{streak}{streakUnit}
                         </span>
                       )}
-                      <span className={`text-xs font-semibold tabular-nums ${met ? 'text-green-400' : 'text-muted-foreground'}`}>
+                      <span className={`text-xs font-semibold tabular-nums ${goal === 0 ? 'text-muted-foreground/40' : met ? 'text-green-400' : 'text-muted-foreground'}`}>
                         {Math.min(done, goal)}/{goal}
                         {cadence === 'monthly' && <span className="ml-0.5 text-[9px] font-normal text-muted-foreground/50">/mo</span>}
                       </span>
@@ -548,7 +566,7 @@ export function HabitsPage() {
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
           </select>
-          <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={1} max={newCadence === 'monthly' ? 31 : 7} className="h-10 w-14 bg-input px-1 text-center" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
+          <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={newCadence === 'monthly' ? 31 : 7} className="h-10 w-14 bg-input px-1 text-center" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
           <button onClick={addHabit} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground active:bg-secondary/80">
             <Plus className="h-5 w-5" />
           </button>
@@ -606,7 +624,7 @@ export function HabitsPage() {
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
             </select>
-            <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={1} max={newCadence === 'monthly' ? 31 : 7} className="h-8 w-14 bg-input px-1 text-center text-sm" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
+            <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={newCadence === 'monthly' ? 31 : 7} className="h-8 w-14 bg-input px-1 text-center text-sm" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
             <button onClick={addHabit} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-foreground transition-colors hover:bg-secondary/80">
               <Plus className="h-4 w-4" />
             </button>

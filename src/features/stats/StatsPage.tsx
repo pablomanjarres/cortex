@@ -271,8 +271,11 @@ export function StatsPage() {
   }, [habits, habitHistory, weekDates])
 
   const weekHabitConsistency = useMemo(() => {
-    if (weekHabitData.length === 0) return 0
-    const avgPct = weekHabitData.reduce((s, h) => s + Math.min(h.completed / h.goal, 1), 0) / weekHabitData.length
+    // 0-goal habits are "not required this week" — exclude them from the average
+    // so they neither divide by zero nor count as a free 100%.
+    const scored = weekHabitData.filter(h => h.goal > 0)
+    if (scored.length === 0) return 0
+    const avgPct = scored.reduce((s, h) => s + Math.min(h.completed / h.goal, 1), 0) / scored.length
     return Math.round(avgPct * 100)
   }, [weekHabitData])
 
@@ -569,8 +572,8 @@ export function StatsPage() {
             <WidgetCard title="HABIT CONSISTENCY" description={`${weekHabitConsistency}% this week`} delay={0.15}>
               <div className="flex flex-col gap-1.5">
                 {weekHabitData.map((h) => {
-                  const pct = Math.min(h.completed / h.goal, 1) * 100
-                  const met = h.completed >= h.goal
+                  const pct = h.goal > 0 ? Math.min(h.completed / h.goal, 1) * 100 : 0
+                  const met = h.goal > 0 && h.completed >= h.goal
                   return (
                     <div key={h.name} className="flex items-center gap-2">
                       <span className="text-xs w-32 sm:w-40 truncate">{h.name}</span>
