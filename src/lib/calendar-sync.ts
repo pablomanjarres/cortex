@@ -80,12 +80,15 @@ interface ClassLike {
 
 const STORE_KEY = 'cortex-calendar-sync'
 const DEFAULT_STATE: CalendarSyncState = { mappings: [], lastPolled: '' }
-const TARGET_CALENDAR = import.meta.env.VITE_CALENDAR_TARGET || ''
 
 // Classes sync into their own calendar so they show up purple (EventKit colors
 // per-calendar, not per-event). The helper creates it on demand with this color.
 const CLASSES_CALENDAR = 'Classes (Cortex)'
 const CLASSES_COLOR = '#8B5CF6' // tailwind purple-500
+const EXAMS_CALENDAR = 'Exams (Cortex)'
+const EXAMS_COLOR = '#EF4444' // tailwind red-500
+const BIRTHDAYS_CALENDAR = 'Birthdays (Cortex)'
+const BIRTHDAYS_COLOR = '#FBBF24' // tailwind amber-400 (yellow)
 const BYDAY_TOKENS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] // index 0=Mon … 6=Sun
 
 // First calendar date on/after termStart whose weekday is one of `days`.
@@ -221,7 +224,9 @@ export async function syncAssignmentToCalendar(
       title,
       startDate: assignment.deadline,
       isAllDay: true,
-      calendar: TARGET_CALENDAR,
+      calendar: EXAMS_CALENDAR,
+      calendarColor: EXAMS_COLOR,
+      createCalendarIfMissing: true,
       notes: `cortex:assignment:${assignment.id}`,
     }
 
@@ -287,7 +292,9 @@ export async function syncBirthdayToCalendar(
       title,
       startDate: contact.birthday,
       isAllDay: true,
-      calendar: TARGET_CALENDAR,
+      calendar: BIRTHDAYS_CALENDAR,
+      calendarColor: BIRTHDAYS_COLOR,
+      createCalendarIfMissing: true,
       notes: `cortex:birthday:${contact.id}`,
       recurrence: 'FREQ=YEARLY',
     }

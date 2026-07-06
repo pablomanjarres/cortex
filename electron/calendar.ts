@@ -332,7 +332,8 @@ case "delete":
         exit(1)
     }
     do {
-        try store.remove(event, span: .thisEvent)
+        // .futureEvents removes the whole recurring series (single events are unaffected).
+        try store.remove(event, span: .futureEvents)
         print("{\\"success\\":true}")
     } catch {
         print("{\\"success\\":false,\\"error\\":\\(jsonString(error.localizedDescription))}")
