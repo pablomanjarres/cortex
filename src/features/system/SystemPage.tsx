@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, AlertCircle, Clock, ShieldCheck, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
 import { SpendSection } from '@/features/spend/SpendPage'
 import { PaperclipSection } from '@/features/paperclip/PaperclipSection'
+import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { HostHistory } from './HostHistory'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
@@ -628,6 +629,7 @@ export function SystemPage() {
           <TabsTrigger value="live">Live</TabsTrigger>
           <TabsTrigger value="spend">Spend</TabsTrigger>
           <TabsTrigger value="paperclip">Paperclip</TabsTrigger>
+          <TabsTrigger value="automations">Automations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="live">
@@ -653,6 +655,10 @@ export function SystemPage() {
 
         <TabsContent value="paperclip">
           <PaperclipSection />
+        </TabsContent>
+
+        <TabsContent value="automations">
+          <AutomationsPage />
         </TabsContent>
       </Tabs>
     </PageShell>
