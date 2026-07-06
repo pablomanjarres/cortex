@@ -6,6 +6,7 @@ import { readStore, writeStore } from './store'
 import {
   reconcileAssignments,
   reconcileBirthdays,
+  reconcileClasses,
   detectExternalChanges,
 } from './calendar-sync'
 
@@ -29,6 +30,17 @@ interface CourseData {
   name: string
 }
 
+interface ClassData {
+  id: string
+  courseName: string
+  days: number[]
+  startTime: string
+  endTime: string
+  room?: string
+  termStart: string
+  termEnd: string
+}
+
 // Hardcoded course list matching StudentPage — needed for event titles
 const COURSES: CourseData[] = [
   { id: 'formales', name: 'Formal Languages' },
@@ -49,9 +61,10 @@ export function useCalendarSync() {
     async function init() {
       try {
         // Load data from store
-        const [assignments, contacts] = await Promise.all([
+        const [assignments, contacts, classes] = await Promise.all([
           readStore<AssignmentData[]>('cortex-student-assignments', []),
           readStore<ContactData[]>('cortex-contacts', []),
+          readStore<ClassData[]>('cortex-classes', []),
         ])
 
         // Reconcile assignments with deadlines
@@ -62,6 +75,11 @@ export function useCalendarSync() {
         // Reconcile birthdays
         if (contacts.length > 0) {
           await reconcileBirthdays(contacts)
+        }
+
+        // Reconcile the weekly class schedule
+        if (classes.length > 0) {
+          await reconcileClasses(classes)
         }
 
         console.log('[Cortex] Calendar sync: initial reconciliation complete')

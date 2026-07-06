@@ -15,6 +15,8 @@ interface CalendarEventPayload {
   calendar?: string
   notes?: string
   recurrence?: string
+  calendarColor?: string
+  createCalendarIfMissing?: boolean
 }
 
 interface CalendarEventResult {
@@ -31,7 +33,7 @@ interface CalendarEventResult {
 
 export interface CalendarMapping {
   cortexId: string
-  cortexType: 'assignment' | 'birthday'
+  cortexType: 'assignment' | 'birthday' | 'class'
   calendarEventId: string
   lastSyncedHash: string
   calendarLastModified: string
@@ -62,11 +64,41 @@ interface CourseLike {
   name: string
 }
 
+// A recurring weekly class meeting (e.g. "Cálculo 3, Mon/Wed 10:00–11:30, all term").
+interface ClassLike {
+  id: string
+  courseName: string
+  days: number[]    // weekday indexes, 0 = Monday … 6 = Sunday
+  startTime: string // "HH:MM" (24h, local)
+  endTime: string   // "HH:MM"
+  room?: string
+  termStart: string // "YYYY-MM-DD" — first week of classes
+  termEnd: string   // "YYYY-MM-DD" — last week of classes (recurrence stops here)
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STORE_KEY = 'cortex-calendar-sync'
 const DEFAULT_STATE: CalendarSyncState = { mappings: [], lastPolled: '' }
 const TARGET_CALENDAR = import.meta.env.VITE_CALENDAR_TARGET || ''
+
+// Classes sync into their own calendar so they show up purple (EventKit colors
+// per-calendar, not per-event). The helper creates it on demand with this color.
+const CLASSES_CALENDAR = 'Classes (Cortex)'
+const CLASSES_COLOR = '#8B5CF6' // tailwind purple-500
+const BYDAY_TOKENS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] // index 0=Mon … 6=Sun
+
+// First calendar date on/after termStart whose weekday is one of `days`.
+function firstClassDate(termStart: string, days: number[]): string {
+  const start = new Date(termStart + 'T00:00:00')
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    const monIdx = (d.getDay() + 6) % 7 // JS 0=Sun → our 0=Mon
+    if (days.includes(monIdx)) return localDate(d)
+  }
+  return termStart
+}
 
 // ─── Hash ─────────────────────────────────────────────────────────────────────
 
@@ -282,11 +314,89 @@ export async function syncBirthdayToCalendar(
   }
 }
 
+export async function syncClassToCalendar(
+  cls: ClassLike,
+  action: 'upsert' | 'delete'
+): Promise<void> {
+  if (_syncLock) return
+  _syncLock = true
+  try {
+    const api = await calendarAPI()
+    const state = await getState()
+
+    if (action === 'delete') {
+      const mapping = findMapping(state, cls.id)
+      if (mapping) {
+        await api.delete(mapping.calendarEventId)
+        saveState(removeMapping(state, cls.id))
+      }
+      return
+    }
+
+    // A class needs at least one weekday, a start time, and a term to recur over.
+    const validDays = (cls.days || []).filter((d) => d >= 0 && d <= 6)
+    if (validDays.length === 0 || !cls.startTime || !cls.termStart || !cls.termEnd || !cls.courseName.trim()) {
+      const existing = findMapping(state, cls.id)
+      if (existing) {
+        await api.delete(existing.calendarEventId)
+        saveState(removeMapping(state, cls.id))
+      }
+      return
+    }
+
+    const first = firstClassDate(cls.termStart, validDays)
+    const startISO = new Date(`${first}T${cls.startTime}:00`).toISOString()
+    const endISO = new Date(`${first}T${cls.endTime || cls.startTime}:00`).toISOString()
+    const byday = [...validDays].sort((a, b) => a - b).map((d) => BYDAY_TOKENS[d]).join(',')
+    const until = cls.termEnd.replace(/-/g, '')
+    const recurrence = `FREQ=WEEKLY;BYDAY=${byday};UNTIL=${until}`
+
+    const title = `Class: ${cls.courseName.trim()}`
+    const notes = `cortex:class:${cls.id}${cls.room ? `\nRoom: ${cls.room}` : ''}`
+    const hash = syncHash({ title, startISO, endISO, recurrence, notes })
+    const existing = findMapping(state, cls.id)
+    if (existing && existing.lastSyncedHash === hash) return
+
+    const payload: CalendarEventPayload = {
+      title,
+      startDate: startISO,
+      endDate: endISO,
+      isAllDay: false,
+      calendar: CLASSES_CALENDAR,
+      calendarColor: CLASSES_COLOR,
+      createCalendarIfMissing: true,
+      notes,
+      recurrence,
+    }
+
+    // Recurrence/day/time changes can't be reliably patched in place, so replace
+    // the event: delete the stale one, then create fresh.
+    if (existing) await api.delete(existing.calendarEventId)
+    const result = await api.create(payload)
+    if (result.success && result.id) {
+      saveState(upsertMapping(state, {
+        cortexId: cls.id,
+        cortexType: 'class',
+        calendarEventId: result.id,
+        lastSyncedHash: hash,
+        calendarLastModified: new Date().toISOString(),
+      }))
+    } else if (existing) {
+      // Old event is gone but recreate failed — drop the dangling mapping.
+      saveState(removeMapping(state, cls.id))
+    }
+  } catch (e) {
+    console.error('[Cortex] Calendar sync error (class):', e)
+  } finally {
+    _syncLock = false
+  }
+}
+
 // ─── Pull: Calendar → Cortex ──────────────────────────────────────────────────
 
 export interface ExternalChange {
   cortexId: string
-  cortexType: 'assignment' | 'birthday'
+  cortexType: 'assignment' | 'birthday' | 'class'
   field: 'deadline' | 'birthday' | 'title' | 'deleted'
   oldValue?: string
   newValue?: string
@@ -399,5 +509,13 @@ export async function reconcileBirthdays(
     if (c.birthday) {
       await syncBirthdayToCalendar(c, 'upsert')
     }
+  }
+}
+
+export async function reconcileClasses(
+  classes: ClassLike[]
+): Promise<void> {
+  for (const cls of classes) {
+    await syncClassToCalendar(cls, 'upsert')
   }
 }
