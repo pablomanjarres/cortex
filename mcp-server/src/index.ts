@@ -207,15 +207,18 @@ interface HabitDef {
   emoji: string;
   category?: string;
   cadence?: "weekly" | "monthly";
-  weeklyGoal?: number; // days per week for 100% (weekly cadence), clamped 1–7
-  monthlyGoal?: number; // days per month for 100% (monthly cadence), clamped 1–31
+  weeklyGoal?: number; // days per week for 100% (weekly cadence), clamped 0–7 (0 = no target)
+  monthlyGoal?: number; // days per month for 100% (monthly cadence), clamped 0–31 (0 = no target)
   context?: string; // free-form note: what the habit means + what counts as done
 }
 
 // Clamp a goal to the valid range for its cadence, mirroring the Habits UI.
+// A goal of 0 is allowed — it means the habit has no required completions this
+// window (paused / optional). `?? default` only fills an omitted goal, so an
+// explicit 0 passes through (unlike `|| default`, which would coerce it away).
 function clampHabitGoal(cadence: "weekly" | "monthly", raw: number | undefined): number {
-  if (cadence === "monthly") return Math.min(Math.max(Math.round(raw ?? 1), 1), 31);
-  return Math.min(Math.max(Math.round(raw ?? 7), 1), 7);
+  if (cadence === "monthly") return Math.min(Math.max(Math.round(raw ?? 1), 0), 31);
+  return Math.min(Math.max(Math.round(raw ?? 7), 0), 7);
 }
 
 server.tool(
@@ -226,7 +229,7 @@ server.tool(
     emoji: z.string().optional().describe("Emoji icon, defaults to ⭐"),
     category: z.string().optional().describe("Category, e.g. Health, GTM, Mind"),
     cadence: z.enum(["weekly", "monthly"]).optional().describe("Cadence, defaults to weekly"),
-    goal: z.number().optional().describe("Target completions per window (per week for weekly, per month for monthly). Weekly defaults to 7, monthly to 1."),
+    goal: z.number().optional().describe("Target completions per window (per week for weekly, per month for monthly). Weekly defaults to 7, monthly to 1. 0 = no target this window (paused/optional, still trackable)."),
     context: z.string().optional().describe("Free-form note explaining what the habit really means and exactly what counts as done."),
   },
   async ({ name, emoji, category, cadence, goal, context }) => run(async () => {
@@ -259,7 +262,7 @@ server.tool(
     emoji: z.string().optional().describe("New emoji"),
     category: z.string().optional().describe("New category; empty string clears it"),
     cadence: z.enum(["weekly", "monthly"]).optional().describe("Switch cadence (weekly/monthly)"),
-    goal: z.number().optional().describe("New target completions per window"),
+    goal: z.number().optional().describe("New target completions per window. 0 = no target this window (paused/optional, still trackable)."),
     context: z.string().optional().describe("Free-form note explaining what the habit means and what counts as done; empty string clears it."),
   },
   async ({ habitId, name, emoji, category, cadence, goal, context }) => run(async () => {
