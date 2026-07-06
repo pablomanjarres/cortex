@@ -5,6 +5,7 @@ import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard,
   Target,
+  Goal,
   Rocket,
   GraduationCap,
   Wallet,
@@ -30,6 +31,7 @@ const navGroups = [
     items: [
       { to: '/daily', icon: LayoutDashboard, label: 'Daily' },
       { to: '/habits', icon: Target, label: 'Habits' },
+      { to: '/goals', icon: Goal, label: 'Goals' },
       { to: '/stats', icon: BarChart3, label: 'Stats' },
       { to: '/automations', icon: Timer, label: 'Automations' },
       { to: '/system', icon: Cpu, label: 'System' },

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { DailyPage } from '@/features/daily/DailyPage'
 import { HabitsPage } from '@/features/habits/HabitsPage'
+import { GoalsPage } from '@/features/goals/GoalsPage'
 import { FounderPage } from '@/features/founder/FounderPage'
 import { StudentPage } from '@/features/student/StudentPage'
 import { FinancePage } from '@/features/finance/FinancePage'
@@ -26,6 +27,7 @@ export function App() {
         <Route index element={<Navigate to="/daily" replace />} />
         <Route path="daily" element={<DailyPage />} />
         <Route path="habits" element={<HabitsPage />} />
+        <Route path="goals" element={<GoalsPage />} />
         <Route path="stats" element={<StatsPage />} />
         <Route path="automations" element={<AutomationsPage />} />
         <Route path="system" element={<SystemPage />} />
