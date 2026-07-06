@@ -65,6 +65,11 @@ sem.wait()
 let isoFmt = ISO8601DateFormatter()
 isoFmt.formatOptions = [.withInternetDateTime]
 
+// JS Date.toISOString() emits fractional seconds ("2026-07-13T15:30:00.000Z"),
+// which .withInternetDateTime alone rejects — timed events (classes) need this.
+let isoFmtFrac = ISO8601DateFormatter()
+isoFmtFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
 let dayFmt = DateFormatter()
 dayFmt.dateFormat = "yyyy-MM-dd"
 dayFmt.timeZone = TimeZone.current
@@ -73,7 +78,7 @@ let timeFmt = DateFormatter()
 timeFmt.dateFormat = "HH:mm"
 
 func parseDate(_ s: String) -> Date? {
-    return isoFmt.date(from: s) ?? dayFmt.date(from: s)
+    return isoFmt.date(from: s) ?? isoFmtFrac.date(from: s) ?? dayFmt.date(from: s)
 }
 
 func jsonString(_ s: String) -> String {
