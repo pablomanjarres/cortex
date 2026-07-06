@@ -209,6 +209,7 @@ interface HabitDef {
   cadence?: "weekly" | "monthly";
   weeklyGoal?: number; // days per week for 100% (weekly cadence), clamped 1–7
   monthlyGoal?: number; // days per month for 100% (monthly cadence), clamped 1–31
+  context?: string; // free-form note: what the habit means + what counts as done
 }
 
 // Clamp a goal to the valid range for its cadence, mirroring the Habits UI.
@@ -226,8 +227,9 @@ server.tool(
     category: z.string().optional().describe("Category, e.g. Health, GTM, Mind"),
     cadence: z.enum(["weekly", "monthly"]).optional().describe("Cadence, defaults to weekly"),
     goal: z.number().optional().describe("Target completions per window (per week for weekly, per month for monthly). Weekly defaults to 7, monthly to 1."),
+    context: z.string().optional().describe("Free-form note explaining what the habit really means and exactly what counts as done."),
   },
-  async ({ name, emoji, category, cadence, goal }) => run(async () => {
+  async ({ name, emoji, category, cadence, goal, context }) => run(async () => {
     if (!name.trim()) throw new Error("Habit name is required.");
     const habits = ((await readKey("cortex-habits")) || []) as HabitDef[];
     const cad = cadence ?? "weekly";
@@ -240,6 +242,7 @@ server.tool(
       ...(cad === "monthly"
         ? { monthlyGoal: clampHabitGoal("monthly", goal) }
         : { weeklyGoal: clampHabitGoal("weekly", goal) }),
+      ...(context && context.trim() ? { context: context.trim() } : {}),
     };
     habits.push(habit);
     await writeKey("cortex-habits", habits);
@@ -257,8 +260,9 @@ server.tool(
     category: z.string().optional().describe("New category; empty string clears it"),
     cadence: z.enum(["weekly", "monthly"]).optional().describe("Switch cadence (weekly/monthly)"),
     goal: z.number().optional().describe("New target completions per window"),
+    context: z.string().optional().describe("Free-form note explaining what the habit means and what counts as done; empty string clears it."),
   },
-  async ({ habitId, name, emoji, category, cadence, goal }) => run(async () => {
+  async ({ habitId, name, emoji, category, cadence, goal, context }) => run(async () => {
     const habits = ((await readKey("cortex-habits")) || []) as HabitDef[];
     const idx = habits.findIndex((h) => h.id === habitId);
     if (idx === -1) throw new Error(`No habit found with id "${habitId}". Use get_habits to list ids.`);
@@ -271,6 +275,10 @@ server.tool(
     if (category !== undefined) {
       if (category) habit.category = category;
       else delete habit.category;
+    }
+    if (context !== undefined) {
+      if (context.trim()) habit.context = context.trim();
+      else delete habit.context;
     }
     // Re-normalize goal fields only when cadence or goal is provided (matches the UI's edit save).
     if (cadence !== undefined || goal !== undefined) {
