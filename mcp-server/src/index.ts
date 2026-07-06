@@ -333,6 +333,142 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GROUP 2b: Class schedule (weekly classes → purple calendar events)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+interface ClassDef {
+  id: string;
+  courseId: string;
+  courseName: string;
+  days: number[];    // 0=Mon … 6=Sun
+  startTime: string; // "HH:MM"
+  endTime: string;   // "HH:MM"
+  room?: string;
+  termStart: string; // "YYYY-MM-DD"
+  termEnd: string;   // "YYYY-MM-DD"
+}
+
+const CLASS_TERM_START = "2026-07-15";
+const CLASS_TERM_END = "2026-11-28";
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]; // 0=Mon
+const DAY_INDEX: Record<string, number> = {
+  mon: 0, monday: 0, tue: 1, tues: 1, tuesday: 1, wed: 2, weds: 2, wednesday: 2,
+  thu: 3, thur: 3, thurs: 3, thursday: 3, fri: 4, friday: 4,
+  sat: 5, saturday: 5, sun: 6, sunday: 6,
+};
+
+// Accept day names ('Mon','monday') or numbers (0=Mon) → sorted unique 0–6 indexes.
+function parseDays(days: (string | number)[]): number[] {
+  const out = new Set<number>();
+  for (const d of days) {
+    if (typeof d === "number") { if (d >= 0 && d <= 6) out.add(d); continue; }
+    const idx = DAY_INDEX[String(d).trim().toLowerCase()];
+    if (idx !== undefined) out.add(idx);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+// Loose slug for courseId (an internal link id, never displayed) — courseName
+// carries the real title, so we don't need perfect diacritic handling here.
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "course";
+}
+
+const isHHMM = (s: string) => /^\d{1,2}:\d{2}$/.test(s);
+const withDayNames = (c: ClassDef) => ({ ...c, dayNames: c.days.map((d) => DAY_NAMES[d]) });
+
+server.tool(
+  "get_classes",
+  "List the saved weekly class schedule (course, meeting days/times, room, term). Classes sync to the calendar as purple weekly-recurring events.",
+  {},
+  async () => run(async () => {
+    const classes = ((await readKey("cortex-classes")) || []) as ClassDef[];
+    return classes.map(withDayNames);
+  })
+);
+
+server.tool(
+  "add_class",
+  "Add a weekly class to the schedule. Saves to Cortex and syncs to the calendar as a purple weekly-recurring event (BYDAY across its days, until term end). The event appears on the app's next reconcile — immediately on app restart, or within a few minutes while it's running. Days accept names ('Mon','Wed' or 'monday'); times are 24h 'HH:MM'.",
+  {
+    courseName: z.string().describe("Course name, e.g. 'Cálculo 3' — used as the calendar event title"),
+    days: z.array(z.string()).describe("Meeting days, e.g. ['Mon','Wed']"),
+    startTime: z.string().describe("Start time, 24h 'HH:MM', e.g. '10:00'"),
+    endTime: z.string().describe("End time, 24h 'HH:MM', e.g. '11:30'"),
+    room: z.string().optional().describe("Room / location"),
+    termStart: z.string().optional().describe(`Term start YYYY-MM-DD (default ${CLASS_TERM_START})`),
+    termEnd: z.string().optional().describe(`Term end YYYY-MM-DD; recurrence stops here (default ${CLASS_TERM_END})`),
+    courseId: z.string().optional().describe("Optional id linking to a Student-page course; defaults to a slug of courseName"),
+  },
+  async ({ courseName, days, startTime, endTime, room, termStart, termEnd, courseId }) => run(async () => {
+    if (!courseName.trim()) throw new Error("courseName is required.");
+    const parsedDays = parseDays(days);
+    if (parsedDays.length === 0) throw new Error("At least one valid day is required, e.g. ['Mon','Wed'].");
+    if (!isHHMM(startTime)) throw new Error("startTime must be 24h 'HH:MM', e.g. '10:00'.");
+    if (!isHHMM(endTime)) throw new Error("endTime must be 24h 'HH:MM', e.g. '11:30'.");
+    const classes = ((await readKey("cortex-classes")) || []) as ClassDef[];
+    const cls: ClassDef = {
+      id: uid("class"),
+      courseId: courseId?.trim() || slugify(courseName),
+      courseName: courseName.trim(),
+      days: parsedDays,
+      startTime,
+      endTime,
+      ...(room && room.trim() ? { room: room.trim() } : {}),
+      termStart: termStart || CLASS_TERM_START,
+      termEnd: termEnd || CLASS_TERM_END,
+    };
+    classes.push(cls);
+    await writeKey("cortex-classes", classes);
+    return { ok: true, class: withDayNames(cls) };
+  })
+);
+
+server.tool(
+  "update_class",
+  "Edit a saved class by id. Only the fields you pass change. Empty string for room clears it.",
+  {
+    classId: z.string().describe("Class ID (from get_classes)"),
+    courseName: z.string().optional(),
+    days: z.array(z.string()).optional().describe("Meeting days, e.g. ['Mon','Wed']"),
+    startTime: z.string().optional().describe("24h 'HH:MM'"),
+    endTime: z.string().optional().describe("24h 'HH:MM'"),
+    room: z.string().optional().describe("Room; empty string clears it"),
+    termStart: z.string().optional().describe("YYYY-MM-DD"),
+    termEnd: z.string().optional().describe("YYYY-MM-DD"),
+  },
+  async ({ classId, courseName, days, startTime, endTime, room, termStart, termEnd }) => run(async () => {
+    const classes = ((await readKey("cortex-classes")) || []) as ClassDef[];
+    const idx = classes.findIndex((c) => c.id === classId);
+    if (idx === -1) throw new Error(`No class found with id "${classId}". Use get_classes to list ids.`);
+    const c = { ...classes[idx] };
+    if (courseName !== undefined) { if (!courseName.trim()) throw new Error("courseName cannot be empty."); c.courseName = courseName.trim(); }
+    if (days !== undefined) { const p = parseDays(days); if (p.length === 0) throw new Error("At least one valid day is required."); c.days = p; }
+    if (startTime !== undefined) { if (!isHHMM(startTime)) throw new Error("startTime must be 24h 'HH:MM'."); c.startTime = startTime; }
+    if (endTime !== undefined) { if (!isHHMM(endTime)) throw new Error("endTime must be 24h 'HH:MM'."); c.endTime = endTime; }
+    if (room !== undefined) { if (room.trim()) c.room = room.trim(); else delete c.room; }
+    if (termStart !== undefined) c.termStart = termStart;
+    if (termEnd !== undefined) c.termEnd = termEnd;
+    classes[idx] = c;
+    await writeKey("cortex-classes", classes);
+    return { ok: true, class: withDayNames(c) };
+  })
+);
+
+server.tool(
+  "delete_class",
+  "Delete a saved class by id. Its purple calendar event is removed on the app's next reconcile.",
+  { classId: z.string().describe("Class ID (from get_classes)") },
+  async ({ classId }) => run(async () => {
+    const classes = ((await readKey("cortex-classes")) || []) as ClassDef[];
+    const removed = classes.find((c) => c.id === classId);
+    if (!removed) throw new Error(`No class found with id "${classId}". Use get_classes to list ids.`);
+    await writeKey("cortex-classes", classes.filter((c) => c.id !== classId));
+    return { ok: true, deleted: removed };
+  })
+);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP 3: Books
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
