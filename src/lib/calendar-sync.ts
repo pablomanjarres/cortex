@@ -358,7 +358,7 @@ export async function syncClassToCalendar(
     const until = cls.termEnd.replace(/-/g, '')
     const recurrence = `FREQ=WEEKLY;BYDAY=${byday};UNTIL=${until}`
 
-    const title = `Class: ${cls.courseName.trim()}`
+    const title = `Class: ${cls.courseName.trim()}${cls.room ? ` · ${cls.room}` : ''}`
     const notes = `cortex:class:${cls.id}${cls.room ? `\nRoom: ${cls.room}` : ''}`
     const hash = syncHash({ title, startISO, endISO, recurrence, notes })
     const existing = findMapping(state, cls.id)
