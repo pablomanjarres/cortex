@@ -518,4 +518,18 @@ export async function reconcileClasses(
   for (const cls of classes) {
     await syncClassToCalendar(cls, 'upsert')
   }
+  // Prune calendar events for classes removed elsewhere (e.g. via an MCP tool that
+  // writes cortex-classes directly). Only when the list is non-empty, so a transient
+  // or failed empty read can never mass-delete every class event.
+  if (classes.length > 0) {
+    const ids = new Set(classes.map((c) => c.id))
+    const state = await getState()
+    const orphans = state.mappings.filter((m) => m.cortexType === 'class' && !ids.has(m.cortexId))
+    for (const m of orphans) {
+      await syncClassToCalendar(
+        { id: m.cortexId, courseName: '', days: [], startTime: '', endTime: '', termStart: '', termEnd: '' },
+        'delete'
+      )
+    }
+  }
 }

@@ -97,6 +97,11 @@ export function useCalendarSync() {
   useEffect(() => {
     const poll = async () => {
       try {
+        // Reconcile the class schedule so classes added/removed via MCP (which
+        // writes cortex-classes directly) reach the calendar without an app restart.
+        const classes = await readStore<ClassData[]>('cortex-classes', [])
+        await reconcileClasses(classes)
+
         const changes = await detectExternalChanges()
         if (changes.length === 0) return
 
