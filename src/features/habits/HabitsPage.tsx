@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Fragment } from 'react'
 import { useStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Flame, Trophy, Plus, X, Pencil, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Flame, Trophy, Plus, X, Pencil, Check, ChevronLeft, ChevronRight, StickyNote } from 'lucide-react'
 
 type Cadence = 'weekly' | 'monthly'
 
@@ -17,6 +17,7 @@ interface Habit {
   monthlyGoal?: number // days per month needed for 100%, defaults to 1 (monthly cadence)
   cadence?: Cadence // defaults to 'weekly'
   category?: string
+  context?: string // free-form note: what this habit really means + what counts as done
 }
 
 const OLD_DEFAULT_IDS = ['1', '2', '3', '4', '5', '6', '7']
@@ -104,6 +105,7 @@ export function HabitsPage() {
   const [editGoal, setEditGoal] = useState('')
   const [editCadence, setEditCadence] = useState<Cadence>('weekly')
   const [weekOffset, setWeekOffset] = useState(0)
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null)
 
   const weekDates = getWeekDatesWithOffset(weekOffset)
   // Monthly-cadence habits are scored over the calendar month of the viewed week.
@@ -226,6 +228,48 @@ export function HabitsPage() {
     setEditingId(null)
   }
 
+  const toggleNote = (id: string) => setExpandedNoteId((cur) => (cur === id ? null : id))
+  const setHabitContext = (id: string, value: string) =>
+    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, context: value.trim() ? value : undefined } : h)))
+
+  // Small sticky-note toggle shown next to a habit name. Lit when the habit has
+  // context, faint-on-hover when empty.
+  const renderNoteButton = (habit: Habit, opts?: { mobile?: boolean }) => (
+    <button
+      onClick={() => toggleNote(habit.id)}
+      title={habit.context ? 'Context — click to edit' : 'Add context'}
+      aria-label={habit.context ? 'Edit habit context' : 'Add habit context'}
+      className={`flex items-center justify-center rounded transition-colors ${opts?.mobile ? 'h-7 w-7 p-1.5' : 'h-5 w-5'} ${
+        expandedNoteId === habit.id
+          ? 'text-foreground'
+          : habit.context
+            ? 'text-amber-400/80 hover:text-amber-300'
+            : opts?.mobile
+              ? 'text-muted-foreground/40 active:bg-foreground/10'
+              : 'text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-foreground'
+      }`}
+    >
+      <StickyNote className={opts?.mobile ? 'h-3.5 w-3.5' : 'h-3 w-3'} />
+    </button>
+  )
+
+  // The inline panel to write "what this habit means / what has to be done".
+  const renderNoteEditor = (habit: Habit) => (
+    <div className="rounded-lg border border-border/60 bg-secondary/30 p-3">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+        <StickyNote className="h-3 w-3" />
+        What this means · what counts as done
+      </div>
+      <textarea
+        value={habit.context ?? ''}
+        onChange={(e) => setHabitContext(habit.id, e.target.value)}
+        autoFocus
+        placeholder="Write the full meaning of this habit and exactly what has to be done to check it off…"
+        className="w-full min-h-[72px] resize-y rounded-md border border-border bg-input px-2.5 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+      />
+    </div>
+  )
+
   const getStreak = (habitId: string) => {
     let streak = 0
     const today = new Date()
@@ -293,7 +337,8 @@ export function HabitsPage() {
   })()
 
   const renderHabitRow = (habit: Habit) => (
-    <tr key={habit.id} className="border-t border-border/50 group">
+    <Fragment key={habit.id}>
+    <tr className="border-t border-border/50 group">
       <td className="py-2.5 pr-4 text-sm text-foreground">
         {editingId === habit.id ? (
           <div className="flex items-center gap-1.5">
@@ -306,7 +351,10 @@ export function HabitsPage() {
             <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-7 w-12 bg-input px-1 text-center text-sm" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={1} max={editCadence === 'monthly' ? 31 : 7} />
           </div>
         ) : (
-          <><span className="mr-2">{habit.emoji}</span>{habit.name}</>
+          <span className="inline-flex items-center">
+            <span className="mr-2">{habit.emoji}</span>{habit.name}
+            {renderNoteButton(habit)}
+          </span>
         )}
       </td>
       {weekDays.map((day, dayIndex) => (
@@ -351,6 +399,14 @@ export function HabitsPage() {
         </div>
       </td>
     </tr>
+    {expandedNoteId === habit.id && (
+      <tr>
+        <td colSpan={weekDays.length + 3} className="px-0 pb-3 pt-0">
+          {renderNoteEditor(habit)}
+        </td>
+      </tr>
+    )}
+    </Fragment>
   )
 
   return (
@@ -429,6 +485,7 @@ export function HabitsPage() {
                         {Math.min(done, goal)}/{goal}
                         {cadence === 'monthly' && <span className="ml-0.5 text-[9px] font-normal text-muted-foreground/50">/mo</span>}
                       </span>
+                      {renderNoteButton(habit, { mobile: true })}
                       <button onClick={() => startEdit(habit)} className="p-1.5 rounded-lg text-muted-foreground/40 active:bg-foreground/10">
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
@@ -462,6 +519,9 @@ export function HabitsPage() {
                       )
                     })}
                   </div>
+                  {expandedNoteId === habit.id && (
+                    <div className="mt-3">{renderNoteEditor(habit)}</div>
+                  )}
                 </>
               )}
             </div>
