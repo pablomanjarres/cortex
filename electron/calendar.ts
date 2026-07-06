@@ -142,10 +142,11 @@ func ensureCalendar(_ title: String, _ hex: String?) -> EKCalendar? {
     if let existing = findCalendar(title) { return existing }
     let cal = EKCalendar(for: .event, eventStore: store)
     cal.title = title
-    let source = store.sources.first { $0.sourceType == .local }
-        ?? store.defaultCalendarForNewEvents?.source
-        ?? store.sources.first { $0.sourceType == .calDAV }
-        ?? store.sources.first
+    // Create in a source that ALLOWS new calendars: iCloud or local ("On My Mac").
+    // Google/Exchange sources reject programmatic calendar creation, so never use
+    // defaultCalendarForNewEvents' source (it's often the Google account).
+    let source = store.sources.first { $0.title == "iCloud" }
+        ?? store.sources.first { $0.sourceType == .local }
     guard let src = source else { return nil }
     cal.source = src
     if let hex = hex, let color = cgColorFromHex(hex) { cal.cgColor = color }
@@ -232,7 +233,13 @@ case "create":
     if let calTitle = calTitle, !calTitle.isEmpty {
         if let targetCal = findCalendar(calTitle) {
             event.calendar = targetCal
-        } else if createCalIfMissing, let created = ensureCalendar(calTitle, calColorHex) {
+        } else if createCalIfMissing {
+            // Must land in its own calendar — fail rather than pollute the default
+            // (Google) calendar if we can't create it.
+            guard let created = ensureCalendar(calTitle, calColorHex) else {
+                print("{\\"success\\":false,\\"error\\":\\(jsonString("Could not create calendar: " + calTitle))}")
+                exit(1)
+            }
             event.calendar = created
         } else {
             event.calendar = store.defaultCalendarForNewEvents
