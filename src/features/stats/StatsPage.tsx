@@ -143,7 +143,7 @@ const GYM_COLORS: Record<string, string> = { PUSH: '#60a5fa', PULL: '#34d399', L
 
 function getNutritionTotals(n: DailyNutrition) {
   let protein = 0, calories = 0
-  for (const m of n.meals) for (const f of m.foods) { protein += f.protein; calories += f.calories }
+  for (const m of n.meals ?? []) for (const f of m.foods ?? []) { protein += f.protein; calories += f.calories }
   return { protein, calories, water: n.waterLiters }
 }
 
@@ -249,7 +249,7 @@ export function StatsPage() {
       })))
       setWeekGtm(gtmLogs.filter((g): g is GtmDailyLog => g !== null && (g.dmsSent > 0 || g.xReplies > 0 || g.demoCalls > 0)))
       setWeekWorkouts(workouts.map(firstWorkout).filter((w): w is WorkoutSession => w !== null))
-      setWeekNutrition(nutrition.filter((n): n is DailyNutrition => n !== null && n.meals.some(m => m.foods.length > 0)))
+      setWeekNutrition(nutrition.filter((n): n is DailyNutrition => n !== null && (n.meals ?? []).some(m => (m.foods?.length ?? 0) > 0)))
     })
   }, [weekDates, view])
 
@@ -439,10 +439,10 @@ export function StatsPage() {
           )}
 
           {/* Gym snapshot */}
-          {(dayWorkout || (dayNutrition && dayNutrition.meals.some(m => m.foods.length > 0))) && (() => {
+          {(dayWorkout || (dayNutrition && (dayNutrition.meals ?? []).some(m => (m.foods?.length ?? 0) > 0))) && (() => {
             const workout = dayWorkout
             const stats = workout ? getSessionStats(workout) : null
-            const nutrition = dayNutrition && dayNutrition.meals.some(m => m.foods.length > 0) ? getNutritionTotals(dayNutrition) : null
+            const nutrition = dayNutrition && (dayNutrition.meals ?? []).some(m => (m.foods?.length ?? 0) > 0) ? getNutritionTotals(dayNutrition) : null
             return (
               <WidgetCard title="GYM SNAPSHOT" delay={0.35} compact>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
