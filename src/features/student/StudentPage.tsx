@@ -4,6 +4,7 @@ import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
 import { useStore } from '@/lib/store'
 import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
+import { ClassSchedule } from './ClassSchedule'
 import {
   GraduationCap,
   FlaskConical,
@@ -1072,6 +1073,13 @@ export function StudentPage() {
           </table>
         </div>
       </WidgetCard>
+
+      <ClassSchedule
+        courses={(() => {
+          const inTerm = courses.filter((c) => c.semester === activeSemester)
+          return (inTerm.length ? inTerm : courses).map((c) => ({ id: c.id, name: c.name }))
+        })()}
+      />
     </PageShell>
   )
 }
