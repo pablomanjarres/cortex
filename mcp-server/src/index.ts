@@ -333,6 +333,170 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GROUP 2c: Goals (outcome goals + milestones, stored in cortex-goals)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+type GoalStatus = "active" | "done" | "archived";
+interface Milestone { id: string; title: string; done: boolean }
+interface GoalDef {
+  id: string;
+  title: string;
+  detail?: string; // the "why" / notes
+  area?: string; // life area (Startup, Growth, Health…)
+  period?: string; // "2026" | "2026-Q3" | "2026-07"
+  targetDate?: string; // YYYY-MM-DD deadline
+  progress?: number; // 0–100, used only when there are no milestones
+  milestones?: Milestone[]; // when present, progress = done/total
+  status: GoalStatus;
+  createdAt: string;
+  completedAt?: string;
+}
+
+// Mirror of goalProgress() in src/features/goals/GoalsPage.tsx.
+function computeGoalProgress(g: GoalDef): number {
+  if (g.status === "done") return 100;
+  if (g.milestones && g.milestones.length > 0) {
+    const done = g.milestones.filter((m) => m.done).length;
+    return Math.round((done / g.milestones.length) * 100);
+  }
+  return Math.min(Math.max(g.progress ?? 0, 0), 100);
+}
+
+const withPct = (g: GoalDef) => ({ ...g, pct: computeGoalProgress(g) });
+
+server.tool(
+  "get_goals",
+  "List all goals with computed progress % (derived from milestones, or the manual percent). Includes a summary of active/done counts and average progress.",
+  {
+    includeArchived: z.boolean().optional().describe("Include archived goals (default false)"),
+  },
+  async ({ includeArchived }) => run(async () => {
+    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
+    const shown = includeArchived ? goals : goals.filter((g) => g.status !== "archived");
+    const active = goals.filter((g) => g.status === "active");
+    const avg = active.length ? Math.round(active.reduce((s, g) => s + computeGoalProgress(g), 0) / active.length) : 0;
+    return {
+      goals: shown.map(withPct),
+      summary: { active: active.length, done: goals.filter((g) => g.status === "done").length, archived: goals.filter((g) => g.status === "archived").length, avgProgress: avg },
+    };
+  })
+);
+
+server.tool(
+  "add_goal",
+  "Create a new goal. Optionally give it milestones (a checklist) — when a goal has milestones its progress is auto-computed from them; otherwise use the manual `progress` percent.",
+  {
+    title: z.string().describe("What to achieve"),
+    detail: z.string().optional().describe("Why it matters / notes"),
+    area: z.string().optional().describe("Life area, e.g. Startup, Growth, Health"),
+    period: z.string().optional().describe("Timeframe label: '2026', '2026-Q3', or '2026-07'"),
+    targetDate: z.string().optional().describe("Deadline, YYYY-MM-DD"),
+    progress: z.number().optional().describe("Manual progress 0–100 (ignored if milestones are set)"),
+    milestones: z.array(z.string()).optional().describe("Checklist steps (titles); all start unchecked"),
+    status: z.enum(["active", "done", "archived"]).optional().describe("Defaults to active"),
+  },
+  async ({ title, detail, area, period, targetDate, progress, milestones, status }) => run(async () => {
+    if (!title.trim()) throw new Error("Goal title is required.");
+    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
+    const st = status ?? "active";
+    const goal: GoalDef = {
+      id: uid("goal"),
+      title: title.trim(),
+      status: st,
+      createdAt: new Date().toISOString(),
+      progress: Math.min(Math.max(progress ?? 0, 0), 100),
+      ...(detail ? { detail } : {}),
+      ...(area ? { area } : {}),
+      ...(period ? { period } : {}),
+      ...(targetDate ? { targetDate } : {}),
+      ...(milestones && milestones.length ? { milestones: milestones.map((t) => ({ id: uid("ms"), title: t, done: false })) } : {}),
+      ...(st === "done" ? { completedAt: new Date().toISOString() } : {}),
+    };
+    goals.push(goal);
+    await writeKey("cortex-goals", goals);
+    return { ok: true, goal: withPct(goal) };
+  })
+);
+
+server.tool(
+  "update_goal",
+  "Edit a goal by id. Only passed fields change. Pass an empty string to clear detail/area/period/targetDate. Passing `milestones` REPLACES the whole checklist. Setting status to done stamps completedAt; leaving done clears it.",
+  {
+    goalId: z.string().describe("Goal id (from get_goals)"),
+    title: z.string().optional(),
+    detail: z.string().optional().describe("Empty string clears it"),
+    area: z.string().optional().describe("Empty string clears it"),
+    period: z.string().optional().describe("Empty string clears it"),
+    targetDate: z.string().optional().describe("YYYY-MM-DD; empty string clears it"),
+    progress: z.number().optional().describe("Manual progress 0–100 (ignored if milestones exist)"),
+    status: z.enum(["active", "done", "archived"]).optional(),
+    milestones: z.array(z.object({ title: z.string(), done: z.boolean().optional() })).optional().describe("Replaces the entire milestone list"),
+  },
+  async ({ goalId, title, detail, area, period, targetDate, progress, status, milestones }) => run(async () => {
+    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
+    const idx = goals.findIndex((g) => g.id === goalId);
+    if (idx === -1) throw new Error(`No goal found with id "${goalId}". Use get_goals to list ids.`);
+    const g = { ...goals[idx] };
+    if (title !== undefined) {
+      if (!title.trim()) throw new Error("Goal title cannot be empty.");
+      g.title = title.trim();
+    }
+    const setOrClear = (key: "detail" | "area" | "period" | "targetDate", val: string | undefined) => {
+      if (val === undefined) return;
+      if (val) g[key] = val;
+      else delete g[key];
+    };
+    setOrClear("detail", detail);
+    setOrClear("area", area);
+    setOrClear("period", period);
+    setOrClear("targetDate", targetDate);
+    if (progress !== undefined) g.progress = Math.min(Math.max(progress, 0), 100);
+    if (milestones !== undefined) g.milestones = milestones.map((m) => ({ id: uid("ms"), title: m.title, done: m.done ?? false }));
+    if (status !== undefined) {
+      g.status = status;
+      if (status === "done") g.completedAt = g.completedAt ?? new Date().toISOString();
+      else delete g.completedAt;
+    }
+    goals[idx] = g;
+    await writeKey("cortex-goals", goals);
+    return { ok: true, goal: withPct(g) };
+  })
+);
+
+server.tool(
+  "toggle_goal_milestone",
+  "Check or uncheck one milestone on a goal (this is how you record progress on a milestone-based goal).",
+  {
+    goalId: z.string().describe("Goal id"),
+    milestoneId: z.string().describe("Milestone id (from get_goals)"),
+    done: z.boolean().optional().describe("true to check, false to uncheck; omit to toggle"),
+  },
+  async ({ goalId, milestoneId, done }) => run(async () => {
+    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
+    const g = goals.find((x) => x.id === goalId);
+    if (!g) throw new Error(`No goal found with id "${goalId}".`);
+    const m = (g.milestones ?? []).find((x) => x.id === milestoneId);
+    if (!m) throw new Error(`No milestone "${milestoneId}" on goal "${goalId}".`);
+    m.done = done ?? !m.done;
+    await writeKey("cortex-goals", goals);
+    return { ok: true, goal: withPct(g) };
+  })
+);
+
+server.tool(
+  "delete_goal",
+  "Delete a goal by id.",
+  { goalId: z.string().describe("Goal id (from get_goals)") },
+  async ({ goalId }) => run(async () => {
+    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
+    const removed = goals.find((g) => g.id === goalId);
+    if (!removed) throw new Error(`No goal found with id "${goalId}". Use get_goals to list ids.`);
+    await writeKey("cortex-goals", goals.filter((g) => g.id !== goalId));
+    return { ok: true, deleted: removed };
+  })
+);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP 2b: Class schedule (weekly classes → purple calendar events)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
