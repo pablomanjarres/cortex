@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createServer } from "http";
+import { createServer, type IncomingMessage } from "http";
 import { z } from "zod";
 
 const BASE = "http://localhost:3456";
@@ -1881,15 +1881,50 @@ server.tool(
 // Start
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// ─── HTTP access gate ─────────────────────────────────────
+// Same policy as the Cortex app's :3456 web server (electron/main.ts):
+// only localhost and the Tailscale CGNAT range (100.64.0.0/10) may connect.
+// This keeps the phone-over-Tailscale MCP path working and blocks every
+// LAN or other client. These tools read and write personal data, so an
+// open socket here is full read/write for anyone who can reach the port.
+
+function isTailscaleOrLocal(ip: string): boolean {
+  const clean = ip.replace(/^::ffff:/, "");
+  if (clean === "127.0.0.1" || clean === "::1") return true;
+  const parts = clean.split(".");
+  if (parts.length !== 4) return false;
+  const first = parseInt(parts[0], 10);
+  const second = parseInt(parts[1], 10);
+  return first === 100 && second >= 64 && second <= 127;
+}
+
+// Reflect only origins we trust (mirrors getAllowedOrigin in electron/main.ts).
+// Anything else gets no Access-Control-Allow-Origin header at all, never "*".
+function getAllowedOrigin(req: IncomingMessage): string {
+  const origin = req.headers.origin || "";
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin;
+  if (/^https?:\/\/(192\.168\.|10\.|100\.)/.test(origin)) return origin;
+  if (/^https?:\/\/[a-z0-9-]+\.ts\.net(:\d+)?$/i.test(origin)) return origin;
+  return "";
+}
+
 const httpMode = process.argv.includes("--http");
 
 if (httpMode) {
   const PORT = parseInt(process.env.PORT || "3457");
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   const httpServer = createServer(async (req, res) => {
-    // CORS
-    const origin = req.headers.origin || "*";
-    res.setHeader("Access-Control-Allow-Origin", origin);
+    // IP gate first: reject anything that isn't localhost or the tailnet.
+    const remote = req.socket.remoteAddress ?? "";
+    if (!isTailscaleOrLocal(remote)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+
+    // CORS: only trusted origins are reflected; no header otherwise.
+    const allowedOrigin = getAllowedOrigin(req);
+    if (allowedOrigin) res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, mcp-session-id");
     res.setHeader("Access-Control-Expose-Headers", "mcp-session-id");
