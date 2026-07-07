@@ -5,16 +5,15 @@ import { useSprintTimer } from '@/lib/sprint-context'
 const pageTitles: Record<string, string> = {
   '/daily': 'Execute',
   '/habits': 'Habit Tracking',
-  '/stats': 'Stats & Audits',
-  '/automations': 'Automations',
+  '/goals': 'Goals',
+  '/system': 'System',
   '/founder': 'Founder Mode',
   '/student': 'Student Mode',
   '/projects': 'Projects',
-  '/crm': 'Business CRM',
   '/finance': 'Financial Pulse',
   '/social': 'Contacts',
   '/books': 'Books',
-  '/thoughts': 'Thoughts',
+  '/library': 'Library',
   '/settings': 'Settings',
 }
 
