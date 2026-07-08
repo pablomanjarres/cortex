@@ -2,7 +2,11 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 
-const MARS_ROOT = path.join(os.homedir(), 'Projects', 'Mars', 'Mars')
+// Canonical Mars vault lives in iCloud Drive; the old ~/Projects/Mars/Mars copy is retired.
+// MARS_VAULT_ROOT overrides for tests or a moved vault.
+const MARS_ROOT =
+  process.env.MARS_VAULT_ROOT ||
+  path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Mars', 'Mars')
 const JOURNAL_DIR = path.join(MARS_ROOT, 'content', 'journal')
 const VOICE_ANCHORS_DIR = path.join(MARS_ROOT, 'content', 'voice-anchors')
 
