@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Weekly Opportunity Radar runner (local — launchd invokes this every Monday 09:00;
+# Weekly Opportunity Radar runner (local - launchd invokes this every Monday 09:00;
 # the Cortex "Run radar" button spawns it too, via radar-control-watcher.mjs).
 #
 # DETERMINISTIC + INJECTION-SAFE by construction:
-#   1. SCRAPE   — a hardcoded command run natively on this Mac (the Lima VM is
+#   1. SCRAPE   - a hardcoded command run natively on this Mac (the Lima VM is
 #                 retired). Untrusted output -> a file, never run.
-#   2. CLASSIFY — a TOOL-LESS Claude call. Scraped content can't execute anything; worst
+#   2. CLASSIFY - a TOOL-LESS Claude call. Scraped content can't execute anything; worst
 #                 case the model emits junk JSON.
-#   3. INGEST   — radar-ingest.mjs validates/coerces every field and writes ONLY to the
+#   3. INGEST   - radar-ingest.mjs validates/coerces every field and writes ONLY to the
 #                 Cortex store (localhost:3456). No other write path exists in this flow.
 # The LLM never chooses which commands run, so a prompt-injected post cannot escalate.
 #
@@ -22,7 +22,7 @@ set -uo pipefail
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-CORTEX="/Users/pablo/projects/cortex"
+CORTEX="/Users/pablo/Projects/cortex"
 NOELLE="/Users/pablo/Projects/noelle"
 SCRAPE_ENTRY="$NOELLE/apps/opportunity-radar/dist/scrape.js"
 CORTEX_API="http://127.0.0.1:3456"
@@ -38,7 +38,7 @@ alert_fatal() {
     -H 'Content-Type: application/json' -d "$payload" >/dev/null 2>&1 || true
 }
 
-# ── 40-minute watchdog ──────────────────────────────────────────────────────
+# -- 40-minute watchdog ------------------------------------------------------
 # launchd has no per-job timeout, so the script supervises itself: this outer
 # invocation re-runs the same file (RADAR_INNER=1) under gtimeout/timeout when
 # coreutils is installed, else under a perl alarm wrapper (exit 124 on timeout,
@@ -96,7 +96,7 @@ fatal() {
   command -v claude >/dev/null 2>&1 || fatal 127 "claude CLI not found"
   command -v node   >/dev/null 2>&1 || fatal 127 "node not found"
 
-  # 1. SCRAPE — fixed command, native on this Mac (the old path booted the retired
+  # 1. SCRAPE - fixed command, native on this Mac (the old path booted the retired
   #    Lima VM with `limactl start default` and ran the frozen VM checkout).
   #    Borrows one Apify token (read-only), prints RawHit[] JSON. Env comes from
   #    ~/.noelle/.env, sourced into this process only and never echoed.
@@ -107,7 +107,7 @@ fatal() {
     || fatal 1 "scrape failed (see /tmp/radar-scrape.log)"
   echo "scraped $(wc -c < "$RAW") bytes"
 
-  # 2. CLASSIFY — tool-less LLM. --allowedTools with no entries = no tool can run.
+  # 2. CLASSIFY - tool-less LLM. --allowedTools with no entries = no tool can run.
   node "$CORTEX/scripts/radar-build-prompt.mjs" "$RAW" > "$PROMPT" || fatal 1 "build-prompt failed"
   claude -p --allowedTools "" < "$PROMPT" > "$MODEL" 2>>"$LOG" || fatal 1 "classify failed"
 
