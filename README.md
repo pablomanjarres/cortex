@@ -39,7 +39,7 @@ cortex/
 ├── electron/            # main process: window, tray, IPC, :3456 web server
 │   ├── crypto.ts        # AES-256-GCM at rest (key via safeStorage / Keychain)
 │   ├── calendar.ts      # native macOS calendar CRUD (embedded Swift + EventKit)
-│   └── integrations/    # github · lemon · vercel · supabase · mars vault · paperclip
+│   └── integrations/    # github · lemon · vercel · supabase · mars vault
 ├── src/
 │   ├── features/        # 20 feature modules (daily, habits, founder, crm, gym, …)
 │   └── lib/store.ts     # 3-tier persistence: IPC → HTTP → localStorage
@@ -57,23 +57,23 @@ Cortex is one Electron plus React app with a standalone MCP package and a set of
 |---|---|
 | `src/` | React 19 renderer built with Vite 8: 20 feature modules under `src/features`, shared state in `src/stores`, the persistence hook in `src/lib/store.ts` |
 | `electron/` | Main process: window, tray, the `:3456` web server, `crypto.ts` (AES-256-GCM), `calendar.ts` (Swift + EventKit), `keychain.ts`, and the context-isolated `preload.ts` |
-| `electron/integrations/` | One file per source: `github.ts`, `lemon.ts`, `vercel.ts`, `supabase.ts`, `mars.ts` (Obsidian vault), `paperclip.ts` |
+| `electron/integrations/` | One file per source: `github.ts`, `lemon.ts`, `vercel.ts`, `supabase.ts`, `mars.ts` (Obsidian vault) |
 | `mcp-server/` | Standalone npm package `cortex-mcp-server`: 51 tools in 18 groups over the localhost API, stdio or `--http` |
 | `scripts/` | Opportunity Radar (`radar-*.mjs`, `opportunity-radar-weekly.sh`, and the launchd `*.plist` files) plus `growth-fetch.mjs` for the fastest-growing-repos tab |
 | `public/` | PWA shell: `manifest.webmanifest`, `sw.js` service worker, and app icons |
 
 The 20 feature modules under `src/features`, grouped:
 
-- **Days and routine:** `daily`, `habits`, `gym`, `thoughts`, `captures`
+- **Days and routine:** `daily`, `habits`, `goals`, `gym`, `thoughts`, `captures`
 - **People:** `crm`, `social`
-- **Founder and growth:** `founder`, `opportunities`, `automations`, `paperclip`, `stats`
-- **Money:** `finance`, `spend`
-- **Learning:** `student`, `courses`, `books`, `projects`
+- **Founder and growth:** `founder`, `opportunities`, `automations`, `stats`
+- **Money:** `finance`
+- **Learning:** `student`, `courses`, `books`, `library`, `projects`
 - **App:** `system`, `settings`
 
 ## Tech stack
 
-React 19 · TypeScript 5.9 · Electron 41 · Vite 8 · Tailwind CSS v4 (OKLCH, OLED-black theme) · shadcn/ui · Recharts · Zustand · Framer Motion · React Router v7 (HashRouter) · Model Context Protocol SDK · Supabase (publishable/anon, RLS-gated) · launchd.
+React 19 · TypeScript 5.9 · Electron 41 · Vite 8 · Tailwind CSS v4 (OKLCH, OLED-black theme) · shadcn/ui · Recharts · Framer Motion · React Router v7 (HashRouter) · Model Context Protocol SDK · launchd.
 
 ## Getting started
 
@@ -93,13 +93,6 @@ npm run electron:build
 
 # build, copy to /Applications, clear quarantine, and ad-hoc sign
 npm run cortex:install
-```
-
-Copy `.env.example` to `.env` and fill it in. The Supabase key is a **publishable/anon** key, safe to embed in the client because access is controlled by RLS:
-
-```bash
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=sb_publishable_xxx
 ```
 
 ### Wire up the MCP server

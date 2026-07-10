@@ -14,7 +14,6 @@ import { getLemonStats } from './integrations/lemon.js'
 import { getVercelStats } from './integrations/vercel.js'
 import { getSupabaseStats } from './integrations/supabase.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
-import { createPaperclipClient } from './integrations/paperclip.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -30,11 +29,6 @@ let webServer: http.Server | null = null
 let currentStats = { tasks: '0/0', habits: '0/0', score: '—' }
 const WEB_PORT = 3456
 
-// Self-host VM (Lima, tailnet node openclaw-vm-1). Bare MagicDNS name doesn't
-// resolve from the Mac, so we use the stable tailnet IP. Hosts glances (61208),
-// Uptime Kuma (3001), and Paperclip (3100).
-const VM_HOST = '100.121.121.114'
-
 // ─── Tray live data (events, sprint, habits) ─────────────
 let cachedEvents: { title: string; startTime: string; endTime: string; isAllDay: boolean }[] = []
 let cachedHabits: { id: string; name: string; emoji: string }[] = []
@@ -44,7 +38,7 @@ let traySprintTask: string | null = null
 let traySprintInterval: ReturnType<typeof setInterval> | null = null
 let trayRefreshTimer: ReturnType<typeof setInterval> | null = null
 
-// ─── Live system stats (from Glances on Mac mini + VM) ───
+// ─── Live system stats (from Glances on the Mac mini) ───
 interface HostStats {
   cpu: number; mem: number; memUsed: number; memTotal: number
   swap: number; load1: number; cores: number; uptime: string
@@ -53,12 +47,10 @@ interface HostStats {
 }
 let cachedMacStats: HostStats | null = null
 let macStatsError: string | null = null
-let cachedVmStats: HostStats | null = null
-let vmStatsError: string | null = null
 let traySystemTimer: ReturnType<typeof setInterval> | null = null
 
 // ─── System history (rolling 24h ring buffer per host) ───
-type SystemHostKey = 'mac' | 'vm'
+type SystemHostKey = 'mac'
 interface SystemHistorySample {
   t: number       // epoch ms
   cpu: number     // % 0–100
@@ -76,7 +68,7 @@ interface SystemHistorySample {
 // Keep raw, downsample on read.
 const SYSTEM_HISTORY_MAX = 120_960
 const SYSTEM_HISTORY_RETAIN_MS = 7 * 24 * 3600 * 1000
-const systemHistory: Record<SystemHostKey, SystemHistorySample[]> = { mac: [], vm: [] }
+const systemHistory: Record<SystemHostKey, SystemHistorySample[]> = { mac: [] }
 let systemHistoryDirty = false
 let systemHistoryPersistTimer: ReturnType<typeof setInterval> | null = null
 
@@ -138,12 +130,12 @@ async function refreshTrayData() {
   if (tray) tray.setContextMenu(buildTrayMenu())
 }
 
-// ─── System stats refresh (Mac mini + VM via Glances) ─────
-// Pulls from local Glances on 127.0.0.1:61208 (Mac) and the Lima VM
-// at VM_HOST:61208 every 5s. Updates tray title + menu.
+// ─── System stats refresh (Mac mini via Glances) ──────────
+// Pulls from local Glances on 127.0.0.1:61208 every 5s.
+// Updates tray title + menu.
 
 async function fetchHostStats(host: string): Promise<HostStats> {
-  const opts = { signal: AbortSignal.timeout(host === '127.0.0.1' ? 3000 : 5000) }
+  const opts = { signal: AbortSignal.timeout(3000) }
   const base = `http://${host}:61208/api/4`
   const [cpuR, memR, loadR, upR, fsR, swR, netR] = await Promise.all([
     fetch(`${base}/cpu`, opts),
@@ -234,7 +226,7 @@ function loadSystemHistory() {
     const dir = getSystemHistoryDir()
     if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); return }
     const cutoff = Date.now() - SYSTEM_HISTORY_RETAIN_MS
-    for (const host of ['mac', 'vm'] as SystemHostKey[]) {
+    for (const host of ['mac'] as SystemHostKey[]) {
       const file = path.join(dir, `${host}.json`)
       if (!fs.existsSync(file)) continue
       try {
@@ -257,7 +249,7 @@ function persistSystemHistory() {
   try {
     const dir = getSystemHistoryDir()
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    for (const host of ['mac', 'vm'] as SystemHostKey[]) {
+    for (const host of ['mac'] as SystemHostKey[]) {
       const file = path.join(dir, `${host}.json`)
       const tmp = `${file}.tmp`
       fs.writeFileSync(tmp, JSON.stringify(systemHistory[host]))
@@ -360,20 +352,14 @@ function avg(arr: number[]): number {
 }
 
 async function refreshSystemStats() {
-  const [macRes, vmRes] = await Promise.allSettled([
-    fetchHostStats('127.0.0.1'),
-    fetchHostStats(VM_HOST),
-  ])
-  if (macRes.status === 'fulfilled') {
-    cachedMacStats = macRes.value
+  try {
+    const stats = await fetchHostStats('127.0.0.1')
+    cachedMacStats = stats
     macStatsError = null
-    pushHistorySample('mac', macRes.value)
-  } else { macStatsError = (macRes.reason as Error)?.message ?? 'fetch failed' }
-  if (vmRes.status === 'fulfilled') {
-    cachedVmStats = vmRes.value
-    vmStatsError = null
-    pushHistorySample('vm', vmRes.value)
-  } else { vmStatsError = (vmRes.reason as Error)?.message ?? 'fetch failed' }
+    pushHistorySample('mac', stats)
+  } catch (e) {
+    macStatsError = (e as Error)?.message ?? 'fetch failed'
+  }
   updateTraySystemTitle()
   if (tray) tray.setContextMenu(buildTrayMenu())
 }
@@ -384,7 +370,6 @@ function updateTraySystemTitle() {
   if (traySprintEndMs && traySprintEndMs > Date.now()) return
   const parts: string[] = []
   if (cachedMacStats) parts.push(`Mac ${Math.round(cachedMacStats.cpu)}·${Math.round(cachedMacStats.mem)}`)
-  if (cachedVmStats) parts.push(`VM ${Math.round(cachedVmStats.cpu)}·${Math.round(cachedVmStats.mem)}`)
   tray.setTitle(parts.join('  '))
 }
 
@@ -478,7 +463,6 @@ function buildHostStatsItems(label: string, s: HostStats | null, err: string | n
 function buildMacStatsMenuItems(): Electron.MenuItemConstructorOptions[] {
   return [
     ...buildHostStatsItems('Mac mini', cachedMacStats, macStatsError),
-    ...buildHostStatsItems('Lima VM', cachedVmStats, vmStatsError),
     { label: 'Open System page', click: () => showAndNavigate('/system') },
   ]
 }
@@ -944,31 +928,6 @@ function startWebServer() {
       return
     }
 
-    if (url.pathname.startsWith('/api/integrations/paperclip') && req.method === 'GET') {
-      try {
-        const token = getKey('paperclip-token')
-        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No Paperclip token saved' })); return }
-        const baseUrl = getKey('paperclip-base-url') || `http://${VM_HOST}:3100`
-        const client = createPaperclipClient({ baseUrl, token })
-        const sub = url.pathname.replace('/api/integrations/paperclip', '')
-        let data: unknown
-        if (sub === '/companies') {
-          data = await client.listCompanies()
-        } else {
-          const m = sub.match(/^\/companies\/([^/]+)\/(agents|heartbeat-runs|activity|live-runs)$/)
-          if (!m) { res.writeHead(404, corsHeaders); res.end(JSON.stringify({ error: 'Unknown paperclip route' })); return }
-          const [, companyId, kind] = m
-          const limit = parseInt(url.searchParams.get('limit') || '20')
-          if (kind === 'agents') data = await client.listAgents(companyId)
-          else if (kind === 'heartbeat-runs') data = await client.listHeartbeatRuns(companyId, limit)
-          else if (kind === 'activity') data = await client.listActivity(companyId, limit)
-          else data = await client.liveRuns(companyId)
-        }
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(data))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
     // ─── Mars (Obsidian vault) integration ──────────────────
     if (url.pathname === '/api/mars/journal' && req.method === 'GET') {
       try {
@@ -1021,19 +980,9 @@ function startWebServer() {
 
     // ─── System metrics (Glances proxy) ─────────────────────
     // Mac mini: glances launchd service on 127.0.0.1:61208
-    // Lima VM: glances systemd service on VM_HOST:61208 (Tailscale)
     if (url.pathname === '/api/system/mac' && req.method === 'GET') {
       try {
         const r = await fetch('http://127.0.0.1:61208/api/4/all', { signal: AbortSignal.timeout(4000) })
-        if (!r.ok) throw new Error(`glances ${r.status}`)
-        res.writeHead(200, corsHeaders); res.end(await r.text())
-      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname === '/api/system/vm' && req.method === 'GET') {
-      try {
-        const r = await fetch(`http://${VM_HOST}:61208/api/4/all`, { signal: AbortSignal.timeout(5000) })
         if (!r.ok) throw new Error(`glances ${r.status}`)
         res.writeHead(200, corsHeaders); res.end(await r.text())
       } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
@@ -1044,8 +993,8 @@ function startWebServer() {
     if (url.pathname === '/api/system/history' && req.method === 'GET') {
       try {
         const hostParam = url.searchParams.get('host') as SystemHostKey | null
-        if (hostParam !== 'mac' && hostParam !== 'vm') {
-          res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'host must be mac or vm' })); return
+        if (hostParam !== 'mac') {
+          res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'host must be mac' })); return
         }
         const win = url.searchParams.get('window') ?? '1h'
         const windowMs =
@@ -1060,23 +1009,6 @@ function startWebServer() {
       } catch (e: any) {
         res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e?.message ?? 'history failed' }))
       }
-      return
-    }
-
-    // ─── Uptime Kuma proxy (status page on Lima VM) ─────────────
-    if (url.pathname === '/api/uptime' && req.method === 'GET') {
-      const slug = url.searchParams.get('slug') || 'main'
-      try {
-        const opts = { signal: AbortSignal.timeout(5000) }
-        const [confR, hbR] = await Promise.all([
-          fetch(`http://${VM_HOST}:3001/api/status-page/${slug}`, opts),
-          fetch(`http://${VM_HOST}:3001/api/status-page/heartbeat/${slug}`, opts),
-        ])
-        if (!confR.ok || !hbR.ok) throw new Error(`uptime-kuma ${confR.status}/${hbR.status}`)
-        const config = await confR.json()
-        const heartbeat = await hbR.json()
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify({ config, heartbeat }))
-      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
       return
     }
 

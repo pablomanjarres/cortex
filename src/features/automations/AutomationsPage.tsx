@@ -31,8 +31,8 @@ interface AutomationRun {
   approved?: boolean
 }
 
-type TaskType = 'claude' | 'launchd' | 'cron' | 'openclaw' | 'n8n' | 'hook'
-type TaskHost = 'mac-mini' | 'gcp-vm'
+type TaskType = 'claude' | 'launchd' | 'cron' | 'n8n' | 'hook'
+type TaskHost = 'mac-mini'
 
 interface TaskDef {
   name: string
@@ -44,20 +44,14 @@ interface TaskDef {
 }
 
 // ── Task definitions ─────────────────────────────────────────────────────────
-// type: how it runs (openclaw cron / n8n flow / launchd / Claude scheduled-task / hook)
-// host: where it runs (gcp-vm = openclaw-vm, mac-mini = local desktop)
+// type: how it runs (n8n flow / launchd / cron / Claude scheduled-task / hook)
+// host: where it runs (mac-mini = local desktop)
 
-// Non-Claude automations are curated here — openclaw/n8n/launchd/cron live on
-// the VM or as local daemons and aren't discoverable from disk. Claude
-// scheduled-tasks are merged in LIVE from ~/.claude/scheduled-tasks/ (see
-// CLAUDE_TASK_META + the fetch in the component), so they self-sync.
+// Non-Claude automations are curated here — launchd/cron jobs are local
+// daemons and aren't discoverable from disk. Claude scheduled-tasks are
+// merged in LIVE from ~/.claude/scheduled-tasks/ (see CLAUDE_TASK_META +
+// the fetch in the component), so they self-sync.
 const STATIC_TASKS: TaskDef[] = [
-  // Discovery (Nella ICP listeners + scoring)
-  { name: 'x-discovery', description: 'Bird CLI search of X for trigger phrases, upserts leads to Supabase', frequency: 'Every 20 min', group: 'Discovery', type: 'openclaw', host: 'gcp-vm' },
-  { name: 'mutuals-refresh', description: 'Refresh X mutuals list to filter discovery against existing follows', frequency: 'Weekly Sun 6am', group: 'Discovery', type: 'openclaw', host: 'gcp-vm' },
-  { name: 'classifier-stage1', description: 'Nano LLM scores new leads into ICP slots (n8n flow)', frequency: 'Every 5 min', group: 'Discovery', type: 'n8n', host: 'gcp-vm' },
-  { name: 'velocity-alerts', description: 'Detects 5x baseline spikes per keyword in 30-min windows (n8n)', frequency: 'Every 30 min', group: 'Discovery', type: 'n8n', host: 'gcp-vm' },
-
   // Content & Knowledge
   { name: 'content-draft-queue', description: 'Drafts 3-5 X posts daily in voice via voice-post + RAG over Mars', frequency: 'Daily 9am', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
   { name: 'build-in-public-log', description: 'Drafts 1-2 sentence build-log post from git/Vercel activity', frequency: 'Daily 6pm', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
@@ -66,19 +60,11 @@ const STATIC_TASKS: TaskDef[] = [
   { name: 'course-companion', description: 'PDF in Mars/courses/incoming/ produces classify + flashcards', frequency: 'On file land', group: 'Content & Knowledge', type: 'launchd', host: 'mac-mini' },
 
   // Ops & Life
-  { name: 'uptime-flap-filter', description: 'Reads Uptime Kuma; pages Pushover only after 3 consecutive down checks + restart attempt', frequency: 'Every 5 min', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
-  { name: 'adc-health', description: 'Mints a token from openclaw-vm ADC; flags invalid_rapt to Pushover + Slack + Cortex', frequency: 'Every 5 min', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
-  { name: 'oracle-gmail-poll', description: 'Oracle reads Gmail, classifies via Vertex Gemini, posts Slack digest as @oracle, fires Pushover for urgent items', frequency: 'Every 30 min', group: 'Ops & Life', type: 'cron', host: 'gcp-vm' },
   { name: 'health-habit-tracker', description: 'PPL/swim/sleep/cal/journal Telegram check-in; Sun graph', frequency: 'Daily 9pm + Sun 8pm', group: 'Ops & Life', type: 'launchd', host: 'mac-mini' },
-
-  // Security & Discipline
-  { name: 'cost-guardian', description: 'Sums LLM/cloud bills daily; Pushover at 50/80/100% thresholds (n8n)', frequency: 'Daily 8am', group: 'Security & Discipline', type: 'n8n', host: 'gcp-vm' },
-  { name: 'distraction-logger', description: 'Telegram /dw start <task>; mid-session pings; end-of-session honesty audit (n8n)', frequency: 'On /dw command', group: 'Security & Discipline', type: 'n8n', host: 'gcp-vm' },
 
   // System (launchd daemons)
   { name: 'backup-projects', description: 'Hourly OneDrive backup with smart pruning', frequency: 'Hourly', group: 'System', type: 'launchd', host: 'mac-mini' },
-  { name: 'infra-health', description: 'Health check for localhost-mirror, content-pipeline, cortex', frequency: 'Every 2 min', group: 'System', type: 'launchd', host: 'mac-mini' },
-  { name: 'content-pipeline', description: 'Content Pipeline app daemon (keep-alive)', frequency: 'Always', group: 'System', type: 'launchd', host: 'mac-mini' },
+  { name: 'infra-health', description: 'Health check for localhost-mirror and cortex', frequency: 'Every 2 min', group: 'System', type: 'launchd', host: 'mac-mini' },
   { name: 'localhost-mirror', description: 'Tunnel daemon for LAN/Tailscale access', frequency: 'Always', group: 'System', type: 'launchd', host: 'mac-mini' },
 ]
 
@@ -102,7 +88,6 @@ const DEFAULT_CLAUDE_META = { group: 'Dev & Business', frequency: 'Scheduled' }
 
 // Visual config per task TYPE (where the work runs).
 const typeConfig: Record<TaskType, { label: string; bg: string; color: string }> = {
-  openclaw: { label: 'openclaw', bg: 'bg-pink-500/15', color: 'text-pink-400' },
   n8n:      { label: 'n8n',      bg: 'bg-rose-500/15', color: 'text-rose-300' },
   launchd:  { label: 'launchd',  bg: 'bg-green-500/15', color: 'text-green-400' },
   claude:   { label: 'claude',   bg: 'bg-purple-500/15', color: 'text-purple-400' },
@@ -112,7 +97,6 @@ const typeConfig: Record<TaskType, { label: string; bg: string; color: string }>
 
 // Visual config per HOST (where the runtime lives).
 const hostConfig: Record<TaskHost, { label: string; bg: string; color: string }> = {
-  'gcp-vm':   { label: 'GCP VM',   bg: 'bg-blue-500/10',  color: 'text-blue-300' },
   'mac-mini': { label: 'Mac mini', bg: 'bg-slate-500/15', color: 'text-slate-300' },
 }
 
@@ -120,11 +104,9 @@ const groupConfig: Record<string, { icon: typeof Code; color: string }> = {
   'Foundation': { icon: Brain, color: 'text-cyan-400' },
   'Dev & Business': { icon: Code, color: 'text-blue-400' },
   'Intelligence': { icon: Brain, color: 'text-purple-400' },
-  'Discovery': { icon: Search, color: 'text-pink-400' },
   'Content & Knowledge': { icon: FileText, color: 'text-amber-400' },
   'Discipline & Content': { icon: Flame, color: 'text-orange-400' },
   'Ops & Life': { icon: Clock, color: 'text-emerald-400' },
-  'Security & Discipline': { icon: AlertTriangle, color: 'text-red-400' },
   'System': { icon: Server, color: 'text-green-400' },
 }
 
@@ -250,7 +232,7 @@ export function AutomationsPage() {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000
     return runs.filter((r) => new Date(r.timestamp).getTime() > cutoff)
   }, [runs])
-  const groups = ['Foundation', 'Dev & Business', 'Intelligence', 'Discovery', 'Content & Knowledge', 'Discipline & Content', 'Ops & Life', 'Security & Discipline', 'System']
+  const groups = ['Foundation', 'Dev & Business', 'Intelligence', 'Content & Knowledge', 'Discipline & Content', 'Ops & Life', 'System']
 
   const filteredTasks = useMemo(() => {
     const lowerSearch = search.toLowerCase()

@@ -48,7 +48,7 @@ function uid(prefix: string): string {
 
 // A goal's progress: 100 when explicitly done, else derived from milestones
 // when it has any, else the manual percent (default 0).
-export function goalProgress(g: Goal): number {
+function goalProgress(g: Goal): number {
   if (g.status === 'done') return 100
   if (g.milestones && g.milestones.length > 0) {
     const done = g.milestones.filter((m) => m.done).length

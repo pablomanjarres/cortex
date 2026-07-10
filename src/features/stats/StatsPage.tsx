@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { useStore, readStore } from '@/lib/store'
-import { localDate } from '@/lib/date-utils'
+import { localDate, getISOWeek, getWeekLabel, formatMinutes } from '@/lib/date-utils'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import {
   ChevronLeft,
@@ -107,34 +107,8 @@ function getWeekDates(isoDate: string): string[] {
   return dates
 }
 
-function getISOWeek(isoDate: string): string {
-  const d = new Date(isoDate + 'T00:00:00')
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))
-  const week1 = new Date(d.getFullYear(), 0, 4)
-  const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7)
-  return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
-}
-
 function formatDate(iso: string): string {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-}
-
-function formatWeekLabel(startDate: string): string {
-  const start = new Date(startDate + 'T00:00:00')
-  const end = new Date(start)
-  end.setDate(start.getDate() + 6)
-  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return `${fmt(start)} – ${fmt(end)}`
-}
-
-function formatMinutes(mins: number): string {
-  if (mins >= 60) {
-    const h = Math.floor(mins / 60)
-    const m = mins % 60
-    return m > 0 ? `${h}h ${m}m` : `${h}h`
-  }
-  return `${mins}m`
 }
 
 const weekDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -328,7 +302,7 @@ export function StatsPage() {
       <p className="text-sm font-medium text-muted-foreground">
         {view === 'day'
           ? formatDate(selectedDate)
-          : `Week of ${formatWeekLabel(weekDates[0])}`}
+          : `Week of ${getWeekLabel(weekDates[0])}`}
       </p>
 
       {/* --- DAY VIEW -------------------------------------- */}

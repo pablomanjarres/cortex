@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { useStore } from '@/lib/store'
-import { localDate } from '@/lib/date-utils'
+import { localDate, getWeekLabel } from '@/lib/date-utils'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Badge } from '@/components/ui/badge'
@@ -50,13 +50,6 @@ function getWeekDatesWithOffset(offset: number): string[] {
     dates.push(localDate(d))
   }
   return dates
-}
-
-function getWeekLabel(dates: string[]): string {
-  const start = new Date(dates[0] + 'T00:00:00')
-  const end = new Date(dates[6] + 'T00:00:00')
-  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return `${fmt(start)} – ${fmt(end)}`
 }
 
 // All calendar dates (YYYY-MM-DD) in the month containing the anchor date.
@@ -444,7 +437,7 @@ export function HabitsPage() {
             onClick={() => setWeekOffset(0)}
             className={`text-xs font-medium px-2 py-1 rounded-md transition-colors ${weekOffset === 0 ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
           >
-            {weekOffset === 0 ? 'This week' : getWeekLabel(weekDates)}
+            {weekOffset === 0 ? 'This week' : getWeekLabel(weekDates[0])}
           </button>
           <button onClick={() => setWeekOffset(w => Math.min(w + 1, 0))} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors" disabled={weekOffset >= 0}>
             <ChevronRight className={`h-4 w-4 ${weekOffset >= 0 ? 'opacity-30' : ''}`} />

@@ -1368,17 +1368,6 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// GROUP 16: Content Pipeline
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-server.tool(
-  "get_content_pipeline",
-  "Get daily content pipeline state (video/post ideas, drafts, published items)",
-  {},
-  async () => run(() => readKey("cortex-content-pipeline-daily"))
-);
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP 17: Founder Metrics
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1796,7 +1785,7 @@ server.tool(
 
 server.tool(
   "run_opportunity_radar",
-  "Trigger the native Opportunity Radar pipeline — the same as the app's 'Run radar' button. Requests a run that the local radar watcher executes (scrape → classify → ingest). Depends on the local watcher daemon + scraper VM being up. Optionally pass a hunt order to personalize this run. To source opportunities WITHOUT the external scraper (Claude Code does its own web research), use add_opportunities instead.",
+  "Trigger the native Opportunity Radar pipeline — the same as the app's 'Run radar' button. Requests a run that the local radar watcher executes (scrape → classify → ingest); the scrape runs natively on this Mac, so only the local watcher daemon needs to be up. Optionally pass a hunt order to personalize this run. To source opportunities WITHOUT the native scraper (Claude Code does its own web research), use add_opportunities instead.",
   { huntOrder: z.string().optional().describe("Optional plain-language focus for this run; added as an active hunt order first") },
   async ({ huntOrder }) => run(async () => {
     const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };

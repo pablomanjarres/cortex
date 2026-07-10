@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AreaChart, Area, Line, ComposedChart, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Activity, Cpu, MemoryStick, Loader2, AlertCircle } from 'lucide-react'
 
-type HostKey = 'mac' | 'vm'
+type HostKey = 'mac'
 type WindowKey = '15m' | '1h' | '6h' | '24h' | '3d' | '7d'
 
 interface HistoryBucket {

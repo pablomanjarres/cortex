@@ -2,9 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Cpu, MemoryStick, HardDrive, Activity, Server, AlertCircle, Clock, ShieldCheck, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
-import { SpendSection } from '@/features/spend/SpendPage'
-import { PaperclipSection } from '@/features/paperclip/PaperclipSection'
+import { Cpu, MemoryStick, HardDrive, Activity, Server, AlertCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { HostHistory } from './HostHistory'
 
@@ -24,7 +22,7 @@ interface GlancesPayload {
   processlist: Array<{ pid: number; name: string; cpu_percent: number; memory_percent: number; username: string }>
 }
 
-type HostKey = 'mac' | 'vm'
+type HostKey = 'mac'
 
 interface HostSpec {
   key: HostKey
@@ -42,7 +40,6 @@ const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 
 
 const HOSTS: HostSpec[] = [
   { key: 'mac', label: 'Mac mini', path: '/api/system/mac', noteIfDown: 'glances launchd service not running' },
-  { key: 'vm',  label: 'Lima VM', path: '/api/system/vm', noteIfDown: 'VM unreachable or glances service down' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -375,243 +372,6 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   )
 }
 
-// ── Uptime Kuma panel ─────────────────────────────────────────────────────
-
-interface KumaMonitor { id: number; name: string; type: string }
-interface KumaHeartbeat { status: 0 | 1 | 2 | 3; time: string; msg?: string; ping?: number }
-interface KumaPayload {
-  config?: {
-    config: { slug: string; title: string }
-    publicGroupList: Array<{ id: number; name: string; monitorList: KumaMonitor[] }>
-  }
-  heartbeat?: {
-    heartbeatList: Record<string, KumaHeartbeat[]>
-    uptimeList: Record<string, number>
-  }
-  error?: string
-}
-
-function statusDot(s?: 0 | 1 | 2 | 3): { color: string; label: string } {
-  if (s === 1) return { color: 'bg-emerald-400', label: 'Up' }
-  if (s === 0) return { color: 'bg-red-400', label: 'Down' }
-  if (s === 2) return { color: 'bg-yellow-400', label: 'Pending' }
-  if (s === 3) return { color: 'bg-blue-400', label: 'Maint.' }
-  return { color: 'bg-zinc-500', label: '—' }
-}
-
-function HeartbeatBars({ beats }: { beats: KumaHeartbeat[] }) {
-  // Latest 24 beats, oldest left -> newest right
-  const last = beats.slice(-24)
-  return (
-    <div className="flex gap-0.5">
-      {last.map((b, i) => {
-        const c = b.status === 1 ? 'bg-emerald-400/70' : b.status === 0 ? 'bg-red-400/80' : 'bg-yellow-400/70'
-        return <div key={i} className={`h-4 w-1 rounded-sm ${c}`} title={`${b.time} · ${b.status === 1 ? 'up' : b.status === 0 ? 'down' : 'pending'}${b.ping ? ` · ${b.ping}ms` : ''}`} />
-      })}
-    </div>
-  )
-}
-
-function UptimePanel({ delay }: { delay: number }) {
-  const [data, setData] = useState<KumaPayload | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const tick = async () => {
-      try {
-        const r = await fetch(`${API_BASE}/api/uptime`, { cache: 'no-store' })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const json = (await r.json()) as KumaPayload
-        if (cancelled) return
-        if (json.error) throw new Error(json.error)
-        setData(json)
-        setError(null)
-      } catch (e: any) {
-        if (cancelled) return
-        setError(e?.message ?? 'fetch failed')
-      } finally {
-        if (!cancelled) timer = setTimeout(tick, 10_000)
-      }
-    }
-    tick()
-    return () => { cancelled = true; if (timer) clearTimeout(timer) }
-  }, [])
-
-  if (!data && !error) {
-    return (
-      <WidgetCard title="Uptime Kuma" description="Connecting…" delay={delay}>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-2 w-2 rounded-full bg-yellow-400/70 animate-pulse" />
-          Awaiting first poll
-        </div>
-      </WidgetCard>
-    )
-  }
-  if (!data && error) {
-    return (
-      <WidgetCard title="Uptime Kuma" description="Offline" variant="urgent" delay={delay}>
-        <div className="flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-foreground">{error}</p>
-            <p className="text-[11px] text-muted-foreground/70 mt-1">Lima VM (100.121.121.114:3001) unreachable or status page unpublished</p>
-          </div>
-        </div>
-      </WidgetCard>
-    )
-  }
-  if (!data) return null
-
-  const groups = data.config?.publicGroupList ?? []
-  const beats = data.heartbeat?.heartbeatList ?? {}
-  const uptimes = data.heartbeat?.uptimeList ?? {}
-  const allMonitors = groups.flatMap((g) => g.monitorList)
-  const downCount = allMonitors.filter((m) => {
-    const last = beats[String(m.id)]?.slice(-1)?.[0]
-    return last?.status === 0
-  }).length
-
-  return (
-    <WidgetCard
-      title="Uptime Kuma"
-      description={`${data.config?.config.title ?? 'Status'} · ${allMonitors.length} monitors${downCount > 0 ? ` · ${downCount} down` : ''}`}
-      variant={downCount > 0 ? 'urgent' : 'default'}
-      delay={delay}
-    >
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="h-3 w-3" />
-            <span>polled every 10s</span>
-          </div>
-          <a
-            href="http://100.121.121.114:3001"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 hover:text-foreground transition-colors"
-          >
-            <ExternalLink className="h-3 w-3" />
-            Open Kuma
-          </a>
-        </div>
-
-        {groups.map((group) => (
-          <div key={group.id} className="flex flex-col gap-1.5">
-            {groups.length > 1 && (
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{group.name}</div>
-            )}
-            {group.monitorList.map((m) => {
-              const mb = beats[String(m.id)] ?? []
-              const last = mb[mb.length - 1]
-              const dot = statusDot(last?.status)
-              const up24 = uptimes[`${m.id}_24`]
-              return (
-                <div key={m.id} className="flex items-center gap-3 px-2 py-1.5 rounded-lg bg-secondary/10 hover:bg-secondary/20 transition-colors">
-                  <div className={`h-2 w-2 rounded-full shrink-0 ${dot.color} ${last?.status === 1 ? 'animate-pulse' : ''}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[12px] font-medium truncate">{m.name}</span>
-                      <span className="text-[9px] text-muted-foreground/50 uppercase">{m.type}</span>
-                    </div>
-                    {last?.msg && last.status !== 1 && (
-                      <p className="text-[10px] text-red-300/80 truncate mt-0.5" title={last.msg}>{last.msg}</p>
-                    )}
-                  </div>
-                  <HeartbeatBars beats={mb} />
-                  <div className="flex flex-col items-end gap-0 shrink-0 min-w-[64px]">
-                    <span className="text-[11px] tabular-nums text-foreground">
-                      {up24 != null ? `${(up24 * 100).toFixed(2)}%` : '—'}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground/60 tabular-nums">
-                      {last?.ping != null ? `${last.ping}ms` : '—'}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ))}
-      </div>
-    </WidgetCard>
-  )
-}
-
-// ── ADC reauth tile ───────────────────────────────────────────────────────
-
-interface AdcRun {
-  id: string
-  taskName: string
-  timestamp: string
-  status: 'success' | 'error' | 'pending-approval'
-  summary: string
-  fullOutput: string
-}
-
-function AdcHealthTile({ delay }: { delay: number }) {
-  const [run, setRun] = useState<AdcRun | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const tick = async () => {
-      try {
-        const r = await fetch(`${API_BASE}/api/data?key=cortex-automations`, { cache: 'no-store' })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const json = (await r.json()) as { runs?: AdcRun[] }
-        if (cancelled) return
-        const latest = (json.runs ?? []).find((x) => x.taskName === 'adc-health') ?? null
-        setRun(latest)
-        setError(null)
-      } catch (e: any) {
-        if (cancelled) return
-        setError(e?.message ?? 'fetch failed')
-      } finally {
-        if (!cancelled) timer = setTimeout(tick, 30_000)
-      }
-    }
-    tick()
-    return () => { cancelled = true; if (timer) clearTimeout(timer) }
-  }, [])
-
-  const status = run?.status
-  const ageMin = run ? Math.round((Date.now() - new Date(run.timestamp).getTime()) / 60_000) : null
-  const stale = ageMin != null && ageMin > 15
-  const isUrgent = status === 'error' || stale
-
-  let dotColor = 'bg-zinc-500'
-  let pulse = ''
-  if (status === 'success' && !stale) { dotColor = 'bg-emerald-400'; pulse = 'animate-pulse' }
-  else if (status === 'error') dotColor = 'bg-red-400'
-  else if (stale) dotColor = 'bg-yellow-400'
-
-  let body: string
-  if (error) body = error
-  else if (!run) body = 'Awaiting first watchdog tick (vm-watchdog every 5 min)'
-  else if (status === 'error') body = run.summary || 'Reauth needed: gcloud auth application-default login on VM (as openclaw)'
-  else if (stale) body = `Last check ${ageMin}m ago — vm-watchdog may be stuck`
-  else body = run.summary || 'Vertex/Gemini auth healthy'
-
-  return (
-    <WidgetCard
-      title="ADC reauth"
-      description={run ? `${status === 'success' ? 'Healthy' : 'Reauth needed'}${ageMin != null ? ` · ${ageMin}m ago` : ''}` : 'No data yet'}
-      variant={isUrgent ? 'urgent' : 'default'}
-      delay={delay}
-    >
-      <div className="flex items-start gap-3">
-        <div className={`h-2 w-2 rounded-full shrink-0 mt-1.5 ${dotColor} ${pulse}`} />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-foreground/90 break-words">{body}</p>
-          <p className="text-[10px] text-muted-foreground/60 mt-1">vm-watchdog: ADC token mint check, vertex/gemini auth on Lima VM</p>
-        </div>
-      </div>
-    </WidgetCard>
-  )
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export function SystemPage() {
@@ -620,15 +380,13 @@ export function SystemPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">System</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Hosts, uptime & spend</p>
+          <p className="text-sm text-muted-foreground mt-0.5">Host metrics & automations</p>
         </div>
       </div>
 
       <Tabs defaultValue="live">
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="live">Live</TabsTrigger>
-          <TabsTrigger value="spend">Spend</TabsTrigger>
-          <TabsTrigger value="paperclip">Paperclip</TabsTrigger>
           <TabsTrigger value="automations">Automations</TabsTrigger>
         </TabsList>
 
@@ -643,18 +401,7 @@ export function SystemPage() {
                 <HostCard key={host.key} host={host} delay={i * 0.05} />
               ))}
             </div>
-
-            <UptimePanel delay={0.15} />
-            <AdcHealthTile delay={0.20} />
           </div>
-        </TabsContent>
-
-        <TabsContent value="spend">
-          <SpendSection />
-        </TabsContent>
-
-        <TabsContent value="paperclip">
-          <PaperclipSection />
         </TabsContent>
 
         <TabsContent value="automations">
