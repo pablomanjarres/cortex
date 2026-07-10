@@ -63,7 +63,13 @@ async function getApiBase(): Promise<string | null> {
   for (const base of candidates) {
     try {
       const res = await fetch(`${base}/api/data/keys`, { signal: AbortSignal.timeout(2000) })
-      if (res.ok) { _apiBase = base; return base }
+      // A 200 alone is not proof of a live API: SPA-fallback servers answer
+      // every path with 200 + index.html, which would put the store into a
+      // phantom-API mode that swallows writes. Require a real JSON body.
+      if (res.ok) {
+        const body = await res.json().catch(() => null)
+        if (body !== null && typeof body === 'object') { _apiBase = base; return base }
+      }
     } catch { /* try next */ }
   }
 
