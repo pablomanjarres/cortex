@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { readStore } from '@/lib/store'
-import { getLastNDays } from '@/lib/date-utils'
+import { getLastNDays, localDate } from '@/lib/date-utils'
 import type { WorkoutDay, WorkoutSession, BodyStats, DailyNutrition } from '@/types/gym'
 import { PROTEIN_TARGET, CALORIE_TARGET } from '@/types/gym'
 import {
@@ -89,10 +89,11 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
     return { date: s.date.slice(5), sets: totalSets, volume: totalVolume, type: s.workoutName, fill: COLORS[s.workoutName] || '#888' }
   }), [sessions])
 
-  // Weight trend
+  // Weight trend — compare YYYY-MM-DD strings directly: `new Date('YYYY-MM-DD')`
+  // parses as UTC midnight, which shifts entries across day boundaries locally.
   const weightData = useMemo(() => {
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - range)
-    return bodyStats.filter(s => new Date(s.date) >= cutoff).sort((a, b) => a.date.localeCompare(b.date)).map(s => ({ date: s.date.slice(5), weight: s.weight }))
+    const cutoff = getLastNDays(range)[0] // oldest local day in range
+    return bodyStats.filter(s => s.date >= cutoff).sort((a, b) => a.date.localeCompare(b.date)).map(s => ({ date: s.date.slice(5), weight: s.weight }))
   }, [bodyStats, range])
 
   // Personal records
@@ -143,17 +144,21 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
   const totalSets = sessions.reduce((s, sess) => s + sess.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).length, 0), 0)
   const totalVolume = sessions.reduce((s, sess) => s + sess.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).reduce((v, set) => v + set.weight * set.reps, 0), 0), 0)
 
-  // Weekly streak
+  // Weekly streak — week boundaries as local YYYY-MM-DD strings, compared
+  // against session date strings (avoids the UTC-midnight parse of new Date(s)).
   const weeklyStreak = useMemo(() => {
     let streak = 0
-    const now = new Date()
+    const monday = new Date()
+    monday.setHours(0, 0, 0, 0)
+    monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7) // this week's Monday
     for (let w = 0; w < 12; w++) {
-      const weekStart = new Date(now)
-      weekStart.setDate(now.getDate() - (now.getDay() + 6) % 7 - w * 7)
-      const weekSessions = sessions.filter(s => {
-        const d = new Date(s.date)
-        return d >= weekStart && d < new Date(weekStart.getTime() + 7 * 86400000)
-      })
+      const weekStart = new Date(monday)
+      weekStart.setDate(monday.getDate() - w * 7)
+      const weekEnd = new Date(weekStart)
+      weekEnd.setDate(weekStart.getDate() + 7)
+      const startStr = localDate(weekStart)
+      const endStr = localDate(weekEnd)
+      const weekSessions = sessions.filter(s => s.date >= startStr && s.date < endStr)
       if (weekSessions.length >= 3) streak++
       else if (w > 0) break // don't break on current incomplete week
     }

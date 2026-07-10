@@ -3,6 +3,7 @@ import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { useStore, readStore } from '@/lib/store'
 import { localDate, getISOWeek, getWeekLabel, formatMinutes } from '@/lib/date-utils'
+import { useToday } from '@/lib/use-today'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import {
   ChevronLeft,
@@ -141,6 +142,10 @@ export function StatsPage() {
   const [view, setView] = useState<'day' | 'week'>('day')
   const [selectedDate, setSelectedDate] = useState(localDate())
 
+  // Reactive "today" — rolls over at midnight so all the today-keyed stores
+  // below re-key to the new day while the app stays open.
+  const todayStr = useToday()
+
   // Shared stores
   const [habits] = useStore<HabitDef[]>('cortex-habits', [])
   const [founderHistory] = useStore<HistoryEntry[]>('cortex-founder-history', [])
@@ -150,20 +155,19 @@ export function StatsPage() {
 
   // --- GTM Data -------------------------------------------
   const [dayGtm, setDayGtm] = useState<GtmDailyLog | null>(null)
-  const [todayGtm] = useStore<GtmDailyLog | null>(`cortex-gtm-log-${localDate()}`, null)
+  const [todayGtm] = useStore<GtmDailyLog | null>(`cortex-gtm-log-${todayStr}`, null)
 
   // --- Gym Data -------------------------------------------
   const [dayWorkout, setDayWorkout] = useState<WorkoutSession | null>(null)
   const [dayNutrition, setDayNutrition] = useState<DailyNutrition | null>(null)
-  const [todayWorkoutRaw] = useStore<unknown>(`cortex-gym-session-${localDate()}`, null)
+  const [todayWorkoutRaw] = useStore<unknown>(`cortex-gym-session-${todayStr}`, null)
   const todayWorkout = useMemo(() => firstWorkout(todayWorkoutRaw), [todayWorkoutRaw])
-  const [todayNutrition] = useStore<DailyNutrition | null>(`cortex-nutrition-${localDate()}`, null)
+  const [todayNutrition] = useStore<DailyNutrition | null>(`cortex-nutrition-${todayStr}`, null)
 
   // --- Day View Data --------------------------------------
   const [daySessions, setDaySessions] = useState<SprintSession[]>([])
 
   // Use useStore for today's data (reactive), readStore for past dates
-  const todayStr = useMemo(() => localDate(), [])
   const isToday = selectedDate === todayStr
   const [todaySessions] = useStore<SprintSession[]>(`cortex-daily-sessions-${todayStr}`, [])
 

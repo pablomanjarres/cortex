@@ -50,12 +50,22 @@ async function ghSearch(q, perPage) {
   return Array.isArray(body.items) ? body.items : []
 }
 
-async function getStore() {
+// Read the store, capturing the optimistic-concurrency rev
+// (X-Cortex-Rev header; null against servers that don't send it).
+async function getStoreWithRev() {
   try {
     const r = await fetch(`${API}/api/data?key=${KEY}`)
-    if (!r.ok) return null
-    return await r.json()
-  } catch { return null }
+    if (!r.ok) return { data: null, rev: null }
+    return { data: await r.json(), rev: r.headers.get("x-cortex-rev") }
+  } catch { return { data: null, rev: null } }
+}
+
+async function postStore(merged, baseRev) {
+  return fetch(`${API}/api/data`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(baseRev != null ? { key: KEY, data: merged, baseRev } : { key: KEY, data: merged }),
+  })
 }
 
 function mergeSnapshots(prev, found, now) {
@@ -119,15 +129,26 @@ async function main() {
   if (found.size === 0) throw new Error("no repos returned from github")
 
   const now = new Date().toISOString()
-  const existing = (await getStore()) || {}
-  const repos = mergeSnapshots(existing, found, now)
-  const merged = { ...existing, repos, lastRefresh: now, runStatus: "done", runFinishedAt: now, runError: undefined }
+  let { data: existing, rev } = await getStoreWithRev()
+  existing = existing || {}
+  let repos = mergeSnapshots(existing, found, now)
+  let merged = { ...existing, repos, lastRefresh: now, runStatus: "done", runFinishedAt: now, runError: undefined }
 
-  const res = await fetch(`${API}/api/data`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: KEY, data: merged }),
-  })
+  let res = await postStore(merged, rev)
+  if (res.status === 409) {
+    // Someone else wrote between our read and write: re-read, re-merge, retry once.
+    log("write conflict — re-reading and re-applying merge")
+    ;({ data: existing, rev } = await getStoreWithRev())
+    existing = existing || {}
+    repos = mergeSnapshots(existing, found, now)
+    merged = { ...existing, repos, lastRefresh: now, runStatus: "done", runFinishedAt: now, runError: undefined }
+    res = await postStore(merged, rev)
+    if (res.status === 409) {
+      // Still racing — rev-less last-write-wins (old behavior) so the scan isn't lost.
+      log("conflict persists — falling back to last-write-wins")
+      res = await postStore(merged, null)
+    }
+  }
   if (!res.ok) throw new Error(`POST /api/data failed: ${res.status} ${await res.text()}`)
   log(`posted ${repos.length} projects (${found.size} unique scanned) to Cortex.`)
 }

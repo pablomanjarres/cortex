@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useStore, readStore, writeStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
+import { useToday } from '@/lib/use-today'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import { useSprintTimer, type SprintSession } from '@/lib/sprint-context'
 import { motion } from 'framer-motion'
@@ -51,8 +52,9 @@ const defaultHabits: HabitDef[] = [
 export function DailyPage() {
   const navigate = useNavigate()
 
-  // Date key for daily persistence (local date, not UTC)
-  const today = localDate()
+  // Date key for daily persistence (local date, not UTC).
+  // Reactive: rolls over at midnight so habit toggles land on the new day.
+  const today = useToday()
 
   // Sprint timer — from global context (survives page navigation)
   const {
@@ -107,6 +109,8 @@ export function DailyPage() {
   }, [navigate])
 
   // ─── Tray stats ──────────────────────────────────────────
+  // Deps matter: without them this rebuilt the full tray menu on every
+  // render (i.e. every timer second).
   useEffect(() => {
     if (window.electronAPI?.tray) {
       window.electronAPI.tray.updateStats({
@@ -115,11 +119,14 @@ export function DailyPage() {
         score: '',
       })
     }
-  })
+  }, [sessionCount, habitsCompleted, habits.length])
 
   // ─── Weekly Audit Auto-Trigger ───────────────────────────
+  // Keyed to the reactive day so it re-checks after a midnight rollover
+  // (Sunday -> Monday while the app stays open). The existing-audit guard
+  // below prevents double-writing.
   useEffect(() => {
-    const now = new Date()
+    const now = new Date(today + 'T00:00:00')
     if (now.getDay() !== 1) return // Only on Mondays
 
     const lastMonday = new Date(now)
@@ -148,10 +155,15 @@ export function DailyPage() {
         ...weekDates.map(date => readStore<SprintSession[]>(`cortex-daily-sessions-${date}`, [])),
         readStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {}),
         readStore<HistoryEntry[]>('cortex-founder-history', []),
+        // Read habits fresh from the store — the `habits` hook value can still
+        // be the synchronous fallback (phantom ids '1'..'7') when this effect
+        // runs, which would score consistency against habits that don't exist.
+        readStore<HabitDef[]>('cortex-habits', defaultHabits),
       ]).then((results) => {
         const sessionsByDay = results.slice(0, 7) as SprintSession[][]
         const habitHistory = results[7] as Record<string, Record<string, boolean>>
         const founderHistory = results[8] as HistoryEntry[]
+        const storedHabits = results[9] as HabitDef[]
 
         const allSessions = sessionsByDay.flat()
         const totalSessions = allSessions.length
@@ -162,7 +174,7 @@ export function DailyPage() {
 
         // Habit stats — weekly cadence only (monthly habits are scored over the month)
         const weeklyHabitIds = new Set(
-          habits.filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly').map(h => h.id)
+          storedHabits.filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly').map(h => h.id)
         )
         const weekHabits = weekDates.map(wd => habitHistory[wd] || {})
         const totalHabitChecks = weekHabits.reduce(
@@ -192,7 +204,7 @@ export function DailyPage() {
         writeStore(`cortex-weekly-audit-${weekId}`, audit)
       })
     })
-  }, [])
+  }, [today])
 
   return (
     <PageShell>

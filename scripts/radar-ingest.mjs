@@ -109,24 +109,25 @@ function normalizeRecord(raw, runId) {
   return rec
 }
 
-async function main() {
-  const classified = JSON.parse(await readFile(classifiedPath, "utf8"))
-  if (!Array.isArray(classified)) throw new Error("classified.json must be an array")
-  const report = reportPath ? await readFile(reportPath, "utf8") : undefined
-  const runId = new Date().toISOString()
-
-  // existing store
-  let existing = { items: [], lastRun: null }
+// Read the existing store, also capturing the optimistic-concurrency rev
+// (X-Cortex-Rev header; null against servers that don't send it).
+async function readStoreWithRev() {
   try {
     const res = await fetch(`${API}/api/data?key=${KEY}`)
     if (res.ok) {
+      const rev = res.headers.get("x-cortex-rev")
       const body = await res.json()
-      if (body && Array.isArray(body.items)) existing = body
+      if (body && Array.isArray(body.items)) return { existing: body, rev }
+      return { existing: { items: [], lastRun: null }, rev }
     }
   } catch (e) {
     console.error("warn: could not read existing store:", e.message)
   }
+  return { existing: { items: [], lastRun: null }, rev: null }
+}
 
+// Pure merge: classified records into the existing store (dedup both ways).
+function mergeClassified(existing, classified, runId, report) {
   const seen = new Set()
 
   // pass 1: keep existing, dropping any pre-existing self-duplicates (cleans old dupes)
@@ -156,6 +157,25 @@ async function main() {
     lastRunId: runId,
     ...(report !== undefined ? { report } : {}),
   }
+  return { merged, added, existingDropped }
+}
+
+async function postMerged(merged, baseRev) {
+  return fetch(`${API}/api/data`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(baseRev != null ? { key: KEY, data: merged, baseRev } : { key: KEY, data: merged }),
+  })
+}
+
+async function main() {
+  const classified = JSON.parse(await readFile(classifiedPath, "utf8"))
+  if (!Array.isArray(classified)) throw new Error("classified.json must be an array")
+  const report = reportPath ? await readFile(reportPath, "utf8") : undefined
+  const runId = new Date().toISOString()
+
+  let { existing, rev } = await readStoreWithRev()
+  let { merged, added, existingDropped } = mergeClassified(existing, classified, runId, report)
 
   console.error(`radar-ingest: ${classified.length} classified, ${added.length} new, ${existingDropped} existing dupes removed, ${merged.items.length} total`)
 
@@ -164,11 +184,20 @@ async function main() {
     return
   }
 
-  const res = await fetch(`${API}/api/data`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: KEY, data: merged }),
-  })
+  let res = await postMerged(merged, rev)
+  if (res.status === 409) {
+    // Someone else wrote between our read and write: re-read, re-merge, retry once.
+    console.error("radar-ingest: write conflict — re-reading and re-applying merge")
+    ;({ existing, rev } = await readStoreWithRev())
+    ;({ merged, added, existingDropped } = mergeClassified(existing, classified, runId, report))
+    res = await postMerged(merged, rev)
+    if (res.status === 409) {
+      // Still racing — fall back to a rev-less write (old last-write-wins behavior)
+      // so a full radar run is never thrown away.
+      console.error("radar-ingest: conflict persists — falling back to last-write-wins")
+      res = await postMerged(merged, null)
+    }
+  }
   if (!res.ok) throw new Error(`POST /api/data failed: ${res.status} ${await res.text()}`)
   console.error(`radar-ingest: wrote ${merged.items.length} items (${added.length} new) to Cortex.`)
 }

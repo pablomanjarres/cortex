@@ -18,18 +18,23 @@ const ELIGIBILITY = new Set(["remote-global","latam","us-eu","other","unknown"])
 const CLAUDE_TIMEOUT_MS = 90_000
 
 // ── store I/O ────────────────────────────────────────────────────────────────
-async function getStore(API, KEY) {
+// Reads capture the optimistic-concurrency rev (X-Cortex-Rev header; null
+// against servers that don't send it); writes pass it back as baseRev.
+async function getStoreWithRev(API, KEY) {
   try {
     const r = await fetch(`${API}/api/data?key=${KEY}`)
-    if (!r.ok) return null
-    return await r.json()
-  } catch { return null }
+    if (!r.ok) return { data: null, rev: null }
+    return { data: await r.json(), rev: r.headers.get("x-cortex-rev") }
+  } catch { return { data: null, rev: null } }
 }
-async function postStore(API, KEY, data) {
-  await fetch(`${API}/api/data`, {
+async function getStore(API, KEY) {
+  return (await getStoreWithRev(API, KEY)).data
+}
+async function postStore(API, KEY, data, baseRev) {
+  return fetch(`${API}/api/data`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: KEY, data }),
+    body: JSON.stringify(baseRev != null ? { key: KEY, data, baseRev } : { key: KEY, data }),
   })
 }
 
@@ -142,9 +147,20 @@ export async function processPendingObjectives(API, KEY) {
     patch = { status: "error", error: String(e?.message ?? e).slice(0, 200) }
   }
 
-  // Re-read before writing so we merge onto the freshest store (avoid clobbering edits).
-  const cur = (await getStore(API, KEY)) ?? store
-  const objectives = (cur.objectives || []).map((o) => (o.id === pending.id ? { ...o, ...patch } : o))
-  await postStore(API, KEY, { ...cur, objectives })
+  // Re-read before writing so we merge onto the freshest store (avoid clobbering
+  // edits), and write with baseRev. On 409 re-read + re-apply once; if it still
+  // conflicts, fall back to a rev-less last-write-wins post so the objective
+  // never stays stuck in "thinking".
+  const applyPatch = (cur) => ({
+    ...cur,
+    objectives: (cur.objectives || []).map((o) => (o.id === pending.id ? { ...o, ...patch } : o)),
+  })
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, rev } = await getStoreWithRev(API, KEY)
+    const res = await postStore(API, KEY, applyPatch(data ?? store), rev)
+    if (!res || res.status !== 409) return true
+  }
+  const { data } = await getStoreWithRev(API, KEY)
+  await postStore(API, KEY, applyPatch(data ?? store), null)
   return true
 }

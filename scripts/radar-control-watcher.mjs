@@ -19,20 +19,47 @@ const STALE_MS = 45 * 60 * 1000
 
 let busy = false
 
-async function getStore() {
+// Read a store key, capturing the optimistic-concurrency rev
+// (X-Cortex-Rev header; null against servers that don't send it).
+async function getStoreWithRev(key) {
   try {
-    const r = await fetch(`${API}/api/data?key=${KEY}`)
-    if (!r.ok) return null
-    return await r.json()
-  } catch { return null }
+    const r = await fetch(`${API}/api/data?key=${key}`)
+    if (!r.ok) return { data: null, rev: null }
+    return { data: await r.json(), rev: r.headers.get("x-cortex-rev") }
+  } catch { return { data: null, rev: null } }
 }
-async function patch(fields) {
-  const cur = (await getStore()) ?? { items: [], lastRun: null }
+
+async function getStore() {
+  return (await getStoreWithRev(KEY)).data
+}
+
+// Read → merge fields → write with baseRev. On 409 (someone else wrote in
+// between) re-read and retry once; if it STILL conflicts, fall back to a
+// rev-less last-write-wins post — these are control-flow flags (runStatus)
+// that must land or the UI wedges.
+async function postPatch(key, fallbackObj, fields) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data, rev } = await getStoreWithRev(key)
+    const cur = data ?? fallbackObj
+    const res = await fetch(`${API}/api/data`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(rev != null
+        ? { key, data: { ...cur, ...fields }, baseRev: rev }
+        : { key, data: { ...cur, ...fields } }),
+    })
+    if (res.status !== 409) return
+  }
+  const { data } = await getStoreWithRev(key)
   await fetch(`${API}/api/data`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: KEY, data: { ...cur, ...fields } }),
+    body: JSON.stringify({ key, data: { ...(data ?? fallbackObj), ...fields } }),
   })
+}
+
+async function patch(fields) {
+  await postPatch(KEY, { items: [], lastRun: null }, fields)
 }
 
 function runPipeline() {
@@ -98,19 +125,10 @@ const GROWTH_KEY = "cortex-growth-projects"
 const GROWTH_SCRIPT = "/Users/pablo/projects/cortex/scripts/growth-fetch.mjs"
 
 async function getGrowth() {
-  try {
-    const r = await fetch(`${API}/api/data?key=${GROWTH_KEY}`)
-    if (!r.ok) return null
-    return await r.json()
-  } catch { return null }
+  return (await getStoreWithRev(GROWTH_KEY)).data
 }
 async function patchGrowth(fields) {
-  const cur = (await getGrowth()) ?? { repos: [], lastRefresh: null }
-  await fetch(`${API}/api/data`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ key: GROWTH_KEY, data: { ...cur, ...fields } }),
-  })
+  await postPatch(GROWTH_KEY, { repos: [], lastRefresh: null }, fields)
 }
 function runGrowth() {
   return new Promise((resolve) => {

@@ -54,13 +54,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   data: {
-    read: (key: string) => ipcRenderer.invoke('data:read', key),
-    write: (key: string, data: unknown) => ipcRenderer.invoke('data:write', key, data),
+    // data:read resolves { data, rev } — `read` keeps the legacy "just the
+    // value" contract for existing callers; `readWithRev` exposes the rev.
+    read: (key: string) => ipcRenderer.invoke('data:read', key)
+      .then((r: { data: unknown } | null) => (r && typeof r === 'object' && 'data' in r ? r.data : r)),
+    readWithRev: (key: string) => ipcRenderer.invoke('data:read', key),
+    // Optional baseRev enables optimistic concurrency: on mismatch main
+    // returns { ok: false, conflict: true, rev, data } instead of writing.
+    write: (key: string, data: unknown, baseRev?: string | null) => ipcRenderer.invoke('data:write', key, data, baseRev ?? null),
     listKeys: () => ipcRenderer.invoke('data:listKeys'),
     exportAll: () => ipcRenderer.invoke('data:exportAll'),
     importAll: (json: string) => ipcRenderer.invoke('data:importAll', json),
     getPath: () => ipcRenderer.invoke('data:getPath'),
     getStats: () => ipcRenderer.invoke('data:getStats'),
+    // Push-based store updates: main broadcasts { key, source, rev } after
+    // every successful write. Returns an unsubscribe function.
+    onDataChanged: (callback: (payload: { key: string; source: 'ipc' | 'http' | 'main'; rev: string | null }) => void) => {
+      const listener = (_event: unknown, payload: { key: string; source: 'ipc' | 'http' | 'main'; rev: string | null }) => callback(payload)
+      ipcRenderer.on('data:changed', listener)
+      return () => ipcRenderer.removeListener('data:changed', listener)
+    },
   },
 
   automation: {
