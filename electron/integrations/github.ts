@@ -4,10 +4,23 @@ function localDate(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Monday (local) of the week containing `d`, as YYYY-MM-DD. */
-function mondayOfWeek(d: Date = new Date()): string {
-  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7))
-  return localDate(monday)
+/** Monday (local) of the week containing `d`, at local midnight. */
+function mondayOfWeek(d: Date = new Date()): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7))
+}
+
+/**
+ * Local midnight of `d` as an ISO timestamp WITH the machine's UTC offset
+ * (e.g. 2026-07-06T00:00:00-05:00). GitHub search parses bare dates as UTC,
+ * which would shift the week boundary — the explicit offset keeps "since
+ * Monday" meaning the local Monday.
+ */
+function localMidnightISO(d: Date): string {
+  const off = -d.getTimezoneOffset()
+  const sign = off >= 0 ? '+' : '-'
+  const abs = Math.abs(off)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T00:00:00${sign}${p(Math.floor(abs / 60))}:${p(abs % 60)}`
 }
 
 // Mirrors src/types/metrics.ts GitHubStats — keep the two in sync.
@@ -20,13 +33,13 @@ interface GitHubStats {
   repoCount: number
   followers: number
   streak: number
-  /** Real per-day commit counts for the last 30 days, from the contribution calendar. */
+  /** Real per-day commit counts for the last 30 days. */
   commitTimeline: { date: string; commits: number }[]
 }
 
 interface GraphQLError { message?: string }
 
-interface ContributionDay { date: string; contributionCount: number }
+interface CommitContributionNode { occurredAt: string; commitCount: number }
 
 interface StatsQueryData {
   viewer: {
@@ -34,8 +47,12 @@ interface StatsQueryData {
     repositories: { totalCount: number }
     followers: { totalCount: number }
     contributionsCollection: {
-      totalCommitContributions: number
-      contributionCalendar: { weeks: { contributionDays: ContributionDay[] }[] }
+      // Commit-ONLY per-day counts. The contribution calendar's
+      // contributionCount is the profile-graph number (commits + issues +
+      // PR opens + reviews) and must NOT be used as a commit metric.
+      commitContributionsByRepository: {
+        contributions: { nodes: CommitContributionNode[] }
+      }[]
     }
   }
   open: { issueCount: number }
@@ -83,8 +100,9 @@ query FounderStats($from: DateTime!, $to: DateTime!, $openQ: String!, $mergedQ: 
     repositories(first: 1, affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]) { totalCount }
     followers { totalCount }
     contributionsCollection(from: $from, to: $to) {
-      totalCommitContributions
-      contributionCalendar { weeks { contributionDays { date contributionCount } } }
+      commitContributionsByRepository(maxRepositories: 100) {
+        contributions(first: 100) { nodes { occurredAt commitCount } }
+      }
     }
   }
   open: search(type: ISSUE, query: $openQ) { issueCount }
@@ -93,8 +111,9 @@ query FounderStats($from: DateTime!, $to: DateTime!, $openQ: String!, $mergedQ: 
 
 /**
  * ONE GraphQL POST (two on the very first call, to resolve the login) replaces
- * the old serial REST scan of ~87 repos. The contribution calendar is the
- * authoritative per-day commit source; PR counts come from aliased searches.
+ * the old serial REST scan of ~87 repos. commitContributionsByRepository is
+ * the commit-ONLY per-day source (one day-bucketed node per repo per day);
+ * PR counts come from aliased searches.
  */
 export async function getGitHubStats(token: string): Promise<GitHubStats> {
   const login = await getLogin(token)
@@ -102,19 +121,22 @@ export async function getGitHubStats(token: string): Promise<GitHubStats> {
   const now = new Date()
   // 30 buckets ending today (local): today - 29 days .. today
   const windowStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29)
-  const weekStartStr = mondayOfWeek(now)
 
   const data = await ghGraphQL<StatsQueryData>(token, STATS_QUERY, {
     from: windowStart.toISOString(),
     to: now.toISOString(),
     openQ: `is:pr author:${login} is:open`,
-    mergedQ: `is:pr author:${login} is:merged merged:>=${weekStartStr}`,
+    mergedQ: `is:pr author:${login} is:merged merged:>=${localMidnightISO(mondayOfWeek(now))}`,
   })
 
-  // Calendar days → dense 30-day timeline (zero-filled)
+  // Per-repo day-bucketed commit nodes → per-day totals (commit-only),
+  // then a dense zero-filled 30-day timeline.
   const dayCounts = new Map<string, number>()
-  for (const week of data.viewer.contributionsCollection.contributionCalendar.weeks) {
-    for (const day of week.contributionDays) dayCounts.set(day.date, day.contributionCount)
+  for (const repo of data.viewer.contributionsCollection.commitContributionsByRepository) {
+    for (const node of repo.contributions.nodes) {
+      const key = node.occurredAt.slice(0, 10) // the day GitHub credited the commits
+      dayCounts.set(key, (dayCounts.get(key) ?? 0) + node.commitCount)
+    }
   }
   const commitTimeline: { date: string; commits: number }[] = []
   for (let i = 29; i >= 0; i--) {

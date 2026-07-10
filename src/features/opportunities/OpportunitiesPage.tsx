@@ -381,7 +381,12 @@ function sectionOf(o: Opportunity): SectionKey {
   if (o.deadline) {
     const d = daysUntil(o.deadline)
     if (d !== null) {
-      if (d < 0) return 'closed'
+      if (d < 0) {
+        // A recurring program whose cycle closed >7d ago isn't "closed" —
+        // it's waiting for its next window.
+        if (dt === 'recurring' && d < -7) return 'upcoming'
+        return 'closed'
+      }
       if (d <= 7) return 'week'
       if (d <= 30) return 'month'
       return 'later'

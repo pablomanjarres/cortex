@@ -192,12 +192,6 @@ function refreshSource(source: FounderSource, opts: { force?: boolean; minAgeMs?
 
 // ─── History upsert (single writer; full backed-up write path) ─
 
-function nonZeroGuard(prev: number, next: number): number {
-  // Never replace a non-zero value with zero — zeros from partial data must
-  // not erase a real reading.
-  return prev > 0 && next === 0 ? prev : next
-}
-
 interface CycleResults {
   github?: GithubResult | null
   lemon?: LemonResult | null
@@ -230,16 +224,19 @@ async function upsertHistoryNow(results: CycleResults): Promise<void> {
     history.push(entry)
   }
 
-  // Per-field semantics — a field is ONLY written when its source succeeded.
+  // Per-field semantics — a field is ONLY written when its source succeeded,
+  // and a successful reading is authoritative even when it is zero (a real
+  // "0 PRs open" / "0 commits" must be recordable; failed sources are already
+  // excluded by the null guards above).
   if (github) {
-    // Authoritative full-day count from the contribution calendar.
-    entry.commits = nonZeroGuard(entry.commits ?? 0, github.commitsToday)
-    entry.prsOpen = nonZeroGuard(entry.prsOpen ?? 0, github.prsOpen)
+    // Authoritative full-day commit count from GitHub.
+    entry.commits = github.commitsToday
+    entry.prsOpen = github.prsOpen
     // Merged-THIS-WEEK count — the field finally matches its "(week)" label.
-    entry.prsMerged = nonZeroGuard(entry.prsMerged ?? 0, github.prsMergedWeek)
+    entry.prsMerged = github.prsMergedWeek
   }
-  if (supabase) entry.users = nonZeroGuard(entry.users ?? 0, supabase.totalUsers)
-  if (lemon) entry.mrr = nonZeroGuard(entry.mrr ?? 0, lemon.mrr)
+  if (supabase) entry.users = supabase.totalUsers
+  if (lemon) entry.mrr = lemon.mrr
   if (vercel) entry.deploys = Math.max(entry.deploys ?? 0, vercel.deploymentsToday)
 
   // Retention: 365 days, ascending by date.

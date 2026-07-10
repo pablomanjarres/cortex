@@ -139,14 +139,23 @@ export function readAndDecrypt(filePath: string): string {
 }
 
 /** Async variant of encryptAndWrite (atomic: tmp file + rename). */
+let tmpSeq = 0
 export async function encryptAndWriteAsync(filePath: string, jsonString: string): Promise<void> {
-  const tmpFile = filePath + '.tmp'
-  if (_encryptionAvailable) {
-    await fs.promises.writeFile(tmpFile, encrypt(jsonString))
-  } else {
-    await fs.promises.writeFile(tmpFile, jsonString, 'utf-8')
+  // Unique tmp name per write: with async IO, two concurrent writers of the
+  // SAME file (e.g. the founder refresher and an importAll restore) would
+  // otherwise interleave on a shared `<file>.tmp` and cross-publish payloads.
+  const tmpFile = `${filePath}.${process.pid}.${++tmpSeq}.tmp`
+  try {
+    if (_encryptionAvailable) {
+      await fs.promises.writeFile(tmpFile, encrypt(jsonString))
+    } else {
+      await fs.promises.writeFile(tmpFile, jsonString, 'utf-8')
+    }
+    await fs.promises.rename(tmpFile, filePath)
+  } catch (err) {
+    await fs.promises.unlink(tmpFile).catch(() => {})
+    throw err
   }
-  await fs.promises.rename(tmpFile, filePath)
 }
 
 /** Async variant of readAndDecrypt. */
