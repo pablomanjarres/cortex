@@ -33,14 +33,19 @@ You are given the current opportunity records as DATA. For EACH one decide:
   graduate/PhD/senior-only, expired before ${today}, or otherwise off-profile).
 - Otherwise KEEP it, and update priority + leverageScore for THIS profile, and add a short
   eligibility caveat to notes if there's any age/visa/degree question. Preserve the item's
-  id, sourceRef, url, source, title, host, deadline, location, and modality unchanged
-  (only set modality if it is missing: "remote" fully online, "hybrid" physical+online,
-  "in-person" physical-only, "unknown" if unclear).
+  id, sourceRef, url, officialUrl, source, title, host, deadline, deadlineType, rolling,
+  recurrence, nextWindowExpected, amountUsd, requires18Plus, effort, location, and modality
+  unchanged (only set modality if it is missing: "remote" fully online, "hybrid"
+  physical+online, "in-person" physical-only, "unknown" if unclear; and only set
+  requires18Plus if it is missing AND the record's own text explicitly states an age rule —
+  true for an explicit 18+/legal-age requirement, false when minors are explicitly allowed,
+  else null).
 
 Output EXACTLY one JSON object, nothing else:
 { "opportunities": [ <the KEPT records, full objects, re-scored> ], "report": "<plain-text digest: how many kept vs dropped and why, then the top items to act on now for a 17-year-old Colombia-based sophomore>" }
 
-Each kept record keeps this shape: {id,title,host,category,goals,priority,leverageScore,leverageNote,deadline,rolling,location,modality,eligibility,reward,url,source,sourceRef,notes,tags}.
+Each kept record keeps this shape: {id,title,host,category,goals,priority,leverageScore,leverageNote,deadline,deadlineType,rolling,recurrence,nextWindowExpected,amountUsd,requires18Plus,effort,location,modality,eligibility,reward,url,officialUrl,source,sourceRef,notes,tags}
+(carry any of those fields through even when null/missing on the input record).
 Do not invent new opportunities. Do not call any tools.
 
 <DATA>

@@ -12,8 +12,8 @@
 // Exports processPendingObjectives(API, KEY) for the always-on radar-control-watcher.
 
 import { spawn } from "node:child_process"
+import { CATEGORIES } from "./radar-lib.mjs"
 
-const CATEGORIES = new Set(["hackathon","grant","accelerator","fellowship","internship","exchange","competition","pitch","speaking","scholarship","community","launch","trending","other"])
 const ELIGIBILITY = new Set(["remote-global","latam","us-eu","other","unknown"])
 const CLAUDE_TIMEOUT_MS = 90_000
 
@@ -63,7 +63,7 @@ Output EXACTLY this shape (no markdown fences, no prose outside it):
   "reply": "1-2 sentences, first person as Radar, confirming exactly what you'll hunt for and that you'll prioritize it on the next run. Concrete, no fluff.",
   "parsed": {
     "summary": "one-line normalized restatement, e.g. '20 remote internships, $2k+/mo, deadline before 2026-09-01'",
-    "category": "hackathon|grant|accelerator|fellowship|internship|exchange|competition|pitch|speaking|scholarship|community|launch|trending|other" | null,
+    "category": "hackathon|grant|accelerator|fellowship|internship|exchange|competition|pitch|speaking|scholarship|community|launch|trending|program|residency|research|other" | null,
     "targetCount": integer | null,
     "locations": ["cities/regions/countries named in the order, e.g. 'Medellín','Bogotá','Colombia'; [] if none"],
     "eligibility": "remote-global|latam|us-eu|other|unknown" | null,

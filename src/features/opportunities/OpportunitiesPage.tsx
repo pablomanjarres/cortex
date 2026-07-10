@@ -1,7 +1,12 @@
 import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { StatTile } from '@/components/shared/StatTile'
+import { EmptyState } from '@/components/shared/EmptyState'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
+import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useStore } from '@/lib/store'
 import { GrowthProjectsPanel } from './GrowthProjectsPanel'
@@ -12,13 +17,9 @@ import {
   ExternalLink,
   Target,
   CalendarClock,
-  Flame,
+  InfinityIcon,
   Sparkles,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
   RefreshCw,
-  Loader2,
   Send,
   X,
   Crosshair,
@@ -29,7 +30,7 @@ import {
 export type OpportunityCategory =
   | 'hackathon' | 'grant' | 'accelerator' | 'fellowship' | 'internship'
   | 'exchange' | 'competition' | 'pitch' | 'speaking' | 'scholarship'
-  | 'community' | 'launch' | 'trending' | 'other'
+  | 'community' | 'launch' | 'trending' | 'program' | 'residency' | 'research' | 'other'
 
 export type Goal = 'internship' | 'exchange' | 'funding' | 'social-growth' | 'users'
 
@@ -39,6 +40,16 @@ export type Eligibility = 'remote-global' | 'latam' | 'us-eu' | 'other' | 'unkno
 export type Modality = 'remote' | 'hybrid' | 'in-person' | 'unknown'
 
 export type OppStatus = 'new' | 'pursuing' | 'applied' | 'won' | 'lost' | 'archived'
+
+/** Deadline intelligence: how this opportunity's application window behaves. */
+export type DeadlineType = 'fixed' | 'rolling' | 'recurring' | 'always-open' | 'unknown'
+
+/** Rough application effort (form vs essays vs multi-stage interviews). */
+export type Effort = 'low' | 'medium' | 'high'
+
+export type OppSource =
+  | 'x' | 'linkedin' | 'reddit' | 'instagram' | 'github' | 'devpost' | 'luma'
+  | 'eventbrite' | 'meetup' | 'web' | 'manual' | 'catalog'
 
 export interface Opportunity {
   id: string
@@ -51,14 +62,29 @@ export interface Opportunity {
   leverageNote: string
   status: OppStatus
   deadline: string | null
+  /** Legacy boolean — kept in sync with deadlineType ('rolling' | 'always-open' → true). */
   rolling: boolean
+  /** Optional: records predating the field derive it at render (deadlineTypeOf). */
+  deadlineType?: DeadlineType
+  /** Cadence when known, e.g. 'annual', 'rolling cohorts', '2 batches/yr'. */
+  recurrence?: string | null
+  /** Freeform estimate of the next application window (estimates marked as such). */
+  nextWindowExpected?: string | null
+  /** Representative amount in USD (grant / stipend / top prize) — null when unclear. */
+  amountUsd?: number | null
+  /** true ONLY for an explicit 18+/legal-age rule; false = minors explicitly OK; null = unstated. */
+  requires18Plus?: boolean | null
+  /** Application effort heuristic. */
+  effort?: Effort | null
   location: string
   /** Venue modality. Optional so records predating this field default to 'unknown' at render. */
   modality?: Modality
   eligibility: Eligibility
   reward: string
   url: string
-  source: 'x' | 'linkedin' | 'reddit' | 'instagram' | 'github' | 'devpost' | 'luma' | 'eventbrite' | 'meetup' | 'web' | 'manual'
+  /** Canonical program page when known; `url` stays the apply/discovery link. */
+  officialUrl?: string
+  source: OppSource
   sourceRef: string
   discoveredAt: string
   /** Which radar run surfaced this item (ISO stamp). 'manual' for hand-added. */
@@ -123,41 +149,55 @@ interface OppData {
 
 const DEFAULT_DATA: OppData = { items: [], lastRun: null }
 
-// ── Config ───────────────────────────────────────────────────────────────────
+// ── Config (labels + semantic Chip variants — no per-item hues) ──────────────
+// Every lookup goes through a *Of() accessor with a safe fallback, so a record
+// written by a newer radar build (or an unknown enum value) can never throw.
 
-const categoryConfig: Record<OpportunityCategory, { label: string; color: string }> = {
-  hackathon: { label: 'Hackathon', color: 'bg-violet-500/15 text-violet-400' },
-  grant: { label: 'Grant', color: 'bg-green-500/15 text-green-400' },
-  accelerator: { label: 'Accelerator', color: 'bg-orange-500/15 text-orange-400' },
-  fellowship: { label: 'Fellowship', color: 'bg-teal-500/15 text-teal-400' },
-  internship: { label: 'Internship', color: 'bg-blue-500/15 text-blue-400' },
-  exchange: { label: 'Exchange', color: 'bg-cyan-500/15 text-cyan-400' },
-  competition: { label: 'Competition', color: 'bg-fuchsia-500/15 text-fuchsia-400' },
-  pitch: { label: 'Pitch', color: 'bg-pink-500/15 text-pink-400' },
-  speaking: { label: 'Speaking', color: 'bg-amber-500/15 text-amber-400' },
-  scholarship: { label: 'Scholarship', color: 'bg-emerald-500/15 text-emerald-400' },
-  community: { label: 'Community', color: 'bg-indigo-500/15 text-indigo-400' },
-  launch: { label: 'Launch', color: 'bg-rose-500/15 text-rose-400' },
-  trending: { label: 'Trending', color: 'bg-lime-500/15 text-lime-400' },
-  other: { label: 'Other', color: 'bg-secondary text-muted-foreground' },
+type ChipVariant = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
+
+const categoryConfig: Record<OpportunityCategory, { label: string }> = {
+  hackathon: { label: 'Hackathon' },
+  grant: { label: 'Grant' },
+  accelerator: { label: 'Accelerator' },
+  fellowship: { label: 'Fellowship' },
+  internship: { label: 'Internship' },
+  exchange: { label: 'Exchange' },
+  competition: { label: 'Competition' },
+  pitch: { label: 'Pitch' },
+  speaking: { label: 'Speaking' },
+  scholarship: { label: 'Scholarship' },
+  community: { label: 'Community' },
+  launch: { label: 'Launch' },
+  trending: { label: 'Trending' },
+  program: { label: 'Program' },
+  residency: { label: 'Residency' },
+  research: { label: 'Research' },
+  other: { label: 'Other' },
 }
 const ALL_CATEGORIES = Object.keys(categoryConfig) as OpportunityCategory[]
+const categoryOf = (c: string | null | undefined) =>
+  categoryConfig[c as OpportunityCategory] ?? categoryConfig.other
 
-const priorityConfig: Record<Opportunity['priority'], { label: string; color: string; rank: number }> = {
-  high: { label: 'High', color: 'bg-red-500/15 text-red-400', rank: 0 },
-  medium: { label: 'Medium', color: 'bg-yellow-500/15 text-yellow-400', rank: 1 },
-  low: { label: 'Low', color: 'bg-secondary text-muted-foreground', rank: 2 },
-}
-
-const statusConfig: Record<OppStatus, { label: string; color: string }> = {
-  new: { label: 'New', color: 'bg-blue-500/15 text-blue-400' },
-  pursuing: { label: 'Pursuing', color: 'bg-violet-500/15 text-violet-400' },
-  applied: { label: 'Applied', color: 'bg-amber-500/15 text-amber-400' },
-  won: { label: 'Won', color: 'bg-green-500/15 text-green-400' },
-  lost: { label: 'Lost', color: 'bg-red-500/15 text-red-400' },
-  archived: { label: 'Archived', color: 'bg-secondary text-muted-foreground' },
+// Statuses: only truly semantic states carry a tone (won/lost/applied); the
+// rest are neutral. `text` colors the inline status select per state.
+const statusConfig: Record<OppStatus, { label: string; chip: ChipVariant; text: string }> = {
+  new: { label: 'New', chip: 'neutral', text: 'text-foreground' },
+  pursuing: { label: 'Pursuing', chip: 'accent', text: 'text-accent' },
+  applied: { label: 'Applied', chip: 'warning', text: 'text-warning' },
+  won: { label: 'Won', chip: 'success', text: 'text-success' },
+  lost: { label: 'Lost', chip: 'danger', text: 'text-destructive' },
+  archived: { label: 'Archived', chip: 'neutral', text: 'text-muted-foreground' },
 }
 const ALL_STATUSES = Object.keys(statusConfig) as OppStatus[]
+const statusOf = (s: string | null | undefined) => statusConfig[s as OppStatus] ?? statusConfig.new
+
+const priorityConfig: Record<Opportunity['priority'], { label: string; rank: number; chip: ChipVariant }> = {
+  high: { label: 'High', rank: 0, chip: 'danger' },
+  medium: { label: 'Medium', rank: 1, chip: 'warning' },
+  low: { label: 'Low', rank: 2, chip: 'neutral' },
+}
+const priorityOf = (p: string | null | undefined) =>
+  priorityConfig[p as Opportunity['priority']] ?? priorityConfig.medium
 
 const goalConfig: Record<Goal, string> = {
   internship: 'Internship',
@@ -175,52 +215,80 @@ const eligibilityConfig: Record<Eligibility, string> = {
   other: 'Other',
   unknown: 'Unknown',
 }
+const eligibilityOf = (e: string | null | undefined) =>
+  eligibilityConfig[e as Eligibility] ?? eligibilityConfig.unknown
 
-const modalityConfig: Record<Modality, { label: string; color: string; dot: string }> = {
-  remote: { label: 'Remote', color: 'bg-green-500/15 text-green-400', dot: 'bg-green-400' },
-  hybrid: { label: 'Hybrid', color: 'bg-violet-500/15 text-violet-400', dot: 'bg-violet-400' },
-  'in-person': { label: 'In-person', color: 'bg-blue-500/15 text-blue-400', dot: 'bg-blue-400' },
-  unknown: { label: 'Unknown', color: 'bg-secondary text-muted-foreground', dot: 'bg-muted-foreground/40' },
+const modalityConfig: Record<Modality, { label: string }> = {
+  remote: { label: 'Remote' },
+  hybrid: { label: 'Hybrid' },
+  'in-person': { label: 'In-person' },
+  unknown: { label: 'Unknown' },
 }
 /** Pills the user can filter by (the 'unknown' bucket isn't offered as a filter). */
 const MODALITY_FILTERS: Modality[] = ['remote', 'hybrid', 'in-person']
 /** Normalize possibly-absent modality (older records) to a valid key. */
-const modalityOf = (o: Opportunity): Modality => o.modality && modalityConfig[o.modality] ? o.modality : 'unknown'
+const modalityOf = (o: Opportunity): Modality =>
+  o.modality && modalityConfig[o.modality] ? o.modality : 'unknown'
 
-const sourceConfig: Record<Opportunity['source'], { label: string; color: string }> = {
-  x: { label: 'X', color: 'bg-neutral-500/15 text-neutral-300' },
-  linkedin: { label: 'LinkedIn', color: 'bg-sky-500/15 text-sky-400' },
-  reddit: { label: 'Reddit', color: 'bg-orange-500/15 text-orange-400' },
-  instagram: { label: 'Instagram', color: 'bg-pink-500/15 text-pink-400' },
-  github: { label: 'GitHub', color: 'bg-purple-500/15 text-purple-400' },
-  devpost: { label: 'Devpost', color: 'bg-blue-500/15 text-blue-400' },
-  luma: { label: 'Luma', color: 'bg-rose-500/15 text-rose-400' },
-  eventbrite: { label: 'Eventbrite', color: 'bg-red-500/15 text-red-400' },
-  meetup: { label: 'Meetup', color: 'bg-red-400/15 text-red-300' },
-  web: { label: 'Web', color: 'bg-teal-500/15 text-teal-400' },
-  manual: { label: 'Manual', color: 'bg-secondary text-muted-foreground' },
+const sourceConfig: Record<OppSource, { label: string }> = {
+  x: { label: 'X' },
+  linkedin: { label: 'LinkedIn' },
+  reddit: { label: 'Reddit' },
+  instagram: { label: 'Instagram' },
+  github: { label: 'GitHub' },
+  devpost: { label: 'Devpost' },
+  luma: { label: 'Luma' },
+  eventbrite: { label: 'Eventbrite' },
+  meetup: { label: 'Meetup' },
+  web: { label: 'Web' },
+  manual: { label: 'Manual' },
+  catalog: { label: 'Catalog' },
 }
 /** Safe lookup — a record from a newer radar build could carry a source this UI predates. */
 const sourceOf = (o: Opportunity) => sourceConfig[o.source] ?? sourceConfig.web
 
-// ── Region (geography) filter — the "click a tag to show only Colombia" axis ───────────
+const deadlineTypeConfig: Record<DeadlineType, { label: string }> = {
+  fixed: { label: 'Fixed date' },
+  rolling: { label: 'Rolling' },
+  recurring: { label: 'Recurring' },
+  'always-open': { label: 'Always open' },
+  unknown: { label: 'Unknown' },
+}
+const ALL_DEADLINE_TYPES = Object.keys(deadlineTypeConfig) as DeadlineType[]
+
+/**
+ * Normalize an item's deadline type at render time (mirrors scripts/radar-lib.mjs):
+ * explicit valid value wins; legacy records derive rolling→'rolling',
+ * dated→'fixed', else 'unknown'. All 68 legacy items render without migration.
+ */
+function deadlineTypeOf(o: Opportunity): DeadlineType {
+  if (o.deadlineType && deadlineTypeConfig[o.deadlineType]) return o.deadlineType
+  if (o.rolling === true) return 'rolling'
+  if (o.deadline) return 'fixed'
+  return 'unknown'
+}
+
+const effortConfig: Record<Effort, string> = { low: 'Low', medium: 'Medium', high: 'High' }
+const ALL_EFFORTS = Object.keys(effortConfig) as Effort[]
+
+// ── Region (geography) filter — the "click a tag to show only Colombia" axis ──
 // Distinct from modality (the venue axis) and eligibility (who-can-apply): this buckets an
 // item by WHERE in the world it is, read accent-insensitively from its location/title/tags.
 type Region = 'colombia' | 'latam' | 'usa' | 'europe' | 'asia' | 'online' | 'other'
-const regionConfig: Record<Region, { label: string; color: string; match: string[] }> = {
-  colombia: { label: '🇨🇴 Colombia', color: 'bg-amber-500/15 text-amber-400', match: ['colombia', 'medellin', 'bogota', 'cali', 'barranquilla', 'cartagena', 'bucaramanga', 'pereira', 'manizales'] },
-  latam: { label: 'LatAm', color: 'bg-emerald-500/15 text-emerald-400', match: ['latam', 'latin america', 'latinoamerica', 'mexico', 'brasil', 'brazil', 'argentina', 'chile', 'peru', 'ecuador', 'uruguay', 'bolivia', 'paraguay', 'venezuela', 'guatemala', 'costa rica', 'panama', 'dominican'] },
-  usa: { label: 'USA', color: 'bg-blue-500/15 text-blue-400', match: ['united states', ' usa', 'u.s.', 'san francisco', 'new york', 'boston', 'seattle', 'austin', 'silicon valley', 'california', 'chicago', 'los angeles'] },
-  europe: { label: 'Europe', color: 'bg-indigo-500/15 text-indigo-400', match: ['europe', 'london', 'berlin', 'paris', 'madrid', 'barcelona', 'amsterdam', 'lisbon', 'portugal', 'united kingdom', ' uk', 'germany', 'france', 'spain', 'netherlands', 'dublin', 'zurich', 'munich'] },
-  asia: { label: 'Asia', color: 'bg-fuchsia-500/15 text-fuchsia-400', match: ['asia', 'india', 'bangalore', 'bengaluru', 'singapore', 'tokyo', 'japan', 'china', 'shenzhen', 'hong kong', 'dubai', 'uae', 'seoul', 'jakarta'] },
-  online: { label: 'Online', color: 'bg-teal-500/15 text-teal-400', match: ['online', 'remote', 'virtual', 'global', 'worldwide', 'anywhere'] },
-  other: { label: 'Other', color: 'bg-secondary text-muted-foreground', match: [] },
+const regionConfig: Record<Region, { label: string; match: string[] }> = {
+  colombia: { label: 'Colombia', match: ['colombia', 'medellin', 'bogota', 'cali', 'barranquilla', 'cartagena', 'bucaramanga', 'pereira', 'manizales'] },
+  latam: { label: 'LatAm', match: ['latam', 'latin america', 'latinoamerica', 'mexico', 'brasil', 'brazil', 'argentina', 'chile', 'peru', 'ecuador', 'uruguay', 'bolivia', 'paraguay', 'venezuela', 'guatemala', 'costa rica', 'panama', 'dominican'] },
+  usa: { label: 'USA', match: ['united states', ' usa', 'u.s.', 'san francisco', 'new york', 'boston', 'seattle', 'austin', 'silicon valley', 'california', 'chicago', 'los angeles'] },
+  europe: { label: 'Europe', match: ['europe', 'london', 'berlin', 'paris', 'madrid', 'barcelona', 'amsterdam', 'lisbon', 'portugal', 'united kingdom', ' uk', 'germany', 'france', 'spain', 'netherlands', 'dublin', 'zurich', 'munich'] },
+  asia: { label: 'Asia', match: ['asia', 'india', 'bangalore', 'bengaluru', 'singapore', 'tokyo', 'japan', 'china', 'shenzhen', 'hong kong', 'dubai', 'uae', 'seoul', 'jakarta'] },
+  online: { label: 'Online', match: ['online', 'remote', 'virtual', 'global', 'worldwide', 'anywhere'] },
+  other: { label: 'Other', match: [] },
 }
 /** Most-specific region wins: Colombia > LatAm > a named country > Online. */
 const REGION_ORDER: Region[] = ['colombia', 'latam', 'usa', 'europe', 'asia', 'online', 'other']
 const deburr = (s: string) => (s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
 function regionOf(o: Opportunity): Region {
-  const hay = deburr(`${o.location} ${o.title} ${o.host} ${o.tags.join(' ')}`)
+  const hay = deburr(`${o.location} ${o.title} ${o.host} ${(o.tags || []).join(' ')}`)
   for (const r of REGION_ORDER) {
     if (r !== 'other' && regionConfig[r].match.some((m) => hay.includes(m))) return r
   }
@@ -235,16 +303,21 @@ function regionForText(text: string): Region | null {
   return null
 }
 
-type SortKey = 'deadline' | 'priority' | 'leverageScore' | 'discoveredAt' | 'title'
+// ── Kind groups (the segmented filter: programs vs funding vs compete vs career) ──
 
-type DueBucket = 'all' | 'overdue' | 'week' | 'twoWeeks' | 'month' | 'rolling'
-const dueBucketLabel: Record<DueBucket, string> = {
-  all: 'Any deadline',
-  overdue: 'Overdue',
-  week: 'Next week',
-  twoWeeks: 'Next 2 weeks',
-  month: 'Next month',
-  rolling: 'Rolling / open',
+type KindGroup = 'all' | 'programs' | 'funding' | 'compete' | 'career' | 'other'
+const KIND_GROUPS: Record<Exclude<KindGroup, 'all'>, { label: string; categories: OpportunityCategory[] }> = {
+  programs: { label: 'Programs', categories: ['program', 'fellowship', 'accelerator', 'residency'] },
+  funding: { label: 'Funding', categories: ['grant', 'scholarship'] },
+  compete: { label: 'Compete', categories: ['hackathon', 'competition', 'pitch'] },
+  career: { label: 'Career', categories: ['internship', 'exchange'] },
+  other: { label: 'Other', categories: ['speaking', 'community', 'launch', 'trending', 'research', 'other'] },
+}
+const kindGroupFor = (c: OpportunityCategory): KindGroup => {
+  for (const [g, cfg] of Object.entries(KIND_GROUPS)) {
+    if (cfg.categories.includes(c)) return g as KindGroup
+  }
+  return 'other'
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -257,29 +330,105 @@ function daysUntil(d: string | null): number | null {
   const ms = new Date(d).getTime() - Date.now()
   return Math.ceil(ms / 86_400_000)
 }
-function deadlineLabel(o: Opportunity): { text: string; tone: string } {
-  if (o.rolling) return { text: 'Rolling', tone: 'text-muted-foreground' }
-  if (!o.deadline) return { text: '—', tone: 'text-muted-foreground' }
-  const d = daysUntil(o.deadline)
-  if (d === null) return { text: '—', tone: 'text-muted-foreground' }
-  if (d < 0) return { text: `${fmtDate(o.deadline)} (past)`, tone: 'text-red-400/70' }
-  if (d <= 7) return { text: `${fmtDate(o.deadline)} · ${d}d`, tone: 'text-red-400' }
-  if (d <= 14) return { text: `${fmtDate(o.deadline)} · ${d}d`, tone: 'text-yellow-400' }
-  return { text: fmtDate(o.deadline), tone: 'text-muted-foreground' }
+/** Was this item discovered within the last 7 days? (drives the "New this week" KPI) */
+function isNewThisWeek(o: Opportunity): boolean {
+  return !!o.discoveredAt && (Date.now() - new Date(o.discoveredAt).getTime()) < 7 * 86_400_000
 }
-function matchesDueBucket(o: Opportunity, bucket: DueBucket): boolean {
-  if (bucket === 'all') return true
-  if (bucket === 'rolling') return o.rolling
-  if (o.rolling || !o.deadline) return false
-  const d = daysUntil(o.deadline)
-  if (d === null) return false
-  if (bucket === 'overdue') return d < 0
-  if (d < 0) return false
-  if (bucket === 'week') return d <= 7
-  if (bucket === 'twoWeeks') return d <= 14
-  if (bucket === 'month') return d <= 30
-  return true
+/** '$62.5k grant' style short money: 1500 -> $1.5k, 62500 -> $63k, 1000000 -> $1M. */
+function fmtAmount(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
+  if (n >= 1_000) return `$${Math.round(n / 1_000)}k`
+  return `$${n}`
 }
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+/** Squeeze a freeform nextWindowExpected into a chip-sized hint ("opens ~Sep 2026"). */
+function windowHint(s: string | null | undefined): string | null {
+  if (!s) return null
+  const tokens = s.split(/[\s,;()]+/)
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]
+    const low = t.toLowerCase().replace(/[^a-z]/g, '')
+    const mi = MONTHS.indexOf(low.slice(0, 3))
+    if (mi === -1 || low.length < 3) continue
+    const year = /^20\d\d$/.test(tokens[i + 1] || '') ? tokens[i + 1] : null
+    if (/^[A-Z]/.test(t) || year) {
+      const label = MONTHS[mi][0].toUpperCase() + MONTHS[mi].slice(1)
+      return `opens ~${label}${year ? ` ${year}` : ''}`
+    }
+  }
+  const y = s.match(/\b20\d\d\b/)?.[0]
+  return y ? `opens ~${y}` : null
+}
+
+// ── Urgency sections — the core deadline-intelligence view ───────────────────
+
+type SectionKey = 'week' | 'month' | 'later' | 'rolling' | 'upcoming' | 'nodate' | 'closed'
+const SECTION_META: Record<SectionKey, { title: string; tone: string; dim?: boolean }> = {
+  week: { title: 'Closing this week', tone: 'text-destructive' },
+  month: { title: 'Closing this month', tone: 'text-warning' },
+  later: { title: 'Closing later', tone: 'text-muted-foreground' },
+  rolling: { title: 'Rolling · always open', tone: 'text-accent' },
+  upcoming: { title: 'Upcoming windows', tone: 'text-muted-foreground' },
+  nodate: { title: 'No date intel', tone: 'text-muted-foreground' },
+  closed: { title: 'Recently closed', tone: 'text-muted-foreground', dim: true },
+}
+const SECTION_ORDER: SectionKey[] = ['week', 'month', 'later', 'rolling', 'upcoming', 'nodate', 'closed']
+
+function sectionOf(o: Opportunity): SectionKey {
+  const dt = deadlineTypeOf(o)
+  if (dt === 'rolling' || dt === 'always-open') return 'rolling'
+  if (o.deadline) {
+    const d = daysUntil(o.deadline)
+    if (d !== null) {
+      if (d < 0) return 'closed'
+      if (d <= 7) return 'week'
+      if (d <= 30) return 'month'
+      return 'later'
+    }
+  }
+  if (dt === 'recurring') return 'upcoming' // recurring without an active deadline
+  return 'nodate'
+}
+
+/** Sort rows within a section: dated ones by soonest deadline, open ones by leverage. */
+function sectionSort(key: SectionKey, a: Opportunity, b: Opportunity): number {
+  switch (key) {
+    case 'week':
+    case 'month':
+    case 'later':
+      return (a.deadline || '').localeCompare(b.deadline || '')
+    case 'closed':
+      return (b.deadline || '').localeCompare(a.deadline || '')
+    case 'rolling':
+    case 'upcoming':
+      return (b.leverageScore - a.leverageScore) || (priorityOf(a.priority).rank - priorityOf(b.priority).rank)
+    case 'nodate':
+      return (b.discoveredAt || '').localeCompare(a.discoveredAt || '')
+  }
+}
+
+/** Countdown chip content for a row (mono, semantic tone by urgency). */
+function countdownOf(o: Opportunity): { text: string; variant: ChipVariant; outline?: boolean; title?: string } {
+  const dt = deadlineTypeOf(o)
+  if (dt === 'rolling') return { text: 'rolling', variant: 'accent', outline: true }
+  if (dt === 'always-open') return { text: 'always open', variant: 'accent', outline: true }
+  if (o.deadline) {
+    const d = daysUntil(o.deadline)
+    if (d !== null) {
+      if (d < 0) return { text: `closed ${fmtDate(o.deadline)}`, variant: 'neutral' }
+      if (d <= 7) return { text: `D-${d}`, variant: 'danger', title: fmtDate(o.deadline) }
+      if (d <= 14) return { text: `D-${d}`, variant: 'warning', title: fmtDate(o.deadline) }
+      return { text: fmtDate(o.deadline), variant: 'neutral' }
+    }
+  }
+  if (dt === 'recurring') {
+    const hint = windowHint(o.nextWindowExpected)
+    return { text: hint ?? 'recurring', variant: 'neutral', title: o.nextWindowExpected ?? undefined }
+  }
+  return { text: 'no date', variant: 'neutral' }
+}
+
 /** Does an opportunity satisfy a hunt order's parsed constraints? Drives progress counts. */
 function objectiveMatches(o: Opportunity, p?: ObjectiveParsed): boolean {
   if (!p) return false
@@ -288,46 +437,52 @@ function objectiveMatches(o: Opportunity, p?: ObjectiveParsed): boolean {
   if (p.eligibility && o.eligibility !== p.eligibility) return false
   if (p.deadlineBefore && !o.rolling && o.deadline && o.deadline > p.deadlineBefore) return false
   if (p.locations && p.locations.length) {
-    const where = deburr(`${o.location} ${o.title} ${o.host} ${o.notes} ${o.tags.join(' ')}`)
+    const where = deburr(`${o.location} ${o.title} ${o.host} ${o.notes} ${(o.tags || []).join(' ')}`)
     if (!p.locations.some((l) => l && where.includes(deburr(l)))) return false
   }
   if (p.keywords && p.keywords.length) {
-    const hay = deburr(`${o.title} ${o.host} ${o.tags.join(' ')} ${o.notes}`)
+    const hay = deburr(`${o.title} ${o.host} ${(o.tags || []).join(' ')} ${o.notes}`)
     if (!p.keywords.some((k) => k && hay.includes(deburr(k)))) return false
   }
   return true
 }
 
-function Leverage({ score }: { score: number }) {
+/** Leverage as five dots — filled dots are the accent, empty ones sit on the hairline. */
+function LeverageDots({ score }: { score: number }) {
   const n = Math.max(0, Math.min(5, Math.round(score)))
   return (
-    <span className="inline-flex gap-0.5" title={`Leverage ${n}/5`}>
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5"
+      role="img"
+      aria-label={`Leverage ${n} of 5`}
+      title={`Leverage ${n}/5`}
+    >
       {Array.from({ length: 5 }).map((_, i) => (
-        <span key={i} className={i < n ? 'text-amber-400' : 'text-muted-foreground/25'}>★</span>
+        <span key={i} aria-hidden className={`h-1.5 w-1.5 rounded-full ${i < n ? 'bg-accent' : 'bg-border'}`} />
       ))}
     </span>
   )
 }
 
+// Shared token style for native <select> controls (mirrors the Input primitive).
+const selectCls =
+  'h-8 w-full cursor-pointer rounded-md border border-input bg-input/20 px-2 text-xs text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function OpportunitiesPage() {
   const [data, updateData] = useStore<OppData>('cortex-opportunities', DEFAULT_DATA)
-  const items = data.items || []
+  const items = useMemo(() => data.items || [], [data.items])
 
   const [search, setSearch] = useState('')
+  const [kindGroup, setKindGroup] = useState<KindGroup>('all')
   const [catFilter, setCatFilter] = useState<OpportunityCategory | null>(null)
   const [modalityFilter, setModalityFilter] = useState<Modality | null>(null)
   const [statusFilter, setStatusFilter] = useState<OppStatus | null>(null)
-  const [goalFilter, setGoalFilter] = useState<Goal | null>(null)
-  const [sourceFilter, setSourceFilter] = useState<Opportunity['source'] | null>(null)
   const [regionFilter, setRegionFilter] = useState<Region | null>(null)
-  const [dueBucket, setDueBucket] = useState<DueBucket>('all')
   const [thisRunOnly, setThisRunOnly] = useState(false)
-  const [hideArchived, setHideArchived] = useState(true)
+  const [showArchived, setShowArchived] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [sortKey, setSortKey] = useState<SortKey>('deadline')
-  const [sortAsc, setSortAsc] = useState(true)
 
   const setItems = (fn: (prev: Opportunity[]) => Opportunity[]) =>
     updateData((p) => ({ ...p, items: fn(p.items || []) }))
@@ -363,16 +518,17 @@ export function OpportunitiesPage() {
     updateData((p) => ({ ...p, objectives: (p.objectives || []).map((o) => (o.id === id ? { ...o, ...f } : o)) }))
   const deleteObjective = (id: string) =>
     updateData((p) => ({ ...p, objectives: (p.objectives || []).filter((o) => o.id !== id) }))
-  // Jump the table to an objective's matches: filter to its region (so "1/20 found" lands
-  // on the actual Colombia rows), clear competing filters, newest first.
+  // Jump the list to an objective's matches: filter to its region (so "1/20 found" lands
+  // on the actual Colombia rows) and clear competing filters.
   const showObjectiveMatches = (p?: ObjectiveParsed) => {
     const region = p?.locations?.length ? regionForText(p.locations.join(' ')) : null
-    setCatFilter(p?.category ?? null)
+    const cat = p?.category ?? null
+    setCatFilter(cat)
+    setKindGroup(cat ? kindGroupFor(cat) : 'all')
     setRegionFilter(region)
     setSearch(region ? '' : (p?.locations?.[0] ?? p?.keywords?.[0] ?? ''))
-    setModalityFilter(null); setSourceFilter(null); setGoalFilter(null)
-    setStatusFilter(null); setThisRunOnly(false); setDueBucket('all'); setHideArchived(true)
-    setSortKey('discoveredAt'); setSortAsc(false)
+    setModalityFilter(null); setStatusFilter(null)
+    setThisRunOnly(false); setShowArchived(false)
   }
 
   const addOpp = () => {
@@ -381,6 +537,8 @@ export function OpportunitiesPage() {
       id: `opp-${Date.now()}`, title: 'New opportunity', host: '',
       category: 'other', goals: [], priority: 'medium', leverageScore: 3,
       leverageNote: '', status: 'new', deadline: null, rolling: false,
+      deadlineType: 'unknown', recurrence: null, nextWindowExpected: null,
+      amountUsd: null, requires18Plus: null, effort: null, officialUrl: '',
       location: '', modality: 'unknown', eligibility: 'unknown', reward: '', url: '',
       source: 'manual', sourceRef: '', discoveredAt: now, notes: '', tags: [],
     }
@@ -388,56 +546,41 @@ export function OpportunitiesPage() {
     setExpanded(o.id)
   }
 
-  const toggleSort = (k: SortKey) => {
-    if (sortKey === k) setSortAsc((p) => !p)
-    else { setSortKey(k); setSortAsc(k === 'deadline' || k === 'title') }
-  }
-  const SortIcon = ({ k }: { k: SortKey }) =>
-    sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
-
   const toggleGoal = (id: string, g: Goal) =>
     setItems((prev) => prev.map((o) => o.id === id
       ? { ...o, goals: o.goals.includes(g) ? o.goals.filter((x) => x !== g) : [...o.goals, g] }
       : o))
 
+  // ── Filtering + urgency grouping ────────────────────────────────────────────
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    const list = items.filter((o) =>
-      (!hideArchived || o.status !== 'archived') &&
+    const groupCats = kindGroup === 'all' ? null : KIND_GROUPS[kindGroup].categories
+    return items.filter((o) =>
+      (showArchived || o.status !== 'archived') &&
+      (!groupCats || groupCats.includes(o.category) || (kindGroup === 'other' && !categoryConfig[o.category])) &&
       (!catFilter || o.category === catFilter) &&
       (!modalityFilter || modalityOf(o) === modalityFilter) &&
       (!statusFilter || o.status === statusFilter) &&
-      (!goalFilter || o.goals.includes(goalFilter)) &&
-      (!sourceFilter || o.source === sourceFilter) &&
       (!regionFilter || regionOf(o) === regionFilter) &&
       (!thisRunOnly || (data.lastRunId != null && o.runId === data.lastRunId)) &&
-      matchesDueBucket(o, dueBucket) &&
       (!search || o.title.toLowerCase().includes(q) || o.host.toLowerCase().includes(q) ||
         o.notes.toLowerCase().includes(q) || o.location.toLowerCase().includes(q) ||
-        o.tags.some((t) => t.toLowerCase().includes(q)))
+        (o.tags || []).some((t) => t.toLowerCase().includes(q)))
     )
-    list.sort((a, b) => {
-      let v = 0
-      switch (sortKey) {
-        case 'deadline': {
-          // rolling / null sink to the bottom regardless of direction
-          const av = a.rolling || !a.deadline ? Infinity : new Date(a.deadline).getTime()
-          const bv = b.rolling || !b.deadline ? Infinity : new Date(b.deadline).getTime()
-          if (av === Infinity && bv === Infinity) return 0
-          if (av === Infinity) return 1
-          if (bv === Infinity) return -1
-          v = av - bv
-          break
-        }
-        case 'priority': v = priorityConfig[a.priority].rank - priorityConfig[b.priority].rank; break
-        case 'leverageScore': v = a.leverageScore - b.leverageScore; break
-        case 'discoveredAt': v = (a.discoveredAt || '').localeCompare(b.discoveredAt || ''); break
-        case 'title': v = a.title.localeCompare(b.title); break
-      }
-      return sortAsc ? v : -v
-    })
-    return list
-  }, [items, search, catFilter, modalityFilter, statusFilter, goalFilter, sourceFilter, regionFilter, dueBucket, thisRunOnly, hideArchived, sortKey, sortAsc, data.lastRunId])
+  }, [items, search, kindGroup, catFilter, modalityFilter, statusFilter, regionFilter, thisRunOnly, showArchived, data.lastRunId])
+
+  const sections = useMemo(() => {
+    const buckets = new Map<SectionKey, Opportunity[]>()
+    for (const o of filtered) {
+      const k = sectionOf(o)
+      if (!buckets.has(k)) buckets.set(k, [])
+      buckets.get(k)!.push(o)
+    }
+    return SECTION_ORDER
+      .filter((k) => buckets.has(k))
+      .map((k) => ({ key: k, ...SECTION_META[k], items: buckets.get(k)!.sort((a, b) => sectionSort(k, a, b)) }))
+  }, [filtered])
 
   // Regions actually present in the data — drives the geography chip row (no empty chips).
   const availableRegions = useMemo(() => {
@@ -445,28 +588,38 @@ export function OpportunitiesPage() {
     return REGION_ORDER.filter((r) => present.has(r))
   }, [items])
 
-  // Stats (over non-archived)
+  // ── KPIs (over non-archived) ────────────────────────────────────────────────
   const live = items.filter((o) => o.status !== 'archived')
   const openCount = live.filter((o) => o.status === 'new' || o.status === 'pursuing').length
-  const dueSoonCount = live.filter((o) => !o.rolling && o.deadline && (daysUntil(o.deadline) ?? 999) <= 14 && (daysUntil(o.deadline) ?? -1) >= 0).length
-  const highCount = live.filter((o) => o.priority === 'high').length
-  const newThisWeek = live.filter((o) => o.discoveredAt && (Date.now() - new Date(o.discoveredAt).getTime()) < 7 * 86_400_000).length
+  const closingWeek = live.filter((o) => sectionOf(o) === 'week').length
+  const rollingCount = live.filter((o) => {
+    const dt = deadlineTypeOf(o)
+    return dt === 'rolling' || dt === 'always-open'
+  }).length
+  const newThisWeek = live.filter(isNewThisWeek).length
   const thisRunCount = data.lastRunId ? items.filter((o) => o.runId === data.lastRunId).length : 0
 
-  // "What you should see" — highest priority, then leverage, then soonest deadline.
+  // TOP PICKS — deadline-aware leverage ranking:
+  //   score = priorityWeight × leverageScore × urgencyBoost
+  //     priorityWeight : high 3 · medium 2 · low 1
+  //     leverageScore  : 1..5 (from the radar/profile scoring)
+  //     urgencyBoost   : a dated deadline within 7 days ×2, within 14 days ×1.5, else ×1
+  //   Overdue items are excluded entirely; ties break toward the sooner deadline.
   const topPicks = useMemo(() => {
-    return [...live]
+    const weight = { high: 3, medium: 2, low: 1 } as const
+    const scored = items
       .filter((o) => o.status === 'new' || o.status === 'pursuing')
-      .sort((a, b) => {
-        const p = priorityConfig[a.priority].rank - priorityConfig[b.priority].rank
-        if (p !== 0) return p
-        if (a.leverageScore !== b.leverageScore) return b.leverageScore - a.leverageScore
-        const ad = a.rolling || !a.deadline ? Infinity : new Date(a.deadline).getTime()
-        const bd = b.rolling || !b.deadline ? Infinity : new Date(b.deadline).getTime()
-        return ad - bd
+      .map((o) => {
+        const d = o.deadline ? daysUntil(o.deadline) : null
+        if (d !== null && d < 0 && !o.rolling) return null // overdue — never a pick
+        const boost = d !== null && d >= 0 ? (d <= 7 ? 2 : d <= 14 ? 1.5 : 1) : 1
+        const score = (weight[o.priority] ?? 2) * o.leverageScore * boost
+        return { o, score, d }
       })
-      .slice(0, 5)
-  }, [items]) // eslint-disable-line react-hooks/exhaustive-deps
+      .filter((x): x is { o: Opportunity; score: number; d: number | null } => x !== null)
+    scored.sort((a, b) => (b.score - a.score) || ((a.d ?? Infinity) - (b.d ?? Infinity)))
+    return scored.slice(0, 5).map((x) => x.o)
+  }, [items])
 
   return (
     <PageShell>
@@ -478,376 +631,254 @@ export function OpportunitiesPage() {
 
         <TabsContent value="radar">
           <div className="flex flex-col gap-6">
-      {/* Radar report — what landed + what to look at first */}
-      {(data.report || data.lastRun || topPicks.length > 0) && (
-        <WidgetCard
-          title="This week's radar"
-          description={data.lastRun ? `Ran ${new Date(data.lastRun).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${thisRunCount ? ` · ${thisRunCount} new` : ''}` : 'Not run yet — add opportunities manually or trigger the radar routine.'}
-          variant="success"
-        >
-          <div className="flex flex-col gap-4">
-            {data.report && (
-              <div className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">{data.report}</div>
-            )}
-            {topPicks.length > 0 && (
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">What you should see first</p>
-                <div className="flex flex-col gap-1.5">
-                  {topPicks.map((o) => {
-                    const dl = deadlineLabel(o)
-                    return (
-                      <button key={o.id} onClick={() => { setExpanded(o.id); setThisRunOnly(false) }}
-                        className="cursor-pointer flex items-center gap-2 text-left rounded-lg px-2 py-1.5 hover:bg-secondary/40 transition-colors">
-                        <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full ${priorityConfig[o.priority].color}`}>{priorityConfig[o.priority].label}</span>
-                        <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full ${categoryConfig[o.category].color}`}>{categoryConfig[o.category].label}</span>
-                        <span className="text-xs font-medium truncate">{o.title}</span>
-                        {o.leverageNote && <span className="text-[11px] text-muted-foreground truncate hidden sm:inline">— {o.leverageNote}</span>}
-                        <span className={`ml-auto shrink-0 text-[11px] ${dl.tone}`}>{dl.text}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </WidgetCard>
-      )}
+            {/* KPI row */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <StatTile variant="glass" label="Open" value={openCount} icon={<Target />} />
+              <StatTile variant="glass" label="Closing ≤7d" value={closingWeek} icon={<CalendarClock />} />
+              <StatTile variant="glass" label="Rolling / open" value={rollingCount} icon={<InfinityIcon />} />
+              <StatTile variant="glass" label="New this week" value={newThisWeek} icon={<Sparkles />} />
+            </div>
 
-      {/* Hunt orders — talk to radar in plain language */}
-      <WidgetCard
-        title="Tell radar what to hunt"
-        description="Say it like you'd say it out loud — “I need 20 remote internships paying $2k+, deadline before Sept” or “5 AI competitions with cash prizes”. Radar reads it, then prioritizes those on every run."
-        delay={0.05}
-      >
-        <div className="flex flex-col gap-3">
-          {/* Existing objectives */}
-          {objectives.length > 0 && (
-            <div className="flex flex-col gap-2.5">
-              {objectives.map((obj) => {
-                const found = obj.parsed ? items.filter((o) => objectiveMatches(o, obj.parsed)).length : 0
-                const target = obj.parsed?.targetCount ?? null
-                const pct = target ? Math.min(100, Math.round((found / target) * 100)) : 0
-                const chips: string[] = []
-                if (obj.parsed?.category) chips.push(categoryConfig[obj.parsed.category].label)
-                if (obj.parsed?.locations?.length) chips.push(`📍 ${obj.parsed.locations.join(' · ')}`)
-                if (obj.parsed?.eligibility) chips.push(eligibilityConfig[obj.parsed.eligibility])
-                if (obj.parsed?.salaryText) chips.push(obj.parsed.salaryText)
-                if (obj.parsed?.deadlineBefore) chips.push(`by ${fmtDate(obj.parsed.deadlineBefore)}`)
-                return (
-                  <div key={obj.id}
-                    className={`rounded-xl border p-3 transition-colors ${obj.active ? 'border-violet-500/25 bg-violet-500/[0.04]' : 'border-border bg-secondary/20 opacity-60'}`}>
-                    <div className="flex items-start gap-2">
-                      <Crosshair className="h-3.5 w-3.5 mt-0.5 shrink-0 text-violet-400" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium leading-snug">{obj.text}</p>
-                        {/* Radar's conversational reply */}
-                        {obj.status === 'thinking' && (
-                          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Radar is reading this…</p>
-                        )}
-                        {obj.status === 'error' && (
-                          <p className="mt-1 text-[11px] text-red-400/80">Couldn’t read this: {obj.error || 'agent error'} — it still steers the next run as written.</p>
-                        )}
-                        {obj.status === 'ready' && obj.reply && (
-                          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{obj.reply}</p>
-                        )}
-                        {/* Parsed constraint chips */}
-                        {chips.length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            {chips.map((c, i) => (
-                              <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full bg-secondary text-muted-foreground">{c}</span>
-                            ))}
-                          </div>
-                        )}
-                        {/* Progress toward target */}
-                        {obj.status === 'ready' && (
-                          <button onClick={() => showObjectiveMatches(obj.parsed)}
-                            className="cursor-pointer mt-2 flex items-center gap-2 text-left group/prog w-full max-w-xs">
-                            {target ? (
-                              <>
-                                <span className="h-1.5 flex-1 rounded-full bg-secondary overflow-hidden">
-                                  <span className="block h-full rounded-full bg-violet-400 transition-all" style={{ width: `${pct}%` }} />
-                                </span>
-                                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground group-hover/prog:text-foreground">{found} / {target} found</span>
-                              </>
-                            ) : (
-                              <span className="text-[10px] text-muted-foreground group-hover/prog:text-foreground">{found} match{found === 1 ? '' : 'es'} so far →</span>
-                            )}
-                          </button>
-                        )}
-                      </div>
-                      {/* Controls */}
-                      <div className="flex shrink-0 items-center gap-1">
-                        <button onClick={() => setObjective(obj.id, { active: !obj.active })}
-                          title={obj.active ? 'Pause (stop steering radar)' : 'Resume'}
-                          className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-colors ${obj.active ? 'border-violet-500/30 text-violet-400 hover:bg-violet-500/10' : 'border-border text-muted-foreground/50 hover:text-muted-foreground'}`}>
-                          {obj.active ? 'Active' : 'Paused'}
-                        </button>
-                        <button onClick={() => deleteObjective(obj.id)} title="Remove hunt order"
-                          className="cursor-pointer text-muted-foreground/40 hover:text-red-400"><X className="h-3.5 w-3.5" /></button>
+            {/* Radar report — what landed + what to look at first */}
+            {(data.report || data.lastRun || topPicks.length > 0) && (
+              <WidgetCard
+                title="This week's radar"
+                description={data.lastRun
+                  ? `Ran ${new Date(data.lastRun).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}${thisRunCount ? ` · ${thisRunCount} new` : ''}`
+                  : 'Not run yet — add opportunities manually or trigger the radar routine.'}
+                delay={0.05}
+              >
+                <div className="flex flex-col gap-4">
+                  {data.report && (
+                    <div className="text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">{data.report}</div>
+                  )}
+                  {topPicks.length > 0 && (
+                    <div>
+                      <p className="mb-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Top picks</p>
+                      <div className="flex flex-col gap-1">
+                        {topPicks.map((o, i) => {
+                          const cd = countdownOf(o)
+                          return (
+                            <div
+                              key={o.id}
+                              onClick={() => { setExpanded(o.id); setThisRunOnly(false); setShowArchived(false) }}
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary/40"
+                            >
+                              <span className="w-4 shrink-0 font-mono text-2xs tabular-nums text-foreground-faint">{i + 1}</span>
+                              <Chip size="sm" variant={priorityOf(o.priority).chip}>{priorityOf(o.priority).label}</Chip>
+                              <Chip size="sm">{categoryOf(o.category).label}</Chip>
+                              <span className="truncate text-xs font-medium text-foreground">{o.title}</span>
+                              {o.leverageNote && <span className="hidden truncate text-xs text-foreground-faint sm:inline">— {o.leverageNote}</span>}
+                              <span className="ml-auto shrink-0">
+                                <Chip size="sm" variant={cd.variant} className={cd.outline ? 'bg-transparent' : undefined} title={cd.title}>{cd.text}</Chip>
+                              </span>
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Composer */}
-          <div className="flex items-end gap-2">
-            <textarea
-              value={objInput}
-              onChange={(e) => setObjInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addObjective() } }}
-              rows={2}
-              placeholder="e.g. Find me 20 remote software internships paying $2k+/mo with deadlines before September…"
-              className="flex-1 resize-none rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            <button onClick={addObjective} disabled={!objInput.trim()}
-              className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg transition-colors ${objInput.trim() ? 'cursor-pointer text-foreground bg-violet-500/15 hover:bg-violet-500/25' : 'text-muted-foreground bg-secondary cursor-default'}`}>
-              <Send className="h-3 w-3" /> Send
-            </button>
-          </div>
-          <p className="text-[10px] text-muted-foreground/60 -mt-1">⌘↵ to send · active orders steer the next “Run radar”.</p>
-        </div>
-      </WidgetCard>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="liquid-glass flex items-center gap-3 rounded-xl px-4 py-3">
-          <Target className="h-5 w-5 text-blue-400" />
-          <div>
-            <p className="text-lg font-bold tabular-nums">{openCount}</p>
-            <p className="text-[10px] text-muted-foreground">Open</p>
-          </div>
-        </div>
-        <div className="liquid-glass flex items-center gap-3 rounded-xl px-4 py-3">
-          <CalendarClock className="h-5 w-5 text-yellow-400" />
-          <div>
-            <p className="text-lg font-bold tabular-nums">{dueSoonCount}</p>
-            <p className="text-[10px] text-muted-foreground">Due ≤14d</p>
-          </div>
-        </div>
-        <div className="liquid-glass flex items-center gap-3 rounded-xl px-4 py-3">
-          <Flame className="h-5 w-5 text-red-400" />
-          <div>
-            <p className="text-lg font-bold tabular-nums">{highCount}</p>
-            <p className="text-[10px] text-muted-foreground">High priority</p>
-          </div>
-        </div>
-        <div className="liquid-glass flex items-center gap-3 rounded-xl px-4 py-3">
-          <Sparkles className="h-5 w-5 text-violet-400" />
-          <div>
-            <p className="text-lg font-bold tabular-nums">{newThisWeek}</p>
-            <p className="text-[10px] text-muted-foreground">New this week</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Search + primary controls */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
-          <Input placeholder="Search opportunities..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 pl-8 text-xs" />
-        </div>
-        <select value={dueBucket} onChange={(e) => setDueBucket(e.target.value as DueBucket)}
-          className="cursor-pointer h-8 rounded-lg border border-border bg-input px-2 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-          {(Object.keys(dueBucketLabel) as DueBucket[]).map((b) => <option key={b} value={b}>{dueBucketLabel[b]}</option>)}
-        </select>
-        {data.lastRunId && (
-          <button onClick={() => setThisRunOnly((v) => !v)}
-            className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${thisRunOnly ? 'bg-violet-500/15 text-violet-400 border-current/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-            This run
-          </button>
-        )}
-        <button onClick={() => setHideArchived((v) => !v)}
-          className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${hideArchived ? 'border-border text-muted-foreground/40 hover:text-muted-foreground' : 'bg-secondary text-foreground border-current/20'}`}>
-          {hideArchived ? 'Hiding archived' : 'Showing archived'}
-        </button>
-        {/* Goal filter */}
-        <select value={goalFilter ?? ''} onChange={(e) => setGoalFilter((e.target.value || null) as Goal | null)}
-          className="cursor-pointer h-8 rounded-lg border border-border bg-input px-2 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-          <option value="">All goals</option>
-          {ALL_GOALS.map((g) => <option key={g} value={g}>{goalConfig[g]}</option>)}
-        </select>
-        {/* Source filter */}
-        <select value={sourceFilter ?? ''} onChange={(e) => setSourceFilter((e.target.value || null) as Opportunity['source'] | null)}
-          className="cursor-pointer h-8 rounded-lg border border-border bg-input px-2 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-          <option value="">All sources</option>
-          {(Object.keys(sourceConfig) as Opportunity['source'][]).map((s) => <option key={s} value={s}>{sourceConfig[s].label}</option>)}
-        </select>
-        <div className="ml-auto flex items-center gap-2">
-          <button onClick={requestRun} disabled={running}
-            title={running ? 'Radar is running…' : 'Scrape all lanes now and refresh the page'}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${running ? 'text-muted-foreground bg-secondary cursor-default' : 'cursor-pointer text-foreground bg-violet-500/15 hover:bg-violet-500/25'}`}>
-            {running
-              ? <><Loader2 className="h-3 w-3 animate-spin" /> {data.runStatus === 'requested' ? 'Queued…' : 'Running…'}</>
-              : <><RefreshCw className="h-3 w-3" /> Run radar</>}
-          </button>
-          <button onClick={addOpp} className="cursor-pointer flex items-center gap-1 text-xs text-foreground bg-foreground/10 px-3 py-1.5 rounded-lg hover:bg-foreground/20 transition-colors">
-            <Plus className="h-3 w-3" /> Add
-          </button>
-        </div>
-      </div>
-      {data.runStatus === 'error' && data.runError && (
-        <p className="text-[11px] text-red-400/80 -mt-2">Last radar run failed: {data.runError}</p>
-      )}
-
-      {/* Category chips */}
-      <div className="flex gap-1.5 flex-wrap">
-        {ALL_CATEGORIES.map((c) => (
-          <button key={c} onClick={() => setCatFilter(catFilter === c ? null : c)}
-            className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${catFilter === c ? `${categoryConfig[c].color} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-            {categoryConfig[c].label}
-          </button>
-        ))}
-      </div>
-
-      {/* Modality chips — remote / hybrid / in-person */}
-      <div className="flex gap-1.5 flex-wrap">
-        {MODALITY_FILTERS.map((m) => (
-          <button key={m} onClick={() => setModalityFilter(modalityFilter === m ? null : m)}
-            className={`cursor-pointer inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border transition-all ${modalityFilter === m ? `${modalityConfig[m].color} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${modalityConfig[m].dot}`} />
-            {modalityConfig[m].label}
-          </button>
-        ))}
-      </div>
-
-      {/* Region chips — geography axis ("show only Colombia"). Only regions present in the data. */}
-      {availableRegions.length > 1 && (
-        <div className="flex gap-1.5 flex-wrap">
-          {availableRegions.map((r) => (
-            <button key={r} onClick={() => setRegionFilter(regionFilter === r ? null : r)}
-              className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${regionFilter === r ? `${regionConfig[r].color} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-              {regionConfig[r].label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Status chips */}
-      <div className="flex gap-1.5 flex-wrap">
-        {ALL_STATUSES.map((s) => (
-          <button key={s} onClick={() => setStatusFilter(statusFilter === s ? null : s)}
-            className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${statusFilter === s ? `${statusConfig[s].color} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-            {statusConfig[s].label}
-          </button>
-        ))}
-      </div>
-
-      {/* Mobile: cards */}
-      <div className="flex flex-col gap-3 md:hidden">
-        {filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            {items.length === 0 ? 'No opportunities yet. The radar fills this weekly — or click Add.' : 'No opportunities match your filters.'}
-          </p>
-        ) : filtered.map((o) => {
-          const dl = deadlineLabel(o)
-          return (
-            <div key={o.id} className="liquid-glass rounded-xl border border-border p-4">
-              <div className="flex items-start justify-between gap-2" onClick={() => setExpanded(expanded === o.id ? null : o.id)}>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{o.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">{o.host || eligibilityConfig[o.eligibility]}</p>
+                  )}
                 </div>
-                <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full ${priorityConfig[o.priority].color}`}>{priorityConfig[o.priority].label}</span>
-              </div>
-              <div className="flex items-center gap-2 mt-2 flex-wrap text-xs">
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${categoryConfig[o.category].color}`}>{categoryConfig[o.category].label}</span>
-                <span className={`inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full ${modalityConfig[modalityOf(o)].color}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${modalityConfig[modalityOf(o)].dot}`} />{modalityConfig[modalityOf(o)].label}
-                </span>
-                {o.location && <span className="text-muted-foreground truncate max-w-[120px]">{o.location}</span>}
-                <Leverage score={o.leverageScore} />
-                <span className={dl.tone}>{dl.text}</span>
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceOf(o).color}`}>{sourceOf(o).label}</span>
-              </div>
-              {expanded === o.id && <EditForm o={o} setField={setField} toggleGoal={toggleGoal} onDelete={() => deleteOpp(o.id)} />}
-            </div>
-          )
-        })}
-      </div>
+              </WidgetCard>
+            )}
 
-      {/* Desktop: table */}
-      <WidgetCard title="Opportunities" description={`${filtered.length} shown${data.lastRun ? ` · radar last ran ${new Date(data.lastRun).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}`} delay={0.1} className="hidden md:block">
-        <div className="overflow-x-auto -mx-5">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="px-5 py-2 text-left font-medium min-w-[220px]">
-                  <button onClick={() => toggleSort('title')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Opportunity <SortIcon k="title" /></button>
-                </th>
-                <th className="py-2 text-left font-medium">Category</th>
-                <th className="py-2 text-left font-medium">Where</th>
-                <th className="py-2 text-left font-medium">Goals</th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('priority')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Priority <SortIcon k="priority" /></button>
-                </th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('leverageScore')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Leverage <SortIcon k="leverageScore" /></button>
-                </th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('deadline')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Deadline <SortIcon k="deadline" /></button>
-                </th>
-                <th className="py-2 text-left font-medium">Source</th>
-                <th className="py-2 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((o) => {
-                const dl = deadlineLabel(o)
-                return (
-                  <>
-                    <tr key={o.id} onClick={() => setExpanded(expanded === o.id ? null : o.id)}
-                      className={`cursor-pointer border-b border-border/20 transition-colors hover:bg-secondary/30 group ${expanded === o.id ? 'bg-secondary/20' : ''}`}>
-                      <td className="px-5 py-2.5">
-                        <span className="font-medium">{o.title}</span>
-                        {o.host && <span className="text-muted-foreground"> · {o.host}</span>}
-                      </td>
-                      <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${categoryConfig[o.category].color}`}>{categoryConfig[o.category].label}</span></td>
-                      <td className="py-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`shrink-0 text-[9px] px-1.5 py-0.5 rounded-full ${modalityConfig[modalityOf(o)].color}`}>{modalityConfig[modalityOf(o)].label}</span>
-                          {o.location && <span className="text-muted-foreground truncate max-w-[130px]" title={o.location}>{o.location}</span>}
+            {/* Hunt orders — talk to radar in plain language */}
+            <WidgetCard
+              title="Tell radar what to hunt"
+              description="Say it like you'd say it out loud — “I need 20 remote internships paying $2k+, deadline before Sept”. Radar reads it, then prioritizes those on every run."
+              delay={0.1}
+            >
+              <div className="flex flex-col gap-3">
+                {objectives.length > 0 && (
+                  <div className="flex flex-col gap-2.5">
+                    {objectives.map((obj) => {
+                      const found = obj.parsed ? items.filter((o) => objectiveMatches(o, obj.parsed)).length : 0
+                      const target = obj.parsed?.targetCount ?? null
+                      const pct = target ? Math.min(100, Math.round((found / target) * 100)) : 0
+                      const chips: string[] = []
+                      if (obj.parsed?.category) chips.push(categoryOf(obj.parsed.category).label)
+                      if (obj.parsed?.locations?.length) chips.push(obj.parsed.locations.join(' · '))
+                      if (obj.parsed?.eligibility) chips.push(eligibilityOf(obj.parsed.eligibility))
+                      if (obj.parsed?.salaryText) chips.push(obj.parsed.salaryText)
+                      if (obj.parsed?.deadlineBefore) chips.push(`by ${fmtDate(obj.parsed.deadlineBefore)}`)
+                      return (
+                        <div key={obj.id} className={`rounded-xl border p-3 transition-opacity ${obj.active ? 'border-border' : 'border-border/60 opacity-60'}`}>
+                          <div className="flex items-start gap-2.5">
+                            <Crosshair className={`mt-0.5 size-3.5 shrink-0 ${obj.active ? 'text-accent' : 'text-foreground-faint'}`} />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium leading-snug text-foreground">{obj.text}</p>
+                              {obj.status === 'thinking' && (
+                                <p className="mt-1 text-xs text-foreground-faint">Radar is reading this order…</p>
+                              )}
+                              {obj.status === 'error' && (
+                                <p className="mt-1 text-xs text-destructive">Couldn't read this: {obj.error || 'agent error'} — it still steers the next run as written.</p>
+                              )}
+                              {obj.status === 'ready' && obj.reply && (
+                                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{obj.reply}</p>
+                              )}
+                              {chips.length > 0 && (
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {chips.map((c, i) => <Chip key={i} size="sm">{c}</Chip>)}
+                                </div>
+                              )}
+                              {obj.status === 'ready' && (
+                                <div className="mt-2 flex max-w-sm items-center gap-2">
+                                  {target ? (
+                                    <>
+                                      <Progress value={pct} className="flex-1" />
+                                      <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">{found} / {target} found</span>
+                                    </>
+                                  ) : (
+                                    <span className="font-mono text-2xs tabular-nums text-muted-foreground">{found} match{found === 1 ? '' : 'es'} so far</span>
+                                  )}
+                                  <Button variant="ghost" size="xs" onClick={() => showObjectiveMatches(obj.parsed)}>View</Button>
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Chip
+                                selectable
+                                selected={obj.active}
+                                size="sm"
+                                onClick={() => setObjective(obj.id, { active: !obj.active })}
+                                title={obj.active ? 'Pause (stop steering radar)' : 'Resume'}
+                              >
+                                {obj.active ? 'Active' : 'Paused'}
+                              </Chip>
+                              <Button variant="ghost" size="icon-xs" aria-label="Remove hunt order" onClick={() => deleteObjective(obj.id)}>
+                                <X />
+                              </Button>
+                            </div>
+                          </div>
                         </div>
-                      </td>
-                      <td className="py-2.5 text-muted-foreground">{o.goals.length ? o.goals.map((g) => goalConfig[g]).join(', ') : '—'}</td>
-                      <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${priorityConfig[o.priority].color}`}>{priorityConfig[o.priority].label}</span></td>
-                      <td className="py-2.5"><Leverage score={o.leverageScore} /></td>
-                      <td className={`py-2.5 ${dl.tone}`}>{dl.text}</td>
-                      <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sourceOf(o).color}`}>{sourceOf(o).label}</span></td>
-                      <td className="py-2.5 pr-4">
-                        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
-                          {o.url && (
-                            <a href={o.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-muted-foreground/40 hover:text-foreground" title="Open link">
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          )}
-                          <button onClick={(e) => { e.stopPropagation(); deleteOpp(o.id) }} className="cursor-pointer text-muted-foreground/40 hover:text-red-400" title="Delete">
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {expanded === o.id && (
-                      <tr key={`${o.id}-edit`}>
-                        <td colSpan={9} className="px-5 py-4 border-b border-border/20 bg-foreground/[0.02]">
-                          <EditForm o={o} setField={setField} toggleGoal={toggleGoal} onDelete={() => deleteOpp(o.id)} />
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                )
-              })}
-            </tbody>
-          </table>
-          {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              {items.length === 0 ? 'No opportunities yet. The radar fills this weekly — or click Add.' : 'No opportunities match your filters.'}
-            </p>
-          )}
-        </div>
-      </WidgetCard>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Composer */}
+                <div className="flex items-end gap-2">
+                  <textarea
+                    value={objInput}
+                    onChange={(e) => setObjInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addObjective() } }}
+                    rows={2}
+                    placeholder="e.g. Find me 20 remote software internships paying $2k+/mo with deadlines before September…"
+                    className="flex-1 resize-none rounded-md border border-input bg-input/20 px-2.5 py-2 text-xs text-foreground outline-none transition-colors duration-150 placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  />
+                  <Button size="sm" onClick={addObjective} disabled={!objInput.trim()}>
+                    <Send /> Send
+                  </Button>
+                </div>
+                <p className="-mt-1 font-mono text-2xs text-foreground-faint">⌘↵ to send · active orders steer the next “Run radar”.</p>
+              </div>
+            </WidgetCard>
+
+            {/* Filter rail */}
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative max-w-xs flex-1">
+                  <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-foreground-faint" />
+                  <Input placeholder="Search opportunities…" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-8 text-xs" />
+                </div>
+                {data.lastRunId && (
+                  <Chip selectable selected={thisRunOnly} onClick={() => setThisRunOnly((v) => !v)}>This run</Chip>
+                )}
+                <Chip selectable selected={showArchived} onClick={() => setShowArchived((v) => !v)}>Show archived</Chip>
+                <div className="ml-auto flex items-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={requestRun}
+                    disabled={running}
+                    title={running ? 'Radar is running…' : 'Scrape all lanes now and refresh the page'}
+                  >
+                    <RefreshCw /> {running ? (data.runStatus === 'requested' ? 'Queued…' : 'Running…') : 'Run radar'}
+                  </Button>
+                  <Button size="sm" onClick={addOpp}><Plus /> Add</Button>
+                </div>
+              </div>
+              {data.runStatus === 'error' && data.runError && (
+                <p className="text-xs text-destructive">Last radar run failed: {data.runError}</p>
+              )}
+
+              {/* Kind group — segmented control + per-category chips within the group */}
+              <div className="flex flex-wrap items-center gap-3">
+                <Tabs value={kindGroup} onValueChange={(v) => { setKindGroup(v as KindGroup); setCatFilter(null) }}>
+                  <TabsList>
+                    <TabsTrigger value="all">All</TabsTrigger>
+                    {(Object.keys(KIND_GROUPS) as Exclude<KindGroup, 'all'>[]).map((g) => (
+                      <TabsTrigger key={g} value={g}>{KIND_GROUPS[g].label}</TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
+                {kindGroup !== 'all' && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {KIND_GROUPS[kindGroup].categories.map((c) => (
+                      <Chip key={c} selectable selected={catFilter === c} onClick={() => setCatFilter(catFilter === c ? null : c)}>
+                        {categoryOf(c).label}
+                      </Chip>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Status · modality · region chips */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {ALL_STATUSES.map((s) => (
+                  <Chip key={s} selectable variant={statusConfig[s].chip} selected={statusFilter === s} onClick={() => setStatusFilter(statusFilter === s ? null : s)}>
+                    {statusConfig[s].label}
+                  </Chip>
+                ))}
+                <span aria-hidden className="mx-1 h-3.5 w-px bg-border" />
+                {MODALITY_FILTERS.map((m) => (
+                  <Chip key={m} selectable selected={modalityFilter === m} onClick={() => setModalityFilter(modalityFilter === m ? null : m)}>
+                    {modalityConfig[m].label}
+                  </Chip>
+                ))}
+                {availableRegions.length > 1 && <span aria-hidden className="mx-1 h-3.5 w-px bg-border" />}
+                {availableRegions.length > 1 && availableRegions.map((r) => (
+                  <Chip key={r} selectable selected={regionFilter === r} onClick={() => setRegionFilter(regionFilter === r ? null : r)}>
+                    {regionConfig[r].label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+
+            {/* Urgency-grouped list — the core deadline-intelligence view */}
+            {filtered.length === 0 ? (
+              <EmptyState
+                message={items.length === 0 ? 'The radar hasn’t surfaced anything yet.' : 'Nothing matches these filters.'}
+                hint={items.length === 0 ? 'It fills weekly — or add one yourself.' : 'Loosen a chip or two.'}
+                action={items.length === 0 ? <Button variant="secondary" size="sm" onClick={addOpp}><Plus /> Add opportunity</Button> : undefined}
+              />
+            ) : (
+              <div className="flex flex-col gap-5">
+                {sections.map((section) => (
+                  <section key={section.key}>
+                    <div className="mb-2 flex items-baseline gap-2">
+                      <h3 className={`font-mono text-2xs uppercase tracking-wider ${section.tone}`}>{section.title}</h3>
+                      <span className="font-mono text-2xs tabular-nums text-foreground-faint">{section.items.length}</span>
+                    </div>
+                    <div className={`surface rounded-xl ${section.dim ? 'opacity-70' : ''}`}>
+                      <div className="flex flex-col divide-y divide-border/60">
+                        {section.items.map((o) => (
+                          <OppRow
+                            key={o.id}
+                            o={o}
+                            expanded={expanded === o.id}
+                            onToggle={() => setExpanded(expanded === o.id ? null : o.id)}
+                            setField={setField}
+                            toggleGoal={toggleGoal}
+                            onDelete={() => deleteOpp(o.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -859,7 +890,78 @@ export function OpportunitiesPage() {
   )
 }
 
+// ── Row (desktop) / stacked card (mobile) ────────────────────────────────────
+
+function OppRow({ o, expanded, onToggle, setField, toggleGoal, onDelete }: {
+  o: Opportunity
+  expanded: boolean
+  onToggle: () => void
+  setField: (id: string, f: Partial<Opportunity>) => void
+  toggleGoal: (id: string, g: Goal) => void
+  onDelete: () => void
+}) {
+  const cd = countdownOf(o)
+  return (
+    <div>
+      <div
+        onClick={onToggle}
+        className={`flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors hover:bg-secondary/30 ${expanded ? 'bg-secondary/20' : ''}`}
+      >
+        <div className="min-w-0 flex-1 basis-52">
+          <p className="truncate text-sm font-medium text-foreground">{o.title}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {o.host || eligibilityOf(o.eligibility)}
+            {o.location ? ` · ${o.location}` : ''}
+          </p>
+        </div>
+        <Chip size="sm">{categoryOf(o.category).label}</Chip>
+        <Chip size="sm" variant={cd.variant} className={cd.outline ? 'bg-transparent' : undefined} title={cd.title}>{cd.text}</Chip>
+        {o.amountUsd != null && (
+          <span className="shrink-0 font-mono text-xs tabular-nums text-foreground">{fmtAmount(o.amountUsd)}</span>
+        )}
+        {o.requires18Plus === true && (
+          <Chip size="sm" variant="danger" className="bg-transparent" title="Requires 18+ — check eligibility">18+</Chip>
+        )}
+        <LeverageDots score={o.leverageScore} />
+        <select
+          value={statusConfig[o.status] ? o.status : 'new'}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setField(o.id, { status: e.target.value as OppStatus })}
+          aria-label="Status"
+          className={`h-7 w-24 shrink-0 cursor-pointer rounded-md border border-input bg-input/20 px-1.5 font-mono text-2xs outline-none transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${statusOf(o.status).text}`}
+        >
+          {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
+        </select>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {o.url && (
+            <a
+              href={o.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title="Open link"
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+          )}
+          <Button variant="ghost" size="icon-sm" aria-label="Delete opportunity" onClick={(e) => { e.stopPropagation(); onDelete() }}>
+            <Trash2 />
+          </Button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="border-t border-border/60 bg-secondary/10 px-4 py-4">
+          <EditForm o={o} setField={setField} toggleGoal={toggleGoal} onDelete={onDelete} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Edit form (shared desktop + mobile) ───────────────────────────────────────
+
+const labelCls = 'text-2xs text-muted-foreground'
 
 function EditForm({ o, setField, toggleGoal, onDelete }: {
   o: Opportunity
@@ -867,96 +969,201 @@ function EditForm({ o, setField, toggleGoal, onDelete }: {
   toggleGoal: (id: string, g: Goal) => void
   onDelete: () => void
 }) {
+  const dt = deadlineTypeOf(o)
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 mt-3 lg:mt-0">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       {/* Col 1 — identity */}
       <div className="flex flex-col gap-2">
-        <label className="text-[10px] text-muted-foreground">Title</label>
-        <input value={o.title} onChange={(e) => setField(o.id, { title: e.target.value })} className="bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" />
-        <div className="grid grid-cols-2 gap-2">
-          <div><label className="text-[10px] text-muted-foreground">Host</label><input value={o.host} onChange={(e) => setField(o.id, { host: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-          <div><label className="text-[10px] text-muted-foreground">Location</label><input value={o.location} onChange={(e) => setField(o.id, { location: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+        <div>
+          <label className={labelCls}>Title</label>
+          <Input value={o.title} onChange={(e) => setField(o.id, { title: e.target.value })} className="h-7 text-xs font-medium" />
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <div><label className="text-[10px] text-muted-foreground">Category</label>
-            <select value={o.category} onChange={(e) => setField(o.id, { category: e.target.value as OpportunityCategory })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+          <div>
+            <label className={labelCls}>Host</label>
+            <Input value={o.host} onChange={(e) => setField(o.id, { host: e.target.value })} className="h-7 text-xs" />
+          </div>
+          <div>
+            <label className={labelCls}>Location</label>
+            <Input value={o.location} onChange={(e) => setField(o.id, { location: e.target.value })} className="h-7 text-xs" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className={labelCls}>Category</label>
+            <select value={categoryConfig[o.category] ? o.category : 'other'} onChange={(e) => setField(o.id, { category: e.target.value as OpportunityCategory })} className={`${selectCls} h-7`}>
               {ALL_CATEGORIES.map((c) => <option key={c} value={c}>{categoryConfig[c].label}</option>)}
             </select>
           </div>
-          <div><label className="text-[10px] text-muted-foreground">Modality</label>
-            <select value={modalityOf(o)} onChange={(e) => setField(o.id, { modality: e.target.value as Modality })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+          <div>
+            <label className={labelCls}>Modality</label>
+            <select value={modalityOf(o)} onChange={(e) => setField(o.id, { modality: e.target.value as Modality })} className={`${selectCls} h-7`}>
               {(Object.keys(modalityConfig) as Modality[]).map((m) => <option key={m} value={m}>{modalityConfig[m].label}</option>)}
             </select>
           </div>
-          <div><label className="text-[10px] text-muted-foreground">Eligibility</label>
-            <select value={o.eligibility} onChange={(e) => setField(o.id, { eligibility: e.target.value as Eligibility })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+          <div>
+            <label className={labelCls}>Eligibility</label>
+            <select value={eligibilityConfig[o.eligibility] ? o.eligibility : 'unknown'} onChange={(e) => setField(o.id, { eligibility: e.target.value as Eligibility })} className={`${selectCls} h-7`}>
               {(Object.keys(eligibilityConfig) as Eligibility[]).map((el) => <option key={el} value={el}>{eligibilityConfig[el]}</option>)}
             </select>
           </div>
+          <div>
+            <label className={labelCls}>Effort to apply</label>
+            <select
+              value={o.effort && effortConfig[o.effort] ? o.effort : ''}
+              onChange={(e) => setField(o.id, { effort: (e.target.value || null) as Effort | null })}
+              className={`${selectCls} h-7`}
+            >
+              <option value="">Unknown</option>
+              {ALL_EFFORTS.map((e) => <option key={e} value={e}>{effortConfig[e]}</option>)}
+            </select>
+          </div>
         </div>
-        <div><label className="text-[10px] text-muted-foreground">Link</label>
-          <input value={o.url} onChange={(e) => setField(o.id, { url: e.target.value })} placeholder="https://..." className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 placeholder:text-muted-foreground/30" />
+        <div>
+          <label className={labelCls}>Apply / discovery link</label>
+          <Input value={o.url} onChange={(e) => setField(o.id, { url: e.target.value })} placeholder="https://…" className="h-7 font-mono text-xs" />
+        </div>
+        <div>
+          <label className={labelCls}>Official program page</label>
+          <Input value={o.officialUrl ?? ''} onChange={(e) => setField(o.id, { officialUrl: e.target.value })} placeholder="https://…" className="h-7 font-mono text-xs" />
         </div>
       </div>
 
-      {/* Col 2 — status / priority / dates */}
+      {/* Col 2 — status / deadline intelligence / money */}
       <div className="flex flex-col gap-2">
         <div className="grid grid-cols-2 gap-2">
-          <div><label className="text-[10px] text-muted-foreground">Status</label>
-            <select value={o.status} onChange={(e) => setField(o.id, { status: e.target.value as OppStatus })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+          <div>
+            <label className={labelCls}>Status</label>
+            <select value={statusConfig[o.status] ? o.status : 'new'} onChange={(e) => setField(o.id, { status: e.target.value as OppStatus })} className={`${selectCls} h-7`}>
               {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
             </select>
           </div>
-          <div><label className="text-[10px] text-muted-foreground">Priority</label>
-            <select value={o.priority} onChange={(e) => setField(o.id, { priority: e.target.value as Opportunity['priority'] })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+          <div>
+            <label className={labelCls}>Priority</label>
+            <select value={priorityConfig[o.priority] ? o.priority : 'medium'} onChange={(e) => setField(o.id, { priority: e.target.value as Opportunity['priority'] })} className={`${selectCls} h-7`}>
               {(['high', 'medium', 'low'] as const).map((p) => <option key={p} value={p}>{priorityConfig[p].label}</option>)}
             </select>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 items-end">
-          <div><label className="text-[10px] text-muted-foreground">Deadline</label>
-            <input type="date" value={o.deadline ?? ''} onChange={(e) => setField(o.id, { deadline: e.target.value || null })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className={labelCls}>Deadline type</label>
+            {/* Replaces the old "Rolling" checkbox — writing it keeps the legacy boolean in sync. */}
+            <select
+              value={dt}
+              onChange={(e) => {
+                const v = e.target.value as DeadlineType
+                setField(o.id, { deadlineType: v, rolling: v === 'rolling' || v === 'always-open' })
+              }}
+              className={`${selectCls} h-7`}
+            >
+              {ALL_DEADLINE_TYPES.map((d) => <option key={d} value={d}>{deadlineTypeConfig[d].label}</option>)}
+            </select>
           </div>
-          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground pb-1 cursor-pointer">
-            <input type="checkbox" checked={o.rolling} onChange={(e) => setField(o.id, { rolling: e.target.checked })} className="cursor-pointer" /> Rolling
-          </label>
+          <div>
+            <label className={labelCls}>Deadline</label>
+            <Input type="date" value={o.deadline ?? ''} onChange={(e) => setField(o.id, { deadline: e.target.value || null })} className="h-7 cursor-pointer font-mono text-xs" />
+          </div>
         </div>
-        <div><label className="text-[10px] text-muted-foreground">Reward / prize</label>
-          <input value={o.reward} onChange={(e) => setField(o.id, { reward: e.target.value })} placeholder="$5k, stipend, credits…" className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 placeholder:text-muted-foreground/30" />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className={labelCls}>Recurrence</label>
+            <Input value={o.recurrence ?? ''} onChange={(e) => setField(o.id, { recurrence: e.target.value || null })} placeholder="annual, 2 batches/yr…" className="h-7 text-xs" />
+          </div>
+          <div>
+            <label className={labelCls}>Next window expected</label>
+            <Input value={o.nextWindowExpected ?? ''} onChange={(e) => setField(o.id, { nextWindowExpected: e.target.value || null })} placeholder="~Sep 2026 (estimate)" className="h-7 text-xs" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className={labelCls}>Amount (USD)</label>
+            <Input
+              type="number"
+              min={0}
+              value={o.amountUsd ?? ''}
+              onChange={(e) => {
+                const v = e.target.value.trim()
+                const n = Number(v)
+                setField(o.id, { amountUsd: v === '' || !Number.isFinite(n) ? null : Math.max(0, Math.round(n)) })
+              }}
+              placeholder="50000"
+              className="h-7 font-mono text-xs tabular-nums"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Age rule</label>
+            <select
+              value={o.requires18Plus === true ? 'yes' : o.requires18Plus === false ? 'no' : ''}
+              onChange={(e) => setField(o.id, { requires18Plus: e.target.value === '' ? null : e.target.value === 'yes' })}
+              className={`${selectCls} h-7`}
+            >
+              <option value="">Unstated</option>
+              <option value="yes">Requires 18+</option>
+              <option value="no">Minors OK</option>
+            </select>
+          </div>
         </div>
         <div>
-          <label className="text-[10px] text-muted-foreground">Leverage: {o.leverageScore}/5</label>
-          <input type="range" min={1} max={5} step={1} value={o.leverageScore} onChange={(e) => setField(o.id, { leverageScore: parseInt(e.target.value) })} className="w-full cursor-pointer accent-amber-400" />
+          <label className={labelCls}>Reward / prize</label>
+          <Input value={o.reward} onChange={(e) => setField(o.id, { reward: e.target.value })} placeholder="$5k, stipend, credits…" className="h-7 text-xs" />
         </div>
-        <div><label className="text-[10px] text-muted-foreground">Leverage note (what it unlocks)</label>
-          <input value={o.leverageNote} onChange={(e) => setField(o.id, { leverageNote: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 placeholder:text-muted-foreground/30" placeholder="e.g. funding + press + investor intros" />
+        <div>
+          <label className={labelCls}>Leverage: <span className="font-mono tabular-nums">{o.leverageScore}/5</span></label>
+          <input
+            type="range"
+            min={1}
+            max={5}
+            step={1}
+            value={o.leverageScore}
+            onChange={(e) => setField(o.id, { leverageScore: parseInt(e.target.value) })}
+            className="w-full cursor-pointer"
+            style={{ accentColor: 'var(--accent)' }}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Leverage note (what it unlocks)</label>
+          <Input value={o.leverageNote} onChange={(e) => setField(o.id, { leverageNote: e.target.value })} placeholder="e.g. funding + press + investor intros" className="h-7 text-xs" />
         </div>
       </div>
 
       {/* Col 3 — goals / notes / tags */}
       <div className="flex flex-col gap-2">
-        <label className="text-[10px] text-muted-foreground">Goals it serves</label>
-        <div className="flex gap-1.5 flex-wrap">
+        <label className={labelCls}>Goals it serves</label>
+        <div className="flex flex-wrap gap-1.5">
           {ALL_GOALS.map((g) => (
-            <button key={g} onClick={() => toggleGoal(o.id, g)}
-              className={`cursor-pointer text-[10px] px-2 py-0.5 rounded-full border transition-all ${o.goals.includes(g) ? 'bg-foreground/10 text-foreground border-current/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+            <Chip key={g} selectable selected={o.goals.includes(g)} onClick={() => toggleGoal(o.id, g)}>
               {goalConfig[g]}
-            </button>
+            </Chip>
           ))}
         </div>
-        <label className="text-[10px] text-muted-foreground">Notes</label>
-        <textarea value={o.notes} onChange={(e) => setField(o.id, { notes: e.target.value })} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none" rows={4} placeholder="Why it matters, what to prepare, source excerpt…" />
-        <label className="text-[10px] text-muted-foreground">Tags (comma-separated)</label>
-        <input value={o.tags.join(', ')} onChange={(e) => setField(o.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" placeholder="remote, ai, latam…" />
-        {o.sourceRef && (
-          <a href={o.sourceRef} target="_blank" rel="noopener noreferrer" className="text-[10px] text-muted-foreground/60 hover:text-foreground inline-flex items-center gap-1 mt-1">
-            <ExternalLink className="h-3 w-3" /> Source post
-          </a>
-        )}
+        <label className={labelCls}>Notes</label>
+        <textarea
+          value={o.notes}
+          onChange={(e) => setField(o.id, { notes: e.target.value })}
+          rows={4}
+          placeholder="Why it matters, what to prepare, source excerpt…"
+          className="w-full resize-none rounded-md border border-input bg-input/20 px-2.5 py-2 text-xs text-foreground outline-none transition-colors duration-150 placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        />
+        <label className={labelCls}>Tags (comma-separated)</label>
+        <Input
+          value={(o.tags || []).join(', ')}
+          onChange={(e) => setField(o.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })}
+          placeholder="remote, ai, latam…"
+          className="h-7 font-mono text-xs"
+        />
+        <div className="mt-1 flex items-center gap-2">
+          <Chip size="sm" title="Where the radar found it">{sourceOf(o).label}</Chip>
+          {o.sourceRef && (
+            <a href={o.sourceRef} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-2xs text-muted-foreground transition-colors hover:text-foreground">
+              <ExternalLink className="size-3" /> Source post
+            </a>
+          )}
+        </div>
         <div className="flex justify-end pt-2">
-          <button onClick={onDelete} className="cursor-pointer flex items-center gap-1.5 text-xs text-red-400/60 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-red-400/20 hover:border-red-400/40 hover:bg-red-400/5">
-            <Trash2 className="h-3 w-3" /> Delete
-          </button>
+          <Button variant="destructive" size="sm" onClick={onDelete}>
+            <Trash2 /> Delete
+          </Button>
         </div>
       </div>
     </div>

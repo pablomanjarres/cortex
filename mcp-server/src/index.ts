@@ -148,7 +148,7 @@ const server = new McpServer(
       "- When he shares a THOUGHT, idea, reflection, realization, or opinion worth keeping, offer to save it with add_thought (e.g. \"Want me to save that as a thought in Cortex?\"). Don't save silently.",
       "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
       "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
-      "- Opportunities (hackathons, grants, internships, fellowships): get_opportunities to read the radar + active hunt orders; add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it.",
+      "- Opportunities (fellowships, grants, accelerators, programs, residencies, hackathons, internships): get_opportunities to read the radar + active hunt orders (filter by category or deadline_type); add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders; include the deadline-intelligence fields); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it. The curated program catalog seeds via `node scripts/radar-seed-programs.mjs --write`.",
       "",
       "Prefer domain-specific tools over the generic read_data / write_data. Confirm before overwriting existing data. Values are stored per calendar day/week under keys like cortex-nutrition-YYYY-MM-DD and cortex-market-<mondayDate>; today's date is the default when omitted.",
     ].join("\n"),
@@ -1854,6 +1854,10 @@ interface McpOpportunity {
   deadline: string | null; rolling: boolean; location: string; modality?: string;
   eligibility: string; reward: string; url: string; source: string; sourceRef: string;
   discoveredAt: string; runId?: string; notes: string; tags: string[];
+  // Deadline intelligence (optional — legacy records derive them at read time)
+  deadlineType?: string; recurrence?: string | null; nextWindowExpected?: string | null;
+  amountUsd?: number | null; requires18Plus?: boolean | null; officialUrl?: string;
+  effort?: string | null;
 }
 interface McpObjective { id: string; text: string; reply?: string; parsed?: unknown; status: string; active: boolean; createdAt: string; error?: string }
 interface McpOppData {
@@ -1864,21 +1868,34 @@ interface McpOppData {
 
 const normOppUrl = (u: string): string => (u || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
 
+// Normalize an item's deadline type (mirrors scripts/radar-lib.mjs + the UI):
+// explicit valid value wins; legacy records derive rolling→'rolling',
+// dated→'fixed', else 'unknown'.
+const OPP_DEADLINE_TYPES = new Set(["fixed", "rolling", "recurring", "always-open", "unknown"]);
+const oppDeadlineTypeOf = (o: McpOpportunity): string => {
+  if (o.deadlineType && OPP_DEADLINE_TYPES.has(o.deadlineType)) return o.deadlineType;
+  if (o.rolling === true) return "rolling";
+  if (o.deadline) return "fixed";
+  return "unknown";
+};
+
 server.tool(
   "get_opportunities",
-  "Read the Opportunity Radar: sourced opportunities, active hunt orders, the latest run report, and run status. Use before sourcing to avoid duplicates and to read what the user is hunting for.",
+  "Read the Opportunity Radar: sourced opportunities (hackathons AND the programs lane — fellowships, grants, accelerators, residencies), active hunt orders, the latest run report, and run status. Use before sourcing to avoid duplicates and to read what the user is hunting for. A curated 30-program catalog can be (re)seeded with `node scripts/radar-seed-programs.mjs --write`.",
   {
     status: z.string().optional().describe("Filter by status: new|pursuing|applied|won|lost|archived"),
-    category: z.string().optional().describe("Filter by category"),
+    category: z.string().optional().describe("Filter by category (e.g. fellowship, grant, program, accelerator, hackathon)"),
+    deadline_type: z.enum(["fixed", "rolling", "recurring", "always-open", "unknown"]).optional().describe("Filter by deadline behavior (legacy records derive it: rolling flag → rolling, dated → fixed, else unknown)"),
     limit: z.number().optional().describe("Max items to return, default 50"),
     includeArchived: z.boolean().optional().describe("Include archived items, default false"),
   },
-  async ({ status, category, limit, includeArchived }) => run(async () => {
+  async ({ status, category, deadline_type, limit, includeArchived }) => run(async () => {
     const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
     let items = Array.isArray(data.items) ? data.items : [];
     if (!includeArchived) items = items.filter(o => o.status !== "archived");
     if (status) items = items.filter(o => o.status === status);
     if (category) items = items.filter(o => o.category === category);
+    if (deadline_type) items = items.filter(o => oppDeadlineTypeOf(o) === deadline_type);
     const total = items.length;
     items = items.slice(0, limit && limit > 0 ? limit : 50);
     const activeHuntOrders = (data.objectives || []).filter(o => o.active).map(o => ({ id: o.id, text: o.text, status: o.status }));
@@ -1926,26 +1943,33 @@ server.tool(
 
 server.tool(
   "add_opportunities",
-  "Add opportunities YOU (Claude Code) sourced via your own web research directly into the Radar. This IS the personalized radar when the external scraper isn't used: first read the user's profile (scripts/radar-profile.md) and active hunt orders (get_opportunities), research matching opportunities on the web, then submit them here. Dedupes against existing items by URL and title+host, stamps them with a runId, and updates the run report.",
+  "Add opportunities YOU (Claude Code) sourced via your own web research directly into the Radar. This IS the personalized radar when the external scraper isn't used: first read the user's profile (scripts/radar-profile.md) and active hunt orders (get_opportunities), research matching opportunities on the web, then submit them here. Fellowships, grants, accelerators, residencies and structured builder programs are first-class targets (categories program/fellowship/grant/accelerator/residency) — fill in the deadline-intelligence fields (deadlineType, recurrence, nextWindowExpected, amountUsd, requires18Plus, officialUrl, effort) whenever known. A curated 30-program baseline also exists: `node scripts/radar-seed-programs.mjs --write` (source 'catalog'). Dedupes against existing items by URL and title+host, stamps them with a runId, and updates the run report.",
   {
     runId: z.string().optional().describe("Label/stamp for this radar run; defaults to an ISO timestamp"),
     report: z.string().optional().describe("Optional markdown digest (what you found + top picks) shown on the Radar tab"),
     opportunities: z.array(z.object({
       title: z.string(),
       host: z.string().describe("Organization / host"),
-      category: z.enum(["hackathon", "grant", "accelerator", "fellowship", "internship", "exchange", "competition", "pitch", "speaking", "scholarship", "community", "launch", "trending", "other"]),
+      category: z.enum(["hackathon", "grant", "accelerator", "fellowship", "internship", "exchange", "competition", "pitch", "speaking", "scholarship", "community", "launch", "trending", "program", "residency", "research", "other"]),
       url: z.string().describe("Direct link"),
       goals: z.array(z.enum(["internship", "exchange", "funding", "social-growth", "users"])).optional(),
       priority: z.enum(["low", "medium", "high"]).optional(),
       leverageScore: z.number().min(1).max(5).optional().describe("1-5, how high-leverage for the user"),
       leverageNote: z.string().optional().describe("Why it matters for the user"),
       deadline: z.string().nullable().optional().describe("YYYY-MM-DD or null"),
-      rolling: z.boolean().optional().describe("Rolling / no fixed deadline"),
+      deadlineType: z.enum(["fixed", "rolling", "recurring", "always-open", "unknown"]).optional().describe("How the application window behaves; keeps the legacy rolling boolean in sync"),
+      rolling: z.boolean().optional().describe("Legacy rolling flag — derived from deadlineType when that is provided"),
+      recurrence: z.string().nullable().optional().describe("Cadence when known, e.g. 'annual', 'rolling cohorts', '2 batches/yr'"),
+      nextWindowExpected: z.string().nullable().optional().describe("Freeform estimate of the next application window (mark estimates)"),
+      amountUsd: z.number().nullable().optional().describe("Representative USD amount (grant/stipend/top prize) as a number, or null"),
+      requires18Plus: z.boolean().nullable().optional().describe("true ONLY for an explicit 18+/legal-age rule; false when minors explicitly allowed; null/omit when unstated"),
+      officialUrl: z.string().optional().describe("Canonical program homepage when identifiable (url stays the apply/discovery link)"),
+      effort: z.enum(["low", "medium", "high"]).nullable().optional().describe("Application effort: low = form, medium = essays/submission, high = multi-stage"),
       location: z.string().optional().describe("City/country, or 'Remote'"),
       modality: z.enum(["remote", "hybrid", "in-person", "unknown"]).optional(),
       eligibility: z.enum(["remote-global", "latam", "us-eu", "other", "unknown"]).optional(),
       reward: z.string().optional().describe("Prize / stipend / reward"),
-      source: z.enum(["x", "linkedin", "reddit", "instagram", "github", "devpost", "luma", "eventbrite", "meetup", "web", "manual"]).optional(),
+      source: z.enum(["x", "linkedin", "reddit", "instagram", "github", "devpost", "luma", "eventbrite", "meetup", "web", "manual", "catalog"]).optional(),
       sourceRef: z.string().optional().describe("Where you found it (handle, post URL, search)"),
       notes: z.string().optional(),
       tags: z.array(z.string()).optional(),
@@ -1967,11 +1991,19 @@ server.tool(
         const u = normOppUrl(o.url);
         const th = `${o.title.trim().toLowerCase()}|${o.host.trim().toLowerCase()}`;
         if ((u && seenUrl.has(u)) || seenTitleHost.has(th)) { skipped.push(o.title); continue; }
+        // Deadline intelligence: explicit deadlineType wins and re-derives the legacy
+        // rolling boolean (rolling|always-open → true); legacy callers derive the type.
+        const deadline = o.deadline ?? null;
+        const deadlineType = o.deadlineType ?? (o.rolling ? "rolling" : deadline ? "fixed" : "unknown");
+        const rolling = deadlineType === "rolling" || deadlineType === "always-open";
         const rec: McpOpportunity = {
           id: `opp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           title: o.title, host: o.host, category: o.category, goals: o.goals ?? [],
           priority: o.priority ?? "medium", leverageScore: o.leverageScore ?? 3, leverageNote: o.leverageNote ?? "",
-          status: "new", deadline: o.deadline ?? null, rolling: o.rolling ?? false,
+          status: "new", deadline, deadlineType, rolling,
+          recurrence: o.recurrence ?? null, nextWindowExpected: o.nextWindowExpected ?? null,
+          amountUsd: o.amountUsd ?? null, requires18Plus: o.requires18Plus ?? null,
+          officialUrl: o.officialUrl ?? "", effort: o.effort ?? null,
           location: o.location ?? "", modality: o.modality ?? "unknown", eligibility: o.eligibility ?? "unknown",
           reward: o.reward ?? "", url: o.url, source: o.source ?? "web", sourceRef: o.sourceRef ?? "",
           discoveredAt: now, runId: stamp, notes: o.notes ?? "", tags: o.tags ?? [],

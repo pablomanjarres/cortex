@@ -2,8 +2,10 @@
 // radar-ingest — merge classified opportunities into the Cortex `cortex-opportunities`
 // store. Deterministic half of the Opportunity Radar routine: the LLM classifies raw
 // hits into opportunity records + writes a report; THIS script assigns stable ids,
-// dedupes by sourceRef/url against what's already there, stamps the run, and POSTs
-// the merged set back to the running Cortex app (localhost:3456).
+// dedupes by sourceRef/url against what's already there, MERGES re-sightings of known
+// programs (refreshing deadline intel without losing user edits), auto-archives
+// long-closed fixed-deadline items, stamps the run, and POSTs the merged set back to
+// the running Cortex app (localhost:3456).
 //
 // Usage:
 //   node scripts/radar-ingest.mjs <classified.json> [report.md]
@@ -12,31 +14,26 @@
 // classified.json = an array of partial Opportunity records from the classifier.
 // Required per record: title, category, source, sourceRef (or url). Everything else
 // is defaulted. Env: CORTEX_API (default http://localhost:3456).
+//
+// Also importable (scripts/radar-seed-programs.mjs reuses the exact same merge/write
+// path): normalizeRecord, mergeClassified, readStoreWithRev, writeMergedWithRetry.
 
 import { readFile } from "node:fs/promises"
-import { createHash } from "node:crypto"
-import { inferSource } from "./radar-lib.mjs"
+import { pathToFileURL } from "node:url"
+import {
+  inferSource, stableId, deadlineTypeOf, rollingFromDeadlineType,
+  mergeOpportunity, shouldAutoArchive,
+  CATEGORIES, SOURCES, DEADLINE_TYPES, EFFORTS,
+} from "./radar-lib.mjs"
 
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
 const KEY = "cortex-opportunities"
 
-const CATEGORIES = new Set(["hackathon","grant","accelerator","fellowship","internship","exchange","competition","pitch","speaking","scholarship","community","launch","trending","other"])
-const GOALS = new Set(["internship","exchange","funding","social-growth","users"])
-const ELIGIBILITY = new Set(["remote-global","latam","us-eu","other","unknown"])
-const MODALITY = new Set(["remote","hybrid","in-person","unknown"])
-const STATUS = new Set(["new","pursuing","applied","won","lost","archived"])
-const PRIORITY = new Set(["low","medium","high"])
-const SOURCE = new Set(["x","linkedin","reddit","instagram","github","devpost","luma","eventbrite","meetup","web","manual"])
-
-const args = process.argv.slice(2)
-const dry = args.includes("--dry")
-const positional = args.filter((a) => !a.startsWith("--"))
-const classifiedPath = positional[0]
-const reportPath = positional[1]
-if (!classifiedPath) {
-  console.error("usage: node scripts/radar-ingest.mjs [--dry] <classified.json> [report.md]")
-  process.exit(2)
-}
+const GOALS = new Set(["internship", "exchange", "funding", "social-growth", "users"])
+const ELIGIBILITY = new Set(["remote-global", "latam", "us-eu", "other", "unknown"])
+const MODALITY = new Set(["remote", "hybrid", "in-person", "unknown"])
+const STATUS = new Set(["new", "pursuing", "applied", "won", "lost", "archived"])
+const PRIORITY = new Set(["low", "medium", "high"])
 
 function clampScore(n) {
   const v = Math.round(Number(n))
@@ -72,14 +69,31 @@ function identityKeys(o) {
 function pick(set, val, fallback) {
   return set.has(val) ? val : fallback
 }
-function stableId(o) {
-  const key = (o.sourceRef || o.url || o.title || "").trim().toLowerCase()
-  return "opp-" + createHash("sha1").update(key).digest("hex").slice(0, 12)
+
+/** number | null — accepts numbers and numeric strings ("50000"), rejects the rest. */
+function amountOrNull(v) {
+  if (v === null || v === undefined || v === "") return null
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null
+}
+/** boolean | null — ONLY an explicit boolean survives (an unstated age rule is null). */
+function boolOrNull(v) {
+  return typeof v === "boolean" ? v : null
+}
+/** trimmed string | null */
+function strOrNull(v) {
+  const s = typeof v === "string" ? v.trim() : ""
+  return s ? s.slice(0, 200) : null
 }
 
-function normalizeRecord(raw, runId) {
+export function normalizeRecord(raw, runId) {
   const url = typeof raw.url === "string" ? raw.url : ""
   const sourceRef = typeof raw.sourceRef === "string" && raw.sourceRef ? raw.sourceRef : url
+  // Deadline intelligence: explicit valid deadlineType wins; legacy records derive it
+  // (rolling -> 'rolling', dated -> 'fixed', else 'unknown'). The legacy `rolling`
+  // boolean is then re-derived so the two can never disagree.
+  const deadline = raw.deadline ? String(raw.deadline).slice(0, 10) : null
+  const deadlineType = pick(DEADLINE_TYPES, raw.deadlineType, deadlineTypeOf({ ...raw, deadline }))
   const rec = {
     id: raw.id || stableId({ sourceRef, url, title: raw.title }),
     title: String(raw.title ?? "Untitled opportunity").slice(0, 300),
@@ -90,16 +104,23 @@ function normalizeRecord(raw, runId) {
     leverageScore: clampScore(raw.leverageScore),
     leverageNote: String(raw.leverageNote ?? ""),
     status: pick(STATUS, raw.status, "new"),
-    deadline: raw.deadline ? String(raw.deadline).slice(0, 10) : null,
-    rolling: Boolean(raw.rolling),
+    deadline,
+    deadlineType,
+    rolling: rollingFromDeadlineType(deadlineType),
+    recurrence: strOrNull(raw.recurrence),
+    nextWindowExpected: strOrNull(raw.nextWindowExpected),
+    amountUsd: amountOrNull(raw.amountUsd),
+    requires18Plus: boolOrNull(raw.requires18Plus),
+    effort: pick(EFFORTS, raw.effort, null),
     location: String(raw.location ?? ""),
     modality: pick(MODALITY, raw.modality, "unknown"),
     eligibility: pick(ELIGIBILITY, raw.eligibility, "unknown"),
     reward: String(raw.reward ?? ""),
     url,
+    officialUrl: typeof raw.officialUrl === "string" ? raw.officialUrl.trim() : "",
     // Trust the platform derived from where the post lives (fixes Devpost hits that the
     // classifier tagged as the generic "web"); fall back to the model's validated source.
-    source: inferSource(url, sourceRef, pick(SOURCE, raw.source, "manual")),
+    source: raw.source === "catalog" ? "catalog" : inferSource(url, sourceRef, pick(SOURCES, raw.source, "manual")),
     sourceRef,
     discoveredAt: raw.discoveredAt || runId,
     runId,
@@ -111,9 +132,9 @@ function normalizeRecord(raw, runId) {
 
 // Read the existing store, also capturing the optimistic-concurrency rev
 // (X-Cortex-Rev header; null against servers that don't send it).
-async function readStoreWithRev() {
+export async function readStoreWithRev(api = API, key = KEY) {
   try {
-    const res = await fetch(`${API}/api/data?key=${KEY}`)
+    const res = await fetch(`${api}/api/data?key=${key}`)
     if (res.ok) {
       const rev = res.headers.get("x-cortex-rev")
       const body = await res.json()
@@ -126,9 +147,15 @@ async function readStoreWithRev() {
   return { existing: { items: [], lastRun: null }, rev: null }
 }
 
-// Pure merge: classified records into the existing store (dedup both ways).
-function mergeClassified(existing, classified, runId, report) {
-  const seen = new Set()
+// Pure merge: classified records into the existing store.
+//   - identity collision (url or year-stripped title+host) => MERGE, not drop: the
+//     incoming sighting refreshes radar-owned fields (deadline intel, links, logistics)
+//     while user-owned fields (status/priority/notes/edits) are preserved. This is how
+//     "Thiel Fellowship 2027" refreshes the stale 2026 entry instead of vanishing.
+//   - fixed-deadline items that closed >7d ago and are still status 'new' auto-archive.
+export function mergeClassified(existing, classified, runId, report) {
+  const today = String(runId).slice(0, 10)
+  const seen = new Map() // identity key -> index in existingKept
 
   // pass 1: keep existing, dropping any pre-existing self-duplicates (cleans old dupes)
   const existingKept = []
@@ -136,70 +163,113 @@ function mergeClassified(existing, classified, runId, report) {
   for (const it of existing.items) {
     const keys = identityKeys(it)
     if (keys.some((k) => seen.has(k))) { existingDropped++; continue }
-    keys.forEach((k) => seen.add(k))
+    keys.forEach((k) => seen.set(k, existingKept.length))
     existingKept.push(it)
   }
 
-  // pass 2: add new classified records, skipping any that collide with a kept item
+  // pass 2: add new classified records; a collision with a kept item REFRESHES it
   const added = []
+  let refreshed = 0
   for (const raw of classified) {
     const rec = normalizeRecord(raw, runId)
     const keys = identityKeys(rec)
-    if (keys.length === 0 || keys.some((k) => seen.has(k))) continue
-    keys.forEach((k) => seen.add(k))
+    if (keys.length === 0) continue
+    const hitKey = keys.find((k) => seen.has(k))
+    if (hitKey !== undefined) {
+      const idx = seen.get(hitKey)
+      // idx === -1 → collides with a record ADDED this same run (classifier emitted a
+      // duplicate); just skip it. idx >= 0 → re-sighting of a stored item: REFRESH it.
+      if (idx >= 0) {
+        existingKept[idx] = mergeOpportunity(existingKept[idx], rec, { runId, today })
+        refreshed++
+      }
+      continue
+    }
+    keys.forEach((k) => seen.set(k, -1)) // -1: marks keys owned by newly-added records
     added.push(rec)
   }
 
+  // pass 3: auto-archive long-closed fixed-deadline items nobody engaged with
+  let archived = 0
+  const allItems = [...added, ...existingKept].map((it) => {
+    if (shouldAutoArchive(it, today)) { archived++; return { ...it, status: "archived" } }
+    return it
+  })
+
   const merged = {
     ...existing,
-    items: [...added, ...existingKept], // new on top, fully deduped
+    items: allItems, // new on top, fully deduped
     lastRun: runId,
     lastRunId: runId,
     ...(report !== undefined ? { report } : {}),
   }
-  return { merged, added, existingDropped }
+  return { merged, added, refreshed, archived, existingDropped }
 }
 
-async function postMerged(merged, baseRev) {
-  return fetch(`${API}/api/data`, {
+async function postMerged(api, key, merged, baseRev) {
+  return fetch(`${api}/api/data`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(baseRev != null ? { key: KEY, data: merged, baseRev } : { key: KEY, data: merged }),
+    body: JSON.stringify(baseRev != null ? { key, data: merged, baseRev } : { key, data: merged }),
   })
 }
 
+/**
+ * Write with optimistic concurrency: post with baseRev; on 409 re-read + re-merge once
+ * (via `remerge(freshExisting)`), then fall back to last-write-wins so a full radar run
+ * is never thrown away. Returns the final { merged } that was written.
+ */
+export async function writeMergedWithRetry(api, key, firstMerged, firstRev, remerge) {
+  let merged = firstMerged
+  let res = await postMerged(api, key, merged, firstRev)
+  if (res.status === 409) {
+    console.error("radar-ingest: write conflict — re-reading and re-applying merge")
+    const { existing, rev } = await readStoreWithRev(api, key)
+    merged = remerge(existing).merged
+    res = await postMerged(api, key, merged, rev)
+    if (res.status === 409) {
+      console.error("radar-ingest: conflict persists — falling back to last-write-wins")
+      res = await postMerged(api, key, merged, null)
+    }
+  }
+  if (!res.ok) throw new Error(`POST /api/data failed: ${res.status} ${await res.text()}`)
+  return { merged }
+}
+
 async function main() {
+  const args = process.argv.slice(2)
+  const dry = args.includes("--dry")
+  const positional = args.filter((a) => !a.startsWith("--"))
+  const classifiedPath = positional[0]
+  const reportPath = positional[1]
+  if (!classifiedPath) {
+    console.error("usage: node scripts/radar-ingest.mjs [--dry] <classified.json> [report.md]")
+    process.exit(2)
+  }
+
   const classified = JSON.parse(await readFile(classifiedPath, "utf8"))
   if (!Array.isArray(classified)) throw new Error("classified.json must be an array")
   const report = reportPath ? await readFile(reportPath, "utf8") : undefined
   const runId = new Date().toISOString()
 
-  let { existing, rev } = await readStoreWithRev()
-  let { merged, added, existingDropped } = mergeClassified(existing, classified, runId, report)
+  const { existing, rev } = await readStoreWithRev(API, KEY)
+  const first = mergeClassified(existing, classified, runId, report)
+  const { added, refreshed, archived, existingDropped } = first
 
-  console.error(`radar-ingest: ${classified.length} classified, ${added.length} new, ${existingDropped} existing dupes removed, ${merged.items.length} total`)
+  console.error(`radar-ingest: ${classified.length} classified, ${added.length} new, ${refreshed} refreshed, ${archived} auto-archived, ${existingDropped} existing dupes removed, ${first.merged.items.length} total`)
 
   if (dry) {
-    console.log(JSON.stringify({ runId, added: added.length, existingDropped, total: merged.items.length, sample: added.slice(0, 3) }, null, 2))
+    console.log(JSON.stringify({ runId, added: added.length, refreshed, archived, existingDropped, total: first.merged.items.length, sample: added.slice(0, 3) }, null, 2))
     return
   }
 
-  let res = await postMerged(merged, rev)
-  if (res.status === 409) {
-    // Someone else wrote between our read and write: re-read, re-merge, retry once.
-    console.error("radar-ingest: write conflict — re-reading and re-applying merge")
-    ;({ existing, rev } = await readStoreWithRev())
-    ;({ merged, added, existingDropped } = mergeClassified(existing, classified, runId, report))
-    res = await postMerged(merged, rev)
-    if (res.status === 409) {
-      // Still racing — fall back to a rev-less write (old last-write-wins behavior)
-      // so a full radar run is never thrown away.
-      console.error("radar-ingest: conflict persists — falling back to last-write-wins")
-      res = await postMerged(merged, null)
-    }
-  }
-  if (!res.ok) throw new Error(`POST /api/data failed: ${res.status} ${await res.text()}`)
-  console.error(`radar-ingest: wrote ${merged.items.length} items (${added.length} new) to Cortex.`)
+  const { merged } = await writeMergedWithRetry(API, KEY, first.merged, rev,
+    (fresh) => mergeClassified(fresh, classified, runId, report))
+  console.error(`radar-ingest: wrote ${merged.items.length} items (${added.length} new, ${refreshed} refreshed, ${archived} auto-archived) to Cortex.`)
 }
 
-main().catch((e) => { console.error("radar-ingest FATAL:", e.message); process.exit(1) })
+// Only run as a CLI — importing this module (seed script, tests) must be side-effect-free.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) {
+  main().catch((e) => { console.error("radar-ingest FATAL:", e.message); process.exit(1) })
+}
