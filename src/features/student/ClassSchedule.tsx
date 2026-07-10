@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useStore } from '@/lib/store'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { syncClassToCalendar } from '@/lib/calendar-sync'
 import { Plus, X, Pencil, Check, Clock, MapPin } from 'lucide-react'
 
@@ -22,6 +24,11 @@ export interface ClassMeeting {
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DEFAULT_TERM_START = '2026-07-15'
 const DEFAULT_TERM_END = '2026-11-28'
+
+// Shared token style for native <select> controls (mirrors the Input primitive;
+// the global :focus-visible rule supplies the focus ring).
+const selectCls =
+  'h-8 cursor-pointer rounded-md border border-input bg-input/20 px-2 text-sm text-foreground transition-colors duration-150 outline-none'
 
 interface Draft {
   courseId: string
@@ -129,12 +136,12 @@ export function ClassSchedule({ courses }: Props) {
   const canSave = !!draft.courseId && draft.days.length > 0 && !!draft.startTime
 
   const renderForm = () => (
-    <div className="flex flex-col gap-2.5 rounded-lg border border-purple-500/30 bg-purple-500/5 p-3">
+    <div className="flex flex-col gap-2.5 rounded-md border border-border bg-muted/20 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={draft.courseId}
           onChange={(e) => setDraft((p) => ({ ...p, courseId: e.target.value }))}
-          className="h-8 rounded-md border border-border bg-input px-2 text-sm text-foreground"
+          className={selectCls}
         >
           {courses.length === 0 && <option value="">No courses</option>}
           {courses.map((c) => (
@@ -143,52 +150,46 @@ export function ClassSchedule({ courses }: Props) {
         </select>
         <div className="flex items-center gap-1">
           {DAY_LABELS.map((lbl, i) => (
-            <button
+            <Button
               key={lbl}
               type="button"
+              variant={draft.days.includes(i) ? 'accent-outline' : 'secondary'}
+              size="sm"
               onClick={() => toggleDay(i)}
-              className={`h-8 w-9 rounded-md text-xs font-medium transition-colors ${
-                draft.days.includes(i)
-                  ? 'bg-purple-500 text-white'
-                  : 'bg-secondary text-muted-foreground hover:bg-secondary/80'
-              }`}
+              aria-pressed={draft.days.includes(i)}
+              className="w-9 px-0 font-mono"
             >
               {lbl.slice(0, 2)}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Clock className="h-3.5 w-3.5" />
-          <Input type="time" value={draft.startTime} onChange={(e) => setDraft((p) => ({ ...p, startTime: e.target.value }))} className="h-8 w-28 bg-input text-sm" />
+          <Input type="time" value={draft.startTime} onChange={(e) => setDraft((p) => ({ ...p, startTime: e.target.value }))} className="w-28 font-mono text-xs" />
           <span>–</span>
-          <Input type="time" value={draft.endTime} onChange={(e) => setDraft((p) => ({ ...p, endTime: e.target.value }))} className="h-8 w-28 bg-input text-sm" />
+          <Input type="time" value={draft.endTime} onChange={(e) => setDraft((p) => ({ ...p, endTime: e.target.value }))} className="w-28 font-mono text-xs" />
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <MapPin className="h-3.5 w-3.5" />
-          <Input value={draft.room} onChange={(e) => setDraft((p) => ({ ...p, room: e.target.value }))} placeholder="Room" className="h-8 w-28 bg-input text-sm" />
+          <Input value={draft.room} onChange={(e) => setDraft((p) => ({ ...p, room: e.target.value }))} placeholder="Room" className="w-28 text-xs" />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span>Term</span>
-          <Input type="date" value={draft.termStart} onChange={(e) => setDraft((p) => ({ ...p, termStart: e.target.value }))} className="h-8 w-36 bg-input text-sm" />
+          <Input type="date" value={draft.termStart} onChange={(e) => setDraft((p) => ({ ...p, termStart: e.target.value }))} className="w-36 font-mono text-xs" />
           <span>→</span>
-          <Input type="date" value={draft.termEnd} onChange={(e) => setDraft((p) => ({ ...p, termEnd: e.target.value }))} className="h-8 w-36 bg-input text-sm" />
+          <Input type="date" value={draft.termEnd} onChange={(e) => setDraft((p) => ({ ...p, termEnd: e.target.value }))} className="w-36 font-mono text-xs" />
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={save}
-            disabled={!canSave}
-            className="flex h-8 items-center gap-1 rounded-md bg-purple-500 px-3 text-sm font-medium text-white transition-colors hover:bg-purple-500/90 disabled:opacity-40"
-          >
-            <Check className="h-3.5 w-3.5" />
-            {editingId ? 'Save' : 'Add'}
-          </button>
-          <button onClick={cancel} className="h-8 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground">
+          <Button size="sm" onClick={save} disabled={!canSave}>
+            <Check /> {editingId ? 'Save' : 'Add'}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={cancel}>
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -209,31 +210,29 @@ export function ClassSchedule({ courses }: Props) {
           editingId === c.id ? (
             <div key={c.id}>{renderForm()}</div>
           ) : (
-            <div key={c.id} className="group flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2">
-              <span className="h-2 w-2 shrink-0 rounded-full bg-purple-400" />
+            <div key={c.id} className="group flex items-center gap-3 rounded-md border border-border/60 px-3 py-2">
+              <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-accent" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="truncate text-sm font-medium text-foreground">{c.courseName}</span>
                   <span className="flex gap-0.5">
                     {c.days.map((d) => (
-                      <span key={d} className="rounded bg-purple-500/15 px-1 text-[10px] font-medium text-purple-300">
-                        {DAY_LABELS[d]?.slice(0, 2)}
-                      </span>
+                      <Chip key={d} size="sm">{DAY_LABELS[d]?.slice(0, 2)}</Chip>
                     ))}
                   </span>
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div className="font-mono text-2xs tabular-nums text-muted-foreground">
                   {c.startTime}–{c.endTime}
                   {c.room ? ` · ${c.room}` : ''}
                 </div>
               </div>
-              <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                <button onClick={() => startEdit(c)} className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground">
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-                <button onClick={() => remove(c)} className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-red-400">
-                  <X className="h-3.5 w-3.5" />
-                </button>
+              <div className="flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                <Button variant="ghost" size="icon-sm" onClick={() => startEdit(c)} aria-label={`Edit ${c.courseName}`}>
+                  <Pencil />
+                </Button>
+                <Button variant="ghost" size="icon-sm" onClick={() => remove(c)} aria-label={`Remove ${c.courseName}`} className="hover:text-destructive">
+                  <X />
+                </Button>
               </div>
             </div>
           )
@@ -242,16 +241,17 @@ export function ClassSchedule({ courses }: Props) {
         {adding && editingId === null ? (
           renderForm()
         ) : (
-          <button
+          <Button
+            variant="outline"
             onClick={() => {
               setAdding(true)
               setEditingId(null)
               setDraft(emptyDraft())
             }}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-purple-500/40 py-2 text-sm text-purple-300 transition-colors hover:bg-purple-500/5"
+            className="w-full border-dashed text-muted-foreground hover:border-accent/40 hover:text-foreground"
           >
-            <Plus className="h-4 w-4" /> Add class
-          </button>
+            <Plus /> Add class
+          </Button>
         )}
       </div>
     </WidgetCard>

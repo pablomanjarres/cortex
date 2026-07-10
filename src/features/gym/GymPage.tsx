@@ -134,13 +134,6 @@ function GymPageDay({ today }: { today: string }) {
 
   return (
     <PageShell>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gym</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Training, nutrition, market & analytics</p>
-        </div>
-      </div>
-
       <Tabs defaultValue="training">
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="training">Training</TabsTrigger>

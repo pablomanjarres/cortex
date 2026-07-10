@@ -1,7 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { useStore } from '@/lib/store'
 import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 import { ClassSchedule } from './ClassSchedule'
@@ -52,8 +54,10 @@ interface Course {
   name: string
   difficulty: Difficulty
   iconKey: string
-  color: string
-  bg: string
+  /** Legacy per-course identity hues — still present in old persisted data but
+   *  no longer written or rendered (categories are text, urgency is color). */
+  color?: string
+  bg?: string
   semester: string
   status: CourseStatus
   credits: number
@@ -85,7 +89,7 @@ interface Assignment {
   notes?: string
 }
 
-// ── Icons & styling palette ──────────────────────────────────────────────────
+// ── Icons ────────────────────────────────────────────────────────────────────
 
 const ICONS: Record<string, typeof GraduationCap> = {
   grad: GraduationCap, flask: FlaskConical, code: Code2, database: Database,
@@ -93,16 +97,8 @@ const ICONS: Record<string, typeof GraduationCap> = {
   cpu: Cpu, terminal: Terminal, messages: MessagesSquare, network: Network,
   book: BookOpen, atom: Atom, globe: Globe, pen: PenTool, calc: Calculator,
 }
-const iconOf = (k: string) => ICONS[k] ?? GraduationCap
 
 // Cycled when auto-styling newly added courses so each looks distinct.
-const PALETTE: [string, string][] = [
-  ['text-blue-400', 'bg-blue-400'], ['text-orange-400', 'bg-orange-400'],
-  ['text-green-400', 'bg-green-400'], ['text-pink-400', 'bg-pink-400'],
-  ['text-purple-400', 'bg-purple-400'], ['text-cyan-400', 'bg-cyan-400'],
-  ['text-red-400', 'bg-red-400'], ['text-yellow-400', 'bg-yellow-400'],
-  ['text-amber-400', 'bg-amber-400'], ['text-teal-400', 'bg-teal-400'],
-]
 const ICON_CYCLE = ['book', 'atom', 'globe', 'pen', 'calc', 'grad', 'sigma', 'blocks', 'cpu', 'terminal', 'messages', 'network']
 const ICON_OPTIONS = Object.keys(ICONS)
 
@@ -112,19 +108,19 @@ const DEFAULT_SEMESTERS = ['4th Semester', '3rd Semester']
 
 const DEFAULT_COURSES: Course[] = [
   // 3rd Semester
-  { id: 'formales', name: 'Formal Languages', difficulty: 'Hard', iconKey: 'file', color: 'text-orange-400', bg: 'bg-orange-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'physics', name: 'Physics II', difficulty: 'Hard', iconKey: 'flask', color: 'text-pink-400', bg: 'bg-pink-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'algorithms', name: 'Algorithms', difficulty: 'Easy', iconKey: 'code', color: 'text-red-400', bg: 'bg-red-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'dbms', name: 'DB Management', difficulty: 'Medium', iconKey: 'database', color: 'text-blue-400', bg: 'bg-blue-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'stats', name: 'Prob & Stats', difficulty: 'Easy', iconKey: 'chart', color: 'text-green-400', bg: 'bg-green-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
-  { id: 'imagination', name: 'Creativity', difficulty: 'Easy', iconKey: 'palette', color: 'text-purple-400', bg: 'bg-purple-400', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'formales', name: 'Formal Languages', difficulty: 'Hard', iconKey: 'file', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'physics', name: 'Physics II', difficulty: 'Hard', iconKey: 'flask', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'algorithms', name: 'Algorithms', difficulty: 'Easy', iconKey: 'code', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'dbms', name: 'DB Management', difficulty: 'Medium', iconKey: 'database', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'stats', name: 'Prob & Stats', difficulty: 'Easy', iconKey: 'chart', semester: '3rd Semester', status: 'Normal', credits: 3 },
+  { id: 'imagination', name: 'Creativity', difficulty: 'Easy', iconKey: 'palette', semester: '3rd Semester', status: 'Normal', credits: 3 },
   // 4th Semester (2026-2, starts 2026-07-15) — seeded from the Google Calendar class schedule
-  { id: 'calculo3', name: 'Cálculo 3', difficulty: 'Hard', iconKey: 'sigma', color: 'text-blue-400', bg: 'bg-blue-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'softeng', name: 'Ingeniería de Software', difficulty: 'Medium', iconKey: 'blocks', color: 'text-orange-400', bg: 'bg-orange-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'comporg', name: 'Organización de Computadores', difficulty: 'Medium', iconKey: 'cpu', color: 'text-cyan-400', bg: 'bg-cyan-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'os', name: 'Sistemas Operativos', difficulty: 'Hard', iconKey: 'terminal', color: 'text-green-400', bg: 'bg-green-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'debates', name: 'Debates Humanísticos', difficulty: 'Easy', iconKey: 'messages', color: 'text-purple-400', bg: 'bg-purple-400', semester: '4th Semester', status: 'Normal', credits: 3 },
-  { id: 'sysinfo', name: 'Sistemas de Información', difficulty: 'Easy', iconKey: 'network', color: 'text-pink-400', bg: 'bg-pink-400', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'calculo3', name: 'Cálculo 3', difficulty: 'Hard', iconKey: 'sigma', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'softeng', name: 'Ingeniería de Software', difficulty: 'Medium', iconKey: 'blocks', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'comporg', name: 'Organización de Computadores', difficulty: 'Medium', iconKey: 'cpu', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'os', name: 'Sistemas Operativos', difficulty: 'Hard', iconKey: 'terminal', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'debates', name: 'Debates Humanísticos', difficulty: 'Easy', iconKey: 'messages', semester: '4th Semester', status: 'Normal', credits: 3 },
+  { id: 'sysinfo', name: 'Sistemas de Información', difficulty: 'Easy', iconKey: 'network', semester: '4th Semester', status: 'Normal', credits: 3 },
 ]
 
 const DEFAULT_TOPICS: Topic[] = [
@@ -193,10 +189,41 @@ const ALL_TYPES: AssignmentType[] = ['Exam', 'Quiz', 'Lab', 'Project', 'Presenta
 const ALL_DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
 const ALL_STATUSES: CourseStatus[] = ['Normal', 'At risk', 'Under Control']
 
-const diffColor: Record<Difficulty, string> = { Hard: 'bg-red-500/15 text-red-400', Medium: 'bg-yellow-500/15 text-yellow-400', Easy: 'bg-green-500/15 text-green-400' }
-const typeColor: Record<string, string> = { Exam: 'bg-red-500/15 text-red-400', Quiz: 'bg-orange-500/15 text-orange-400', Presentation: 'bg-yellow-500/15 text-yellow-400', Project: 'bg-blue-500/15 text-blue-400', Lab: 'bg-green-500/15 text-green-400', Attendance: 'bg-gray-500/15 text-gray-400' }
-const topicStatusColor: Record<TopicStatus, string> = { 'Not seen': 'text-muted-foreground', Previewed: 'text-pink-400', Seen: 'text-yellow-400', Practiced: 'text-blue-400', Mastered: 'text-green-400' }
-const topicTypeColor: Record<string, string> = { Concept: 'bg-amber-500/15 text-amber-400', Excercise: 'bg-blue-500/15 text-blue-400', Lab: 'bg-green-500/15 text-green-400', Proofs: 'bg-yellow-500/15 text-yellow-400' }
+// Difficulty is a risk STATUS → semantic chip variants / ink.
+const diffVariant: Record<Difficulty, 'danger' | 'warning' | 'success'> = { Hard: 'danger', Medium: 'warning', Easy: 'success' }
+const diffInk: Record<Difficulty, string> = { Hard: 'text-destructive', Medium: 'text-warning', Easy: 'text-success' }
+// Topic progression reads as ink strength; only full mastery earns a semantic color.
+const topicStatusInk: Record<TopicStatus, string> = {
+  'Not seen': 'text-foreground-faint', Previewed: 'text-muted-foreground', Seen: 'text-muted-foreground',
+  Practiced: 'text-foreground', Mastered: 'text-success',
+}
+/** Pass grade ink — Colombian scale, 3.0 is the pass mark. */
+const gradeInk = (g: number) => (g >= 3 ? 'text-success' : 'text-destructive')
+/** Deadline proximity → semantic urgency (danger ≤ 2d, warning ≤ 7d). */
+const deadlineUrgency = (days: number): 'danger' | 'warning' | 'neutral' =>
+  days <= 2 ? 'danger' : days <= 7 ? 'warning' : 'neutral'
+
+// Shared token style for native <select> controls (mirrors the Input primitive;
+// the global :focus-visible rule supplies the focus ring).
+const selectCls =
+  'cursor-pointer rounded-md border border-input bg-input/20 text-foreground transition-colors duration-150 outline-none'
+
+/** Property row in the course detail panel (static — module scope keeps children state stable). */
+function Prop({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-4 py-1.5">
+      <span className="w-28 shrink-0 text-xs text-muted-foreground">{label}</span>
+      <span className="text-xs">{children}</span>
+    </div>
+  )
+}
+
+/** Sort direction glyph for the assignments table header. */
+function SortIcon({ k, sortKey, sortAsc }: { k: SortKey; sortKey: SortKey; sortAsc: boolean }) {
+  return sortKey === k
+    ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
+    : <ArrowUpDown className="h-3 w-3 opacity-30" />
+}
 
 function cmp(a: Assignment, b: Assignment, key: SortKey, asc: boolean): number {
   let v = 0
@@ -210,6 +237,9 @@ function cmp(a: Assignment, b: Assignment, key: SortKey, asc: boolean): number {
 }
 
 // ── Inline Edit Cells ─────────────────────────────────────────────────────────
+// Click-to-edit table cells are a documented compact pattern: a <Button>'s fixed
+// height and centered inline-flex layout doesn't fit dense table cells, so these
+// stay bare elements; the global :focus-visible rule supplies their focus rings.
 
 function EditableGrade({ value, onChange }: { value?: number; onChange: (v?: number) => void }) {
   const [editing, setEditing] = useState(false)
@@ -227,11 +257,11 @@ function EditableGrade({ value, onChange }: { value?: number; onChange: (v?: num
 
   if (!editing) {
     return (
-      <button onClick={() => { setDraft(value?.toFixed(1) ?? ''); setEditing(true) }} className="cursor-pointer w-full text-right">
+      <button onClick={() => { setDraft(value?.toFixed(1) ?? ''); setEditing(true) }} className="w-full cursor-pointer text-right font-mono tabular-nums">
         {value !== undefined ? (
-          <span className={value >= 3 ? 'text-green-400' : 'text-red-400'}>{value.toFixed(1)}</span>
+          <span className={gradeInk(value)}>{value.toFixed(1)}</span>
         ) : (
-          <span className="text-muted-foreground/30">—</span>
+          <span className="text-foreground-faint">—</span>
         )}
       </button>
     )
@@ -245,7 +275,7 @@ function EditableGrade({ value, onChange }: { value?: number; onChange: (v?: num
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
-      className="w-12 bg-transparent border-b border-foreground/30 text-right outline-none text-xs tabular-nums"
+      className="w-12 border-b border-input bg-transparent text-right font-mono text-xs tabular-nums outline-none"
       placeholder="0-5"
     />
   )
@@ -266,7 +296,7 @@ function EditableNumber({ value, suffix, onChange }: { value: number; suffix?: s
 
   if (!editing) {
     return (
-      <button onClick={() => { setDraft(value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)); setEditing(true) }} className="cursor-pointer text-right text-muted-foreground">
+      <button onClick={() => { setDraft(value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)); setEditing(true) }} className="cursor-pointer text-right font-mono tabular-nums text-muted-foreground">
         {value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)}{suffix}
       </button>
     )
@@ -280,7 +310,7 @@ function EditableNumber({ value, suffix, onChange }: { value: number; suffix?: s
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
-      className="w-10 bg-transparent border-b border-foreground/30 text-right outline-none text-xs tabular-nums"
+      className="w-10 border-b border-input bg-transparent text-right font-mono text-xs tabular-nums outline-none"
     />
   )
 }
@@ -311,8 +341,8 @@ function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: As
   }
 
   return (
-    <tr className="border-b border-border/20 bg-foreground/[0.02]">
-      <td className="px-5 py-2"><Plus className="h-3.5 w-3.5 text-muted-foreground" /></td>
+    <tr className="border-b border-border/60 bg-muted/20">
+      <td className="px-4 py-2"><Plus className="h-3.5 w-3.5 text-muted-foreground" /></td>
       <td className="py-2">
         <input
           ref={ref}
@@ -320,25 +350,25 @@ function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: As
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
           placeholder="Assignment name..."
-          className="bg-transparent outline-none text-xs font-medium w-full placeholder:text-muted-foreground/30"
+          className="w-full bg-transparent text-xs font-medium outline-none placeholder:text-foreground-faint"
         />
       </td>
       <td className="py-2">
-        <select value={type} onChange={(e) => setType(e.target.value as AssignmentType)} className="bg-transparent outline-none text-[10px] cursor-pointer">
+        <select value={type} onChange={(e) => setType(e.target.value as AssignmentType)} className={`${selectCls} h-6 px-1.5 font-mono text-2xs`}>
           {ALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </td>
       <td className="py-2 text-right">
-        <input value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="%" className="bg-transparent outline-none text-xs tabular-nums w-10 text-right placeholder:text-muted-foreground/30" />
+        <input value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="%" className="w-10 bg-transparent text-right font-mono text-xs tabular-nums outline-none placeholder:text-foreground-faint" />
       </td>
       <td className="py-2" />
       <td className="py-2 text-right">
-        <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="bg-transparent outline-none text-[10px] tabular-nums cursor-pointer" />
+        <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="cursor-pointer bg-transparent font-mono text-2xs tabular-nums outline-none" />
       </td>
       <td className="py-2 pl-2">
         <div className="flex gap-1">
-          <button onClick={submit} className="cursor-pointer text-green-400 hover:text-green-300"><CheckCircle2 className="h-3.5 w-3.5" /></button>
-          <button onClick={onCancel} className="cursor-pointer text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+          <Button variant="ghost" size="icon-xs" onClick={submit} aria-label="Add assignment" className="text-success hover:text-success"><CheckCircle2 /></Button>
+          <Button variant="ghost" size="icon-xs" onClick={onCancel} aria-label="Cancel"><X /></Button>
         </div>
       </td>
     </tr>
@@ -366,7 +396,7 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
   useEffect(() => { if (addingTopic) newRef.current?.focus() }, [addingTopic])
   useEffect(() => { if (editingName) nameRef.current?.focus() }, [editingName])
 
-  const Icon = iconOf(course.iconKey)
+  const Icon = ICONS[course.iconKey] ?? GraduationCap
   const mine = assignments.filter((a) => a.courseId === course.id)
   const myTopics = topics.filter((t) => t.courseId === course.id)
   const totalWeight = mine.reduce((s, a) => s + a.weight, 0)
@@ -378,13 +408,6 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
   const gradedSum = graded.reduce((s, a) => s + a.grade! * a.weight, 0)
   const maxGrade = totalWeight > 0 ? (gradedSum + 5.0 * ungradedWeight) / totalWeight : 5.0
   const minGrade = totalWeight > 0 ? gradedSum / totalWeight : 0
-
-  const Prop = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className="flex items-center gap-4 py-1.5">
-      <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
-      <span className="text-xs">{children}</span>
-    </div>
-  )
 
   const commitName = () => {
     setEditingName(false)
@@ -421,9 +444,11 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 animate-in fade-in slide-in-from-top-2 duration-300">
-      <div className="flex items-center gap-3 mb-4">
-        <button onClick={cycleIcon} title="Change icon" className="cursor-pointer"><Icon className={`h-5 w-5 ${course.color}`} /></button>
+    <div className="surface rounded-xl p-4 duration-300 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-2">
+      <div className="mb-4 flex items-center gap-3">
+        <Button variant="ghost" size="icon-sm" onClick={cycleIcon} title="Change icon" aria-label="Change icon">
+          <Icon className="size-4 text-accent" />
+        </Button>
         {editingName ? (
           <input
             ref={nameRef}
@@ -431,28 +456,29 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
             onChange={(e) => setDraftName(e.target.value)}
             onBlur={commitName}
             onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setDraftName(course.name); setEditingName(false) } }}
-            className="text-base font-semibold bg-transparent border-b border-foreground/30 outline-none"
+            className="border-b border-input bg-transparent text-base font-semibold outline-none"
           />
         ) : (
-          <button onClick={() => { setDraftName(course.name); setEditingName(true) }} className="cursor-pointer text-base font-semibold hover:text-foreground/80">{course.name}</button>
+          /* Click-to-edit title — documented compact pattern (bare text button). */
+          <button onClick={() => { setDraftName(course.name); setEditingName(true) }} className="cursor-pointer text-base font-semibold transition-colors hover:text-muted-foreground">{course.name}</button>
         )}
-        <Badge className={`text-[9px] px-1.5 py-0 ${diffColor[course.difficulty]}`}>{course.difficulty}</Badge>
-        <button onClick={onAddAssignment} className="cursor-pointer ml-auto flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border border-foreground/30 bg-foreground/[0.04] hover:bg-foreground/[0.08] transition-all">
-          <Plus className="h-3 w-3" /> Assignment
-        </button>
-        <button onClick={onDeleteCourse} className="cursor-pointer text-muted-foreground/40 hover:text-red-400 transition-colors" title="Delete course">
-          <Trash2 className="h-4 w-4" />
-        </button>
+        <Chip variant={diffVariant[course.difficulty]} size="sm">{course.difficulty}</Chip>
+        <Button variant="secondary" size="sm" onClick={onAddAssignment} className="ml-auto">
+          <Plus /> Assignment
+        </Button>
+        <Button variant="ghost" size="icon-sm" onClick={onDeleteCourse} title="Delete course" aria-label="Delete course" className="hover:text-destructive">
+          <Trash2 />
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         {/* Properties */}
-        <div className="flex flex-col sm:border-r sm:border-border/30 sm:pr-6">
+        <div className="flex flex-col sm:border-r sm:border-border/60 sm:pr-6">
           <Prop label="Semester">
             <select
               value={course.semester}
               onChange={(e) => onUpdateCourse({ semester: e.target.value })}
-              className="cursor-pointer bg-secondary/50 rounded px-1.5 py-0.5 text-[10px] outline-none"
+              className={`${selectCls} h-6 px-1.5 font-mono text-2xs`}
             >
               {semesters.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -462,7 +488,7 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
             <select
               value={course.status}
               onChange={(e) => onUpdateCourse({ status: e.target.value as CourseStatus })}
-              className="cursor-pointer bg-secondary/50 rounded px-1.5 py-0.5 text-[10px] outline-none"
+              className={`${selectCls} h-6 px-1.5 font-mono text-2xs`}
             >
               {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -471,25 +497,25 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
             <select
               value={course.difficulty}
               onChange={(e) => onUpdateCourse({ difficulty: e.target.value as Difficulty })}
-              className={`cursor-pointer rounded px-1.5 py-0.5 text-[10px] outline-none ${diffColor[course.difficulty]}`}
+              className={`${selectCls} h-6 px-1.5 font-mono text-2xs ${diffInk[course.difficulty]}`}
             >
               {ALL_DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </Prop>
           <Prop label="Current Grade">
             {currentGrade !== undefined ? (
-              <span className={`tabular-nums font-bold text-sm ${currentGrade >= 3 ? 'text-green-400' : 'text-red-400'}`}>{currentGrade.toFixed(2)}/5.0</span>
+              <span className={`font-mono text-sm font-medium tabular-nums ${gradeInk(currentGrade)}`}>{currentGrade.toFixed(2)}/5.0</span>
             ) : (
               <span className="text-muted-foreground">No grades yet</span>
             )}
           </Prop>
-          <Prop label="Best Possible"><span className="tabular-nums font-medium text-green-400">{maxGrade.toFixed(2)}/5.0</span></Prop>
-          <Prop label="Worst Possible"><span className={`tabular-nums font-medium ${minGrade >= 3 ? 'text-green-400' : 'text-red-400'}`}>{minGrade.toFixed(2)}/5.0</span></Prop>
+          <Prop label="Best Possible"><span className="font-mono font-medium tabular-nums text-success">{maxGrade.toFixed(2)}/5.0</span></Prop>
+          <Prop label="Worst Possible"><span className={`font-mono font-medium tabular-nums ${gradeInk(minGrade)}`}>{minGrade.toFixed(2)}/5.0</span></Prop>
           <Prop label="Graded">
             <div className="flex items-center gap-2">
-              <span className="tabular-nums">{gradedPct.toFixed(0)}%</span>
-              <div className="w-24 h-1.5 rounded-full bg-secondary overflow-hidden">
-                <div className="h-full rounded-full bg-green-500/60 transition-all" style={{ width: `${gradedPct}%` }} />
+              <span className="font-mono tabular-nums">{gradedPct.toFixed(0)}%</span>
+              <div className="h-1 w-24 overflow-hidden rounded-full bg-muted/60">
+                <div className="h-full rounded-full bg-success transition-all" style={{ width: `${gradedPct}%` }} />
               </div>
             </div>
           </Prop>
@@ -497,27 +523,27 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
 
         {/* Topics */}
         <div>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Topics</h3>
-            <button onClick={() => setAddingTopic(true)} className="cursor-pointer text-[10px] text-muted-foreground hover:text-foreground flex items-center gap-1"><Plus className="h-3 w-3" /> Add</button>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Topics</h3>
+            <Button variant="ghost" size="xs" onClick={() => setAddingTopic(true)}><Plus /> Add</Button>
           </div>
           {myTopics.length === 0 && !addingTopic && (
-            <p className="text-xs text-muted-foreground/50 py-2">No topics yet</p>
+            <p className="py-2 text-xs text-foreground-faint">No topics yet</p>
           )}
           <div className="flex flex-col gap-1.5">
             {myTopics.map((t) => (
-              <div key={t.id} className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-secondary/30 transition-colors group">
-                <button onClick={() => cycleMastery(t.id)} className="cursor-pointer shrink-0">
-                  <div className={`h-3.5 w-3.5 rounded-full border-2 ${t.status === 'Mastered' ? 'bg-green-400 border-green-400' : `border-muted-foreground/30`}`} />
-                </button>
-                <span className="text-xs font-medium flex-1">{t.name}</span>
-                {t.chapter && <span className="text-[10px] text-muted-foreground">{t.chapter}</span>}
+              <div key={t.id} className="group flex items-center gap-2 rounded-md px-3 py-2 transition-colors hover:bg-secondary/30">
+                <Button variant="ghost" size="icon-xs" onClick={() => cycleMastery(t.id)} aria-label={`Cycle mastery — currently ${t.status}`} className="shrink-0">
+                  <div className={`size-3.5 rounded-full border ${t.status === 'Mastered' ? 'border-success bg-success' : 'border-input'}`} />
+                </Button>
+                <span className="flex-1 text-xs font-medium">{t.name}</span>
+                {t.chapter && <span className="font-mono text-2xs text-foreground-faint">{t.chapter}</span>}
                 {t.types.map((tp) => (
-                  <Badge key={tp} className={`text-[8px] px-1 py-0 ${topicTypeColor[tp] ?? 'bg-secondary'}`}>{tp}</Badge>
+                  <Chip key={tp} size="sm">{tp}</Chip>
                 ))}
-                <span className={`text-[10px] ${topicStatusColor[t.status]}`}>{t.status}</span>
-                {t.priority !== 'Medium' && <Badge className={`text-[8px] px-1 py-0 ${t.priority === 'High' ? 'bg-orange-500/15 text-orange-400' : 'bg-gray-500/15 text-gray-400'}`}>{t.priority}</Badge>}
-                <button onClick={() => deleteTopic(t.id)} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"><Trash2 className="h-3 w-3" /></button>
+                <span className={`font-mono text-2xs ${topicStatusInk[t.status]}`}>{t.status}</span>
+                {t.priority !== 'Medium' && <Chip size="sm" variant={t.priority === 'High' ? 'warning' : 'neutral'}>{t.priority}</Chip>}
+                <Button variant="ghost" size="icon-xs" onClick={() => deleteTopic(t.id)} aria-label={`Delete ${t.name}`} className="opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"><Trash2 /></Button>
               </div>
             ))}
             {addingTopic && (
@@ -529,10 +555,10 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
                   onChange={(e) => setNewTopicName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') addTopic(); if (e.key === 'Escape') setAddingTopic(false) }}
                   placeholder="Topic name..."
-                  className="bg-transparent outline-none text-xs flex-1 placeholder:text-muted-foreground/30"
+                  className="flex-1 bg-transparent text-xs outline-none placeholder:text-foreground-faint"
                 />
-                <button onClick={addTopic} className="cursor-pointer text-green-400"><CheckCircle2 className="h-3.5 w-3.5" /></button>
-                <button onClick={() => setAddingTopic(false)} className="cursor-pointer text-muted-foreground"><X className="h-3.5 w-3.5" /></button>
+                <Button variant="ghost" size="icon-xs" onClick={addTopic} aria-label="Add topic" className="text-success hover:text-success"><CheckCircle2 /></Button>
+                <Button variant="ghost" size="icon-xs" onClick={() => setAddingTopic(false)} aria-label="Cancel"><X /></Button>
               </div>
             )}
           </div>
@@ -540,13 +566,13 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
       </div>
 
       {/* Notes */}
-      <div className="mt-5 border-t border-border/30 pt-4">
-        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Notes</h3>
+      <div className="mt-5 border-t border-border/60 pt-4">
+        <h3 className="mb-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Notes</h3>
         <textarea
           value={course.notes ?? ''}
           onChange={(e) => onUpdateCourse({ notes: e.target.value })}
           placeholder="Class notes, formulas, reminders… (autosaves)"
-          className="w-full min-h-[140px] resize-y rounded-lg border border-border bg-background/40 px-3 py-2 text-xs leading-relaxed outline-none focus:border-foreground/30 placeholder:text-muted-foreground/30"
+          className="min-h-[140px] w-full resize-y rounded-md border border-input bg-input/20 px-3 py-2 text-xs leading-relaxed outline-none transition-colors placeholder:text-foreground-faint"
         />
       </div>
     </div>
@@ -629,10 +655,9 @@ export function StudentPage() {
     setNewCourseName('')
     if (!n) return
     const idx = courses.length
-    const [color, bg] = PALETTE[idx % PALETTE.length]
     const iconKey = ICON_CYCLE[idx % ICON_CYCLE.length]
     const id = `course-${Date.now()}`
-    updateCourses((p) => [...p, { id, name: n, difficulty: 'Medium', iconKey, color, bg, semester: activeSemester, status: 'Normal', credits: 3 }])
+    updateCourses((p) => [...p, { id, name: n, difficulty: 'Medium', iconKey, semester: activeSemester, status: 'Normal', credits: 3 }])
     setSelectedCourse(id)
   }
   const deleteCourse = (id: string) => {
@@ -683,9 +708,6 @@ export function StudentPage() {
     setSelectedTypes((prev) => { const next = new Set(prev); if (next.has(t)) { if (next.size > 1) next.delete(t) } else next.add(t); return next })
   }
   const toggleSort = (key: SortKey) => { if (sortKey === key) setSortAsc((p) => !p); else { setSortKey(key); setSortAsc(true) } }
-
-  const SortIcon = ({ k }: { k: SortKey }) =>
-    sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const upcoming = useMemo(
     () => semesterAssignments.filter((a) => a.deadline && a.deadline >= getToday() && !a.done).sort((a, b) => a.deadline!.localeCompare(b.deadline!)),
@@ -747,17 +769,20 @@ export function StudentPage() {
           const active = s === activeSemester
           const empty = !courses.some((c) => c.semester === s)
           return (
-            <div key={s} className={`group flex items-center rounded-lg border transition-all ${
-              active ? 'border-foreground/30 bg-foreground/[0.06]' : 'border-border hover:border-foreground/20'
+            /* Split pill (select + optional delete) — documented compact pattern:
+               two sibling actions can't nest inside one <Button>/<Chip>. */
+            <div key={s} className={`flex items-center rounded-full border transition-colors ${
+              active ? 'border-accent/40 bg-accent/10' : 'border-border hover:border-input'
             }`}>
               <button
                 onClick={() => changeSemester(s)}
-                className={`cursor-pointer text-xs pl-3 pr-2 py-1.5 ${active ? 'text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                aria-pressed={active}
+                className={`cursor-pointer py-1.5 pl-3 pr-2 font-mono text-2xs ${active ? 'text-accent' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {s}
               </button>
               {empty && (
-                <button onClick={() => deleteSemester(s)} title="Delete empty semester" className="cursor-pointer pr-2 text-muted-foreground/40 hover:text-red-400">
+                <button onClick={() => deleteSemester(s)} title="Delete empty semester" aria-label={`Delete ${s}`} className="cursor-pointer pr-2 text-foreground-faint transition-colors hover:text-destructive">
                   <X className="h-3 w-3" />
                 </button>
               )}
@@ -765,7 +790,7 @@ export function StudentPage() {
           )
         })}
         {addingSemester ? (
-          <div className="flex items-center rounded-lg border border-foreground/30 bg-foreground/[0.04] px-2 py-1">
+          <div className="flex items-center rounded-full border border-input px-2.5 py-1.5">
             <input
               ref={semAddRef}
               value={newSemesterName}
@@ -773,52 +798,56 @@ export function StudentPage() {
               onBlur={addSemester}
               onKeyDown={(e) => { if (e.key === 'Enter') addSemester(); if (e.key === 'Escape') { setAddingSemester(false); setNewSemesterName('') } }}
               placeholder="5th Semester..."
-              className="bg-transparent outline-none text-xs w-28 placeholder:text-muted-foreground/30"
+              className="w-28 bg-transparent font-mono text-2xs outline-none placeholder:text-foreground-faint"
             />
           </div>
         ) : (
-          <button onClick={() => setAddingSemester(true)} className="cursor-pointer flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all">
-            <Plus className="h-3 w-3" /> Semester
-          </button>
+          <Button variant="ghost" size="xs" onClick={() => setAddingSemester(true)}>
+            <Plus /> Semester
+          </Button>
         )}
       </div>
 
       {/* PREP */}
-      <div className="rounded-xl border border-orange-500/20 bg-orange-500/[0.03] px-5 py-4">
-        <p className="text-xs font-bold text-orange-400 mb-1">P.R.E.P = Preview &rarr; Record &rarr; Exercise &rarr; Promote</p>
-        <p className="text-[11px] text-muted-foreground leading-relaxed">
-          <span className="text-foreground/70">Preview</span> &mdash; Skim topic, 3 ideas + 2 doubts &nbsp;|&nbsp;
-          <span className="text-foreground/70">Record</span> &mdash; In class: defs, formulas, examples &nbsp;|&nbsp;
-          <span className="text-foreground/70">Exercise</span> &mdash; Same day: 5-10 problems &nbsp;|&nbsp;
-          <span className="text-foreground/70">Promote</span> &mdash; Weekly review + mark mastered
+      <div className="surface rounded-xl px-4 py-3">
+        <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">P.R.E.P = Preview &rarr; Record &rarr; Exercise &rarr; Promote</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <span className="text-foreground">Preview</span> &mdash; Skim topic, 3 ideas + 2 doubts &nbsp;|&nbsp;
+          <span className="text-foreground">Record</span> &mdash; In class: defs, formulas, examples &nbsp;|&nbsp;
+          <span className="text-foreground">Exercise</span> &mdash; Same day: 5-10 problems &nbsp;|&nbsp;
+          <span className="text-foreground">Promote</span> &mdash; Weekly review + mark mastered
         </p>
       </div>
 
       {/* Course Cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {activeCourses.map((c) => {
-          const Icon = iconOf(c.iconKey)
+          const Icon = ICONS[c.iconKey] ?? GraduationCap
           const count = assignments.filter((a) => a.courseId === c.id).length
           const done = assignments.filter((a) => a.courseId === c.id && a.done).length
           const g = gradesByCourse[c.id]
           const sel = selectedCourse === c.id
           return (
+            /* Selectable course card — documented compact pattern (card-shaped
+               toggle; a <Button>'s centered layout doesn't fit). Selection is
+               the ONE accent; course identity stays neutral text. */
             <button
               key={c.id}
               onClick={() => setSelectedCourse(sel ? null : c.id)}
-              className={`cursor-pointer flex flex-col gap-2 rounded-xl border px-4 py-3 text-left transition-all ${
-                sel ? 'border-foreground/30 bg-foreground/[0.05] ring-1 ring-foreground/10' : 'border-border hover:border-foreground/20 hover:bg-foreground/[0.02]'
+              aria-pressed={sel}
+              className={`flex cursor-pointer flex-col gap-2 rounded-xl border px-4 py-3 text-left transition-colors ${
+                sel ? 'border-accent/40 bg-accent/5' : 'border-border hover:border-input hover:bg-muted/30'
               }`}
             >
               <div className="flex items-center gap-2">
-                <Icon className={`h-4 w-4 ${c.color}`} />
-                <Badge className={`text-[9px] px-1.5 py-0 ${diffColor[c.difficulty]}`}>{c.difficulty}</Badge>
+                <Icon className={`h-4 w-4 ${sel ? 'text-accent' : 'text-muted-foreground'}`} />
+                <Chip variant={diffVariant[c.difficulty]} size="sm">{c.difficulty}</Chip>
               </div>
               <p className="text-xs font-medium leading-tight">{c.name}</p>
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground">{done}/{count}</span>
+                <span className="font-mono text-2xs tabular-nums text-muted-foreground">{done}/{count}</span>
                 {g && g.gradedWeight > 0 && (
-                  <span className={`text-[10px] font-bold tabular-nums ${(g.gradeSum / g.gradedWeight) >= 3 ? 'text-green-400' : 'text-red-400'}`}>{(g.gradeSum / g.gradedWeight).toFixed(1)}</span>
+                  <span className={`font-mono text-2xs font-medium tabular-nums ${gradeInk(g.gradeSum / g.gradedWeight)}`}>{(g.gradeSum / g.gradedWeight).toFixed(1)}</span>
                 )}
               </div>
             </button>
@@ -827,7 +856,7 @@ export function StudentPage() {
 
         {/* Add course card */}
         {addingCourse ? (
-          <div className="flex flex-col gap-2 rounded-xl border border-dashed border-foreground/30 bg-foreground/[0.03] px-4 py-3">
+          <div className="flex flex-col gap-2 rounded-xl border border-dashed border-input bg-muted/20 px-4 py-3">
             <Plus className="h-4 w-4 text-muted-foreground" />
             <input
               ref={courseAddRef}
@@ -836,16 +865,16 @@ export function StudentPage() {
               onBlur={addCourse}
               onKeyDown={(e) => { if (e.key === 'Enter') addCourse(); if (e.key === 'Escape') { setAddingCourse(false); setNewCourseName('') } }}
               placeholder="Course name..."
-              className="bg-transparent outline-none text-xs font-medium placeholder:text-muted-foreground/30"
+              className="bg-transparent text-xs font-medium outline-none placeholder:text-foreground-faint"
             />
           </div>
         ) : (
           <button
             onClick={() => setAddingCourse(true)}
-            className="cursor-pointer flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-4 py-3 text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all min-h-[88px]"
+            className="flex min-h-[88px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-4 py-3 text-muted-foreground transition-colors hover:border-accent/40 hover:text-foreground"
           >
             <Plus className="h-4 w-4" />
-            <span className="text-[10px]">Add course</span>
+            <span className="font-mono text-2xs">Add course</span>
           </button>
         )}
       </div>
@@ -868,25 +897,27 @@ export function StudentPage() {
         {/* Upcoming */}
         <WidgetCard title="Upcoming Deadlines" description={`${upcoming.length} remaining`} delay={0.1} className="lg:col-span-2">
           {upcoming.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">All caught up</p>
+            <EmptyState message="All caught up." hint="Deadlines you add will queue here." />
           ) : (
-            <div className="flex flex-col gap-1 max-h-[340px] overflow-y-auto">
+            <div className="flex max-h-[340px] flex-col gap-1 overflow-y-auto">
               {upcoming.map((a) => {
                 const c = courseMap[a.courseId]
                 const days = daysUntil(a.deadline!)
-                const urgent = days <= 7
+                const urgency = deadlineUrgency(days)
                 return (
-                  <div key={a.id} className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${urgent ? 'bg-red-500/[0.05]' : 'hover:bg-secondary/50'}`}>
-                    <button onClick={() => toggleDone(a.id)} className="cursor-pointer shrink-0">
-                      {urgent ? <AlertCircle className="h-3.5 w-3.5 text-red-400" /> : <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{a.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{c?.name}</p>
+                  <div key={a.id} className="flex items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-secondary/50">
+                    <Button variant="ghost" size="icon-xs" onClick={() => toggleDone(a.id)} aria-label={`Mark ${a.name} done`} className="shrink-0">
+                      {urgency === 'neutral'
+                        ? <CalendarDays className="text-muted-foreground" />
+                        : <AlertCircle className={urgency === 'danger' ? 'text-destructive' : 'text-warning'} />}
+                    </Button>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{a.name}</p>
+                      <p className="text-2xs text-muted-foreground">{c?.name}</p>
                     </div>
-                    <Badge className={`text-[9px] shrink-0 ${typeColor[a.type]}`}>{a.type}</Badge>
-                    <span className="text-xs tabular-nums text-muted-foreground shrink-0">{fmtDate(a.deadline!)}</span>
-                    <Badge variant="secondary" className={`text-[10px] tabular-nums shrink-0 ${urgent ? 'text-red-400' : ''}`}>{days}d</Badge>
+                    <Chip size="sm" className="shrink-0">{a.type}</Chip>
+                    <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">{fmtDate(a.deadline!)}</span>
+                    <Chip variant={urgency} size="sm" className="shrink-0">{days}d</Chip>
                   </div>
                 )
               })}
@@ -897,34 +928,33 @@ export function StudentPage() {
         {/* Overview */}
         <WidgetCard title={activeSemester || 'Semester'} description="Semester overview" delay={0.15}>
           {activeIsEmpty ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No courses yet — add one above</p>
+            <EmptyState message="No courses yet." hint="Add one above to start tracking." />
           ) : (
             <div className="flex flex-col gap-3 py-1">
               <div className="flex items-center gap-3">
                 <GraduationCap className="h-5 w-5 text-muted-foreground" />
                 <div>
-                  <p className={`text-2xl font-bold tabular-nums ${overallGPA !== undefined ? (overallGPA >= 3 ? 'text-green-400' : 'text-red-400') : ''}`}>
+                  <p className={`font-mono text-2xl font-medium tabular-nums leading-none ${overallGPA !== undefined ? gradeInk(overallGPA) : 'text-foreground'}`}>
                     {overallGPA !== undefined ? overallGPA.toFixed(2) : '—'}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="mt-1.5 font-mono text-2xs text-muted-foreground">
                     Overall GPA · {activeCourses.reduce((s, c) => s + c.credits, 0)} credits
                     {maxOverallGPA < 5.0 && <span className="ml-1">· max {maxOverallGPA.toFixed(2)}</span>}
                   </p>
                 </div>
               </div>
-              <div className="border-t border-border/50 pt-3 flex flex-col gap-2">
+              <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
                 {activeCourses.map((c) => {
                   const g = gradesByCourse[c.id]
                   const courseGrade = g && g.gradedWeight > 0 ? g.gradeSum / g.gradedWeight : undefined
                   const pct = g && g.totalWeight > 0 ? Math.round((g.gradedWeight / g.totalWeight) * 100) : 0
                   return (
                     <div key={c.id} className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full ${c.bg}`} />
-                      <span className="text-xs flex-1 truncate">{c.name}</span>
-                      <div className="w-12 h-1.5 rounded-full bg-secondary overflow-hidden">
-                        <div className="h-full rounded-full bg-foreground/40 transition-all" style={{ width: `${pct}%` }} />
+                      <span className="min-w-0 flex-1 truncate text-xs">{c.name}</span>
+                      <div className="h-1 w-12 overflow-hidden rounded-full bg-muted/60">
+                        <div className="h-full rounded-full bg-foreground transition-all" style={{ width: `${pct}%` }} />
                       </div>
-                      <span className={`text-[10px] font-bold tabular-nums w-8 text-right ${courseGrade !== undefined ? (courseGrade >= 3 ? 'text-green-400' : 'text-red-400') : 'text-muted-foreground'}`}>
+                      <span className={`w-8 text-right font-mono text-2xs font-medium tabular-nums ${courseGrade !== undefined ? gradeInk(courseGrade) : 'text-muted-foreground'}`}>
                         {courseGrade !== undefined ? courseGrade.toFixed(1) : '—'}
                       </span>
                     </div>
@@ -943,68 +973,65 @@ export function StudentPage() {
         delay={0.2}
       >
         {/* Type filter + Add button */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex items-center justify-between">
           <div className="flex flex-wrap gap-1.5">
             {ALL_TYPES.map((t) => {
               const active = selectedTypes.has(t)
               const count = semesterAssignments.filter((a) => a.type === t && (!selectedCourse || a.courseId === selectedCourse)).length
               if (count === 0) return null
               return (
-                <button
-                  key={t}
-                  onClick={() => toggleType(t)}
-                  className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${
-                    active ? `${typeColor[t]} border-current/20` : 'text-muted-foreground/40 border-border hover:text-muted-foreground'
-                  }`}
-                >
+                <Chip key={t} selectable selected={active} onClick={() => toggleType(t)}>
                   {t} ({count})
-                </button>
+                </Chip>
               )
             })}
           </div>
           {selectedCourse && (
-            <button onClick={() => setAdding(true)} className="cursor-pointer flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-lg hover:bg-secondary">
-              <Plus className="h-3 w-3" /> Add
-            </button>
+            <Button variant="ghost" size="xs" onClick={() => setAdding(true)}>
+              <Plus /> Add
+            </Button>
           )}
         </div>
 
         {!selectedCourse && filtered.length === 0 && (
-          <p className="text-sm text-muted-foreground py-6 text-center">
-            No assignments in {activeSemester || 'this semester'} yet. Select a course above, then hit <span className="text-foreground/70">Add</span>.
-          </p>
+          <EmptyState
+            message={`No assignments in ${activeSemester || 'this semester'} yet.`}
+            hint="Select a course above, then hit Add."
+          />
         )}
 
         {selectedCourse && filtered.length === 0 && !adding && (
-          <div className="py-6 text-center">
-            <p className="text-sm text-muted-foreground mb-2">No assignments for {selected?.name} yet.</p>
-            <button onClick={() => setAdding(true)} className="cursor-pointer inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-foreground/30 bg-foreground/[0.04] hover:bg-foreground/[0.08] transition-all">
-              <Plus className="h-3 w-3" /> Add your first assignment
-            </button>
-          </div>
+          <EmptyState
+            message={`No assignments for ${selected?.name} yet.`}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>
+                <Plus /> Add your first assignment
+              </Button>
+            }
+          />
         )}
 
         {/* Table */}
-        <div className="overflow-x-auto -mx-5">
+        <div className="-mx-4 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="px-5 py-2 w-6"></th>
+              <tr className="border-b border-border/60 text-muted-foreground">
+                <th className="w-6 px-4 py-2"></th>
                 <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('name')} className="cursor-pointer flex items-center gap-1 hover:text-foreground transition-colors">Name <SortIcon k="name" /></button>
+                  <Button variant="ghost" size="xs" onClick={() => toggleSort('name')} className="-ml-2">Name <SortIcon k="name" sortKey={sortKey} sortAsc={sortAsc} /></Button>
                 </th>
                 {!selectedCourse && <th className="py-2 text-left font-medium">Course</th>}
                 <th className="py-2 text-left font-medium">Type</th>
                 <th className="py-2 text-right font-medium">
-                  <button onClick={() => toggleSort('weight')} className="cursor-pointer flex items-center gap-1 ml-auto hover:text-foreground transition-colors">Weight <SortIcon k="weight" /></button>
+                  <Button variant="ghost" size="xs" onClick={() => toggleSort('weight')}>Weight <SortIcon k="weight" sortKey={sortKey} sortAsc={sortAsc} /></Button>
                 </th>
                 <th className="py-2 text-right font-medium">
-                  <button onClick={() => toggleSort('grade')} className="cursor-pointer flex items-center gap-1 ml-auto hover:text-foreground transition-colors">Grade <SortIcon k="grade" /></button>
+                  <Button variant="ghost" size="xs" onClick={() => toggleSort('grade')}>Grade <SortIcon k="grade" sortKey={sortKey} sortAsc={sortAsc} /></Button>
                 </th>
                 <th className="py-2 text-right font-medium">
-                  <button onClick={() => toggleSort('deadline')} className="cursor-pointer flex items-center gap-1 ml-auto hover:text-foreground transition-colors">Deadline <SortIcon k="deadline" /></button>
+                  <Button variant="ghost" size="xs" onClick={() => toggleSort('deadline')}>Deadline <SortIcon k="deadline" sortKey={sortKey} sortAsc={sortAsc} /></Button>
                 </th>
-                <th className="py-2 w-6"></th>
+                <th className="w-6 py-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -1012,56 +1039,54 @@ export function StudentPage() {
                 const c = courseMap[a.courseId]
                 const isPast = a.deadline && a.deadline < getToday() && !a.done
                 return (
-                  <tr key={a.id} className={`border-b border-border/20 transition-colors hover:bg-secondary/30 group ${isPast ? 'opacity-40' : ''} ${a.done ? 'opacity-60' : ''}`}>
-                    <td className="px-5 py-2.5">
-                      <button onClick={() => toggleDone(a.id)} className="cursor-pointer">
+                  <tr key={a.id} className={`group border-b border-border/60 transition-colors hover:bg-secondary/30 ${isPast ? 'opacity-40' : ''} ${a.done ? 'opacity-60' : ''}`}>
+                    <td className="px-4 py-2.5">
+                      {/* Done toggle — documented compact pattern (13px control in a dense row). */}
+                      <button onClick={() => toggleDone(a.id)} aria-label={a.done ? `Mark ${a.name} not done` : `Mark ${a.name} done`} className="cursor-pointer">
                         {a.done
-                          ? <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
-                          : <div className="h-3.5 w-3.5 rounded-full border border-muted-foreground/30 hover:border-foreground/50 transition-colors" />
+                          ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                          : <div className="h-3.5 w-3.5 rounded-full border border-input transition-colors hover:border-muted-foreground" />
                         }
                       </button>
                     </td>
                     <td className="py-2.5">
                       <span className={`font-medium ${a.done ? 'line-through' : ''}`}>{a.name}</span>
-                      {a.notes && <span className="ml-2 text-[10px] text-muted-foreground">({a.notes})</span>}
+                      {a.notes && <span className="ml-2 text-2xs text-foreground-faint">({a.notes})</span>}
                     </td>
                     {!selectedCourse && (
                       <td className="py-2.5">
-                        <div className="flex items-center gap-1.5">
-                          <div className={`h-2 w-2 rounded-full ${c?.bg}`} />
-                          <span className="text-muted-foreground">{c?.name}</span>
-                        </div>
+                        <span className="text-muted-foreground">{c?.name}</span>
                       </td>
                     )}
                     <td className="py-2.5">
                       <select
                         value={a.type}
                         onChange={(e) => setField(a.id, { type: e.target.value as AssignmentType })}
-                        className={`cursor-pointer bg-transparent outline-none text-[9px] px-1.5 py-0.5 rounded-full border-0 appearance-none ${typeColor[a.type]}`}
+                        className="cursor-pointer appearance-none rounded-full border border-border bg-transparent px-1.5 py-0.5 font-mono text-3xs text-muted-foreground outline-none transition-colors hover:border-input hover:text-foreground"
                       >
                         {ALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                       </select>
                     </td>
-                    <td className="py-2.5 text-right tabular-nums text-muted-foreground">
+                    <td className="py-2.5 text-right">
                       <EditableNumber
                         value={a.weight * 100}
                         suffix="%"
                         onChange={(v) => setField(a.id, { weight: (v ?? 0) / 100 })}
                       />
                     </td>
-                    <td className="py-2.5 text-right tabular-nums"><EditableGrade value={a.grade} onChange={(v) => setGrade(a.id, v)} /></td>
-                    <td className="py-2.5 text-right tabular-nums text-muted-foreground">
+                    <td className="py-2.5 text-right"><EditableGrade value={a.grade} onChange={(v) => setGrade(a.id, v)} /></td>
+                    <td className="py-2.5 text-right">
                       <input
                         type="date"
                         value={a.deadline ?? ''}
                         onChange={(e) => setField(a.id, { deadline: e.target.value || undefined })}
-                        className="cursor-pointer bg-transparent outline-none text-[10px] tabular-nums text-muted-foreground w-[100px] text-right"
+                        className="w-[100px] cursor-pointer bg-transparent text-right font-mono text-2xs tabular-nums text-muted-foreground outline-none"
                       />
                     </td>
                     <td className="py-2.5 pr-4">
-                      <button onClick={() => deleteAssignment(a.id)} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      <Button variant="ghost" size="icon-xs" onClick={() => deleteAssignment(a.id)} aria-label={`Delete ${a.name}`} className="opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100">
+                        <Trash2 />
+                      </Button>
                     </td>
                   </tr>
                 )

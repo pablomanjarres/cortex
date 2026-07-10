@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { StatTile } from '@/components/shared/StatTile'
+import { Skeleton } from '@/components/shared/Skeleton'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Cpu, MemoryStick, HardDrive, Activity, Server, AlertCircle, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { HostHistory } from './HostHistory'
 
@@ -55,58 +58,42 @@ function fmtRate(bytesPerSec: number): string {
   return `${fmtBytes(bytesPerSec, 1)}/s`
 }
 
-function pctColor(pct: number): string {
-  if (pct >= 90) return 'text-red-400'
-  if (pct >= 75) return 'text-yellow-400'
-  if (pct >= 50) return 'text-amber-300'
-  return 'text-emerald-400'
+/** Gauge text tone — semantic thresholds only (warning >70%, destructive >90%). */
+function pctTone(pct: number): string {
+  if (pct > 90) return 'text-destructive'
+  if (pct > 70) return 'text-warning'
+  return ''
 }
 
-function pctBar(pct: number): string {
-  if (pct >= 90) return 'bg-red-500/70'
-  if (pct >= 75) return 'bg-yellow-500/70'
-  if (pct >= 50) return 'bg-amber-500/70'
-  return 'bg-emerald-500/70'
+/** Sparkline stroke tone — accent at rest, semantic past thresholds. */
+function sparkTone(pct: number): string {
+  return pctTone(pct) || 'text-accent'
+}
+
+/** Gauge fill — accent at rest, semantic past thresholds (meter convention). */
+function barTone(pct: number): string {
+  if (pct > 90) return 'bg-destructive'
+  if (pct > 70) return 'bg-warning'
+  return 'bg-accent'
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────
-
-function StatTile({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  pct,
-}: {
-  icon: typeof Cpu
-  label: string
-  value: string
-  sub?: string
-  pct?: number
-}) {
-  const color = pct !== undefined ? pctColor(pct) : 'text-foreground'
-  return (
-    <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
-        <Icon className="h-3 w-3" />
-        {label}
-      </div>
-      <div className={`text-xl font-semibold tabular-nums ${color}`}>{value}</div>
-      {sub && <div className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</div>}
-    </div>
-  )
-}
 
 function Bar({ pct, label, right }: { pct: number; label: string; right?: string }) {
   const clamped = Math.max(0, Math.min(100, pct))
   return (
     <div>
-      <div className="flex items-center justify-between mb-1 text-[11px]">
+      <div className="mb-1 flex items-center justify-between text-2xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className={`tabular-nums ${pctColor(clamped)}`}>{right ?? `${clamped.toFixed(1)}%`}</span>
+        <span className={`font-mono tabular-nums ${pctTone(clamped) || 'text-muted-foreground'}`}>
+          {right ?? `${clamped.toFixed(1)}%`}
+        </span>
       </div>
-      <div className="h-1.5 w-full rounded-full bg-secondary/40 overflow-hidden">
-        <div className={`h-full transition-all duration-700 ${pctBar(clamped)}`} style={{ width: `${clamped}%` }} />
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary/40">
+        <div
+          className={`h-full motion-safe:transition-all motion-safe:duration-700 ${barTone(clamped)}`}
+          style={{ width: `${clamped}%` }}
+        />
       </div>
     </div>
   )
@@ -176,9 +163,15 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   if (!data && !error) {
     return (
       <WidgetCard title={host.label} description="Connecting…" delay={delay}>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-2 w-2 rounded-full bg-yellow-400/70 animate-pulse" />
-          Awaiting first sample
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+          </div>
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-2/3" />
         </div>
       </WidgetCard>
     )
@@ -188,13 +181,8 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   if (!data && error) {
     return (
       <WidgetCard title={host.label} description="Offline" variant="urgent" delay={delay}>
-        <div className="flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-foreground">{error}</p>
-            <p className="text-[11px] text-muted-foreground/70 mt-1">{host.noteIfDown}</p>
-          </div>
-        </div>
+        <p className="text-xs text-destructive">{error}</p>
+        <p className="mt-1 text-2xs text-foreground-faint">{host.noteIfDown}</p>
       </WidgetCard>
     )
   }
@@ -210,6 +198,7 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   const swap = data.memswap
   const load1 = data.load?.min1 ?? 0
   const cores = data.load?.cpucore ?? data.core?.log ?? 1
+  const loadPct = Math.min(100, (load1 / Math.max(1, cores)) * 100)
 
   const fsList = (data.fs || [])
     .filter((f) => f.size > 1024 * 1024 * 1024) // >1GB
@@ -247,37 +236,40 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
     >
       <div className="flex flex-col gap-4">
         {/* Live indicator + uptime */}
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <div className="flex items-center justify-between text-2xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className={`h-1.5 w-1.5 rounded-full ${stale ? 'bg-yellow-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
+            <div className={`h-1.5 w-1.5 rounded-full motion-safe:animate-pulse ${stale ? 'bg-warning' : 'bg-success'}`} />
             <span>{stale ? 'Reconnecting…' : 'Live'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Clock className="h-3 w-3" />
-            <span className="tabular-nums">{data.uptime}</span>
+            <span className="font-mono tabular-nums">{data.uptime}</span>
           </div>
         </div>
 
         {/* Stat tiles */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <StatTile icon={Cpu} label="CPU" value={`${cpuPct.toFixed(1)}%`} sub={`${cores} cores`} pct={cpuPct} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile
-            icon={MemoryStick}
+            label="CPU"
+            icon={<Cpu />}
+            value={<span className={pctTone(cpuPct)}>{`${cpuPct.toFixed(1)}%`}</span>}
+            sub={`${cores} cores`}
+          />
+          <StatTile
             label="RAM"
-            value={`${memPct.toFixed(1)}%`}
+            icon={<MemoryStick />}
+            value={<span className={pctTone(memPct)}>{`${memPct.toFixed(1)}%`}</span>}
             sub={`${fmtBytes(memUsed, 1)} / ${fmtBytes(memTotal, 1)}`}
-            pct={memPct}
           />
           <StatTile
-            icon={Activity}
             label="Load 1m"
-            value={load1.toFixed(2)}
+            icon={<Activity />}
+            value={<span className={pctTone(loadPct)}>{load1.toFixed(2)}</span>}
             sub={`${(load1 / Math.max(1, cores) * 100).toFixed(0)}% of ${cores}c`}
-            pct={Math.min(100, (load1 / Math.max(1, cores)) * 100)}
           />
           <StatTile
-            icon={Server}
             label="Procs"
+            icon={<Server />}
             value={`${data.processcount?.total ?? 0}`}
             sub={`${data.processcount?.running ?? 0} running`}
           />
@@ -285,12 +277,12 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
 
         {/* CPU + RAM sparklines */}
         <div className="grid grid-cols-2 gap-3">
-          <div className={pctColor(cpuPct)}>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">CPU history (60s)</div>
+          <div className={sparkTone(cpuPct)}>
+            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">CPU history (60s)</div>
             <Sparkline values={cpuHistory.current} max={100} />
           </div>
-          <div className={pctColor(memPct)}>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">RAM history (60s)</div>
+          <div className={sparkTone(memPct)}>
+            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">RAM history (60s)</div>
             <Sparkline values={memHistory.current} max={100} />
           </div>
         </div>
@@ -306,7 +298,7 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         {/* Disk */}
         {fsList.length > 0 && (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+            <div className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
               <HardDrive className="h-3 w-3" />
               Disk
             </div>
@@ -324,13 +316,13 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         {/* Network */}
         {nets.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Network</div>
+            <div className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Network</div>
             {nets.map((n) => (
-              <div key={n.interface_name} className="flex items-center justify-between text-[11px] tabular-nums">
-                <span className="text-muted-foreground">{n.interface_name}</span>
-                <div className="flex gap-3">
-                  <span className="text-blue-300">↓ {fmtRate(n.bytes_recv_rate_per_sec ?? 0)}</span>
-                  <span className="text-pink-300">↑ {fmtRate(n.bytes_sent_rate_per_sec ?? 0)}</span>
+              <div key={n.interface_name} className="flex items-center justify-between text-2xs">
+                <span className="font-mono text-muted-foreground">{n.interface_name}</span>
+                <div className="flex gap-3 font-mono tabular-nums">
+                  <span className="text-muted-foreground">↓ {fmtRate(n.bytes_recv_rate_per_sec ?? 0)}</span>
+                  <span className="text-foreground-faint">↑ {fmtRate(n.bytes_sent_rate_per_sec ?? 0)}</span>
                 </div>
               </div>
             ))}
@@ -340,17 +332,17 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         {/* Top processes */}
         {topProcs.length > 0 && (
           <div className="flex flex-col gap-1">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">Top processes</div>
-            <div className="flex flex-col gap-0.5 text-[11px]">
-              <div className="flex items-center gap-2 text-muted-foreground/50 px-1">
+            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Top processes</div>
+            <div className="flex flex-col gap-0.5 font-mono text-2xs">
+              <div className="flex items-center gap-2 px-1 text-3xs uppercase tracking-wider text-foreground-faint">
                 <span className="flex-1">name</span>
                 <span className="w-12 text-right">cpu</span>
                 <span className="w-12 text-right">mem</span>
               </div>
               {topProcs.map((p) => (
-                <div key={p.pid} className="flex items-center gap-2 px-1 py-0.5 rounded hover:bg-secondary/20">
-                  <span className="flex-1 truncate" title={`${p.name} (pid ${p.pid}, ${p.username})`}>{p.name}</span>
-                  <span className={`w-12 text-right tabular-nums ${pctColor(p.cpu_percent)}`}>{p.cpu_percent.toFixed(1)}%</span>
+                <div key={p.pid} className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-secondary/20">
+                  <span className="flex-1 truncate text-muted-foreground" title={`${p.name} (pid ${p.pid}, ${p.username})`}>{p.name}</span>
+                  <span className={`w-12 text-right tabular-nums ${pctTone(p.cpu_percent) || 'text-foreground'}`}>{p.cpu_percent.toFixed(1)}%</span>
                   <span className="w-12 text-right tabular-nums text-muted-foreground">{p.memory_percent.toFixed(1)}%</span>
                 </div>
               ))}
@@ -359,13 +351,10 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         )}
 
         {/* History expander */}
-        <button
-          onClick={() => setShowHistory((v) => !v)}
-          className="flex items-center justify-center gap-1.5 mt-1 -mx-1 px-3 py-1.5 rounded-md border border-border bg-secondary/15 hover:bg-secondary/30 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {showHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        <Button variant="secondary" size="sm" className="mt-1 w-full" onClick={() => setShowHistory((v) => !v)}>
+          {showHistory ? <ChevronUp /> : <ChevronDown />}
           {showHistory ? 'Hide history' : 'Show history & averages'}
-        </button>
+        </Button>
         {showHistory && <HostHistory host={host.key} />}
       </div>
     </WidgetCard>
@@ -377,13 +366,6 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
 export function SystemPage() {
   return (
     <PageShell>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">System</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Host metrics & automations</p>
-        </div>
-      </div>
-
       <Tabs defaultValue="live">
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="live">Live</TabsTrigger>
@@ -392,11 +374,11 @@ export function SystemPage() {
 
         <TabsContent value="live">
           <div className="flex flex-col gap-4">
-            <p className="text-xs text-muted-foreground">
+            <p className="font-mono text-2xs text-foreground-faint">
               Live host metrics · polled every 2s · history sampled every 5s · powered by Glances
             </p>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               {HOSTS.map((host, i) => (
                 <HostCard key={host.key} host={host} delay={i * 0.05} />
               ))}

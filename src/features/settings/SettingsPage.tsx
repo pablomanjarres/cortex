@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Skeleton } from '@/components/shared/Skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Check, Trash2, Eye, EyeOff, Key, Download, Upload, FolderOpen, HardDrive } from 'lucide-react'
+import { Chip } from '@/components/ui/chip'
+import { Check, Trash2, Eye, EyeOff, Download, Upload, FolderOpen, HardDrive } from 'lucide-react'
 
 interface KeyField {
   service: string
@@ -58,25 +61,36 @@ function KeyRow({ field }: { field: KeyField }) {
     if (key) { setValue(key); setShowValue(true) }
   }
 
-  if (loading) return null
+  if (loading) {
+    return (
+      <div className="rounded-md bg-secondary/30 px-4 py-3">
+        <Skeleton className="h-4 w-36" />
+        <Skeleton className="mt-2 h-3 w-56" />
+      </div>
+    )
+  }
 
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-secondary/30 px-4 py-3">
-      <div className="flex-1 min-w-0">
+    <div className="flex items-center gap-3 rounded-md bg-secondary/30 px-4 py-3">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium">{field.label}</p>
-          {saved && <span className="flex items-center gap-1 text-[10px] text-green-400 font-medium"><Check className="h-3 w-3" /> Saved</span>}
+          {saved && (
+            <Chip variant="success" size="sm">
+              <Check /> Saved
+            </Chip>
+          )}
         </div>
-        <p className="text-[11px] text-muted-foreground mt-0.5">{field.description}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{field.description}</p>
         {(!saved || showValue) && (
-          <div className="flex gap-2 mt-2">
+          <div className="mt-2 flex gap-2">
             <Input
               type={showValue ? 'text' : 'password'}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && save()}
               placeholder={field.placeholder}
-              className="h-8 bg-input text-sm font-mono flex-1"
+              className="h-8 flex-1 font-mono text-sm"
             />
             {!saved && (
               <Button size="sm" onClick={save} disabled={!value.trim()} className="h-8">
@@ -87,13 +101,13 @@ function KeyRow({ field }: { field: KeyField }) {
         )}
       </div>
       {saved && (
-        <div className="flex gap-1 shrink-0">
-          <button onClick={reveal} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-            {showValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-          </button>
-          <button onClick={remove} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-red-400 hover:bg-secondary transition-colors">
-            <Trash2 className="h-4 w-4" />
-          </button>
+        <div className="flex shrink-0 gap-1">
+          <Button variant="ghost" size="icon-sm" onClick={reveal} aria-label={showValue ? `Hide ${field.label}` : `Reveal ${field.label}`}>
+            {showValue ? <EyeOff /> : <Eye />}
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={remove} className="hover:text-destructive" aria-label={`Delete ${field.label}`}>
+            <Trash2 />
+          </Button>
         </div>
       )}
     </div>
@@ -163,7 +177,7 @@ export function SettingsPage() {
 
   return (
     <PageShell>
-      <WidgetCard title="API KEYS" description="Stored securely in macOS Keychain" delay={0}>
+      <WidgetCard title="API keys" description="Stored securely in macOS Keychain" delay={0}>
         {isElectron ? (
           <div className="flex flex-col gap-2">
             {keyFields.map((field) => (
@@ -171,31 +185,31 @@ export function SettingsPage() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <Key className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">API keys can only be configured in the desktop app</p>
-          </div>
+          <EmptyState
+            message="API keys live in the desktop app."
+            hint="Open Cortex on the Mac mini to configure them."
+          />
         )}
       </WidgetCard>
 
-      <WidgetCard title="DATA" description="Your data lives as JSON files — portable, human-readable, backed up" delay={0.1}>
+      <WidgetCard title="Data" description="Your data lives as JSON files — portable, human-readable, backed up" delay={0.1}>
         {hasData ? (
           <div className="flex flex-col gap-4">
             {/* Storage info */}
-            <div className="flex items-center gap-3 rounded-lg bg-secondary/30 px-4 py-3">
-              <FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium">Storage Location</p>
-                <p className="text-[11px] text-muted-foreground font-mono truncate">{dataPath}</p>
+            <div className="flex items-center gap-3 rounded-md bg-secondary/30 px-4 py-3">
+              <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium">Storage location</p>
+                <p className="truncate font-mono text-2xs text-muted-foreground">{dataPath}</p>
               </div>
             </div>
 
             {/* Data stores list with sizes */}
-            <div className="rounded-lg bg-secondary/30 px-4 py-3">
-              <div className="flex items-center gap-3 mb-2">
-                <HardDrive className="h-4 w-4 text-muted-foreground shrink-0" />
-                <p className="text-xs font-medium">{dataKeys.length} Data Stores</p>
-                <span className="text-[10px] text-muted-foreground ml-auto tabular-nums">
+            <div className="rounded-md bg-secondary/30 px-4 py-3">
+              <div className="mb-2 flex items-center gap-3">
+                <HardDrive className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <p className="text-xs font-medium">{dataKeys.length} data stores</p>
+                <span className="ml-auto font-mono text-2xs tabular-nums text-muted-foreground">
                   {fmtSize(dataStats.reduce((s, f) => s + f.size, 0))} total
                 </span>
               </div>
@@ -205,8 +219,8 @@ export function SettingsPage() {
                   .sort((a, b) => b.size - a.size)
                   .map((f) => (
                     <div key={f.key} className="flex items-center justify-between px-1 py-0.5">
-                      <span className="text-[11px] text-muted-foreground truncate mr-2">{f.key}</span>
-                      <span className={`text-[10px] tabular-nums shrink-0 ${f.size > 1024 * 1024 ? 'text-red-400 font-medium' : 'text-muted-foreground/60'}`}>
+                      <span className="mr-2 truncate font-mono text-2xs text-muted-foreground">{f.key}</span>
+                      <span className={`shrink-0 font-mono text-2xs tabular-nums ${f.size > 1024 * 1024 ? 'font-medium text-warning' : 'text-foreground-faint'}`}>
                         {fmtSize(f.size)}
                       </span>
                     </div>
@@ -217,31 +231,29 @@ export function SettingsPage() {
             {/* Export / Import buttons */}
             <div className="flex gap-3">
               <Button variant="secondary" size="sm" onClick={handleExport} className="flex-1">
-                <Download className="mr-2 h-3.5 w-3.5" />
-                Export All Data
+                <Download /> Export all data
               </Button>
               <Button variant="secondary" size="sm" onClick={handleImport} className="flex-1">
-                <Upload className="mr-2 h-3.5 w-3.5" />
-                Import Backup
+                <Upload /> Import backup
               </Button>
             </div>
 
             {(exportStatus || importStatus) && (
-              <p className={`text-[11px] ${(exportStatus || importStatus).includes('fail') ? 'text-red-400' : 'text-green-400'}`}>
+              <p className={`font-mono text-2xs ${(exportStatus || importStatus).includes('fail') ? 'text-destructive' : 'text-success'}`}>
                 {exportStatus || importStatus}
               </p>
             )}
 
-            <p className="text-[10px] text-muted-foreground leading-relaxed">
+            <p className="text-2xs leading-relaxed text-foreground-faint">
               All your data is stored as plain JSON files in the project folder. Your hourly backup covers them automatically.
               Export creates a single portable file you can open in any text editor. Import restores from a previous export (backs up current data first).
             </p>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-3 py-8">
-            <HardDrive className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Data management available in the desktop app</p>
-          </div>
+          <EmptyState
+            message="Data management lives in the desktop app."
+            hint="Open Cortex on the Mac mini to export or import."
+          />
         )}
       </WidgetCard>
     </PageShell>

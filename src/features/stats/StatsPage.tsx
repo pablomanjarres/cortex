@@ -1,6 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { StatTile } from '@/components/shared/StatTile'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
+import { Progress } from '@/components/ui/progress'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ThemedTooltip, axisProps, chartColors, cssVar } from '@/lib/chart-theme'
+import { cn } from '@/lib/utils'
 import { useStore, readStore } from '@/lib/store'
 import { localDate, getISOWeek, getWeekLabel, formatMinutes } from '@/lib/date-utils'
 import { useToday } from '@/lib/use-today'
@@ -90,10 +98,6 @@ interface WeeklyAudit {
 
 // --- Helpers ----------------------------------------------
 
-const TOOLTIP_STYLE = {
-  contentStyle: { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 },
-}
-
 function getWeekDates(isoDate: string): string[] {
   const d = new Date(isoDate + 'T00:00:00')
   const day = d.getDay()
@@ -114,7 +118,7 @@ function formatDate(iso: string): string {
 
 const weekDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-const GYM_COLORS: Record<string, string> = { PUSH: '#60a5fa', PULL: '#34d399', LEGS: '#fbbf24', SWIM: '#22d3ee' }
+const GYM_TYPES = ['PUSH', 'PULL', 'LEGS', 'SWIM'] as const
 
 function getNutritionTotals(n: DailyNutrition) {
   let protein = 0, calories = 0
@@ -141,6 +145,16 @@ function firstWorkout(raw: unknown): WorkoutSession | null {
 export function StatsPage() {
   const [view, setView] = useState<'day' | 'week'>('day')
   const [selectedDate, setSelectedDate] = useState(localDate())
+
+  // Chart palette from the live tokens (never inline hex) — workout types map
+  // onto the standard 5-color chart family.
+  const chartPalette = chartColors()
+  const gymColors: Record<string, string> = {
+    PUSH: chartPalette[0],
+    PULL: chartPalette[1],
+    LEGS: chartPalette[2],
+    SWIM: chartPalette[3],
+  }
 
   // Reactive "today" — rolls over at midnight so all the today-keyed stores
   // below re-key to the new day while the app stays open.
@@ -270,40 +284,28 @@ export function StatsPage() {
     <PageShell>
       {/* Header with view toggle and date navigation */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setView('day')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              view === 'day' ? 'bg-foreground text-background' : 'bg-secondary text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Day
-          </button>
-          <button
-            onClick={() => setView('week')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              view === 'week' ? 'bg-foreground text-background' : 'bg-secondary text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            Week
-          </button>
-        </div>
+        <Tabs value={view} onValueChange={(v) => setView(v as 'day' | 'week')}>
+          <TabsList>
+            <TabsTrigger value="day">Day</TabsTrigger>
+            <TabsTrigger value="week">Week</TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         <div className="flex items-center gap-2">
-          <button onClick={() => navigate(-1)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground transition-colors">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button onClick={goToToday} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-secondary text-muted-foreground hover:text-foreground transition-colors">
+          <Button variant="secondary" size="icon-sm" onClick={() => navigate(-1)} aria-label={view === 'day' ? 'Previous day' : 'Previous week'}>
+            <ChevronLeft />
+          </Button>
+          <Button variant="secondary" size="sm" onClick={goToToday}>
             Today
-          </button>
-          <button onClick={() => navigate(1)} className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-muted-foreground hover:text-foreground transition-colors">
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
+          <Button variant="secondary" size="icon-sm" onClick={() => navigate(1)} aria-label={view === 'day' ? 'Next day' : 'Next week'}>
+            <ChevronRight />
+          </Button>
         </div>
       </div>
 
       {/* Date label */}
-      <p className="text-sm font-medium text-muted-foreground">
+      <p className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
         {view === 'day'
           ? formatDate(selectedDate)
           : `Week of ${getWeekLabel(weekDates[0])}`}
@@ -314,62 +316,44 @@ export function StatsPage() {
         <>
           {/* Summary stats */}
           <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Sessions', value: daySessions.length.toString(), icon: Clock },
-              { label: 'Deep work', value: formatMinutes(daySessions.reduce((s, x) => s + x.duration, 0)), icon: Zap },
-              { label: 'Habits', value: `${mergedHabitsCount}/${habits.length}`, icon: Target },
-            ].map((stat) => (
-              <div key={stat.label} className="liquid-glass flex flex-col gap-1 rounded-xl px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <stat.icon className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-[10px] text-muted-foreground">{stat.label}</span>
-                </div>
-                <p className="text-xl font-bold tabular-nums">{stat.value}</p>
-              </div>
-            ))}
+            <StatTile variant="glass" label="Sessions" value={daySessions.length} icon={<Clock />} />
+            <StatTile variant="glass" label="Deep work" value={formatMinutes(daySessions.reduce((s, x) => s + x.duration, 0))} icon={<Zap />} />
+            <StatTile variant="glass" label="Habits" value={`${mergedHabitsCount}/${habits.length}`} icon={<Target />} />
           </div>
 
           {/* Sprint sessions */}
-          <WidgetCard title="SPRINT SESSIONS" description={`${daySessions.length} sessions`} delay={0.05}>
+          <WidgetCard title="Sprint sessions" description={`${daySessions.length} sessions`} delay={0.05}>
             {daySessions.length > 0 ? (
-              <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+              <div className="flex max-h-48 flex-col gap-1.5 overflow-y-auto">
                 {daySessions.map((s) => (
-                  <div key={s.id} className="flex items-center gap-2.5 rounded-lg bg-secondary/30 px-3 py-2">
-                    <span className="text-[10px] font-mono tabular-nums text-muted-foreground shrink-0">
+                  <div key={s.id} className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2">
+                    <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
                       {new Date(s.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
-                    <span className="text-xs truncate flex-1">{s.task}</span>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{s.duration}m</span>
+                    <span className="flex-1 truncate text-xs">{s.task}</span>
+                    <span className="shrink-0 font-mono text-2xs tabular-nums text-foreground-faint">{s.duration}m</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground/50 py-4 text-center">No sprint sessions</p>
+              <EmptyState className="py-4" message="No sprints this day." />
             )}
           </WidgetCard>
 
           {/* Habits for the day */}
-          <WidgetCard title="HABITS" description={`${mergedHabitsCount}/${habits.length}`} delay={0.15} compact>
+          <WidgetCard title="Habits" description={`${mergedHabitsCount}/${habits.length}`} delay={0.15} compact>
             <div className="flex flex-wrap gap-2">
               {habits.map((h) => (
-                <div
-                  key={h.id}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs ${
-                    isHabitDone(h.id)
-                      ? 'bg-foreground/10 text-foreground'
-                      : 'bg-secondary/50 text-muted-foreground/40'
-                  }`}
-                >
-                  <span>{h.emoji}</span>
-                  <span>{h.name}</span>
-                </div>
+                <Chip key={h.id} variant={isHabitDone(h.id) ? 'success' : 'neutral'}>
+                  {h.emoji} {h.name}
+                </Chip>
               ))}
             </div>
           </WidgetCard>
 
           {/* Founder snapshot */}
           {dayFounder && (
-            <WidgetCard title="FOUNDER SNAPSHOT" delay={0.25} compact>
+            <WidgetCard title="Founder snapshot" delay={0.25} compact>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
                   { label: 'Commits', value: dayFounder.commits, icon: GitCommit },
@@ -379,8 +363,8 @@ export function StatsPage() {
                 ].map((m) => (
                   <div key={m.label} className="flex items-center gap-2">
                     <m.icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-[10px] text-muted-foreground">{m.label}</span>
-                    <span className="ml-auto text-sm font-bold tabular-nums">{m.value}</span>
+                    <span className="text-2xs text-muted-foreground">{m.label}</span>
+                    <span className="ml-auto font-mono text-sm font-medium tabular-nums">{m.value}</span>
                   </div>
                 ))}
               </div>
@@ -389,28 +373,28 @@ export function StatsPage() {
 
           {/* GTM snapshot */}
           {dayGtm && (dayGtm.dmsSent > 0 || dayGtm.xReplies > 0 || dayGtm.demoCalls > 0) && (
-            <WidgetCard title="GTM SNAPSHOT" delay={0.3} compact>
+            <WidgetCard title="GTM snapshot" delay={0.3} compact>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[
-                  { label: 'DMs sent', value: dayGtm.dmsSent, icon: MessageSquare, color: 'text-blue-400' },
-                  { label: 'Responses', value: dayGtm.dmResponses, icon: MessageCircle, color: 'text-green-400' },
-                  { label: 'Demo calls', value: dayGtm.demoCalls, icon: Megaphone, color: 'text-purple-400' },
-                  { label: 'X replies', value: dayGtm.xReplies, icon: MessageCircle, color: 'text-blue-400' },
-                  { label: 'X followers', value: dayGtm.xFollowers, icon: Users, color: 'text-blue-400' },
-                  { label: 'Reddit', value: dayGtm.redditComments, icon: MessageSquare, color: 'text-orange-400' },
-                  { label: 'LinkedIn', value: dayGtm.linkedinMessages, icon: MessageSquare, color: 'text-blue-300' },
+                  { label: 'DMs sent', value: dayGtm.dmsSent, icon: MessageSquare },
+                  { label: 'Responses', value: dayGtm.dmResponses, icon: MessageCircle },
+                  { label: 'Demo calls', value: dayGtm.demoCalls, icon: Megaphone },
+                  { label: 'X replies', value: dayGtm.xReplies, icon: MessageCircle },
+                  { label: 'X followers', value: dayGtm.xFollowers, icon: Users },
+                  { label: 'Reddit', value: dayGtm.redditComments, icon: MessageSquare },
+                  { label: 'LinkedIn', value: dayGtm.linkedinMessages, icon: MessageSquare },
                 ].map((m) => (
                   <div key={m.label} className="flex items-center gap-2">
-                    <m.icon className={`h-3.5 w-3.5 ${m.color}`} />
-                    <span className="text-[10px] text-muted-foreground">{m.label}</span>
-                    <span className="ml-auto text-sm font-bold tabular-nums">{m.value}</span>
+                    <m.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-2xs text-muted-foreground">{m.label}</span>
+                    <span className="ml-auto font-mono text-sm font-medium tabular-nums">{m.value}</span>
                   </div>
                 ))}
               </div>
               {dayGtm.notes && (
-                <div className="mt-3 rounded-lg bg-secondary/30 px-3 py-2">
-                  <p className="text-[10px] text-muted-foreground">Notes</p>
-                  <p className="text-xs text-foreground/80">{dayGtm.notes}</p>
+                <div className="mt-3 rounded-md bg-secondary/30 px-3 py-2">
+                  <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Notes</p>
+                  <p className="text-xs text-foreground">{dayGtm.notes}</p>
                 </div>
               )}
             </WidgetCard>
@@ -422,48 +406,48 @@ export function StatsPage() {
             const stats = workout ? getSessionStats(workout) : null
             const nutrition = dayNutrition && (dayNutrition.meals ?? []).some(m => (m.foods?.length ?? 0) > 0) ? getNutritionTotals(dayNutrition) : null
             return (
-              <WidgetCard title="GYM SNAPSHOT" delay={0.35} compact>
+              <WidgetCard title="Gym snapshot" delay={0.35} compact>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {workout && (
                     <>
                       <div className="flex items-center gap-2">
-                        <Dumbbell className="h-3.5 w-3.5 text-blue-400" />
-                        <span className="text-[10px] text-muted-foreground">Workout</span>
-                        <span className="ml-auto text-sm font-bold" style={{ color: GYM_COLORS[workout.workoutName] || '#888' }}>{workout.workoutName}</span>
+                        <Dumbbell className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-2xs text-muted-foreground">Workout</span>
+                        <Chip size="sm" className="ml-auto">{workout.workoutName}</Chip>
                       </div>
                       <div className="flex items-center gap-2">
                         <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-[10px] text-muted-foreground">Sets</span>
-                        <span className="ml-auto text-sm font-bold tabular-nums">{stats!.sets}</span>
+                        <span className="text-2xs text-muted-foreground">Sets</span>
+                        <span className="ml-auto font-mono text-sm font-medium tabular-nums">{stats!.sets}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <TrendingUp className="h-3.5 w-3.5 text-yellow-400" />
-                        <span className="text-[10px] text-muted-foreground">Volume</span>
-                        <span className="ml-auto text-sm font-bold tabular-nums">{stats!.volume > 0 ? `${Math.round(stats!.volume / 1000)}K kg` : '0'}</span>
+                        <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-2xs text-muted-foreground">Volume</span>
+                        <span className="ml-auto font-mono text-sm font-medium tabular-nums">{stats!.volume > 0 ? `${Math.round(stats!.volume / 1000)}K kg` : '0'}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Target className="h-3.5 w-3.5 text-green-400" />
-                        <span className="text-[10px] text-muted-foreground">Exercises</span>
-                        <span className="ml-auto text-sm font-bold tabular-nums">{workout.exercises.length}</span>
+                        <Target className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-2xs text-muted-foreground">Exercises</span>
+                        <span className="ml-auto font-mono text-sm font-medium tabular-nums">{workout.exercises.length}</span>
                       </div>
                     </>
                   )}
                   {nutrition && (
                     <>
                       <div className="flex items-center gap-2">
-                        <Utensils className="h-3.5 w-3.5 text-green-400" />
-                        <span className="text-[10px] text-muted-foreground">Protein</span>
-                        <span className={`ml-auto text-sm font-bold tabular-nums ${nutrition.protein >= PROTEIN_TARGET ? 'text-green-400' : ''}`}>{nutrition.protein}g</span>
+                        <Utensils className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-2xs text-muted-foreground">Protein</span>
+                        <span className={cn('ml-auto font-mono text-sm font-medium tabular-nums', nutrition.protein >= PROTEIN_TARGET && 'text-success')}>{nutrition.protein}g</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Flame className="h-3.5 w-3.5 text-orange-400" />
-                        <span className="text-[10px] text-muted-foreground">Calories</span>
-                        <span className={`ml-auto text-sm font-bold tabular-nums ${nutrition.calories >= CALORIE_TARGET ? 'text-green-400' : ''}`}>{nutrition.calories}</span>
+                        <Flame className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-2xs text-muted-foreground">Calories</span>
+                        <span className={cn('ml-auto font-mono text-sm font-medium tabular-nums', nutrition.calories >= CALORIE_TARGET && 'text-success')}>{nutrition.calories}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Droplets className="h-3.5 w-3.5 text-blue-400" />
-                        <span className="text-[10px] text-muted-foreground">Water</span>
-                        <span className={`ml-auto text-sm font-bold tabular-nums ${nutrition.water >= WATER_TARGET ? 'text-blue-400' : ''}`}>{nutrition.water}L</span>
+                        <Droplets className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span className="text-2xs text-muted-foreground">Water</span>
+                        <span className={cn('ml-auto font-mono text-sm font-medium tabular-nums', nutrition.water >= WATER_TARGET && 'text-success')}>{nutrition.water}L</span>
                       </div>
                     </>
                   )}
@@ -474,10 +458,10 @@ export function StatsPage() {
                       const completedSets = ex.sets.filter(s => s.completed).length
                       const maxWeight = ex.sets.filter(s => s.completed).reduce((max, s) => Math.max(max, s.weight), 0)
                       return (
-                        <div key={i} className="flex items-center gap-1.5 rounded-lg bg-foreground/5 px-2.5 py-1.5 text-[10px]">
-                          <span className="text-foreground/80">{ex.exerciseName}</span>
-                          <span className="text-muted-foreground/50">{completedSets}s{maxWeight > 0 ? ` · ${maxWeight}kg` : ''}</span>
-                        </div>
+                        <Chip key={i} className="gap-1.5">
+                          <span>{ex.exerciseName}</span>
+                          <span className="text-foreground-faint">{completedSets}s{maxWeight > 0 ? ` · ${maxWeight}kg` : ''}</span>
+                        </Chip>
                       )
                     })}
                   </div>
@@ -492,76 +476,55 @@ export function StatsPage() {
       {view === 'week' && (
         <>
           {/* Summary stats */}
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { label: 'Sessions', value: weekSessions.reduce((s, d) => s + d.sessions, 0).toString() },
-              { label: 'Deep work', value: formatMinutes(weekSessions.reduce((s, d) => s + d.minutes, 0)) },
-              { label: 'Habit score', value: `${weekHabitConsistency}%` },
-            ].map((stat) => (
-              <div key={stat.label} className="liquid-glass flex flex-col gap-1 rounded-xl px-4 py-3">
-                <span className="text-[10px] text-muted-foreground">{stat.label}</span>
-                <p className="text-xl font-bold tabular-nums">{stat.value}</p>
-              </div>
-            ))}
+          <div className="grid grid-cols-3 gap-3">
+            <StatTile variant="glass" label="Sessions" value={weekSessions.reduce((s, d) => s + d.sessions, 0)} />
+            <StatTile variant="glass" label="Deep work" value={formatMinutes(weekSessions.reduce((s, d) => s + d.minutes, 0))} />
+            <StatTile variant="glass" label="Habit score" value={`${weekHabitConsistency}%`} />
           </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {/* Sprint trend */}
-            <WidgetCard title="SPRINT SESSIONS" description={`${weekSessions.reduce((s, d) => s + d.sessions, 0)} sessions · avg ${(weekSessions.reduce((s, d) => s + d.sessions, 0) / 7).toFixed(1)}/day`} delay={0.05}>
+            <WidgetCard title="Sprint sessions" description={`${weekSessions.reduce((s, d) => s + d.sessions, 0)} sessions · avg ${(weekSessions.reduce((s, d) => s + d.sessions, 0) / 7).toFixed(1)}/day`} delay={0.05}>
               <div className="h-[140px] sm:h-[180px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={weekSessions.map((d, i) => ({ day: weekDayNames[i], sessions: d.sessions }))}>
-                    <defs>
-                      <linearGradient id="sessionGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.3} />
-                        <stop offset="100%" stopColor="#60a5fa" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} width={25} />
-                    <Tooltip {...TOOLTIP_STYLE} />
-                    <Area type="monotone" dataKey="sessions" stroke="#60a5fa" strokeWidth={2} fill="url(#sessionGrad)" dot={{ r: 3, fill: '#60a5fa', strokeWidth: 0 }} />
+                    <XAxis dataKey="day" {...axisProps()} />
+                    <YAxis allowDecimals={false} {...axisProps()} width={25} />
+                    <Tooltip content={<ThemedTooltip />} cursor={{ stroke: cssVar('--border') }} />
+                    <Area type="monotone" dataKey="sessions" stroke={chartPalette[0]} strokeWidth={2} fill={chartPalette[0]} fillOpacity={0.12} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             </WidgetCard>
 
             {/* Deep work trend */}
-            <WidgetCard title="DEEP WORK" description={`${formatMinutes(weekSessions.reduce((s, d) => s + d.minutes, 0))} total · avg ${(weekSessions.reduce((s, d) => s + d.minutes, 0) / 7 / 60).toFixed(1)}h/day`} delay={0.1}>
+            <WidgetCard title="Deep work" description={`${formatMinutes(weekSessions.reduce((s, d) => s + d.minutes, 0))} total · avg ${(weekSessions.reduce((s, d) => s + d.minutes, 0) / 7 / 60).toFixed(1)}h/day`} delay={0.1}>
               <div className="h-[140px] sm:h-[180px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={weekSessions.map((d, i) => ({ day: weekDayNames[i], hours: Math.round(d.minutes / 60 * 10) / 10 }))}>
-                    <defs>
-                      <linearGradient id="deepWorkGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#34d399" stopOpacity={0.3} />
-                        <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} width={30} unit="h" />
-                    <Tooltip {...TOOLTIP_STYLE} formatter={(value) => [`${value}h`, 'Deep work']} />
-                    <Area type="monotone" dataKey="hours" stroke="#34d399" strokeWidth={2} fill="url(#deepWorkGrad)" dot={{ r: 3, fill: '#34d399', strokeWidth: 0 }} />
+                    <XAxis dataKey="day" {...axisProps()} />
+                    <YAxis {...axisProps()} width={30} unit="h" />
+                    <Tooltip content={<ThemedTooltip formatter={(value) => `${value}h`} />} cursor={{ stroke: cssVar('--border') }} />
+                    <Area type="monotone" dataKey="hours" stroke={chartPalette[0]} strokeWidth={2} fill={chartPalette[0]} fillOpacity={0.12} dot={false} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
             </WidgetCard>
 
             {/* Habit consistency */}
-            <WidgetCard title="HABIT CONSISTENCY" description={`${weekHabitConsistency}% this week`} delay={0.15}>
+            <WidgetCard title="Habit consistency" description={`${weekHabitConsistency}% this week`} delay={0.15}>
               <div className="flex flex-col gap-1.5">
                 {weekHabitData.map((h) => {
                   const pct = h.goal > 0 ? Math.min(h.completed / h.goal, 1) * 100 : 0
                   const met = h.goal > 0 && h.completed >= h.goal
                   return (
                     <div key={h.name} className="flex items-center gap-2">
-                      <span className="text-xs w-32 sm:w-40 truncate">{h.name}</span>
-                      <div className="flex-1 h-4 rounded bg-secondary/50 overflow-hidden">
-                        <div
-                          className={`h-full rounded ${met ? 'bg-green-500/30' : 'bg-foreground/20'}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className={`text-[10px] font-mono tabular-nums w-8 text-right ${met ? 'text-green-400' : 'text-muted-foreground'}`}>{h.completed}/{h.goal}</span>
+                      <span className="w-32 truncate text-xs sm:w-40">{h.name}</span>
+                      <Progress
+                        value={Math.round(pct)}
+                        className={cn('flex-1', met && '[&_[data-slot=progress-indicator]]:bg-success')}
+                      />
+                      <span className={cn('w-8 text-right font-mono text-2xs tabular-nums', met ? 'text-success' : 'text-muted-foreground')}>{h.completed}/{h.goal}</span>
                     </div>
                   )
                 })}
@@ -570,7 +533,7 @@ export function StatsPage() {
 
             {/* Founder weekly */}
             {weekFounder.length > 0 && (
-              <WidgetCard title="FOUNDER METRICS" description="This week" delay={0.2}>
+              <WidgetCard title="Founder metrics" description="This week" delay={0.2}>
                 <div className="grid grid-cols-2 gap-4">
                   {[
                     { label: 'Commits', value: weekFounder.reduce((s, h) => s + h.commits, 0), icon: GitCommit },
@@ -578,11 +541,11 @@ export function StatsPage() {
                     { label: 'Users (latest)', value: weekFounder[weekFounder.length - 1]?.users ?? 0, icon: Users },
                     { label: 'MRR (latest)', value: `$${weekFounder[weekFounder.length - 1]?.mrr ?? 0}`, icon: DollarSign },
                   ].map((m) => (
-                    <div key={m.label} className="flex items-center gap-2 rounded-lg bg-secondary/30 px-3 py-2.5">
-                      <m.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <div key={m.label} className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
+                      <m.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <div>
-                        <p className="text-[10px] text-muted-foreground">{m.label}</p>
-                        <p className="text-lg font-bold tabular-nums">{m.value}</p>
+                        <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{m.label}</p>
+                        <p className="font-mono text-lg font-medium tabular-nums">{m.value}</p>
                       </div>
                     </div>
                   ))}
@@ -594,23 +557,24 @@ export function StatsPage() {
             {weekGtm.length > 0 && (() => {
               const totalDms = weekGtm.reduce((s, g) => s + g.dmsSent, 0)
               const totalResponses = weekGtm.reduce((s, g) => s + g.dmResponses, 0)
-              const responseRate = totalDms > 0 ? ((totalResponses / totalDms) * 100).toFixed(0) + '%' : '\u2014'
+              const responseRate = totalDms > 0 ? ((totalResponses / totalDms) * 100).toFixed(0) + '%' : '—'
+              const rateGood = totalDms > 0 && totalResponses / totalDms >= 0.1
               return (
-                <WidgetCard title="GTM METRICS" description="This week" delay={0.25}>
+                <WidgetCard title="GTM metrics" description="This week" delay={0.25}>
                   <div className="grid grid-cols-2 gap-4">
                     {[
-                      { label: 'DMs sent', value: totalDms, icon: MessageSquare, color: 'text-blue-400' },
-                      { label: 'Response rate', value: responseRate, icon: MessageCircle, color: totalDms > 0 && totalResponses / totalDms >= 0.1 ? 'text-green-400' : 'text-red-400' },
-                      { label: 'Demo calls', value: weekGtm.reduce((s, g) => s + g.demoCalls, 0), icon: Megaphone, color: 'text-purple-400' },
-                      { label: 'X replies', value: weekGtm.reduce((s, g) => s + g.xReplies, 0), icon: MessageCircle, color: 'text-blue-400' },
-                      { label: 'Reddit', value: weekGtm.reduce((s, g) => s + g.redditComments, 0), icon: MessageSquare, color: 'text-orange-400' },
-                      { label: 'LinkedIn', value: weekGtm.reduce((s, g) => s + g.linkedinMessages, 0), icon: MessageSquare, color: 'text-blue-300' },
+                      { label: 'DMs sent', value: totalDms, icon: MessageSquare },
+                      { label: 'Response rate', value: responseRate, icon: MessageCircle, valueClass: rateGood ? 'text-success' : 'text-destructive' },
+                      { label: 'Demo calls', value: weekGtm.reduce((s, g) => s + g.demoCalls, 0), icon: Megaphone },
+                      { label: 'X replies', value: weekGtm.reduce((s, g) => s + g.xReplies, 0), icon: MessageCircle },
+                      { label: 'Reddit', value: weekGtm.reduce((s, g) => s + g.redditComments, 0), icon: MessageSquare },
+                      { label: 'LinkedIn', value: weekGtm.reduce((s, g) => s + g.linkedinMessages, 0), icon: MessageSquare },
                     ].map((m) => (
-                      <div key={m.label} className="flex items-center gap-2 rounded-lg bg-secondary/30 px-3 py-2.5">
-                        <m.icon className={`h-4 w-4 shrink-0 ${m.color}`} />
+                      <div key={m.label} className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
+                        <m.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
                         <div>
-                          <p className="text-[10px] text-muted-foreground">{m.label}</p>
-                          <p className="text-lg font-bold tabular-nums">{m.value}</p>
+                          <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{m.label}</p>
+                          <p className={cn('font-mono text-lg font-medium tabular-nums', 'valueClass' in m && m.valueClass)}>{m.value}</p>
                         </div>
                       </div>
                     ))}
@@ -634,40 +598,45 @@ export function StatsPage() {
               // Build workout schedule for the week bar chart
               const weekGymChart = weekDates.map((d, i) => {
                 const w = weekWorkouts.find(s => s.date === d)
-                return { day: weekDayNames[i], type: w?.workoutName || '', sets: w ? getSessionStats(w).sets : 0, fill: w ? (GYM_COLORS[w.workoutName] || '#888') : '#333' }
+                return {
+                  day: weekDayNames[i],
+                  type: w?.workoutName || '',
+                  sets: w ? getSessionStats(w).sets : 0,
+                  fill: w ? (gymColors[w.workoutName] || cssVar('--muted-foreground')) : cssVar('--muted'),
+                }
               })
 
               return (
-                <WidgetCard title="GYM METRICS" description={`${weekWorkouts.length}/4 sessions this week`} delay={0.3}>
+                <WidgetCard title="Gym metrics" description={`${weekWorkouts.length}/4 sessions this week`} delay={0.3}>
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center gap-2 rounded-lg bg-secondary/30 px-3 py-2.5">
-                      <Dumbbell className="h-4 w-4 text-blue-400 shrink-0" />
+                    <div className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
+                      <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <div>
-                        <p className="text-[10px] text-muted-foreground">Sessions</p>
-                        <p className="text-lg font-bold tabular-nums">{weekWorkouts.length}</p>
+                        <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Sessions</p>
+                        <p className="font-mono text-lg font-medium tabular-nums">{weekWorkouts.length}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 rounded-lg bg-secondary/30 px-3 py-2.5">
-                      <TrendingUp className="h-4 w-4 text-yellow-400 shrink-0" />
+                    <div className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
+                      <TrendingUp className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <div>
-                        <p className="text-[10px] text-muted-foreground">Volume</p>
-                        <p className="text-lg font-bold tabular-nums">{totalVolume > 0 ? `${Math.round(totalVolume / 1000)}K kg` : `${totalSets} sets`}</p>
+                        <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Volume</p>
+                        <p className="font-mono text-lg font-medium tabular-nums">{totalVolume > 0 ? `${Math.round(totalVolume / 1000)}K kg` : `${totalSets} sets`}</p>
                       </div>
                     </div>
                     {avgNutrition && (
                       <>
-                        <div className="flex items-center gap-2 rounded-lg bg-secondary/30 px-3 py-2.5">
-                          <Utensils className="h-4 w-4 text-green-400 shrink-0" />
+                        <div className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
+                          <Utensils className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <div>
-                            <p className="text-[10px] text-muted-foreground">Avg Protein</p>
-                            <p className={`text-lg font-bold tabular-nums ${avgNutrition.protein >= PROTEIN_TARGET ? 'text-green-400' : ''}`}>{avgNutrition.protein}g</p>
+                            <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Avg protein</p>
+                            <p className={cn('font-mono text-lg font-medium tabular-nums', avgNutrition.protein >= PROTEIN_TARGET && 'text-success')}>{avgNutrition.protein}g</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 rounded-lg bg-secondary/30 px-3 py-2.5">
-                          <Droplets className="h-4 w-4 text-blue-400 shrink-0" />
+                        <div className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
+                          <Droplets className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <div>
-                            <p className="text-[10px] text-muted-foreground">Avg Water</p>
-                            <p className={`text-lg font-bold tabular-nums ${avgNutrition.water >= WATER_TARGET ? 'text-blue-400' : ''}`}>{avgNutrition.water}L</p>
+                            <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Avg water</p>
+                            <p className={cn('font-mono text-lg font-medium tabular-nums', avgNutrition.water >= WATER_TARGET && 'text-success')}>{avgNutrition.water}L</p>
                           </div>
                         </div>
                       </>
@@ -676,15 +645,22 @@ export function StatsPage() {
                   {/* Weekly workout schedule chart */}
                   {weekWorkouts.length > 0 && (
                     <div className="mt-4">
-                      <p className="text-[10px] text-muted-foreground mb-2">Workout Schedule</p>
+                      <p className="mb-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Workout schedule</p>
                       <div className="h-[120px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={weekGymChart}>
-                            <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} />
-                            <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#888' }} axisLine={false} tickLine={false} width={25} />
+                            <XAxis dataKey="day" {...axisProps()} />
+                            <YAxis allowDecimals={false} {...axisProps()} width={25} />
                             <Tooltip
-                              {...TOOLTIP_STYLE}
-                              formatter={(value, _name, props) => [value as number, ((props as unknown as { payload?: { type?: string } }).payload?.type) || 'Rest']}
+                              content={
+                                <ThemedTooltip
+                                  labelFormatter={(day) => {
+                                    const e = weekGymChart.find((x) => x.day === day)
+                                    return e?.type ? `${day} · ${e.type}` : `${day} · rest`
+                                  }}
+                                />
+                              }
+                              cursor={{ fill: cssVar('--border'), fillOpacity: 0.3 }}
                             />
                             <Bar dataKey="sets" radius={[3, 3, 0, 0]}>
                               {weekGymChart.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
@@ -692,11 +668,11 @@ export function StatsPage() {
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
-                      <div className="flex gap-3 mt-2 justify-center">
-                        {Object.entries(GYM_COLORS).map(([name, color]) => (
+                      <div className="mt-2 flex justify-center gap-3">
+                        {GYM_TYPES.map((name) => (
                           <div key={name} className="flex items-center gap-1">
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-                            <span className="text-[10px] text-muted-foreground">{name}</span>
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: gymColors[name] }} />
+                            <span className="font-mono text-2xs text-muted-foreground">{name}</span>
                           </div>
                         ))}
                       </div>
@@ -709,16 +685,21 @@ export function StatsPage() {
 
           {/* Weekly Audit (if generated) */}
           {weeklyAudit && (
-            <WidgetCard title="WEEKLY AUDIT" description={`Generated ${new Date(weeklyAudit.generatedAt).toLocaleDateString()}`} delay={0.3}>
+            <WidgetCard title="Weekly audit" description={`Generated ${new Date(weeklyAudit.generatedAt).toLocaleDateString()}`} delay={0.3}>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-1">Sprint Summary</p>
-                  <p className="text-sm">{weeklyAudit.sprintStats.totalSessions} sessions, {formatMinutes(weeklyAudit.sprintStats.totalDeepWork)} deep work</p>
-                  <p className="text-[10px] text-muted-foreground mt-1">Avg {weeklyAudit.sprintStats.avgPerDay} sessions/day</p>
+                  <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Sprint summary</p>
+                  <p className="text-sm">
+                    <span className="font-mono tabular-nums">{weeklyAudit.sprintStats.totalSessions}</span> sessions,{' '}
+                    <span className="font-mono tabular-nums">{formatMinutes(weeklyAudit.sprintStats.totalDeepWork)}</span> deep work
+                  </p>
+                  <p className="mt-1 font-mono text-2xs text-foreground-faint">Avg {weeklyAudit.sprintStats.avgPerDay} sessions/day</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-muted-foreground mb-1">Habits</p>
-                  <p className="text-sm">{weeklyAudit.habitStats.consistency}% consistency</p>
+                  <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Habits</p>
+                  <p className="text-sm">
+                    <span className="font-mono tabular-nums">{weeklyAudit.habitStats.consistency}%</span> consistency
+                  </p>
                 </div>
               </div>
             </WidgetCard>

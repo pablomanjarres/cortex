@@ -2,10 +2,14 @@ import { useState } from 'react'
 import { useStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import { PageShell } from '@/components/shared/PageShell'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  Goal as GoalIcon,
   Plus,
   X,
   Pencil,
@@ -13,7 +17,6 @@ import {
   CheckCircle2,
   Calendar,
   Archive,
-  Target,
 } from 'lucide-react'
 
 // ─── Model ────────────────────────────────────────────────
@@ -258,32 +261,32 @@ export function GoalsPage() {
       return (
         <div key={g.id} className="surface rounded-xl p-4">
           <div className="flex flex-col gap-2">
-            <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-9 bg-input" placeholder="Goal title" autoFocus />
+            <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-9" placeholder="Goal title" autoFocus />
             <textarea
               value={editDetail}
               onChange={(e) => setEditDetail(e.target.value)}
               placeholder="Why this matters / notes…"
-              className="min-h-[56px] w-full resize-y rounded-md border border-border bg-input px-2.5 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+              className="min-h-14 w-full resize-y rounded-md border border-input bg-input/20 px-2.5 py-2 text-sm leading-relaxed text-foreground placeholder:text-foreground-faint"
             />
             <div className="flex flex-wrap items-center gap-2">
-              <Input value={editArea} onChange={(e) => setEditArea(e.target.value)} placeholder="Area" className="h-8 w-32 bg-input text-sm" list="goal-areas" />
-              <Input value={editPeriod} onChange={(e) => setEditPeriod(e.target.value)} placeholder="2026-Q3" className="h-8 w-28 bg-input text-sm" />
-              <input type="date" value={editTarget} onChange={(e) => setEditTarget(e.target.value)} className="h-8 rounded-md border border-border bg-input px-2 text-sm text-foreground" />
+              <Input value={editArea} onChange={(e) => setEditArea(e.target.value)} placeholder="Area" className="h-8 w-32 text-sm" list="goal-areas" />
+              <Input value={editPeriod} onChange={(e) => setEditPeriod(e.target.value)} placeholder="2026-Q3" className="h-8 w-28 text-sm" />
+              <input type="date" value={editTarget} onChange={(e) => setEditTarget(e.target.value)} className="h-8 rounded-md border border-input bg-input/20 px-2 text-sm text-foreground" />
               {milestones.length === 0 && (
                 <div className="flex items-center gap-1">
-                  <Input value={editProgress} onChange={(e) => setEditProgress(e.target.value)} type="number" min={0} max={100} className="h-8 w-16 bg-input px-1 text-center text-sm" title="Progress %" />
+                  <Input value={editProgress} onChange={(e) => setEditProgress(e.target.value)} type="number" min={0} max={100} className="h-8 w-16 px-1 text-center text-sm" title="Progress %" />
                   <span className="text-xs text-muted-foreground">%</span>
                 </div>
               )}
-              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value as GoalStatus)} className="h-8 rounded-md border border-border bg-input px-2 text-sm text-foreground">
+              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value as GoalStatus)} className="h-8 cursor-pointer rounded-md border border-input bg-input/20 px-2 text-sm text-foreground">
                 <option value="active">Active</option>
                 <option value="done">Done</option>
                 <option value="archived">Archived</option>
               </select>
             </div>
             <div className="flex gap-2 pt-1">
-              <button onClick={saveEdit} className="h-8 flex-1 rounded-lg bg-foreground/10 text-sm font-medium hover:bg-foreground/15 transition-colors">Save</button>
-              <button onClick={() => setEditingId(null)} className="h-8 rounded-lg px-3 text-sm text-muted-foreground hover:text-foreground">Cancel</button>
+              <Button onClick={saveEdit} className="flex-1">Save</Button>
+              <Button variant="ghost" onClick={() => setEditingId(null)}>Cancel</Button>
             </div>
           </div>
         </div>
@@ -294,19 +297,26 @@ export function GoalsPage() {
       <div key={g.id} className={`group surface rounded-xl p-4 transition-opacity ${g.status === 'archived' ? 'opacity-50' : ''}`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
-          <button onClick={() => toggleDone(g)} className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground transition-colors" title={isDone ? 'Mark active' : 'Mark done'}>
-            {isDone ? <CheckCircle2 className="h-5 w-5 text-green-400" /> : <Circle className="h-5 w-5" />}
-          </button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => toggleDone(g)}
+            className="-ml-1.5 -mt-1 shrink-0"
+            aria-label={isDone ? 'Mark active' : 'Mark done'}
+            title={isDone ? 'Mark active' : 'Mark done'}
+          >
+            {isDone ? <CheckCircle2 className="size-5 text-success" /> : <Circle className="size-5" />}
+          </Button>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className={`text-sm font-semibold ${isDone ? 'text-muted-foreground line-through' : 'text-foreground'}`}>{g.title}</span>
             </div>
             {g.detail && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{g.detail}</p>}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {g.area && <Badge variant="secondary" className="text-[10px]">{g.area}</Badge>}
-              {g.period && <Badge variant="outline" className="text-[10px]">{g.period}</Badge>}
+              {g.area && <Chip size="sm">{g.area}</Chip>}
+              {g.period && <Chip size="sm">{g.period}</Chip>}
               {g.targetDate && (
-                <span className={`inline-flex items-center gap-1 text-[10px] ${overdue ? 'text-red-400' : 'text-muted-foreground/60'}`}>
+                <span className={`inline-flex items-center gap-1 font-mono text-2xs tabular-nums ${overdue ? 'text-destructive' : 'text-foreground-faint'}`}>
                   <Calendar className="h-3 w-3" />
                   {formatTargetDate(g.targetDate)}{overdue ? ' · overdue' : ''}
                 </span>
@@ -314,38 +324,51 @@ export function GoalsPage() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <span className={`text-sm font-semibold tabular-nums ${pct === 100 ? 'text-green-400' : 'text-muted-foreground'}`}>{pct}%</span>
-            <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <button onClick={() => startEdit(g)} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors" title="Edit">
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={() => patchGoal(g.id, { status: g.status === 'archived' ? 'active' : 'archived' })} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors" title={g.status === 'archived' ? 'Unarchive' : 'Archive'}>
-                <Archive className="h-3.5 w-3.5" />
-              </button>
-              <button onClick={() => removeGoal(g.id)} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-destructive transition-colors" title="Delete">
-                <X className="h-3.5 w-3.5" />
-              </button>
+            <span className={`font-mono text-sm font-medium tabular-nums ${pct === 100 ? 'text-success' : 'text-muted-foreground'}`}>{pct}%</span>
+            <div className="flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+              <Button variant="ghost" size="icon-xs" onClick={() => startEdit(g)} aria-label="Edit goal" title="Edit">
+                <Pencil />
+              </Button>
+              <Button variant="ghost" size="icon-xs" onClick={() => patchGoal(g.id, { status: g.status === 'archived' ? 'active' : 'archived' })} aria-label={g.status === 'archived' ? 'Unarchive goal' : 'Archive goal'} title={g.status === 'archived' ? 'Unarchive' : 'Archive'}>
+                <Archive />
+              </Button>
+              <Button variant="ghost" size="icon-xs" onClick={() => removeGoal(g.id)} aria-label="Delete goal" title="Delete" className="hover:text-destructive">
+                <X />
+              </Button>
             </div>
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-          <div className={`h-full rounded-full transition-all ${pct === 100 ? 'bg-green-400' : 'bg-foreground'}`} style={{ width: `${pct}%` }} />
-        </div>
+        <Progress
+          value={pct}
+          className={`mt-3 ${pct === 100 ? '[&_[data-slot=progress-indicator]]:bg-success' : '[&_[data-slot=progress-indicator]]:bg-accent'}`}
+        />
 
         {/* Milestones */}
         {milestones.length > 0 && (
           <div className="mt-3 flex flex-col gap-1">
             {milestones.map((m) => (
               <div key={m.id} className="group/ms flex items-center gap-2">
-                <button onClick={() => toggleMilestone(g.id, m.id)} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
-                  {m.done ? <CheckCircle2 className="h-4 w-4 text-green-400" /> : <Circle className="h-4 w-4" />}
-                </button>
-                <span className={`flex-1 text-xs ${m.done ? 'text-muted-foreground line-through' : 'text-foreground/90'}`}>{m.title}</span>
-                <button onClick={() => removeMilestone(g.id, m.id)} className="shrink-0 text-muted-foreground/30 opacity-0 transition-opacity hover:text-destructive group-hover/ms:opacity-100">
-                  <X className="h-3 w-3" />
-                </button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => toggleMilestone(g.id, m.id)}
+                  className="shrink-0"
+                  aria-label={m.done ? 'Mark step not done' : 'Mark step done'}
+                >
+                  {m.done ? <CheckCircle2 className="size-4 text-success" /> : <Circle className="size-4" />}
+                </Button>
+                <span className={`flex-1 text-xs ${m.done ? 'text-muted-foreground line-through' : 'text-foreground'}`}>{m.title}</span>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => removeMilestone(g.id, m.id)}
+                  aria-label="Remove step"
+                  className="shrink-0 opacity-0 transition-opacity focus-visible:opacity-100 group-hover/ms:opacity-100 hover:text-destructive"
+                >
+                  <X className="size-3" />
+                </Button>
               </div>
             ))}
           </div>
@@ -353,13 +376,13 @@ export function GoalsPage() {
 
         {/* Add milestone */}
         <div className="mt-2 flex items-center gap-2">
-          <Plus className="h-3.5 w-3.5 text-muted-foreground/40" />
+          <Plus className="h-3.5 w-3.5 text-foreground-faint" />
           <input
             value={msDraft[g.id] ?? ''}
             onChange={(e) => setMsDraft((d) => ({ ...d, [g.id]: e.target.value }))}
             onKeyDown={(e) => e.key === 'Enter' && addMilestone(g.id)}
             placeholder="Add a step…"
-            className="flex-1 bg-transparent text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none"
+            className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground-faint"
           />
         </div>
       </div>
@@ -376,35 +399,31 @@ export function GoalsPage() {
         ))}
       </datalist>
 
-      {/* Header */}
+      {/* Toolbar — the topbar already owns the page title */}
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="font-mono text-xs tabular-nums text-muted-foreground">
+          {activeGoals.length} active · {doneCount} done · {avgProgress}% avg
+        </p>
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold md:text-2xl md:font-bold">Goals</h2>
-          <span className="text-xs text-muted-foreground md:text-sm">
-            {activeGoals.length} active · {doneCount} done · {avgProgress}% avg
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-lg bg-secondary/60 p-0.5">
-            {views.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => setView(v.id)}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                  view === v.id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
-          <button
+          <Tabs value={view} onValueChange={(v) => setView(v as View)}>
+            <TabsList>
+              {views.map((v) => (
+                <TabsTrigger key={v.id} value={v.id}>
+                  {v.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <Button
+            variant={showArchived ? 'secondary' : 'ghost'}
+            size="icon-sm"
             onClick={() => setShowArchived((s) => !s)}
-            className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${showArchived ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            aria-pressed={showArchived}
+            aria-label="Toggle archived goals"
             title="Toggle archived goals"
           >
-            <Archive className="h-3.5 w-3.5" />
-          </button>
+            <Archive />
+          </Button>
         </div>
       </div>
 
@@ -414,8 +433,8 @@ export function GoalsPage() {
           {groups.map(([label, gs]) => (
             <div key={label || 'all'} className="flex flex-col gap-2">
               {label && (
-                <p className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/40">
-                  {label} <span className="text-muted-foreground/30">· {gs.length}</span>
+                <p className="px-1 font-mono text-2xs uppercase tracking-widest text-foreground-faint">
+                  {label} · {gs.length}
                 </p>
               )}
               {gs.map(renderGoal)}
@@ -423,30 +442,21 @@ export function GoalsPage() {
           ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/60 py-16 text-center">
-          <Target className="h-8 w-8 text-muted-foreground/30" />
-          <div>
-            <p className="text-sm font-medium text-foreground">No goals yet</p>
-            <p className="text-xs text-muted-foreground">Add your first one below.</p>
-          </div>
-        </div>
+        <EmptyState message="No goals yet." hint="Add your first one below." />
       )}
 
       {/* Add goal */}
-      <div className="surface rounded-xl p-4">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground">
-          <GoalIcon className="h-4 w-4" /> New goal
-        </div>
+      <WidgetCard title="New goal">
         <div className="flex flex-wrap items-center gap-2">
-          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addGoal()} placeholder="What do you want to achieve?" className="h-9 min-w-[180px] flex-1 bg-input text-sm" />
-          <Input value={newArea} onChange={(e) => setNewArea(e.target.value)} placeholder="Area" className="h-9 w-32 bg-input text-sm" list="goal-areas" />
-          <Input value={newPeriod} onChange={(e) => setNewPeriod(e.target.value)} placeholder="2026-Q3" className="h-9 w-28 bg-input text-sm" />
-          <input type="date" value={newTarget} onChange={(e) => setNewTarget(e.target.value)} className="h-9 rounded-md border border-border bg-input px-2 text-sm text-foreground" />
-          <button onClick={addGoal} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-foreground transition-colors hover:bg-secondary/80" title="Add goal">
-            <Plus className="h-5 w-5" />
-          </button>
+          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addGoal()} placeholder="What do you want to achieve?" className="h-9 min-w-[180px] flex-1 text-sm" />
+          <Input value={newArea} onChange={(e) => setNewArea(e.target.value)} placeholder="Area" className="h-9 w-32 text-sm" list="goal-areas" />
+          <Input value={newPeriod} onChange={(e) => setNewPeriod(e.target.value)} placeholder="2026-Q3" className="h-9 w-28 text-sm" />
+          <input type="date" value={newTarget} onChange={(e) => setNewTarget(e.target.value)} className="h-9 rounded-md border border-input bg-input/20 px-2 text-sm text-foreground" />
+          <Button variant="secondary" size="icon-lg" onClick={addGoal} aria-label="Add goal" title="Add goal">
+            <Plus className="size-5" />
+          </Button>
         </div>
-      </div>
+      </WidgetCard>
     </PageShell>
   )
 }

@@ -1,6 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { StatTile } from '@/components/shared/StatTile'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import {
@@ -55,12 +59,16 @@ const DEFAULT_DATA: CrmData = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const statusConfig: Record<CrmContact['status'], { label: string; color: string }> = {
-  lead: { label: 'Lead', color: 'bg-yellow-500/15 text-yellow-400' },
-  prospect: { label: 'Prospect', color: 'bg-blue-500/15 text-blue-400' },
-  active: { label: 'Active', color: 'bg-green-500/15 text-green-400' },
-  churned: { label: 'Churned', color: 'bg-red-500/15 text-red-400' },
-  paused: { label: 'Paused', color: 'bg-secondary text-muted-foreground' },
+// Pipeline states map to the semantic Chip trio (see OpportunitiesPage):
+// only truly semantic states carry a tone; new/incoming stays neutral.
+type ChipVariant = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
+
+const statusConfig: Record<CrmContact['status'], { label: string; chip: ChipVariant }> = {
+  lead: { label: 'Lead', chip: 'neutral' },
+  prospect: { label: 'Prospect', chip: 'accent' },
+  active: { label: 'Active', chip: 'success' },
+  churned: { label: 'Churned', chip: 'danger' },
+  paused: { label: 'Paused', chip: 'warning' },
 }
 
 const ALL_STATUSES: CrmContact['status'][] = ['lead', 'prospect', 'active', 'churned', 'paused']
@@ -69,6 +77,16 @@ type SortKey = 'name' | 'company' | 'value' | 'status' | 'lastContact'
 
 function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '' }
 function fmtMoney(n: number) { return n > 0 ? `$${n.toLocaleString('en-US')}` : '' }
+
+// Shared token styles (same quiet patterns as the other contact tables).
+const selectCls =
+  'h-8 w-full cursor-pointer rounded-md border border-input bg-input/20 px-2 text-xs text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+const textareaCls =
+  'w-full resize-none rounded-md border border-input bg-input/20 px-3 py-2 text-xs text-foreground outline-none placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+const lineInputCls = 'w-full border-b border-border/60 bg-transparent py-1 text-xs outline-none placeholder:text-foreground-faint'
+const labelCls = 'text-2xs text-muted-foreground'
+const thCls = 'py-2 text-left font-mono text-2xs font-normal uppercase tracking-wider'
+const thBtnCls = 'flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground'
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -142,7 +160,7 @@ export function CrmPage() {
 
   const filtered = useMemo(() => {
     const lowerSearch = search.toLowerCase()
-    let list = contacts.filter((c) =>
+    const list = contacts.filter((c) =>
       (!statusFilter || c.status === statusFilter) &&
       (!search || c.name.toLowerCase().includes(lowerSearch) || c.company.toLowerCase().includes(lowerSearch) || c.role.toLowerCase().includes(lowerSearch))
     )
@@ -171,21 +189,18 @@ export function CrmPage() {
   return (
     <PageShell>
       {/* Org switcher */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2">
         {data.orgs.map((org) => (
-          <button
+          <Chip
             key={org.id}
+            selectable
+            selected={data.activeOrg === org.id}
             onClick={() => setActiveOrg(org.id)}
-            className={`cursor-pointer flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs md:text-sm font-medium transition-all ${
-              data.activeOrg === org.id
-                ? 'bg-foreground text-background'
-                : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary'
-            }`}
           >
-            <Building2 className="h-3.5 w-3.5" />
+            <Building2 />
             {org.name}
-            <span className="text-[10px] opacity-60">{org.contacts.length}</span>
-          </button>
+            <span className="tabular-nums opacity-60">{org.contacts.length}</span>
+          </Chip>
         ))}
         {showNewOrg ? (
           <div className="flex items-center gap-1.5">
@@ -194,131 +209,110 @@ export function CrmPage() {
               onChange={(e) => setNewOrgName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addOrg()}
               placeholder="Org name..."
-              className="h-8 w-32 text-xs"
+              className="h-7 w-32 text-xs"
               autoFocus
             />
-            <button onClick={addOrg} className="cursor-pointer text-xs text-foreground bg-foreground/10 px-2 py-1 rounded hover:bg-foreground/20 transition-colors">Add</button>
-            <button onClick={() => { setShowNewOrg(false); setNewOrgName('') }} className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors">Cancel</button>
+            <Button size="sm" onClick={addOrg}>Add</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setShowNewOrg(false); setNewOrgName('') }}>Cancel</Button>
           </div>
         ) : (
-          <button
-            onClick={() => setShowNewOrg(true)}
-            className="cursor-pointer flex items-center gap-1 rounded-lg px-3 py-2 text-sm text-muted-foreground/40 border border-dashed border-border hover:text-muted-foreground hover:border-muted-foreground/30 transition-all"
-          >
-            <Plus className="h-3.5 w-3.5" /> New org
-          </button>
+          <Button variant="ghost" size="sm" onClick={() => setShowNewOrg(true)}>
+            <Plus /> New org
+          </Button>
         )}
         {/* Delete current org */}
         {data.orgs.length > 1 && (
-          <button
-            onClick={() => deleteOrg(data.activeOrg)}
-            className="cursor-pointer ml-auto text-[10px] text-muted-foreground/30 hover:text-red-400 transition-colors"
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Delete this org"
             title="Delete this org"
+            className="ml-auto hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => deleteOrg(data.activeOrg)}
           >
-            <Trash2 className="h-3 w-3" />
-          </button>
+            <Trash2 />
+          </Button>
         )}
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="liquid-glass flex items-center gap-3 rounded-xl px-4 py-3">
-          <Users className="h-5 w-5 text-blue-400" />
-          <div>
-            <p className="text-lg font-bold tabular-nums">{contacts.length}</p>
-            <p className="text-[10px] text-muted-foreground">Total contacts</p>
-          </div>
-        </div>
-        <div className="liquid-glass flex items-center gap-3 rounded-xl px-4 py-3">
-          <DollarSign className="h-5 w-5 text-green-400" />
-          <div>
-            <p className="text-lg font-bold tabular-nums">{fmtMoney(totalValue) || '$0'}</p>
-            <p className="text-[10px] text-muted-foreground">Active value</p>
-          </div>
-        </div>
-        {(['active', 'lead'] as const).map((s) => (
-          <div key={s} className="liquid-glass flex items-center gap-3 rounded-xl px-4 py-3">
-            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${statusConfig[s].color}`}>
-              {statusCounts[s] || 0}
-            </span>
-            <div>
-              <p className="text-lg font-bold tabular-nums">{statusCounts[s] || 0}</p>
-              <p className="text-[10px] text-muted-foreground">{statusConfig[s].label}</p>
-            </div>
-          </div>
-        ))}
+        <StatTile label="Total contacts" value={contacts.length} icon={<Users />} />
+        <StatTile label="Active value" value={fmtMoney(totalValue) || '$0'} icon={<DollarSign />} />
+        <StatTile label="Active" value={statusCounts.active || 0} />
+        <StatTile label="Leads" value={statusCounts.lead || 0} />
       </div>
 
       {/* Search + Filters + Add */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative max-w-xs flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
           <Input placeholder="Search contacts..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 pl-8 text-xs" />
         </div>
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex flex-wrap gap-1.5">
           {ALL_STATUSES.map((s) => (
-            <button key={s} onClick={() => setStatusFilter(statusFilter === s ? null : s)}
-              className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${statusFilter === s ? `${statusConfig[s].color} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+            <Chip key={s} selectable variant={statusConfig[s].chip} selected={statusFilter === s} onClick={() => setStatusFilter(statusFilter === s ? null : s)}>
               {statusConfig[s].label}
-            </button>
+            </Chip>
           ))}
         </div>
-        <button onClick={addContact} className="cursor-pointer ml-auto flex items-center gap-1 text-xs text-foreground bg-foreground/10 px-3 py-1.5 rounded-lg hover:bg-foreground/20 transition-colors">
-          <Plus className="h-3 w-3" /> Add
-        </button>
+        <Button size="sm" className="ml-auto" onClick={addContact}>
+          <Plus /> Add
+        </Button>
       </div>
 
       {/* Mobile: Contact cards */}
       <div className="flex flex-col gap-3 md:hidden">
         {filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-8">
-            {contacts.length === 0 ? 'No contacts yet. Click Add to create one.' : 'No contacts match your filters.'}
-          </p>
+          <EmptyState
+            message={contacts.length === 0 ? 'No contacts yet.' : 'No contacts match.'}
+            hint={contacts.length === 0 ? 'Press Add to create one.' : 'Try clearing a filter.'}
+          />
         ) : filtered.map((c) => (
-          <div key={c.id} className="liquid-glass rounded-xl border border-border p-4">
+          <div key={c.id} className="surface rounded-xl p-4">
             <div className="flex items-start justify-between" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{c.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{[c.company, c.role].filter(Boolean).join(' · ') || 'No company'}</p>
+                <p className="truncate text-sm font-medium">{c.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{[c.company, c.role].filter(Boolean).join(' · ') || 'No company'}</p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${statusConfig[c.status].color}`}>{statusConfig[c.status].label}</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <Chip size="sm" variant={statusConfig[c.status].chip}>{statusConfig[c.status].label}</Chip>
               </div>
             </div>
-            <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-              {c.value > 0 && <span className="tabular-nums">{fmtMoney(c.value)}</span>}
-              {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
+            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+              {c.value > 0 && <span className="font-mono tabular-nums">{fmtMoney(c.value)}</span>}
+              {c.lastContact && <span className="font-mono">{fmtDate(c.lastContact)}</span>}
               {c.tags.length > 0 && <span className="truncate">{c.tags.join(', ')}</span>}
             </div>
             {expanded === c.id && (
-              <div className="mt-4 pt-3 border-t border-border/30 flex flex-col gap-3">
+              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
                 <div className="flex flex-col gap-2">
-                  <label className="text-[10px] text-muted-foreground">Name</label>
-                  <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className="bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" />
+                  <label className={labelCls}>Name</label>
+                  <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-[10px] text-muted-foreground">Company</label><input value={c.company} onChange={(e) => setField(c.id, { company: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                  <div><label className="text-[10px] text-muted-foreground">Role</label><input value={c.role} onChange={(e) => setField(c.id, { role: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                  <div><label className={labelCls}>Company</label><input value={c.company} onChange={(e) => setField(c.id, { company: e.target.value })} className={lineInputCls} /></div>
+                  <div><label className={labelCls}>Role</label><input value={c.role} onChange={(e) => setField(c.id, { role: e.target.value })} className={lineInputCls} /></div>
                 </div>
-                <div><label className="text-[10px] text-muted-foreground">Status</label>
-                  <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                <div><label className={labelCls}>Status</label>
+                  <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })} className={selectCls}>
                     {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
                   </select>
                 </div>
-                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.website} onChange={(e) => setField(c.id, { website: e.target.value })} placeholder="Website" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                <div className="flex items-center gap-2"><DollarSign className="h-3.5 w-3.5 text-muted-foreground" /><input type="number" value={c.value || ''} onChange={(e) => setField(c.id, { value: parseInt(e.target.value) || 0 })} placeholder="Deal value" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30 tabular-nums" /></div>
-                <div><label className="text-[10px] text-muted-foreground">Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
-                <div><label className="text-[10px] text-muted-foreground">Notes</label>
-                  <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none" rows={3} placeholder="Notes..." />
+                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className={`${lineInputCls} flex-1 font-mono`} /></div>
+                <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className={`${lineInputCls} flex-1`} /></div>
+                <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.website} onChange={(e) => setField(c.id, { website: e.target.value })} placeholder="Website" className={`${lineInputCls} flex-1 font-mono`} /></div>
+                <div className="flex items-center gap-2"><DollarSign className="h-3.5 w-3.5 text-muted-foreground" /><input type="number" value={c.value || ''} onChange={(e) => setField(c.id, { value: parseInt(e.target.value) || 0 })} placeholder="Deal value" className={`${lineInputCls} flex-1 font-mono tabular-nums`} /></div>
+                <div><label className={labelCls}>Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
+                <div><label className={labelCls}>Notes</label>
+                  <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })} className={textareaCls} rows={3} placeholder="Notes..." />
                 </div>
-                <div><label className="text-[10px] text-muted-foreground">Tags (comma-separated)</label>
-                  <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" placeholder="vip, priority..." />
+                <div><label className={labelCls}>Tags (comma-separated)</label>
+                  <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className={lineInputCls} placeholder="vip, priority..." />
                 </div>
-                <button onClick={() => deleteContact(c.id)} className="cursor-pointer flex items-center justify-center gap-1.5 text-xs text-red-400/60 active:text-red-400 px-3 py-2.5 rounded-lg border border-red-400/20">
-                  <Trash2 className="h-3 w-3" /> Delete contact
-                </button>
+                <Button variant="destructive" size="sm" className="w-full" onClick={() => deleteContact(c.id)}>
+                  <Trash2 /> Delete contact
+                </Button>
               </div>
             )}
           </div>
@@ -327,93 +321,95 @@ export function CrmPage() {
 
       {/* Desktop: Table */}
       <WidgetCard title={activeOrg?.name || 'CRM'} description={`${filtered.length} contacts`} delay={0.1} className="hidden md:block">
-        <div className="overflow-x-auto -mx-5">
+        <div className="-mx-4 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="px-5 py-2 text-left font-medium min-w-[160px]">
-                  <button onClick={() => toggleSort('name')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Name <SortIcon k="name" /></button>
+              <tr className="border-b border-border/60 text-muted-foreground">
+                {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
+                <th className={`${thCls} min-w-[160px] px-4`}>
+                  <button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon k="name" /></button>
                 </th>
-                <th className="py-2 text-left font-medium min-w-[120px]">
-                  <button onClick={() => toggleSort('company')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Company <SortIcon k="company" /></button>
+                <th className={`${thCls} min-w-[120px]`}>
+                  <button onClick={() => toggleSort('company')} className={thBtnCls}>Company <SortIcon k="company" /></button>
                 </th>
-                <th className="py-2 text-left font-medium">Role</th>
-                <th className="py-2 text-left font-medium">
-                  <button onClick={() => toggleSort('status')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Status <SortIcon k="status" /></button>
+                <th className={thCls}>Role</th>
+                <th className={thCls}>
+                  <button onClick={() => toggleSort('status')} className={thBtnCls}>Status <SortIcon k="status" /></button>
                 </th>
-                <th className="py-2 text-right font-medium">
-                  <button onClick={() => toggleSort('value')} className="cursor-pointer flex items-center gap-1 ml-auto hover:text-foreground">Value <SortIcon k="value" /></button>
+                <th className={`${thCls} text-right`}>
+                  <button onClick={() => toggleSort('value')} className={`${thBtnCls} ml-auto`}>Value <SortIcon k="value" /></button>
                 </th>
-                <th className="py-2 text-right font-medium">
-                  <button onClick={() => toggleSort('lastContact')} className="cursor-pointer flex items-center gap-1 ml-auto hover:text-foreground">Last <SortIcon k="lastContact" /></button>
+                <th className={`${thCls} text-right`}>
+                  <button onClick={() => toggleSort('lastContact')} className={`${thBtnCls} ml-auto`}>Last <SortIcon k="lastContact" /></button>
                 </th>
-                <th className="py-2 w-6"></th>
+                <th className="w-6 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((c) => (
-                <>
-                  <tr key={c.id} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-                    className={`cursor-pointer border-b border-border/20 transition-colors hover:bg-secondary/30 group ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                    <td className="px-5 py-2.5"><span className="font-medium">{c.name}</span></td>
+                <Fragment key={c.id}>
+                  <tr onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                    className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
+                    <td className="px-4 py-2.5"><span className="font-medium">{c.name}</span></td>
                     <td className="py-2.5 text-muted-foreground">{c.company || '—'}</td>
                     <td className="py-2.5 text-muted-foreground">{c.role || '—'}</td>
-                    <td className="py-2.5"><span className={`text-[9px] px-1.5 py-0.5 rounded-full ${statusConfig[c.status].color}`}>{statusConfig[c.status].label}</span></td>
-                    <td className="py-2.5 text-right tabular-nums text-muted-foreground">{fmtMoney(c.value) || '—'}</td>
-                    <td className="py-2.5 text-right text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
+                    <td className="py-2.5"><Chip size="sm" variant={statusConfig[c.status].chip}>{statusConfig[c.status].label}</Chip></td>
+                    <td className="py-2.5 text-right font-mono tabular-nums text-muted-foreground">{fmtMoney(c.value) || '—'}</td>
+                    <td className="py-2.5 text-right font-mono text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
                     <td className="py-2.5 pr-4">
-                      <button onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      <Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
+                        <Trash2 />
+                      </Button>
                     </td>
                   </tr>
                   {expanded === c.id && (
-                    <tr key={`${c.id}-edit`}>
-                      <td colSpan={7} className="px-5 py-4 border-b border-border/20 bg-foreground/[0.02]">
+                    <tr>
+                      <td colSpan={7} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
                         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                           <div className="flex flex-col gap-2">
-                            <label className="text-[10px] text-muted-foreground">Name</label>
-                            <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className="bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" />
+                            <label className={labelCls}>Name</label>
+                            <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} />
                             <div className="grid grid-cols-2 gap-2">
-                              <div><label className="text-[10px] text-muted-foreground">Company</label><input value={c.company} onChange={(e) => setField(c.id, { company: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                              <div><label className="text-[10px] text-muted-foreground">Role</label><input value={c.role} onChange={(e) => setField(c.id, { role: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+                              <div><label className={labelCls}>Company</label><input value={c.company} onChange={(e) => setField(c.id, { company: e.target.value })} className={lineInputCls} /></div>
+                              <div><label className={labelCls}>Role</label><input value={c.role} onChange={(e) => setField(c.id, { role: e.target.value })} className={lineInputCls} /></div>
                             </div>
-                            <div><label className="text-[10px] text-muted-foreground">Status</label>
-                              <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                            <div><label className={labelCls}>Status</label>
+                              <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })} className={selectCls}>
                                 {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
                               </select>
                             </div>
                           </div>
                           <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                            <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                            <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.website} onChange={(e) => setField(c.id, { website: e.target.value })} placeholder="Website" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                            <div className="flex items-center gap-2"><DollarSign className="h-3.5 w-3.5 text-muted-foreground" /><input type="number" value={c.value || ''} onChange={(e) => setField(c.id, { value: parseInt(e.target.value) || 0 })} placeholder="Deal value" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30 tabular-nums" /></div>
-                            <div><label className="text-[10px] text-muted-foreground">Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
+                            <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className={`${lineInputCls} flex-1 font-mono`} /></div>
+                            <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className={`${lineInputCls} flex-1`} /></div>
+                            <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.website} onChange={(e) => setField(c.id, { website: e.target.value })} placeholder="Website" className={`${lineInputCls} flex-1 font-mono`} /></div>
+                            <div className="flex items-center gap-2"><DollarSign className="h-3.5 w-3.5 text-muted-foreground" /><input type="number" value={c.value || ''} onChange={(e) => setField(c.id, { value: parseInt(e.target.value) || 0 })} placeholder="Deal value" className={`${lineInputCls} flex-1 font-mono tabular-nums`} /></div>
+                            <div><label className={labelCls}>Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
                           </div>
                           <div className="flex flex-col gap-2">
-                            <label className="text-[10px] text-muted-foreground">Notes</label>
-                            <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })} className="w-full rounded-lg border border-border bg-input px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring resize-none" rows={4} placeholder="Notes about this contact..." />
-                            <label className="text-[10px] text-muted-foreground">Tags (comma-separated)</label>
-                            <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" placeholder="vip, priority, follow-up..." />
+                            <label className={labelCls}>Notes</label>
+                            <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })} className={textareaCls} rows={4} placeholder="Notes about this contact..." />
+                            <label className={labelCls}>Tags (comma-separated)</label>
+                            <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className={lineInputCls} placeholder="vip, priority, follow-up..." />
                           </div>
-                          <div className="flex items-end justify-end lg:col-span-3 pt-2">
-                            <button onClick={() => deleteContact(c.id)} className="cursor-pointer flex items-center gap-1.5 text-xs text-red-400/60 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-red-400/20 hover:border-red-400/40 hover:bg-red-400/5">
-                              <Trash2 className="h-3 w-3" /> Delete contact
-                            </button>
+                          <div className="flex items-end justify-end pt-2 lg:col-span-3">
+                            <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
+                              <Trash2 /> Delete contact
+                            </Button>
                           </div>
                         </div>
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
           {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-8">
-              {contacts.length === 0 ? 'No contacts yet. Click Add to create one.' : 'No contacts match your filters.'}
-            </p>
+            <EmptyState
+              message={contacts.length === 0 ? 'No contacts yet.' : 'No contacts match.'}
+              hint={contacts.length === 0 ? 'Press Add to create one.' : 'Try clearing a filter.'}
+            />
           )}
         </div>
       </WidgetCard>

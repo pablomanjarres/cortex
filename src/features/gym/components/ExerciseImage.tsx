@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Dumbbell } from 'lucide-react'
+import { Skeleton } from '@/components/shared/Skeleton'
 import { findExerciseMedia, type ExerciseMedia } from '@/lib/exercise-media'
+import { cn } from '@/lib/utils'
 
 interface ExerciseImageProps {
   name: string
@@ -34,19 +36,19 @@ export function ExerciseImage({ name, className = '', showBadge = true }: Exerci
   }, [media])
 
   if (media === undefined) {
-    return <div className={`animate-pulse rounded-xl bg-secondary ${className}`} />
+    return <Skeleton className={cn('rounded-xl', className)} />
   }
 
   if (!media || failed) {
     return (
-      <div className={`flex items-center justify-center rounded-xl bg-gradient-to-br from-secondary to-card ${className}`}>
-        <Dumbbell className="h-10 w-10 text-muted-foreground/25" />
+      <div className={cn('flex items-center justify-center rounded-xl bg-secondary', className)}>
+        <Dumbbell className="h-8 w-8 text-foreground-faint" />
       </div>
     )
   }
 
   return (
-    <div className={`relative overflow-hidden rounded-xl bg-white ${className}`}>
+    <div className={cn('relative overflow-hidden rounded-xl bg-white', className)}>
       <img
         src={media.images[frame]}
         alt={name}
@@ -55,7 +57,7 @@ export function ExerciseImage({ name, className = '', showBadge = true }: Exerci
         className="h-full w-full object-contain"
       />
       {showBadge && media.primaryMuscles?.[0] && (
-        <span className="absolute left-2 top-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[10px] font-medium capitalize text-white backdrop-blur-sm">
+        <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 font-mono text-2xs capitalize text-white backdrop-blur-sm">
           {media.primaryMuscles[0]}
           {media.equipment ? ` · ${media.equipment}` : ''}
         </span>

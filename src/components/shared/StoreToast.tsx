@@ -43,10 +43,10 @@ export function StoreToast() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="pointer-events-auto rounded-lg border border-red-500/40 bg-neutral-900/95 px-4 py-3 text-xs shadow-lg"
+          className="pointer-events-auto rounded-xl border border-destructive/40 bg-card/95 px-4 py-3 text-xs shadow-lift backdrop-blur-sm"
         >
-          <span className="font-semibold text-red-400">Save failed</span>
-          <span className="ml-2 text-neutral-300">
+          <span className="font-semibold text-destructive">Save failed</span>
+          <span className="ml-2 text-muted-foreground">
             Could not persist &ldquo;{t.key}&rdquo; — the latest change may not be saved.
           </span>
         </div>

@@ -25,7 +25,7 @@ function page(name: string, node: ReactNode) {
     <RouteErrorBoundary name={name}>
       <Suspense
         fallback={
-          <div className="flex h-full min-h-[50vh] items-center justify-center text-sm text-neutral-500">
+          <div className="flex h-full min-h-[50vh] items-center justify-center text-sm text-muted-foreground">
             Loading…
           </div>
         }

@@ -1,7 +1,13 @@
 import { useState, useMemo, useRef } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { StatTile } from '@/components/shared/StatTile'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { CHART_FONT_MONO, ThemedTooltip, axisProps, chartColor, chartColors, cssVar } from '@/lib/chart-theme'
 import { useStore } from '@/lib/store'
 import {
   TrendingUp,
@@ -98,24 +104,10 @@ const fmtCOP = (n: number) => {
   return `$${n}`
 }
 const fmtFull = (n: number) => `$${n.toLocaleString('es-CO')}`
-const typeColor: Record<ItemType, string> = { Income: 'bg-green-500/15 text-green-400', Expense: 'bg-red-500/15 text-red-400', Subscription: 'bg-blue-500/15 text-blue-400' }
-const CHART_COLORS = ['#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#fb923c', '#2dd4bf', '#818cf8', '#e879f9']
 
 const CATEGORIES = ['AI', 'Infrastructure', 'Creative', 'Productivity', 'Apps', 'Food', 'Personal Care', 'Home', 'Debt', 'Health', 'Transport', 'Education', 'Entertainment', 'Other'] as const
-const CATEGORY_COLORS: Record<string, string> = {
-  'AI': '#a78bfa', 'Infrastructure': '#60a5fa', 'Creative': '#f472b6', 'Productivity': '#2dd4bf',
-  'Apps': '#818cf8', 'Food': '#f87171', 'Personal Care': '#fb923c', 'Home': '#fbbf24',
-  'Debt': '#ef4444', 'Health': '#34d399', 'Transport': '#38bdf8', 'Education': '#c084fc',
-  'Entertainment': '#e879f9', 'Other': '#94a3b8',
-}
 
 const fmtCell = (n: number) => `$${n.toLocaleString('es-CO')}`
-
-const rowBorderColor: Record<ItemType, string> = {
-  Income: 'border-l-2 border-green-500/40',
-  Expense: 'border-l-2 border-red-500/40',
-  Subscription: 'border-l-2 border-blue-500/40',
-}
 
 // ── Currency Cell ────────────────────────────────────────────────────────────
 
@@ -131,7 +123,7 @@ function CurrencyCell({ value, onChange, className }: { value: number; onChange:
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onChange={(e) => onChange(parseInt(e.target.value.replace(/\D/g, '')) || 0)}
-      className={`bg-transparent outline-none text-right tabular-nums w-[70px] ${className ?? ''}`}
+      className={`w-[70px] bg-transparent text-right font-mono tabular-nums outline-none ${className ?? ''}`}
       placeholder="$0"
     />
   )
@@ -151,6 +143,10 @@ export function FinancePage() {
   const [hideIncome, updateHideIncome] = useStore<boolean>('cortex-finance-hide-income', false)
   const toggleHideIncome = () => updateHideIncome((prev) => !prev)
   const [categoryFilter, setCategoryFilter] = useState<string>('')
+
+  const [c1] = chartColors()
+  const incomeColor = chartColor(1)
+  const expenseColor = chartColor(4)
 
   const toggleSort = (field: 'name' | 'total') => {
     if (sortField === field) {
@@ -276,84 +272,103 @@ export function FinancePage() {
     <PageShell>
       {/* Month selector + hide toggle */}
       <div className="flex items-center gap-3">
-        <button onClick={toggleHideIncome}
-          className={`cursor-pointer flex items-center gap-1.5 text-[10px] px-2.5 py-1.5 rounded-lg border transition-all shrink-0 ${hideIncome ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-          {hideIncome ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+        <Button
+          variant={hideIncome ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={toggleHideIncome}
+          aria-pressed={hideIncome}
+          className="shrink-0"
+        >
+          {hideIncome ? <EyeOff /> : <Eye />}
           {hideIncome ? 'Hidden' : 'Income'}
-        </button>
-        <div className="overflow-x-auto flex-1">
-          <div className="flex gap-1 flex-nowrap min-w-max">
-          {MONTHS.map((m, i) => (
-            <button key={m} onClick={() => setSelectedMonth(i)}
-              className={`cursor-pointer flex-1 text-[10px] py-1.5 px-2 rounded-lg transition-all ${i === selectedMonth ? 'bg-foreground/10 text-foreground font-medium' : 'text-muted-foreground/40 hover:text-muted-foreground'} ${i === currentMonth ? 'border-b-2 border-green-400/50' : ''}`}>
-              {m}
-            </button>
-          ))}
-          </div>
+        </Button>
+        <div className="min-w-0 flex-1 overflow-x-auto">
+          <Tabs value={selectedMonth} onValueChange={(v) => setSelectedMonth(v as number)}>
+            <TabsList className="min-w-max">
+              {MONTHS.map((m, i) => (
+                <TabsTrigger key={m} value={i}>
+                  {m}
+                  {i === currentMonth && (
+                    <>
+                      <span aria-hidden className="size-1 shrink-0 rounded-full bg-accent" />
+                      <span className="sr-only">current month</span>
+                    </>
+                  )}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </div>
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-4">
-        {[
-          { label: 'Income', value: mask(fmtCOP(cur.income)), icon: TrendingUp, color: hideIncome ? 'text-muted-foreground' : 'text-green-400' },
-          { label: 'Expenses', value: fmtCOP(cur.expenses), icon: TrendingDown, color: 'text-red-400' },
-          { label: 'Net Savings', value: mask(fmtCOP(cur.savings)), icon: PiggyBank, color: hideIncome ? 'text-muted-foreground' : cur.savings >= 0 ? 'text-green-400' : 'text-red-400', sparkline: !hideIncome },
-          { label: 'Savings Rate', value: mask(`${savingsRate.toFixed(0)}%`), icon: DollarSign, color: hideIncome ? 'text-muted-foreground' : savingsRate >= 20 ? 'text-green-400' : 'text-yellow-400' },
-        ].map((kpi) => (
-          <div key={kpi.label} className="liquid-glass flex items-center gap-2 sm:gap-3 rounded-xl border border-border px-3 py-2.5 sm:px-4 sm:py-3">
-            <kpi.icon className={`h-4 w-4 sm:h-5 sm:w-5 shrink-0 ${kpi.color}`} />
-            <div className="flex-1 min-w-0">
-              <p className={`text-base sm:text-lg font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
-              <p className="text-[10px] text-muted-foreground">{kpi.label}</p>
-            </div>
-            {'sparkline' in kpi && kpi.sparkline && (
-              <div className="w-[50px] sm:w-[80px] h-[25px] sm:h-[30px] shrink-0 hidden min-[480px]:block">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile variant="glass" label="Income" value={mask(fmtCOP(cur.income))} icon={<TrendingUp />} />
+        <StatTile variant="glass" label="Expenses" value={fmtCOP(cur.expenses)} icon={<TrendingDown />} />
+        <StatTile
+          variant="glass"
+          label="Net Savings"
+          icon={<PiggyBank />}
+          value={
+            <span className={!hideIncome && cur.savings < 0 ? 'text-destructive' : undefined}>
+              {mask(fmtCOP(cur.savings))}
+            </span>
+          }
+          delta={
+            !hideIncome ? (
+              <div aria-hidden className="hidden h-6 w-16 shrink-0 min-[480px]:block">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={monthlyTotals}>
-                    <Line type="monotone" dataKey="savings" stroke={cur.savings >= 0 ? '#34d399' : '#f87171'} strokeWidth={1.5} dot={false} />
+                    <Line type="monotone" dataKey="savings" stroke={c1} strokeWidth={1.5} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-            )}
-          </div>
-        ))}
+            ) : undefined
+          }
+        />
+        <StatTile
+          variant="glass"
+          label="Savings Rate"
+          icon={<DollarSign />}
+          value={
+            <span className={!hideIncome && savingsRate < 20 ? 'text-warning' : undefined}>
+              {mask(`${savingsRate.toFixed(0)}%`)}
+            </span>
+          }
+        />
       </div>
 
       {/* Balance */}
-      <div className="liquid-glass rounded-xl border border-border px-4 py-3 sm:px-5">
-        <div className="flex items-center gap-3">
-          <Wallet className={`h-5 w-5 shrink-0 ${hideIncome ? 'text-muted-foreground' : 'text-emerald-400'}`} />
-          <div className="flex-1 min-w-0">
-            <p className={`text-base font-bold tabular-nums ${hideIncome ? 'text-muted-foreground' : 'text-emerald-400'}`}>{mask(fmtFull(balance.current))}</p>
-            <p className="text-[10px] text-muted-foreground">Account Balance · {MONTHS[selectedMonth]}</p>
-          </div>
-          <div className="flex items-center gap-3 sm:gap-4">
-            {balance.pending > 0 && (
-              <div className="text-right">
-                <p className="text-xs sm:text-sm font-bold tabular-nums text-amber-400">{fmtFull(balance.pending)}</p>
-                <p className="text-[10px] text-muted-foreground">Pending</p>
-              </div>
-            )}
-            <div className="text-right">
-              <p className="text-xs sm:text-sm tabular-nums font-medium">{balance.paidCount}/{balance.totalPayable}</p>
-              <p className="text-[10px] text-muted-foreground">Paid</p>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatTile
+          label={`Account Balance · ${MONTHS[selectedMonth]}`}
+          value={mask(fmtFull(balance.current))}
+          icon={<Wallet />}
+          className="col-span-2 sm:col-span-1"
+        />
+        <StatTile
+          label="Pending"
+          value={
+            <span className={balance.pending > 0 ? 'text-warning' : undefined}>{fmtFull(balance.pending)}</span>
+          }
+        />
+        <StatTile label="Paid" value={`${balance.paidCount}/${balance.totalPayable}`} sub="bills settled this month" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-5">
         {/* Bar chart */}
         <WidgetCard title={hideIncome ? 'Expenses' : 'Income vs Expenses'} description={hideIncome ? `${data.year}` : `${data.year} · Net: ${fmtCOP(yearTotal.income - yearTotal.expenses)}`} delay={0.1} className="lg:col-span-3">
-          <div className="h-[200px] sm:h-[280px] -mx-2">
+          <div className="h-[200px] -mx-2 sm:h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={hideIncome ? monthlyTotals.map(m => ({ ...m, income: 0 })) : monthlyTotals} barGap={2}>
-                <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#666' }} axisLine={false} tickLine={false} interval={0} />
-                <YAxis tick={{ fontSize: 9, fill: '#666' }} axisLine={false} tickLine={false} tickFormatter={fmtCOP} width={40} />
-                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }} formatter={(v) => fmtFull(Number(v))} />
-                {!hideIncome && <Bar dataKey="income" fill="#34d399" radius={[4, 4, 0, 0]} maxBarSize={20} />}
-                <Bar dataKey="expenses" fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                <XAxis dataKey="month" {...axisProps()} interval={0} />
+                <YAxis {...axisProps()} tickFormatter={fmtCOP} width={40} />
+                <Tooltip
+                  content={<ThemedTooltip formatter={(v) => fmtFull(Number(v))} />}
+                  cursor={{ fill: cssVar('--muted'), fillOpacity: 0.4 }}
+                />
+                {!hideIncome && <Bar dataKey="income" fill={incomeColor} radius={[4, 4, 0, 0]} maxBarSize={20} />}
+                <Bar dataKey="expenses" fill={expenseColor} radius={[4, 4, 0, 0]} maxBarSize={20} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -362,16 +377,16 @@ export function FinancePage() {
         {/* Pie chart */}
         <WidgetCard title={`${MONTHS[selectedMonth]} by Category`} description={`${expenseBreakdown.length} categories`} delay={0.15} className="lg:col-span-2">
           {expenseBreakdown.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-6 text-center">No expenses</p>
+            <EmptyState message="No expenses this month." className="py-6" />
           ) : (
-            <div className="h-[200px] sm:h-[280px] -mx-2">
+            <div className="h-[200px] -mx-2 sm:h-[280px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={expenseBreakdown} dataKey="value" nameKey="name" cx="50%" cy="45%" innerRadius="30%" outerRadius="55%" paddingAngle={2}>
-                    {expenseBreakdown.map((entry, i) => <Cell key={i} fill={CATEGORY_COLORS[entry.name] || CHART_COLORS[i % CHART_COLORS.length]} />)}
+                    {expenseBreakdown.map((entry, i) => <Cell key={entry.name} fill={chartColor(i)} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }} formatter={(v) => fmtFull(Number(v))} />
-                  <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
+                  <Tooltip content={<ThemedTooltip formatter={(v) => fmtFull(Number(v))} />} />
+                  <Legend iconSize={8} wrapperStyle={{ fontSize: 10, fontFamily: CHART_FONT_MONO }} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -388,60 +403,51 @@ export function FinancePage() {
             const annualCost = sub.months.reduce((a, b) => a + b, 0)
             const isActive = amt > 0
             return (
-              <div key={sub.id} className={`flex items-center justify-between rounded-lg px-3 py-2 ${isActive ? 'bg-blue-500/[0.04]' : 'bg-secondary/30 opacity-40'}`}>
+              <div key={sub.id} className={`flex items-center justify-between rounded-md px-3 py-2 ${isActive ? 'bg-secondary/30' : 'bg-secondary/20 opacity-40'}`}>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <span className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${isActive ? 'bg-green-400' : 'bg-muted-foreground/30'}`} />
-                    <p className="text-xs font-medium truncate">{sub.name}</p>
+                    <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? 'bg-success' : 'bg-border'}`} />
+                    <p className="truncate text-xs font-medium">{sub.name}</p>
                   </div>
-                  <p className="text-[10px] text-muted-foreground tabular-nums">
+                  <p className="font-mono text-2xs tabular-nums text-muted-foreground">
                     {isActive ? fmtFull(amt) : 'Inactive'}{' '}
-                    <span className="text-muted-foreground/50">· {activeMonths}mo · {fmtCOP(annualCost)}/yr</span>
+                    <span className="text-foreground-faint">· {activeMonths}mo · {fmtCOP(annualCost)}/yr</span>
                   </p>
                 </div>
-                <CreditCard className="h-3.5 w-3.5 text-blue-400/40 shrink-0 ml-2" />
+                <CreditCard className="ml-2 h-3.5 w-3.5 shrink-0 text-foreground-faint" />
               </div>
             )
           })}
         </div>
       </WidgetCard>
 
-      {/* Section divider */}
-      <div className="flex items-center gap-3 pt-2">
-        <h2 className="text-sm font-semibold text-foreground">Budget</h2>
-        <div className="flex-1 h-px bg-border/50" />
-      </div>
-
       {/* Budget Table */}
       <WidgetCard title="Budget" description={`${filtered.length} items`} delay={0.25}>
-        <div className="flex flex-col gap-2 sm:gap-3 mb-3">
+        <div className="mb-3 flex flex-col gap-2 sm:gap-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto">
-              <div className="flex gap-1 sm:gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5 overflow-x-auto sm:gap-2">
+              <div className="flex shrink-0 gap-1 sm:gap-1.5">
                 {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
-                  <button key={t} onClick={() => setFilterType(filterType === t ? null : t)}
-                    className={`cursor-pointer text-[10px] px-2 sm:px-2.5 py-1 rounded-full border transition-all whitespace-nowrap ${filterType === t ? `${typeColor[t]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+                  <Chip key={t} selectable selected={filterType === t} onClick={() => setFilterType(filterType === t ? null : t)}>
                     {t === 'Subscription' ? 'Sub' : t}
-                  </button>
+                  </Chip>
                 ))}
               </div>
-              <button onClick={() => setCompact(!compact)}
-                className={`cursor-pointer flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border transition-all shrink-0 ${compact ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-                <Columns2 className="h-3 w-3" /> <span className="hidden sm:inline">Compact</span>
-              </button>
+              <Chip selectable selected={compact} onClick={() => setCompact(!compact)} aria-label="Toggle compact columns" className="shrink-0">
+                <Columns2 /> <span className="hidden sm:inline">Compact</span>
+              </Chip>
             </div>
-            <div className="flex gap-1 shrink-0">
+            <div className="flex shrink-0 gap-1">
               {(['Income', 'Expense', 'Subscription'] as ItemType[]).map((t) => (
-                <button key={t} onClick={() => addItem(t)}
-                  className="cursor-pointer flex items-center gap-0.5 sm:gap-1 text-[10px] text-muted-foreground hover:text-foreground px-1.5 sm:px-2 py-1 rounded-lg border border-border hover:bg-secondary transition-all whitespace-nowrap">
-                  <Plus className="h-3 w-3" /> <span className="hidden sm:inline">{t}</span><span className="sm:hidden">{t === 'Subscription' ? 'S' : t[0]}</span>
-                </button>
+                <Button key={t} variant="outline" size="xs" onClick={() => addItem(t)} className="whitespace-nowrap">
+                  <Plus /> <span className="hidden sm:inline">{t}</span><span className="sm:hidden">{t === 'Subscription' ? 'S' : t[0]}</span>
+                </Button>
               ))}
             </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="relative max-w-xs flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
               <Input
                 placeholder="Search items..."
                 value={searchTerm}
@@ -450,35 +456,35 @@ export function FinancePage() {
               />
             </div>
             <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
-              className="h-7 text-xs rounded-md border border-border bg-transparent px-2 text-muted-foreground outline-none cursor-pointer">
+              className="h-7 cursor-pointer rounded-md border border-input bg-transparent px-2 text-xs text-muted-foreground">
               <option value="">All Categories</option>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
-        <div className="overflow-x-auto -mx-5">
+        <div className="-mx-4 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="px-5 py-2 text-left font-medium sticky left-0 bg-card z-10 min-w-[140px]">
-                  <button onClick={() => toggleSort('name')} className="cursor-pointer flex items-center gap-1 hover:text-foreground transition-colors">
+              <tr className="border-b border-border/50 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
+                <th className="sticky left-0 z-10 min-w-[140px] bg-card px-4 py-2 text-left font-medium">
+                  <Button variant="ghost" size="xs" onClick={() => toggleSort('name')} className="-ml-2 gap-1 font-mono text-2xs uppercase tracking-wider">
                     Item
-                    {sortField === 'name' ? (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronUp className="h-3 w-3 opacity-0 group-hover:opacity-30" />}
-                  </button>
+                    {sortField === 'name' ? (sortDir === 'asc' ? <ChevronUp /> : <ChevronDown />) : <ChevronUp className="opacity-0 transition-opacity group-hover/button:opacity-40" />}
+                  </Button>
                 </th>
-                <th className="py-2 text-left font-medium w-16">Type</th>
-                <th className="py-2 text-left font-medium w-24">Category</th>
+                <th className="w-16 py-2 text-left font-medium">Type</th>
+                <th className="w-24 py-2 text-left font-medium">Category</th>
                 {!compact && MONTHS.map((m, i) => (
-                  <th key={m} className={`py-2 text-right font-medium min-w-[80px] ${i === selectedMonth ? 'text-foreground' : ''}`}>{m}</th>
+                  <th key={m} className={`min-w-[80px] py-2 text-right font-medium ${i === selectedMonth ? 'text-foreground' : ''}`}>{m}</th>
                 ))}
-                {compact && <th className="py-2 text-right font-medium min-w-[80px]">{MONTHS[selectedMonth]}</th>}
-                <th className="py-2 text-right font-medium min-w-[90px]">
-                  <button onClick={() => toggleSort('total')} className="cursor-pointer flex items-center gap-1 ml-auto hover:text-foreground transition-colors">
+                {compact && <th className="min-w-[80px] py-2 text-right font-medium">{MONTHS[selectedMonth]}</th>}
+                <th className="min-w-[90px] py-2 text-right font-medium">
+                  <Button variant="ghost" size="xs" onClick={() => toggleSort('total')} className="-mr-2 gap-1 font-mono text-2xs uppercase tracking-wider">
                     Total
-                    {sortField === 'total' ? (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />) : <ChevronUp className="h-3 w-3 opacity-0 group-hover:opacity-30" />}
-                  </button>
+                    {sortField === 'total' ? (sortDir === 'asc' ? <ChevronUp /> : <ChevronDown />) : <ChevronUp className="opacity-0 transition-opacity group-hover/button:opacity-40" />}
+                  </Button>
                 </th>
-                <th className="py-2 w-6"></th>
+                <th className="w-6 py-2"></th>
               </tr>
             </thead>
             <tbody>
@@ -491,12 +497,12 @@ export function FinancePage() {
                     const total = item.months.reduce((a, b) => a + b, 0)
                     const isPaidSelected = item.type !== 'Income' && item.months[selectedMonth] > 0 && (item.paid?.[selectedMonth] ?? false)
                     return (
-                      <tr key={item.id} className={`border-b border-border/20 hover:bg-secondary/30 group ${rowBorderColor[item.type]} ${idx % 2 === 1 ? 'bg-secondary/10' : ''} ${isPaidSelected ? 'opacity-60' : ''}`}>
-                        <td className="px-5 py-2 sticky left-0 bg-inherit z-10">
+                      <tr key={item.id} className={`group border-b border-border/20 hover:bg-secondary/30 ${idx % 2 === 1 ? 'bg-secondary/10' : ''} ${isPaidSelected ? 'opacity-60' : ''}`}>
+                        <td className="sticky left-0 z-10 bg-inherit px-4 py-2">
                           <div className="flex items-center gap-1.5">
                             {item.type !== 'Income' ? (
                               item.months[selectedMonth] > 0 ? (
-                                <div className="flex items-center gap-1 shrink-0">
+                                <div className="flex shrink-0 items-center gap-1">
                                   {editingPaidId === item.id ? (
                                     <div className="flex items-center gap-1">
                                       <input
@@ -504,7 +510,7 @@ export function FinancePage() {
                                         onChange={(e) => setPaidAmountInput(e.target.value.replace(/\D/g, ''))}
                                         onKeyDown={(e) => e.key === 'Enter' && commitPaidAmount(item.id, selectedMonth)}
                                         onBlur={() => commitPaidAmount(item.id, selectedMonth)}
-                                        className="h-5 w-16 rounded bg-input px-1 text-[10px] outline-none tabular-nums"
+                                        className="h-5 w-16 rounded-md bg-input px-1 font-mono text-2xs tabular-nums outline-none"
                                         autoFocus
                                       />
                                     </div>
@@ -515,23 +521,24 @@ export function FinancePage() {
                                           const pa = item.paidAmounts?.[selectedMonth] ?? 0
                                           startEditPaid(item.id, pa, item.months[selectedMonth])
                                         }}
-                                        className="cursor-pointer shrink-0"
+                                        className="shrink-0 cursor-pointer"
                                         title="Click to set paid amount"
+                                        aria-label={`Set paid amount for ${item.name}`}
                                       >
                                         {(item.paid?.[selectedMonth]) ? (
-                                          <div className="h-3.5 w-3.5 rounded-full bg-green-500 flex items-center justify-center">
-                                            <Check className="h-2 w-2 text-white" strokeWidth={3} />
-                                          </div>
+                                          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-success/25 bg-success/10">
+                                            <Check className="h-2 w-2 text-success" strokeWidth={3} />
+                                          </span>
                                         ) : (item.paidAmounts?.[selectedMonth] ?? 0) > 0 ? (
-                                          <div className="h-3.5 w-3.5 rounded-full bg-amber-500 flex items-center justify-center">
-                                            <span className="text-[6px] text-white font-bold">$</span>
-                                          </div>
+                                          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-warning/25 bg-warning/10">
+                                            <DollarSign className="h-2 w-2 text-warning" strokeWidth={3} />
+                                          </span>
                                         ) : (
-                                          <Circle className="h-3.5 w-3.5 text-muted-foreground/30 hover:text-muted-foreground/50 transition-colors" />
+                                          <Circle className="h-3.5 w-3.5 text-foreground-faint transition-colors hover:text-muted-foreground" />
                                         )}
                                       </button>
                                       {(item.paidAmounts?.[selectedMonth] ?? 0) > 0 && (item.paidAmounts?.[selectedMonth] ?? 0) < item.months[selectedMonth] && (
-                                        <span className="text-[9px] text-amber-400 tabular-nums whitespace-nowrap">
+                                        <span className="whitespace-nowrap font-mono text-3xs tabular-nums text-warning">
                                           {fmtCOP(item.paidAmounts![selectedMonth])}/{fmtCOP(item.months[selectedMonth])}
                                         </span>
                                       )}
@@ -542,19 +549,19 @@ export function FinancePage() {
                                 <span className="w-3.5 shrink-0" />
                               )
                             ) : null}
-                            <input value={item.name} onChange={(e) => setField(item.id, { name: e.target.value })} className="bg-transparent outline-none font-medium w-full" />
+                            <input value={item.name} onChange={(e) => setField(item.id, { name: e.target.value })} className="w-full bg-transparent font-medium outline-none" />
                           </div>
                         </td>
                         <td className="py-2">
                           <select value={item.type} onChange={(e) => setField(item.id, { type: e.target.value as ItemType })}
-                            className={`cursor-pointer bg-transparent outline-none text-[9px] rounded-full px-1.5 py-0.5 ${typeColor[item.type]}`}>
+                            className="cursor-pointer rounded-full border border-border bg-transparent px-1.5 py-0.5 font-mono text-3xs text-muted-foreground outline-none hover:text-foreground">
                             <option value="Income">Income</option><option value="Expense">Expense</option><option value="Subscription">Sub</option>
                           </select>
                         </td>
                         <td className="py-2">
                           {item.type !== 'Income' ? (
                             <select value={item.category || 'Other'} onChange={(e) => setField(item.id, { category: e.target.value })}
-                              className="cursor-pointer bg-transparent outline-none text-[9px] rounded-full px-1.5 py-0.5 text-muted-foreground hover:text-foreground">
+                              className="cursor-pointer rounded-full bg-transparent px-1.5 py-0.5 font-mono text-3xs text-muted-foreground outline-none hover:text-foreground">
                               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
                           ) : null}
@@ -562,58 +569,64 @@ export function FinancePage() {
                         {!compact && item.months.map((val, mi) => {
                           const cellPaid = item.type !== 'Income' && val > 0 && (item.paid?.[mi] ?? false)
                           return (
-                            <td key={mi} className={`py-2 text-right ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''} ${cellPaid ? 'bg-green-500/10' : ''}`}>
+                            <td key={mi} className={`py-2 text-right ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''} ${cellPaid ? 'bg-success/10' : ''}`}>
                               {hideIncome && item.type === 'Income' ? (
-                                <span className="text-muted-foreground/30 tabular-nums w-[70px] inline-block">•••</span>
+                                <span className="inline-block w-[70px] font-mono tabular-nums text-foreground-faint">•••</span>
                               ) : (
                                 <CurrencyCell value={val} onChange={(v) => setAmount(item.id, mi, v)}
-                                  className={item.type === 'Income' ? 'text-green-400/80' : cellPaid ? 'text-green-400/70' : 'text-muted-foreground'} />
+                                  className={item.type === 'Income' || cellPaid ? 'text-success' : 'text-muted-foreground'} />
                               )}
                             </td>
                           )
                         })}
                         {compact && (
-                          <td className={`py-2 text-right ${isPaidSelected ? 'bg-green-500/10' : 'bg-foreground/[0.03]'}`}>
+                          <td className={`py-2 text-right ${isPaidSelected ? 'bg-success/10' : 'bg-foreground/[0.03]'}`}>
                             {hideIncome && item.type === 'Income' ? (
-                              <span className="text-muted-foreground/30 tabular-nums w-[70px] inline-block">•••</span>
+                              <span className="inline-block w-[70px] font-mono tabular-nums text-foreground-faint">•••</span>
                             ) : (
                               <CurrencyCell value={item.months[selectedMonth]} onChange={(v) => setAmount(item.id, selectedMonth, v)}
-                                className={item.type === 'Income' ? 'text-green-400/80' : isPaidSelected ? 'text-green-400/70' : 'text-muted-foreground'} />
+                                className={item.type === 'Income' || isPaidSelected ? 'text-success' : 'text-muted-foreground'} />
                             )}
                           </td>
                         )}
-                        <td className="py-2 text-right tabular-nums font-medium">{hideIncome && item.type === 'Income' ? '•••' : fmtCell(total)}</td>
+                        <td className="py-2 text-right font-mono font-medium tabular-nums">{hideIncome && item.type === 'Income' ? '•••' : fmtCell(total)}</td>
                         <td className="py-2 pr-4">
-                          <button onClick={() => deleteItem(item.id)} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all">
-                            <Trash2 className="h-3 w-3" />
-                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => deleteItem(item.id)}
+                            aria-label={`Delete ${item.name}`}
+                            className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:text-destructive"
+                          >
+                            <Trash2 />
+                          </Button>
                         </td>
                       </tr>
                     )
                   }),
                   <tr key={`subtotal-${group.type}`} className="border-t border-border/40">
-                    <td className="px-5 py-1.5 sticky left-0 bg-card z-10 text-muted-foreground font-semibold text-[10px]">{group.type} Subtotal</td>
+                    <td className="sticky left-0 z-10 bg-card px-4 py-1.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{group.type} Subtotal</td>
                     <td></td>
                     <td></td>
                     {!compact && groupSubtotals.map((val, mi) => (
-                      <td key={mi} className={`py-1.5 text-right tabular-nums font-semibold text-muted-foreground text-[10px] ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{hideIncome && group.type === 'Income' ? '•••' : fmtCell(val)}</td>
+                      <td key={mi} className={`py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{hideIncome && group.type === 'Income' ? '•••' : fmtCell(val)}</td>
                     ))}
-                    {compact && <td className="py-1.5 text-right tabular-nums font-semibold text-muted-foreground text-[10px] bg-foreground/[0.03]">{hideIncome && group.type === 'Income' ? '•••' : fmtCell(groupSubtotals[selectedMonth])}</td>}
-                    <td className="py-1.5 text-right tabular-nums font-semibold text-muted-foreground text-[10px]">{hideIncome && group.type === 'Income' ? '•••' : fmtCell(groupTotal)}</td>
+                    {compact && <td className="bg-foreground/[0.03] py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{hideIncome && group.type === 'Income' ? '•••' : fmtCell(groupSubtotals[selectedMonth])}</td>}
+                    <td className="py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{hideIncome && group.type === 'Income' ? '•••' : fmtCell(groupTotal)}</td>
                     <td></td>
                   </tr>,
                 ]
               })}
               <tr className="border-t border-border/50 font-medium">
-                <td className="px-5 py-2.5 sticky left-0 bg-card z-10">Net</td>
+                <td className="sticky left-0 z-10 bg-card px-4 py-2.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Net</td>
                 <td></td>
                 <td></td>
                 {!compact && MONTHS.map((_, mi) => {
                   const net = monthlyTotals[mi].savings
-                  return <td key={mi} className={`py-2.5 text-right tabular-nums ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''} ${hideIncome ? 'text-muted-foreground/30' : net >= 0 ? 'text-green-400' : 'text-red-400'}`}>{hideIncome ? '•••' : fmtCOP(net)}</td>
+                  return <td key={mi} className={`py-2.5 text-right font-mono tabular-nums ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''} ${hideIncome ? 'text-foreground-faint' : net >= 0 ? 'text-success' : 'text-destructive'}`}>{hideIncome ? '•••' : fmtCOP(net)}</td>
                 })}
-                {compact && (() => { const net = monthlyTotals[selectedMonth].savings; return <td className={`py-2.5 text-right tabular-nums bg-foreground/[0.03] ${hideIncome ? 'text-muted-foreground/30' : net >= 0 ? 'text-green-400' : 'text-red-400'}`}>{hideIncome ? '•••' : fmtCOP(net)}</td> })()}
-                <td className={`py-2.5 text-right tabular-nums ${hideIncome ? 'text-muted-foreground/30' : yearTotal.income - yearTotal.expenses >= 0 ? 'text-green-400' : 'text-red-400'}`}>{hideIncome ? '•••' : fmtCOP(yearTotal.income - yearTotal.expenses)}</td>
+                {compact && (() => { const net = monthlyTotals[selectedMonth].savings; return <td className={`bg-foreground/[0.03] py-2.5 text-right font-mono tabular-nums ${hideIncome ? 'text-foreground-faint' : net >= 0 ? 'text-success' : 'text-destructive'}`}>{hideIncome ? '•••' : fmtCOP(net)}</td> })()}
+                <td className={`py-2.5 text-right font-mono tabular-nums ${hideIncome ? 'text-foreground-faint' : yearTotal.income - yearTotal.expenses >= 0 ? 'text-success' : 'text-destructive'}`}>{hideIncome ? '•••' : fmtCOP(yearTotal.income - yearTotal.expenses)}</td>
                 <td></td>
               </tr>
             </tbody>

@@ -1,7 +1,10 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { EmptyState } from '@/components/shared/EmptyState'
 import type { DailyNutrition, FoodItem, BodyStats, NutritionTargets, PantryItem } from '@/types/gym'
 import { COMMON_FOODS, EMPTY_DAILY_NUTRITION } from '@/types/gym'
 import { localDate } from '@/lib/date-utils'
@@ -48,7 +51,20 @@ function formatDateLabel(dateStr: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
+/** Tokenized macro meter — success once the target is reached. */
+function MacroBar({ value, target, className = '' }: { value: number; target: number; className?: string }) {
+  return (
+    <div className={`h-1.5 rounded-full bg-muted/60 ${className}`}>
+      <div
+        className={`h-full rounded-full transition-all duration-500 ${value >= target ? 'bg-success' : 'bg-foreground/40'}`}
+        style={{ width: `${Math.min(100, (value / target) * 100)}%` }}
+      />
+    </div>
+  )
+}
+
 export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToday, bodyStats, onUpdateBodyStats, targets, onUpdateTargets }: NutritionLogProps) {
+  const reduceMotion = useReducedMotion()
   const [dayOffset, setDayOffset] = useState(0)
   const viewDate = useMemo(() => {
     const d = new Date()
@@ -215,44 +231,55 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
     <div className="mt-4 space-y-4">
       {/* Day navigation */}
       <div className="flex items-center justify-between">
-        <button onClick={() => setDayOffset(d => d - 1)} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors">
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-        <button
+        <Button variant="ghost" size="icon-sm" onClick={() => setDayOffset(d => d - 1)} aria-label="Previous day">
+          <ChevronLeft />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => setDayOffset(0)}
-          className={`text-sm font-medium px-3 py-1 rounded-md transition-colors ${isToday ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          className={`font-mono ${isToday ? 'text-foreground' : ''}`}
         >
           {formatDateLabel(viewDate)}
-        </button>
-        <button onClick={() => setDayOffset(d => Math.min(d + 1, 0))} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors" disabled={dayOffset >= 0}>
-          <ChevronRight className={`h-4 w-4 ${dayOffset >= 0 ? 'opacity-30' : ''}`} />
-        </button>
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setDayOffset(d => Math.min(d + 1, 0))}
+          disabled={dayOffset >= 0}
+          aria-label="Next day"
+        >
+          <ChevronRight />
+        </Button>
       </div>
 
       {/* Targets editing */}
       {editingTargets ? (
-        <div className="flex items-center gap-2 flex-wrap rounded-xl border border-border bg-card p-3">
+        <div className="surface flex flex-wrap items-center gap-2 rounded-xl p-3">
           <div className="flex items-center gap-1">
-            <label className="text-[10px] text-muted-foreground">Protein</label>
-            <input type="number" value={targetInputs.protein}
+            <label className="text-2xs text-muted-foreground">Protein</label>
+            <Input type="number" value={targetInputs.protein}
               onChange={(e) => setTargetInputs(p => ({ ...p, protein: e.target.value }))}
-              className="h-7 w-16 rounded border border-border bg-background px-2 text-xs text-foreground outline-none tabular-nums" />
-            <span className="text-[10px] text-muted-foreground">g</span>
+              className="h-7 w-16 text-xs tabular-nums" />
+            <span className="text-2xs text-muted-foreground">g</span>
           </div>
           <div className="flex items-center gap-1">
-            <label className="text-[10px] text-muted-foreground">Calories</label>
-            <input type="number" value={targetInputs.calories}
+            <label className="text-2xs text-muted-foreground">Calories</label>
+            <Input type="number" value={targetInputs.calories}
               onChange={(e) => setTargetInputs(p => ({ ...p, calories: e.target.value }))}
-              className="h-7 w-20 rounded border border-border bg-background px-2 text-xs text-foreground outline-none tabular-nums" />
+              className="h-7 w-20 text-xs tabular-nums" />
           </div>
           <div className="flex items-center gap-1">
-            <label className="text-[10px] text-muted-foreground">Water</label>
-            <input type="number" step="0.1" value={targetInputs.water}
+            <label className="text-2xs text-muted-foreground">Water</label>
+            <Input type="number" step="0.1" value={targetInputs.water}
               onChange={(e) => setTargetInputs(p => ({ ...p, water: e.target.value }))}
-              className="h-7 w-16 rounded border border-border bg-background px-2 text-xs text-foreground outline-none tabular-nums" />
-            <span className="text-[10px] text-muted-foreground">L</span>
+              className="h-7 w-16 text-xs tabular-nums" />
+            <span className="text-2xs text-muted-foreground">L</span>
           </div>
-          <button
+          <Button
+            variant="secondary"
+            size="icon-sm"
+            aria-label="Save targets"
             onClick={() => {
               onUpdateTargets({
                 protein: Number(targetInputs.protein) || targets.protein,
@@ -261,14 +288,16 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
               })
               setEditingTargets(false)
             }}
-            className="rounded-lg bg-foreground/10 p-1.5 hover:bg-foreground/20 transition-colors"
           >
-            <Check className="h-3.5 w-3.5" />
-          </button>
+            <Check />
+          </Button>
         </div>
       ) : (
         <div className="flex justify-end">
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-foreground-faint hover:text-muted-foreground"
             onClick={() => {
               setTargetInputs({
                 protein: String(targets.protein),
@@ -277,86 +306,58 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
               })
               setEditingTargets(true)
             }}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground transition-colors"
           >
-            <Pencil className="h-2.5 w-2.5" />
+            <Pencil />
             Edit targets
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Summary bar — mobile: stacked, desktop: 3-col */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={reduceMotion ? false : { opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="space-y-2 sm:space-y-0 sm:grid sm:grid-cols-3 sm:gap-3"
+        className="space-y-2 sm:grid sm:grid-cols-3 sm:gap-3 sm:space-y-0"
       >
         {/* Protein & Calories — side by side on mobile */}
         <div className="grid grid-cols-2 gap-2 sm:contents">
-          <div className="rounded-xl border border-border bg-card p-3">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs text-muted-foreground">Protein</span>
-              <span className="text-xs font-medium tabular-nums">
+          <div className="surface rounded-xl p-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Protein</span>
+              <span className="font-mono text-xs tabular-nums text-foreground">
                 {totals.protein}g / {targets.protein}g
               </span>
             </div>
-            <div className="h-2 sm:h-1.5 rounded-full bg-foreground/10">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  totals.protein >= targets.protein ? 'bg-green-400' : 'bg-foreground/40'
-                }`}
-                style={{ width: `${Math.min(100, (totals.protein / targets.protein) * 100)}%` }}
-              />
-            </div>
+            <MacroBar value={totals.protein} target={targets.protein} className="h-2 sm:h-1.5" />
           </div>
 
-          <div className="rounded-xl border border-border bg-card p-3">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs text-muted-foreground">Calories</span>
-              <span className="text-xs font-medium tabular-nums">
+          <div className="surface rounded-xl p-3">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Calories</span>
+              <span className="font-mono text-xs tabular-nums text-foreground">
                 {totals.calories} / {targets.calories}
               </span>
             </div>
-            <div className="h-2 sm:h-1.5 rounded-full bg-foreground/10">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  totals.calories >= targets.calories ? 'bg-green-400' : 'bg-foreground/40'
-                }`}
-                style={{ width: `${Math.min(100, (totals.calories / targets.calories) * 100)}%` }}
-              />
-            </div>
+            <MacroBar value={totals.calories} target={targets.calories} className="h-2 sm:h-1.5" />
           </div>
         </div>
 
         {/* Water — full width on mobile */}
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs text-muted-foreground">Water</span>
-            <span className="text-xs font-medium tabular-nums">
+        <div className="surface rounded-xl p-3">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Water</span>
+            <span className="font-mono text-xs tabular-nums text-foreground">
               {nutrition.waterLiters}L / {targets.water}L
             </span>
           </div>
           <div className="flex items-center gap-3 sm:gap-2">
-            <button
-              onClick={() => adjustWater(-0.25)}
-              className="rounded-lg bg-foreground/10 p-1.5 sm:p-0.5 hover:bg-foreground/20 transition-colors"
-            >
-              <Minus className="h-4 w-4 sm:h-3 sm:w-3" />
-            </button>
-            <div className="flex-1 h-2 sm:h-1.5 rounded-full bg-foreground/10">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  nutrition.waterLiters >= targets.water ? 'bg-blue-400' : 'bg-blue-400/50'
-                }`}
-                style={{ width: `${Math.min(100, (nutrition.waterLiters / targets.water) * 100)}%` }}
-              />
-            </div>
-            <button
-              onClick={() => adjustWater(0.25)}
-              className="rounded-lg bg-foreground/10 p-1.5 sm:p-0.5 hover:bg-foreground/20 transition-colors"
-            >
-              <Plus className="h-4 w-4 sm:h-3 sm:w-3" />
-            </button>
+            <Button variant="secondary" size="icon-xs" onClick={() => adjustWater(-0.25)} aria-label="Remove 0.25 liters">
+              <Minus />
+            </Button>
+            <MacroBar value={nutrition.waterLiters} target={targets.water} className="h-2 flex-1 sm:h-1.5" />
+            <Button variant="secondary" size="icon-xs" onClick={() => adjustWater(0.25)} aria-label="Add 0.25 liters">
+              <Plus />
+            </Button>
           </div>
         </div>
       </motion.div>
@@ -370,71 +371,81 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
             <button
               key={meal.id}
               onClick={() => setActiveMeal(mi)}
-              className={`sm:flex-1 rounded-lg px-3 py-3 sm:py-2 text-left transition-colors cursor-pointer ${
+              aria-pressed={activeMeal === mi}
+              className={`cursor-pointer rounded-md border px-3 py-3 text-left transition-colors sm:flex-1 sm:py-2 ${
                 activeMeal === mi
-                  ? 'bg-foreground/10 border border-foreground/20'
-                  : 'bg-card border border-border hover:bg-foreground/5'
+                  ? 'border-accent/40 bg-accent/10'
+                  : 'border-border bg-card hover:bg-muted/40'
               }`}
             >
-              <p className={`text-sm sm:text-xs font-medium ${activeMeal === mi ? 'text-foreground' : 'text-muted-foreground'}`}>{meal.name}</p>
-              <p className="text-xs sm:text-[10px] text-muted-foreground/50 tabular-nums">{mealProtein}g · {mealCals} kcal</p>
+              <p className={`text-sm font-medium sm:text-xs ${activeMeal === mi ? 'text-foreground' : 'text-muted-foreground'}`}>{meal.name}</p>
+              <p className="font-mono text-2xs tabular-nums text-foreground-faint">{mealProtein}g · {mealCals} kcal</p>
             </button>
           )
         })}
       </div>
 
       {/* Active meal food list */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-        <div className="flex items-center justify-between mb-1">
-          <h4 className="text-base sm:text-sm font-medium">{nutrition.meals[activeMeal].name}</h4>
-          <span className="text-xs text-muted-foreground tabular-nums">
+      <div className="surface space-y-2 rounded-xl p-4">
+        <div className="mb-1 flex items-center justify-between">
+          <h4 className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{nutrition.meals[activeMeal].name}</h4>
+          <span className="font-mono text-2xs tabular-nums text-muted-foreground">
             {nutrition.meals[activeMeal].foods.reduce((s, f) => s + f.protein, 0)}g protein · {nutrition.meals[activeMeal].foods.reduce((s, f) => s + f.calories, 0)} kcal
           </span>
         </div>
         {nutrition.meals[activeMeal].foods.length === 0 && (
-          <p className="text-sm sm:text-xs text-muted-foreground/40 py-3 sm:py-2">No foods logged yet. Use quick-add below or add custom food.</p>
+          <EmptyState
+            message="Nothing logged for this meal."
+            hint="Quick-add below or add a custom food."
+            className="py-5"
+          />
         )}
         {nutrition.meals[activeMeal].foods.map((food, fi) => (
-          <div key={fi} className="flex items-center justify-between text-sm sm:text-xs border-t border-border/30 pt-2.5 sm:pt-1.5 pb-0.5 sm:pb-0">
-            <div className="flex items-center gap-2 min-w-0">
+          <div key={fi} className="flex items-center justify-between border-t border-border/60 pb-0.5 pt-2.5 text-sm sm:pb-0 sm:pt-1.5 sm:text-xs">
+            <div className="flex min-w-0 items-center gap-2">
               <span className="truncate text-foreground">{food.name}</span>
               {food.quantity && (
-                <span className="text-muted-foreground/40 shrink-0">{food.quantity}</span>
+                <span className="shrink-0 text-foreground-faint">{food.quantity}</span>
               )}
             </div>
-            <div className="flex items-center gap-3 sm:gap-2 shrink-0">
-              <span className="text-muted-foreground tabular-nums">{food.protein}g · {food.calories}</span>
-              <button
+            <div className="flex shrink-0 items-center gap-3 sm:gap-2">
+              <span className="font-mono tabular-nums text-muted-foreground">{food.protein}g · {food.calories}</span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 onClick={() => removeFood(activeMeal, fi)}
-                className="sm:opacity-0 sm:group-hover:opacity-100 text-red-400/60 hover:text-red-400 active:text-red-400 transition-all p-1 -m-1"
+                aria-label={`Remove ${food.name}`}
+                className="text-muted-foreground hover:text-destructive"
               >
-                <X className="h-4 w-4 sm:h-3 sm:w-3" />
-              </button>
+                <X />
+              </Button>
             </div>
           </div>
         ))}
       </div>
 
       {/* Quick-add panel */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+      <div className="surface space-y-3 rounded-xl p-4">
         <div className="flex items-center justify-between">
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => setShowQuickAdd(!showQuickAdd)}
-            className="flex items-center gap-2"
+            className="-ml-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground"
+            aria-expanded={showQuickAdd}
           >
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/50">
-              Quick Add → {nutrition.meals[activeMeal].name}
-            </h4>
-            <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground/40 transition-transform ${showQuickAdd ? 'rotate-180' : ''}`} />
-          </button>
+            Quick Add → {nutrition.meals[activeMeal].name}
+            <ChevronDown className={`transition-transform ${showQuickAdd ? 'rotate-180' : ''}`} />
+          </Button>
           {showQuickAdd && (
-            <button
+            <Button
+              variant={editingQuickAdd ? 'secondary' : 'ghost'}
+              size="icon-xs"
               onClick={() => setEditingQuickAdd(!editingQuickAdd)}
-              className={`p-1 rounded transition-colors ${editingQuickAdd ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground/40 hover:text-muted-foreground'}`}
-              title={editingQuickAdd ? 'Done editing' : 'Edit quick-add items'}
+              aria-label={editingQuickAdd ? 'Done editing' : 'Edit quick-add items'}
             >
-              <Pencil className="h-3 w-3" />
-            </button>
+              <Pencil />
+            </Button>
           )}
         </div>
 
@@ -442,37 +453,40 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
           <>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-1.5">
               {quickFoods.map((food, i) => (
-                <div key={`${food.name}-${i}`} className="relative group">
+                <div key={`${food.name}-${i}`} className="group relative">
                   <button
                     onClick={() => !editingQuickAdd && addFood(activeMeal, food)}
-                    className={`w-full rounded-lg border border-border bg-foreground/5 px-3 py-2.5 sm:px-2.5 sm:py-1.5 text-xs text-left transition-colors ${
-                      editingQuickAdd ? 'pr-7 cursor-default' : 'hover:bg-foreground/10 active:bg-foreground/15'
+                    className={`w-full rounded-md border border-border bg-muted/40 px-3 py-2.5 text-left text-xs transition-colors sm:px-2.5 sm:py-1.5 ${
+                      editingQuickAdd ? 'cursor-default pr-7' : 'hover:bg-muted/70 active:bg-muted'
                     }`}
                   >
                     <span className="text-foreground">{food.name}</span>
-                    <span className="text-muted-foreground/40 ml-1">{food.protein}g · {food.calories}</span>
+                    <span className="ml-1 font-mono text-2xs tabular-nums text-foreground-faint">{food.protein}g · {food.calories}</span>
                   </button>
                   {editingQuickAdd && (
-                    <button
+                    <Button
+                      variant="destructive"
+                      size="icon-xs"
+                      className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full"
                       onClick={() => removeQuickFood(i)}
-                      className="absolute -top-1.5 -right-1.5 rounded-full bg-red-500/80 hover:bg-red-500 p-1 sm:p-0.5 transition-colors"
+                      aria-label={`Remove ${food.name} from quick-add`}
                     >
-                      <X className="h-3 w-3 sm:h-2.5 sm:w-2.5 text-white" />
-                    </button>
+                      <X />
+                    </Button>
                   )}
                 </div>
               ))}
             </div>
 
             {/* Custom food input — mobile: stacked rows, desktop: single row */}
-            <div className="space-y-2 sm:space-y-0 sm:flex sm:gap-2 sm:items-end">
+            <div className="space-y-2 sm:flex sm:items-end sm:gap-2 sm:space-y-0">
               <div className="flex gap-2 sm:contents">
                 <div className="flex-1 sm:flex-1">
                   <Input
                     placeholder="Food name"
                     value={newFoodName}
                     onChange={(e) => setNewFoodName(e.target.value)}
-                    className="h-9 sm:h-7 text-sm sm:text-xs"
+                    className="h-9 text-sm sm:h-7 sm:text-xs"
                     onKeyDown={(e) => e.key === 'Enter' && addCustomFood()}
                   />
                 </div>
@@ -481,7 +495,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                     placeholder="Qty"
                     value={newFoodQuantity}
                     onChange={(e) => setNewFoodQuantity(e.target.value)}
-                    className="h-9 sm:h-7 text-sm sm:text-xs"
+                    className="h-9 text-sm sm:h-7 sm:text-xs"
                   />
                 </div>
               </div>
@@ -492,7 +506,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                     placeholder="Protein (g)"
                     value={newFoodProtein}
                     onChange={(e) => setNewFoodProtein(e.target.value)}
-                    className="h-9 sm:h-7 text-sm sm:text-xs"
+                    className="h-9 text-sm sm:h-7 sm:text-xs"
                   />
                 </div>
                 <div className="flex-1 sm:w-16 sm:flex-none">
@@ -501,24 +515,28 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                     placeholder="Calories"
                     value={newFoodCalories}
                     onChange={(e) => setNewFoodCalories(e.target.value)}
-                    className="h-9 sm:h-7 text-sm sm:text-xs"
+                    className="h-9 text-sm sm:h-7 sm:text-xs"
                     onKeyDown={(e) => e.key === 'Enter' && addCustomFood()}
                   />
                 </div>
-                <button
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 sm:h-7 sm:w-7"
                   onClick={addCustomFood}
-                  className="rounded-lg bg-foreground/10 p-2 sm:p-1.5 hover:bg-foreground/20 active:bg-foreground/25 transition-colors shrink-0"
-                  title="Add to meal"
+                  aria-label="Add to meal"
                 >
-                  <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                </button>
-                <button
+                  <Plus />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 sm:h-7 sm:w-7"
                   onClick={saveToQuickAdd}
-                  className="rounded-lg bg-foreground/10 p-2 sm:p-1.5 hover:bg-foreground/20 active:bg-foreground/25 transition-colors shrink-0"
-                  title="Save to quick-add"
+                  aria-label="Save to quick-add"
                 >
-                  <Bookmark className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                </button>
+                  <Bookmark />
+                </Button>
               </div>
             </div>
           </>
@@ -529,59 +547,60 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
       <WidgetCard title="Pantry" description="Foods on hand — add straight to today's snack." delay={0.05}>
         <div className="space-y-2">
           {pantry.length === 0 ? (
-            <p className="text-sm sm:text-xs text-muted-foreground/40 py-2">
-              No pantry items yet — add a grocery bill via Claude and they'll show up here.
-            </p>
+            <EmptyState
+              message="Pantry's empty."
+              hint="Add a grocery bill via Claude and items land here."
+              className="py-4"
+            />
           ) : (
             pantry.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between gap-2 text-sm sm:text-xs border-t border-border/30 pt-2.5 sm:pt-1.5 first:border-t-0 first:pt-0"
+                className="flex items-center justify-between gap-2 border-t border-border/60 pt-2.5 text-sm first:border-t-0 first:pt-0 sm:pt-1.5 sm:text-xs"
               >
-                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <span className="truncate text-foreground">{item.name}</span>
                   {item.serving && (
-                    <span className="text-muted-foreground/40 shrink-0">{item.serving}</span>
+                    <span className="shrink-0 text-foreground-faint">{item.serving}</span>
                   )}
-                  {item.category && (
-                    <span className="shrink-0 rounded-full border border-border bg-foreground/5 px-1.5 py-0.5 text-[10px] text-muted-foreground/60">
-                      {item.category}
-                    </span>
-                  )}
+                  {item.category && <Chip size="sm" className="shrink-0">{item.category}</Chip>}
                   {typeof item.quantity === 'number' && (
-                    <span className="text-muted-foreground/40 shrink-0 tabular-nums">{item.quantity} on hand</span>
+                    <span className="shrink-0 font-mono text-2xs tabular-nums text-foreground-faint">{item.quantity} on hand</span>
                   )}
                 </div>
-                <div className="flex items-center gap-3 sm:gap-2 shrink-0">
-                  <span className="text-muted-foreground tabular-nums">{item.protein}g P · {item.calories} kcal</span>
-                  <button
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="font-mono tabular-nums text-muted-foreground">{item.protein}g P · {item.calories} kcal</span>
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
                     onClick={() => addPantryToToday(item)}
-                    className="rounded-lg bg-foreground/10 p-1.5 sm:p-1 hover:bg-foreground/20 active:bg-foreground/25 transition-colors"
-                    title="Add to today's snack"
+                    aria-label={`Add ${item.name} to today's snack`}
                   >
-                    <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-                  </button>
-                  <button
+                    <Plus />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     onClick={() => removePantryItem(item.id)}
-                    className="text-red-400/60 hover:text-red-400 active:text-red-400 transition-colors p-1 -m-1"
-                    title="Remove from pantry"
+                    aria-label={`Remove ${item.name} from pantry`}
+                    className="text-muted-foreground hover:text-destructive"
                   >
-                    <Trash2 className="h-4 w-4 sm:h-3 sm:w-3" />
-                  </button>
+                    <Trash2 />
+                  </Button>
                 </div>
               </div>
             ))
           )}
 
           {/* Add pantry item */}
-          <div className="space-y-2 sm:space-y-0 sm:flex sm:gap-2 sm:items-end border-t border-border/30 pt-3 mt-1">
+          <div className="mt-1 space-y-2 border-t border-border/60 pt-3 sm:flex sm:items-end sm:gap-2 sm:space-y-0">
             <div className="flex gap-2 sm:contents">
               <div className="flex-1">
                 <Input
                   placeholder="Item name"
                   value={newPantryName}
                   onChange={(e) => setNewPantryName(e.target.value)}
-                  className="h-9 sm:h-7 text-sm sm:text-xs"
+                  className="h-9 text-sm sm:h-7 sm:text-xs"
                   onKeyDown={(e) => e.key === 'Enter' && addPantryItem()}
                 />
               </div>
@@ -590,7 +609,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   placeholder="Serving"
                   value={newPantryServing}
                   onChange={(e) => setNewPantryServing(e.target.value)}
-                  className="h-9 sm:h-7 text-sm sm:text-xs"
+                  className="h-9 text-sm sm:h-7 sm:text-xs"
                 />
               </div>
             </div>
@@ -601,7 +620,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   placeholder="Protein (g)"
                   value={newPantryProtein}
                   onChange={(e) => setNewPantryProtein(e.target.value)}
-                  className="h-9 sm:h-7 text-sm sm:text-xs"
+                  className="h-9 text-sm sm:h-7 sm:text-xs"
                 />
               </div>
               <div className="flex-1 sm:w-16 sm:flex-none">
@@ -610,37 +629,39 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   placeholder="Calories"
                   value={newPantryCalories}
                   onChange={(e) => setNewPantryCalories(e.target.value)}
-                  className="h-9 sm:h-7 text-sm sm:text-xs"
+                  className="h-9 text-sm sm:h-7 sm:text-xs"
                   onKeyDown={(e) => e.key === 'Enter' && addPantryItem()}
                 />
               </div>
               <select
                 value={newPantryCategory}
                 onChange={(e) => setNewPantryCategory(e.target.value)}
-                className="h-9 sm:h-7 rounded-md border border-border bg-background px-2 text-sm sm:text-xs text-foreground outline-none"
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground sm:h-7 sm:text-xs"
               >
                 {PANTRY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <button
+              <Button
+                variant="secondary"
+                size="icon"
+                className="h-9 w-9 shrink-0 sm:h-7 sm:w-7"
                 onClick={addPantryItem}
-                className="rounded-lg bg-foreground/10 p-2 sm:p-1.5 hover:bg-foreground/20 active:bg-foreground/25 transition-colors shrink-0"
-                title="Add to pantry"
+                aria-label="Add to pantry"
               >
-                <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-              </button>
+                <Plus />
+              </Button>
             </div>
           </div>
         </div>
       </WidgetCard>
 
       {/* Weight logging */}
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div className="surface rounded-xl p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Scale className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Weight</span>
+            <span className="text-sm font-medium text-foreground">Weight</span>
             {todayWeight && (
-              <span className="text-xs text-muted-foreground ml-1">Today: {todayWeight} kg</span>
+              <span className="ml-1 font-mono text-xs tabular-nums text-muted-foreground">Today: {todayWeight} kg</span>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -649,16 +670,13 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
               placeholder="kg"
               value={weightInput}
               onChange={(e) => setWeightInput(e.target.value)}
-              className="h-9 sm:h-7 w-24 sm:w-20 text-sm sm:text-xs"
+              className="h-9 w-24 text-sm sm:h-7 sm:w-20 sm:text-xs"
               step="0.1"
               onKeyDown={(e) => e.key === 'Enter' && logWeight()}
             />
-            <button
-              onClick={logWeight}
-              className="rounded-lg bg-foreground/10 px-4 py-2 sm:px-3 sm:py-1.5 text-sm sm:text-xs font-medium hover:bg-foreground/20 active:bg-foreground/25 transition-colors"
-            >
+            <Button variant="secondary" size="sm" onClick={logWeight}>
               Log
-            </button>
+            </Button>
           </div>
         </div>
       </div>

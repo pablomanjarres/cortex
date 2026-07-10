@@ -14,24 +14,21 @@ const KINDS: { id: Kind; label: string }[] = [
 
 // The merged Courses + Captures collection: one page, one type filter. "All"
 // shows both together; the two source pages are reused as-is so their upload,
-// PDF viewer, lightbox, and paste-to-capture behaviour are preserved.
+// PDF viewer, lightbox, and paste-to-capture behaviour are preserved. The
+// system Tabs here act purely as the segmented type filter (no panels).
 function LibraryCollection() {
   const [kind, setKind] = useState<Kind>('all')
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex w-fit items-center rounded-lg bg-secondary/60 p-0.5">
-        {KINDS.map((k) => (
-          <button
-            key={k.id}
-            onClick={() => setKind(k.id)}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              kind === k.id ? 'bg-foreground text-background' : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {k.label}
-          </button>
-        ))}
-      </div>
+      <Tabs value={kind} onValueChange={(v) => setKind(v as Kind)}>
+        <TabsList>
+          {KINDS.map((k) => (
+            <TabsTrigger key={k.id} value={k.id}>
+              {k.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
       {(kind === 'all' || kind === 'courses') && <CoursesPage />}
       {(kind === 'all' || kind === 'captures') && <CapturesPage />}
     </div>

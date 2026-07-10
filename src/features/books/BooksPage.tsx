@@ -1,10 +1,13 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { Badge } from '@/components/ui/badge'
+import { StatTile } from '@/components/shared/StatTile'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
+import { Input } from '@/components/ui/input'
 import {
   BookOpen,
-  Star,
   Search,
   Plus,
   Trash2,
@@ -77,14 +80,30 @@ const ALL_STATUSES: Status[] = ['En curso', 'Sin empezar', 'Hecho']
 const ALL_SCORES: Score[] = ['5 stars', '4 stars', '3 stars', '2 stars', '1 star', 'Por decidir', '']
 const ALL_GENRES = ['Self Improvement', 'Programming', 'Economy & Finances', 'Philosophy', 'Novela', 'Psychology', 'Startup', 'History', 'Economy', 'Love', 'Professional', 'Calculus']
 
-const statusColor: Record<Status, string> = { 'En curso': 'bg-blue-500/15 text-blue-400', 'Sin empezar': 'bg-red-500/15 text-red-400', Hecho: 'bg-green-500/15 text-green-400' }
-const statusIcon = (s: Status) => s === 'Hecho' ? <CheckCircle2 className="h-3.5 w-3.5 text-green-400" /> : s === 'En curso' ? <BookOpen className="h-3.5 w-3.5 text-blue-400" /> : <BookMarked className="h-3.5 w-3.5 text-muted-foreground/40" />
+// Reading status is a semantic state: in-progress = accent, done = success.
+const statusIcon = (s: Status) =>
+  s === 'Hecho' ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+  : s === 'En curso' ? <BookOpen className="h-3.5 w-3.5 text-accent" />
+  : <BookMarked className="h-3.5 w-3.5 text-foreground-faint" />
 const scoreNum = (s: Score) => s === '5 stars' ? 5 : s === '4 stars' ? 4 : s === '3 stars' ? 3 : s === '2 stars' ? 2 : s === '1 star' ? 1 : 0
 const Stars = ({ score }: { score: Score }) => {
   const n = scoreNum(score)
-  if (!n) return <span className="text-muted-foreground/30 text-[10px]">{score || '—'}</span>
-  return <div className="flex gap-0.5">{Array.from({ length: 5 }, (_, i) => <Star key={i} className={`h-3 w-3 ${i < n ? 'text-yellow-400 fill-yellow-400' : 'text-muted-foreground/20'}`} />)}</div>
+  if (!n) return <span className="font-mono text-2xs text-foreground-faint">{score || '—'}</span>
+  return (
+    <span className="font-mono text-xs" aria-label={`Rated ${n} of 5`}>
+      <span className="text-accent">{'★'.repeat(n)}</span>
+      <span aria-hidden className="text-foreground-faint">{'☆'.repeat(5 - n)}</span>
+    </span>
+  )
 }
+
+// Shared token styles: native <select> mirrors the Input primitive; underline
+// inputs are the quiet inline-edit pattern; table headers use the card-title stack.
+const selectCls =
+  'h-8 w-full cursor-pointer rounded-md border border-input bg-input/20 px-2 text-xs text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+const lineInputCls = 'w-full border-b border-border/60 bg-transparent py-1 text-xs outline-none placeholder:text-foreground-faint'
+const labelCls = 'text-2xs text-muted-foreground'
+const thCls = 'py-2 text-left font-mono text-2xs font-normal uppercase tracking-wider'
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -137,88 +156,79 @@ export function BooksPage() {
     <PageShell>
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          { label: 'Total', value: stats.total, icon: BookMarked, color: '' },
-          { label: 'Reading', value: stats.reading, icon: BookOpen, color: 'text-blue-400' },
-          { label: 'Completed', value: stats.done, icon: CheckCircle2, color: 'text-green-400' },
-          { label: 'To Read', value: stats.toRead, icon: Clock, color: 'text-muted-foreground' },
-        ].map((kpi) => (
-          <div key={kpi.label} className="flex items-center gap-3 rounded-xl border border-border px-4 py-3">
-            <kpi.icon className={`h-5 w-5 ${kpi.color || 'text-muted-foreground'}`} />
-            <div>
-              <p className={`text-xl font-bold tabular-nums ${kpi.color}`}>{kpi.value}</p>
-              <p className="text-[10px] text-muted-foreground">{kpi.label}</p>
-            </div>
-          </div>
-        ))}
+        <StatTile label="Total" value={stats.total} icon={<BookMarked />} />
+        <StatTile label="Reading" value={stats.reading} icon={<BookOpen />} />
+        <StatTile label="Completed" value={stats.done} icon={<CheckCircle2 />} />
+        <StatTile label="To read" value={stats.toRead} icon={<Clock />} />
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 flex-1 min-w-[200px] rounded-lg border border-border px-3 py-1.5">
-          <Search className="h-3.5 w-3.5 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search books..." className="bg-transparent outline-none text-xs flex-1 placeholder:text-muted-foreground/40" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search books..." className="h-8 pl-8 text-xs" />
         </div>
         <div className="flex gap-1.5">
           {ALL_STATUSES.map((s) => (
-            <button key={s} onClick={() => setFilterStatus(filterStatus === s ? null : s)}
-              className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${filterStatus === s ? `${statusColor[s]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>{s}</button>
+            <Chip key={s} selectable selected={filterStatus === s} onClick={() => setFilterStatus(filterStatus === s ? null : s)}>
+              {s}
+            </Chip>
           ))}
         </div>
-        <select value={filterGenre ?? ''} onChange={(e) => setFilterGenre(e.target.value || null)} className="cursor-pointer bg-transparent text-[10px] border border-border rounded-full px-2.5 py-1 outline-none text-muted-foreground">
+        <select value={filterGenre ?? ''} onChange={(e) => setFilterGenre(e.target.value || null)} className={`${selectCls} w-auto`}>
           <option value="">All genres</option>
           {ALL_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
         </select>
-        <button onClick={addBook} className="cursor-pointer flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground px-2.5 py-1 rounded-lg border border-border hover:bg-secondary transition-all">
-          <Plus className="h-3 w-3" /> Add
-        </button>
+        <Button variant="secondary" size="sm" onClick={addBook}>
+          <Plus /> Add
+        </Button>
       </div>
 
       {/* Mobile: Book cards */}
       <div className="flex flex-col gap-3 md:hidden">
         {filtered.map((b) => (
-          <div key={b.id} className="liquid-glass rounded-xl border border-border p-4" onClick={() => setExpanded(expanded === b.id ? null : b.id)}>
+          <div key={b.id} className="surface rounded-xl p-4" onClick={() => setExpanded(expanded === b.id ? null : b.id)}>
             <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex min-w-0 items-center gap-2.5">
                 <span className="shrink-0">{statusIcon(b.status)}</span>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{b.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">{b.author}</p>
+                  <p className="truncate text-sm font-medium">{b.title}</p>
+                  <p className="truncate text-xs text-muted-foreground">{b.author}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex shrink-0 items-center gap-2">
                 <Stars score={b.score} />
-                <button onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }} className="cursor-pointer p-1.5 text-muted-foreground/40 active:text-red-400">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                <Button variant="ghost" size="icon-sm" aria-label="Delete book" className="active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }}>
+                  <Trash2 />
+                </Button>
               </div>
             </div>
-            {b.genre && <div className="mt-1.5"><Badge variant="secondary" className="text-[9px]">{b.genre}</Badge></div>}
+            {b.genre && <div className="mt-1.5"><Chip size="sm">{b.genre}</Chip></div>}
             {expanded === b.id && (
-              <div className="mt-4 pt-3 border-t border-border/30 flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
-                <div><label className="text-[10px] text-muted-foreground">Title</label><input value={b.title} onChange={(e) => setField(b.id, { title: e.target.value })} className="w-full bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" /></div>
-                <div><label className="text-[10px] text-muted-foreground">Author</label><input value={b.author} onChange={(e) => setField(b.id, { author: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
+              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3" onClick={(e) => e.stopPropagation()}>
+                <div><label className={labelCls}>Title</label><input value={b.title} onChange={(e) => setField(b.id, { title: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} /></div>
+                <div><label className={labelCls}>Author</label><input value={b.author} onChange={(e) => setField(b.id, { author: e.target.value })} className={lineInputCls} /></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-[10px] text-muted-foreground">Status</label>
-                    <select value={b.status} onChange={(e) => setField(b.id, { status: e.target.value as Status })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                  <div><label className={labelCls}>Status</label>
+                    <select value={b.status} onChange={(e) => setField(b.id, { status: e.target.value as Status })} className={selectCls}>
                       {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select></div>
-                  <div><label className="text-[10px] text-muted-foreground">Score</label>
-                    <select value={b.score} onChange={(e) => setField(b.id, { score: e.target.value as Score })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                  <div><label className={labelCls}>Score</label>
+                    <select value={b.score} onChange={(e) => setField(b.id, { score: e.target.value as Score })} className={selectCls}>
                       {ALL_SCORES.map((s) => <option key={s} value={s}>{s || 'No rating'}</option>)}
                     </select></div>
                 </div>
-                <div><label className="text-[10px] text-muted-foreground">Genre</label>
-                  <select value={b.genre} onChange={(e) => setField(b.id, { genre: e.target.value })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
+                <div><label className={labelCls}>Genre</label>
+                  <select value={b.genre} onChange={(e) => setField(b.id, { genre: e.target.value })} className={selectCls}>
                     <option value="">None</option>
                     {ALL_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
                   </select></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-[10px] text-muted-foreground">Start date</label><input type="date" value={b.start} onChange={(e) => setField(b.id, { start: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
-                  <div><label className="text-[10px] text-muted-foreground">Finished</label><input type="date" value={b.finished} onChange={(e) => setField(b.id, { finished: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
+                  <div><label className={labelCls}>Start date</label><input type="date" value={b.start} onChange={(e) => setField(b.id, { start: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
+                  <div><label className={labelCls}>Finished</label><input type="date" value={b.finished} onChange={(e) => setField(b.id, { finished: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
                 </div>
-                <div><label className="text-[10px] text-muted-foreground">Notes</label>
-                  <textarea value={b.notes} onChange={(e) => setField(b.id, { notes: e.target.value })} rows={3} className="w-full bg-transparent outline-none text-xs border border-border/30 rounded-lg p-2 resize-none placeholder:text-muted-foreground/30" placeholder="Your thoughts..." />
+                <div><label className={labelCls}>Notes</label>
+                  <textarea value={b.notes} onChange={(e) => setField(b.id, { notes: e.target.value })} rows={3} className="w-full resize-none rounded-md border border-input bg-input/20 p-2 text-xs outline-none placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" placeholder="Your thoughts..." />
                 </div>
               </div>
             )}
@@ -227,61 +237,66 @@ export function BooksPage() {
       </div>
 
       {/* Desktop: Table */}
-      <WidgetCard title="Library" description={`${filtered.length} books`} delay={0.1} className="hidden md:block">
-        <div className="overflow-x-auto -mx-5">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="px-5 py-2 w-6"></th>
-                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('title')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Title <SortIcon k="title" /></button></th>
-                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('author')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Author <SortIcon k="author" /></button></th>
-                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('genre')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Genre <SortIcon k="genre" /></button></th>
-                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('score')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Rating <SortIcon k="score" /></button></th>
-                <th className="py-2 w-6"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((b) => (
-                <>
-                  <tr key={b.id} onClick={() => setExpanded(expanded === b.id ? null : b.id)}
-                    className={`cursor-pointer border-b border-border/20 transition-colors hover:bg-secondary/30 group ${expanded === b.id ? 'bg-secondary/20' : ''}`}>
-                    <td className="px-5 py-2.5">{statusIcon(b.status)}</td>
-                    <td className="py-2.5 font-medium">{b.title}</td>
-                    <td className="py-2.5 text-muted-foreground">{b.author}</td>
-                    <td className="py-2.5">{b.genre ? <Badge variant="secondary" className="text-[9px]">{b.genre}</Badge> : <span className="text-muted-foreground/30">—</span>}</td>
-                    <td className="py-2.5"><Stars score={b.score} /></td>
-                    <td className="py-2.5 pr-4"><button onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"><Trash2 className="h-3 w-3" /></button></td>
-                  </tr>
-                  {expanded === b.id && (
-                    <tr key={`${b.id}-edit`}>
-                      <td colSpan={6} className="px-5 py-4 border-b border-border/20 bg-foreground/[0.02]">
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                          <div className="flex flex-col gap-2">
-                            <div><label className="text-[10px] text-muted-foreground">Title</label><input value={b.title} onChange={(e) => setField(b.id, { title: e.target.value })} className="w-full bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" /></div>
-                            <div><label className="text-[10px] text-muted-foreground">Author</label><input value={b.author} onChange={(e) => setField(b.id, { author: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div><label className="text-[10px] text-muted-foreground">Status</label><select value={b.status} onChange={(e) => setField(b.id, { status: e.target.value as Status })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">{ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
-                              <div><label className="text-[10px] text-muted-foreground">Score</label><select value={b.score} onChange={(e) => setField(b.id, { score: e.target.value as Score })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">{ALL_SCORES.map((s) => <option key={s} value={s}>{s || 'No rating'}</option>)}</select></div>
+      <WidgetCard title="Books" description={`${filtered.length} books`} delay={0.1} className="hidden md:block">
+        {filtered.length === 0 ? (
+          <EmptyState message="No books match." hint="Clear a filter, or press Add to shelve one." />
+        ) : (
+          <div className="-mx-4 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border/60 text-muted-foreground">
+                  <th className="w-6 px-4 py-2"></th>
+                  {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
+                  <th className={thCls}><button onClick={() => toggleSort('title')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Title <SortIcon k="title" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('author')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Author <SortIcon k="author" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('genre')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Genre <SortIcon k="genre" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('score')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Rating <SortIcon k="score" /></button></th>
+                  <th className="w-6 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((b) => (
+                  <Fragment key={b.id}>
+                    <tr onClick={() => setExpanded(expanded === b.id ? null : b.id)}
+                      className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === b.id ? 'bg-secondary/20' : ''}`}>
+                      <td className="px-4 py-2.5">{statusIcon(b.status)}</td>
+                      <td className="py-2.5 font-medium">{b.title}</td>
+                      <td className="py-2.5 text-muted-foreground">{b.author}</td>
+                      <td className="py-2.5">{b.genre ? <Chip size="sm">{b.genre}</Chip> : <span className="text-foreground-faint">—</span>}</td>
+                      <td className="py-2.5"><Stars score={b.score} /></td>
+                      <td className="py-2.5 pr-4"><Button variant="ghost" size="icon-xs" aria-label="Delete book" className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }}><Trash2 /></Button></td>
+                    </tr>
+                    {expanded === b.id && (
+                      <tr>
+                        <td colSpan={6} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
+                          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                            <div className="flex flex-col gap-2">
+                              <div><label className={labelCls}>Title</label><input value={b.title} onChange={(e) => setField(b.id, { title: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} /></div>
+                              <div><label className={labelCls}>Author</label><input value={b.author} onChange={(e) => setField(b.id, { author: e.target.value })} className={lineInputCls} /></div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div><label className={labelCls}>Status</label><select value={b.status} onChange={(e) => setField(b.id, { status: e.target.value as Status })} className={selectCls}>{ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}</select></div>
+                                <div><label className={labelCls}>Score</label><select value={b.score} onChange={(e) => setField(b.id, { score: e.target.value as Score })} className={selectCls}>{ALL_SCORES.map((s) => <option key={s} value={s}>{s || 'No rating'}</option>)}</select></div>
+                              </div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <div><label className={labelCls}>Genre</label><select value={b.genre} onChange={(e) => setField(b.id, { genre: e.target.value })} className={selectCls}><option value="">None</option>{ALL_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
+                              <div><label className={labelCls}>Start date</label><input type="date" value={b.start} onChange={(e) => setField(b.id, { start: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
+                              <div><label className={labelCls}>Finished</label><input type="date" value={b.finished} onChange={(e) => setField(b.id, { finished: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <label className={labelCls}>Notes</label>
+                              <textarea value={b.notes} onChange={(e) => setField(b.id, { notes: e.target.value })} rows={5} className="resize-none rounded-md border border-input bg-input/20 p-2 text-xs outline-none placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" placeholder="Your thoughts on this book..." />
                             </div>
                           </div>
-                          <div className="flex flex-col gap-2">
-                            <div><label className="text-[10px] text-muted-foreground">Genre</label><select value={b.genre} onChange={(e) => setField(b.id, { genre: e.target.value })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1"><option value="">None</option>{ALL_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}</select></div>
-                            <div><label className="text-[10px] text-muted-foreground">Start date</label><input type="date" value={b.start} onChange={(e) => setField(b.id, { start: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
-                            <div><label className="text-[10px] text-muted-foreground">Finished</label><input type="date" value={b.finished} onChange={(e) => setField(b.id, { finished: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <label className="text-[10px] text-muted-foreground">Notes</label>
-                            <textarea value={b.notes} onChange={(e) => setField(b.id, { notes: e.target.value })} rows={5} className="bg-transparent outline-none text-xs border border-border/30 rounded-lg p-2 resize-none placeholder:text-muted-foreground/30" placeholder="Your thoughts on this book..." />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </WidgetCard>
     </PageShell>
   )
