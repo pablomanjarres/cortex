@@ -5,6 +5,8 @@
 @import "@fontsource/inter/700.css";
 @import "@fontsource/instrument-serif/400.css";
 @import "@fontsource/instrument-serif/400-italic.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
@@ -15,61 +17,76 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   cursor: pointer;
 }
 
-/* Dark — lifted panels with visible separation */
+/*
+ * ── Cortex tokens — "Editorial Instrument Panel" ─────────────────────────────
+ * Ground: near-black warm graphite (hue 75, chroma ≤ 0.006). Lifted panels.
+ * Ink: near-white, three text roles (foreground / muted-foreground / faint).
+ * Signal: ONE accent — ice-cyan. Semantic trio matched in L/C so all four read
+ * as a single family of indicator lights. Hairlines, not borders.
+ */
 :root {
-  --background: oklch(0.05 0 0);
-  --foreground: oklch(1 0 0);
+  --background: oklch(0.11 0.004 75);
+  --foreground: oklch(0.985 0.002 75);
 
-  --card: oklch(0.22 0 0);
-  --card-foreground: oklch(1 0 0);
+  --card: oklch(0.22 0.005 75);
+  --card-foreground: oklch(0.985 0.002 75);
 
-  --popover: oklch(0.22 0 0);
-  --popover-foreground: oklch(1 0 0);
+  --popover: oklch(0.22 0.005 75);
+  --popover-foreground: oklch(0.985 0.002 75);
 
-  --primary: oklch(1 0 0);
-  --primary-foreground: oklch(0 0 0);
+  --primary: oklch(0.985 0.002 75);
+  --primary-foreground: oklch(0.11 0.004 75);
 
-  --secondary: oklch(0.27 0 0);
-  --secondary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.27 0.005 75);
+  --secondary-foreground: oklch(0.985 0.002 75);
 
-  --muted: oklch(0.27 0 0);
-  --muted-foreground: oklch(0.74 0 0);
+  --muted: oklch(0.27 0.005 75);
+  --muted-foreground: oklch(0.74 0.006 75);
 
-  --accent: oklch(0.30 0 0);
-  --accent-foreground: oklch(1 0 0);
+  /* Third (faint) text role — de-emphasized micro-copy only, never body text */
+  --foreground-faint: oklch(0.62 0.006 75);
 
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(1 0 0);
+  /* THE signal — ice-cyan. Focus rings, active nav, links, running sprint,
+     selected chips, primary chart series, rare key hairlines. ≤5% of any screen. */
+  --accent: oklch(0.8 0.12 218);
+  --accent-foreground: oklch(0.13 0.03 218);
 
-  --success: oklch(0.55 0.17 142);
-  --success-foreground: oklch(1 0 0);
+  --destructive: oklch(0.74 0.13 25);
+  --destructive-foreground: oklch(0.13 0.03 25);
 
-  --warning: oklch(0.75 0.18 75);
-  --warning-foreground: oklch(0 0 0);
+  --success: oklch(0.78 0.115 155);
+  --success-foreground: oklch(0.13 0.03 155);
 
-  --border: oklch(0.46 0 0);
-  --input: oklch(0.32 0 0);
-  --ring: oklch(0.62 0 0);
+  --warning: oklch(0.8 0.115 80);
+  --warning-foreground: oklch(0.13 0.03 80);
 
-  --hero-subtitle: 210 17% 95%;
+  /* Hairline system — quiet by default (was 0.46: far too bright) */
+  --border: oklch(0.26 0.005 75);
+  --input: oklch(0.32 0.005 75);
+  --ring: oklch(0.8 0.12 218);
 
   --radius: 0.75rem;
 
-  --sidebar: oklch(0.09 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.30 0 0);
-  --sidebar-accent: oklch(0.24 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-muted: oklch(0.74 0 0);
-  --sidebar-primary: oklch(1 0 0);
-  --sidebar-primary-foreground: oklch(0 0 0);
-  --sidebar-ring: oklch(0.62 0 0);
+  /* Shadow tokens — one ambient, one lift. Panels never invent their own. */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.45), 0 18px 44px rgba(0, 0, 0, 0.5);
 
-  --chart-1: oklch(0.65 0.2 250);
-  --chart-2: oklch(0.65 0.18 160);
-  --chart-3: oklch(0.7 0.18 50);
-  --chart-4: oklch(0.6 0.2 300);
-  --chart-5: oklch(0.65 0.2 350);
+  --sidebar: oklch(0.09 0.004 75);
+  --sidebar-foreground: oklch(0.985 0.002 75);
+  --sidebar-border: oklch(0.22 0.005 75);
+  --sidebar-accent: oklch(0.24 0.005 75);
+  --sidebar-accent-foreground: oklch(0.985 0.002 75);
+  --sidebar-muted: oklch(0.72 0.006 75);
+  --sidebar-primary: oklch(0.985 0.002 75);
+  --sidebar-primary-foreground: oklch(0.11 0.004 75);
+  --sidebar-ring: oklch(0.8 0.12 218);
+
+  /* Chart family — chart-1 is the accent; the rest sit at matched L/C */
+  --chart-1: oklch(0.8 0.12 218);
+  --chart-2: oklch(0.78 0.115 155);
+  --chart-3: oklch(0.8 0.115 80);
+  --chart-4: oklch(0.74 0.115 290);
+  --chart-5: oklch(0.76 0.115 350);
 }
 
 @theme inline {
@@ -85,6 +102,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-foreground-faint: var(--foreground-faint);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -118,13 +136,27 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
+  /* Micro-type sub-scale — replaces every text-[10px]/text-[9px] bracket.
+     Nothing in the app renders below 9px. */
+  --text-2xs: 0.625rem;
+  --text-2xs--line-height: 0.875rem;
+  --text-3xs: 0.5625rem;
+  --text-3xs--line-height: 0.75rem;
+
+  /* Shadow utilities (shadow-card / shadow-lift) backed by the :root tokens */
+  --shadow-card: var(--shadow-card);
+  --shadow-lift: var(--shadow-lift);
+
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, monospace;
+  --font-mono--font-feature-settings: "tnum";
   --font-heading: var(--font-sans);
 }
 
-/* Liquid Glass Effect */
+/* Liquid Glass — RESERVED for exactly two roles:
+   the Header date pill and the StatTile `glass` variant. */
 .liquid-glass {
   background: rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(14px);
@@ -132,7 +164,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.09),
-    0 18px 50px rgba(0, 0, 0, 0.28);
+    var(--shadow-lift);
   position: relative;
   overflow: hidden;
 }
@@ -155,30 +187,83 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   pointer-events: none;
 }
 
-/* Surface — every primary panel/card. Strong tint, visible border,
-   drop shadow, top highlight. Reads as a real panel against the bg. */
+/* Surface — every primary panel/card. Warm graphite tint, hairline border,
+   token shadow, inset top highlight (signature — keep). */
 .surface {
-  background-color: oklch(0.22 0 0);
+  background-color: var(--card);
   background-image: linear-gradient(180deg,
-    rgba(255, 255, 255, 0.09) 0%,
-    rgba(255, 255, 255, 0.03) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.10),
-    0 1px 2px rgba(0, 0, 0, 0.45),
-    0 14px 32px rgba(0, 0, 0, 0.40);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    var(--shadow-card);
 }
 
 .surface-strong {
-  background-color: oklch(0.26 0 0);
+  background-color: oklch(0.26 0.005 75);
   background-image: linear-gradient(180deg,
-    rgba(255, 255, 255, 0.12) 0%,
-    rgba(255, 255, 255, 0.04) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.03) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.13),
-    0 2px 4px rgba(0, 0, 0, 0.5),
-    0 20px 44px rgba(0, 0, 0, 0.45);
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    var(--shadow-lift);
+}
+
+/* Semantic glow — WidgetCard urgent/success variants (semantic hairline + soft
+   glow). Declared after .surface so the border/shadow overrides win. */
+.glow-danger {
+  border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    var(--shadow-card),
+    0 0 28px -6px color-mix(in oklab, var(--destructive) 45%, transparent);
+}
+
+.glow-success {
+  border-color: color-mix(in oklab, var(--success) 40%, transparent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    var(--shadow-card),
+    0 0 28px -6px color-mix(in oklab, var(--success) 45%, transparent);
+}
+
+/* Skeleton — the standard loading affordance (skeleton over spinner) */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: color-mix(in oklab, var(--muted) 60%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    translate: -100% 0;
+    background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.05),
+      transparent);
+    animation: skeleton-sweep 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes skeleton-sweep {
+  to {
+    translate: 100% 0;
+  }
+}
+
+/* Header page-title conveyor reveal (CSS-only; keyed by route) */
+@keyframes title-rise {
+  from {
+    transform: translateY(110%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 /* Scrollbar */
@@ -192,12 +277,12 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.35 0 0);
+  background: oklch(0.32 0.005 75);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.45 0 0);
+  background: oklch(0.42 0.005 75);
 }
 
 @layer base {
@@ -209,5 +294,29 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   }
   html {
     @apply font-sans;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 30%, transparent);
+  }
+
+  /* Global focus ring — 2px accent, offset, on every interactive element.
+     :where() keeps specificity at zero so component utilities can override. */
+  :where(a, button, input, textarea, select, summary,
+      [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Reduced motion — every CSS animation/transition collapses to instant */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

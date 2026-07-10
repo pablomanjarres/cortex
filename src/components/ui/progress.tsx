@@ -2,6 +2,11 @@ import { Progress as ProgressPrimitive } from "@base-ui/react/progress"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * Progress — 1px-track instrument meter.
+ * Indicator defaults to foreground (white); pass a semantic token class
+ * (e.g. <ProgressIndicator className="bg-success" />) for status meters.
+ */
 function Progress({
   className,
   children,
@@ -27,7 +32,7 @@ function ProgressTrack({ className, ...props }: ProgressPrimitive.Track.Props) {
   return (
     <ProgressPrimitive.Track
       className={cn(
-        "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted",
+        "relative flex h-1 w-full items-center overflow-x-hidden rounded-full bg-muted/60",
         className
       )}
       data-slot="progress-track"
@@ -43,7 +48,10 @@ function ProgressIndicator({
   return (
     <ProgressPrimitive.Indicator
       data-slot="progress-indicator"
-      className={cn("h-full bg-primary transition-all", className)}
+      className={cn(
+        "h-full rounded-full bg-foreground transition-all duration-200",
+        className
+      )}
       {...props}
     />
   )
@@ -52,7 +60,10 @@ function ProgressIndicator({
 function ProgressLabel({ className, ...props }: ProgressPrimitive.Label.Props) {
   return (
     <ProgressPrimitive.Label
-      className={cn("text-sm font-medium", className)}
+      className={cn(
+        "font-mono text-2xs uppercase tracking-wider text-muted-foreground",
+        className
+      )}
       data-slot="progress-label"
       {...props}
     />
@@ -63,7 +74,7 @@ function ProgressValue({ className, ...props }: ProgressPrimitive.Value.Props) {
   return (
     <ProgressPrimitive.Value
       className={cn(
-        "ml-auto text-sm text-muted-foreground tabular-nums",
+        "ml-auto font-mono text-xs text-muted-foreground tabular-nums",
         className
       )}
       data-slot="progress-value"

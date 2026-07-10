@@ -1,26 +1,13 @@
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Menu } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { titleForPath } from '@/lib/routes'
 import { useSprintTimer } from '@/lib/sprint-context'
-
-const pageTitles: Record<string, string> = {
-  '/daily': 'Execute',
-  '/habits': 'Habit Tracking',
-  '/goals': 'Goals',
-  '/system': 'System',
-  '/founder': 'Founder Mode',
-  '/student': 'Student Mode',
-  '/projects': 'Projects',
-  '/finance': 'Financial Pulse',
-  '/social': 'Contacts',
-  '/books': 'Books',
-  '/library': 'Library',
-  '/settings': 'Settings',
-}
 
 export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const location = useLocation()
   const navigate = useNavigate()
-  const title = pageTitles[location.pathname] || 'Dashboard'
+  const title = titleForPath(location.pathname)
   const { isRunning, isPaused, timeLeft } = useSprintTimer()
   const sprintActive = isRunning || isPaused
   const mins = Math.floor(timeLeft / 60)
@@ -33,34 +20,48 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
         {onMenuToggle && (
           <button
             onClick={onMenuToggle}
-            className="md:hidden flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors [-webkit-app-region:no-drag]"
+            aria-label="Toggle navigation"
+            className="md:hidden flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors duration-150 [-webkit-app-region:no-drag]"
           >
             <Menu className="h-5 w-5" />
           </button>
         )}
-        <h1 className="text-base md:text-lg font-semibold tracking-tight">{title}</h1>
+        {/* Page title — editorial serif italic; conveyor mask reveal on route change */}
+        <span className="inline-block overflow-hidden">
+          <h1
+            key={location.pathname}
+            className="font-serif italic text-xl md:text-2xl font-normal tracking-tight leading-none motion-safe:animate-[title-rise_0.45s_cubic-bezier(0.2,0.6,0.2,1)_both]"
+          >
+            {title}
+          </h1>
+        </span>
       </div>
       <div className="flex items-center gap-2 md:gap-3">
-        {/* Sprint timer — persistent across all pages */}
+        {/* Sprint timer — persistent across all pages. Accent = running, amber = paused. */}
         {sprintActive && (
           <button
             onClick={() => navigate('/daily')}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-xs tabular-nums transition-colors [-webkit-app-region:no-drag] ${
+            className={cn(
+              'flex items-center gap-1.5 rounded-full px-2.5 py-1.5 font-mono text-xs tabular-nums transition-colors duration-150 active:scale-[0.98] [-webkit-app-region:no-drag]',
               isRunning
-                ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                : 'bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20'
-            }`}
+                ? 'bg-accent/10 text-accent hover:bg-accent/15'
+                : 'bg-warning/10 text-warning hover:bg-warning/15'
+            )}
           >
-            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-              isRunning ? 'bg-emerald-400 animate-pulse' : 'bg-yellow-400'
-            }`} />
-            <span className="font-semibold">
+            <span
+              className={cn(
+                'h-1.5 w-1.5 rounded-full shrink-0',
+                isRunning ? 'bg-accent motion-safe:animate-pulse' : 'bg-warning'
+              )}
+            />
+            <span className="font-medium">
               {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
             </span>
           </button>
         )}
-        <div className="liquid-glass rounded-lg px-2 md:px-3 py-1.5">
-          <span className="text-xs md:text-sm font-medium text-muted-foreground">
+        {/* Date chip — one of the two sanctioned .liquid-glass roles */}
+        <div className="liquid-glass rounded-full px-3 py-1.5">
+          <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">
             {new Date().toLocaleDateString('en-US', {
               month: 'short',
               day: 'numeric',

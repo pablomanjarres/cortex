@@ -1,71 +1,20 @@
 import { NavLink } from 'react-router-dom'
+import { Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import {
-  LayoutDashboard,
-  Target,
-  Goal,
-  Rocket,
-  GraduationCap,
-  Wallet,
-  Users,
-  Library,
-  LibraryBig,
-  FolderKanban,
-  Radar,
-  Settings,
-  Globe,
-  Dumbbell,
-  Cpu,
-} from 'lucide-react'
-
-const navGroups = [
-  {
-    label: 'Core',
-    items: [
-      { to: '/daily', icon: LayoutDashboard, label: 'Daily' },
-      { to: '/habits', icon: Target, label: 'Habits' },
-      { to: '/goals', icon: Goal, label: 'Goals' },
-      { to: '/system', icon: Cpu, label: 'System' },
-    ],
-  },
-  {
-    label: 'Roles',
-    items: [
-      { to: '/founder', icon: Rocket, label: 'Founder' },
-      { to: '/student', icon: GraduationCap, label: 'Student' },
-      { to: '/projects', icon: FolderKanban, label: 'Projects' },
-      { to: '/opportunities', icon: Radar, label: 'Opportunities' },
-    ],
-  },
-  {
-    label: 'Life',
-    items: [
-      { to: '/finance', icon: Wallet, label: 'Finance' },
-      { to: '/gym', icon: Dumbbell, label: 'Gym' },
-      { to: '/social', icon: Users, label: 'Social' },
-      { to: '/books', icon: Library, label: 'Books' },
-      { to: '/library', icon: LibraryBig, label: 'Library' },
-    ],
-  },
-  {
-    label: '',
-    items: [
-      { to: '/settings', icon: Settings, label: 'Settings' },
-    ],
-  },
-]
+import { NAV_GROUPS } from '@/lib/routes'
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
+      {/* Wordmark — the serif italic C is the brand mark. Do not restyle. */}
       <div className="flex items-center gap-3 px-5 pb-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground">
           <span className="text-sm font-serif italic text-background">C</span>
         </div>
-        <span className="text-lg font-semibold tracking-tight text-sidebar-foreground">
-          <span className="font-serif italic font-normal">Cortex</span>
+        <span className="text-lg tracking-tight text-sidebar-foreground">
+          <span className="font-serif italic">Cortex</span>
         </span>
       </div>
 
@@ -73,28 +22,30 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <ScrollArea className="flex-1 px-3 py-4">
         <nav className="flex flex-col gap-6">
-          {navGroups.map((group) => (
-            <div key={group.label}>
-              <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
-                {group.label}
-              </p>
+          {NAV_GROUPS.map((group, i) => (
+            <div key={group.label || `group-${i}`}>
+              {group.label && (
+                <p className="mb-2 px-2 font-mono text-2xs uppercase tracking-widest text-sidebar-muted">
+                  {group.label}
+                </p>
+              )}
               <div className="flex flex-col gap-0.5">
-                {group.items.map((item) => (
+                {group.routes.map((route) => (
                   <NavLink
-                    key={item.to}
-                    to={item.to}
+                    key={route.path}
+                    to={route.path}
                     onClick={onNavigate}
                     className={({ isActive }) =>
                       cn(
-                        'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                        'relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-150',
                         isActive
-                          ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                          ? 'text-accent before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-4 before:w-0.5 before:rounded-full before:bg-accent'
                           : 'text-sidebar-muted hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                       )
                     }
                   >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    {item.label}
+                    <route.icon className="h-4 w-4 shrink-0" />
+                    {route.navLabel}
                   </NavLink>
                 ))}
               </div>
@@ -105,17 +56,18 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <Separator className="bg-sidebar-border" />
 
+      {/* Footer — quiet mono telemetry */}
       <div className="px-5 py-4 flex flex-col gap-2">
         <a
           href="http://localhost:19100/lm"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 text-xs text-sidebar-muted hover:text-sidebar-foreground transition-colors"
+          className="flex items-center gap-2 font-mono text-2xs uppercase tracking-wider text-sidebar-muted hover:text-sidebar-foreground transition-colors duration-150"
         >
-          <Globe className="h-3.5 w-3.5" />
+          <Globe className="h-3 w-3" />
           Localhost
         </a>
-        <p className="text-xs text-sidebar-muted">
+        <p className="font-mono text-2xs uppercase tracking-wider text-sidebar-muted">
           {new Date().toLocaleDateString('en-US', {
             weekday: 'long',
             month: 'short',
@@ -143,10 +95,10 @@ export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () =>
   if (!open) return null
   return (
     <>
-      {/* Backdrop */}
-      <div className="md:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      {/* Scrim — matches the app-wide overlay rule (bg-black/70 + blur) */}
+      <div className="md:hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       {/* Drawer */}
-      <aside className="md:hidden fixed left-0 top-0 z-50 h-screen w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col animate-in slide-in-from-left duration-200 pt-[env(safe-area-inset-top)]">
+      <aside className="md:hidden fixed left-0 top-0 z-50 h-screen w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col motion-safe:animate-in motion-safe:slide-in-from-left motion-safe:duration-200 pt-[env(safe-area-inset-top)]">
         <div className="h-4 shrink-0" />
         <SidebarContent onNavigate={onClose} />
       </aside>
