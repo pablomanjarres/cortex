@@ -39,6 +39,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     supabase: () => ipcRenderer.invoke('supabase:getStats'),
   },
 
+  founder: {
+    /** Kick a full background refresh now; resolves (with per-source status) when the cycle completes. */
+    refresh: () => ipcRenderer.invoke('founder:refresh'),
+    /** Per-source { configured, ok, fetchedAt, consecutiveFailures }. */
+    status: () => ipcRenderer.invoke('founder:status'),
+  },
+
   projects: {
     scan: () => ipcRenderer.invoke('projects:scan'),
   },

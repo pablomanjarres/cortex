@@ -9,10 +9,8 @@ import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent
 import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { initEncryption, encrypt, encryptAndWrite, encryptAndWriteAsync, readAndDecrypt, readAndDecryptAsync, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
-import { getGitHubStats } from './integrations/github.js'
-import { getLemonStats } from './integrations/lemon.js'
-import { getVercelStats } from './integrations/vercel.js'
-import { getSupabaseStats } from './integrations/supabase.js'
+import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.js'
+import type { FounderSource } from './founder-refresher.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -949,45 +947,26 @@ function startWebServer() {
       return
     }
 
-    if (url.pathname === '/api/integrations/github' && req.method === 'GET') {
+    // Founder integrations (MCP get_*_stats): cache-first via the refresher —
+    // fresh cache (<10min) is served as-is, otherwise a live refresh of just
+    // that source runs. MCP calls no longer hammer the upstream APIs.
+    const integrationMatch = url.pathname.match(/^\/api\/integrations\/(github|lemon|vercel|supabase)$/)
+    if (integrationMatch && req.method === 'GET') {
+      const source = integrationMatch[1] as FounderSource
       try {
-        const token = getKey('github-token')
-        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No GitHub token saved' })); return }
-        const stats = await getGitHubStats(token)
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname === '/api/integrations/lemon' && req.method === 'GET') {
-      try {
-        const apiKey = getKey('lemon-api-key')
-        const storeId = getKey('lemon-store-id')
-        if (!apiKey || !storeId) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No Lemon credentials saved' })); return }
-        const stats = await getLemonStats(apiKey, storeId)
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname === '/api/integrations/vercel' && req.method === 'GET') {
-      try {
-        const token = getKey('vercel-token')
-        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify(null)); return }
-        const stats = await getVercelStats(token)
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname === '/api/integrations/supabase' && req.method === 'GET') {
-      try {
-        const sbUrl = getKey('supabase-url')
-        const sbKey = getKey('supabase-service-key')
-        if (!sbUrl || !sbKey) { res.writeHead(200, corsHeaders); res.end(JSON.stringify(null)); return }
-        const stats = await getSupabaseStats(sbUrl, sbKey)
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+        const result = await getStatsForEndpoint(source)
+        if (result.kind === 'unconfigured') {
+          // Preserve the legacy per-source unconfigured contracts.
+          const body = source === 'github' ? { error: 'No GitHub token saved' }
+            : source === 'lemon' ? { error: 'No Lemon credentials saved' }
+            : null
+          res.writeHead(200, corsHeaders); res.end(JSON.stringify(body))
+        } else if (result.kind === 'ok') {
+          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result.data))
+        } else {
+          res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: result.error }))
+        }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: (e as Error).message })) }
       return
     }
 
@@ -1208,55 +1187,31 @@ ipcMain.handle('keychain:delete', async (_event, service: string) => deleteKey(s
 ipcMain.handle('keychain:has', async (_event, service: string) => hasKey(service))
 ipcMain.handle('keychain:list', async () => listKeys())
 
-// ─── IPC: GitHub ───────────────────────────────────────────
+// ─── IPC: Founder integrations (legacy per-source handlers) ──
+// Route through the refresher so every path shares one cache shape/write.
 
 ipcMain.handle('github:getStats', async () => {
-  const token = getKey('github-token')
-  if (!token) return { error: 'No GitHub token saved' }
-  try {
-    const stats = await getGitHubStats(token)
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-github.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() })) } catch { /* cache optional */ }
-    return stats
-  } catch (e: any) { return { error: `GitHub: ${e.message}` } }
+  const r = await getStatsForEndpoint('github')
+  if (r.kind === 'unconfigured') return { error: 'No GitHub token saved' }
+  if (r.kind === 'ok') return r.data
+  return { error: `GitHub: ${r.error}` }
 })
-
-// ─── IPC: Lemon Squeezy ───────────────────────────────────
 
 ipcMain.handle('lemon:getStats', async () => {
-  const apiKey = getKey('lemon-api-key')
-  const storeId = getKey('lemon-store-id')
-  if (!apiKey) return { error: 'No Lemon API key saved' }
-  if (!storeId) return { error: 'No Lemon Store ID saved' }
-  try {
-    const stats = await getLemonStats(apiKey, storeId)
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-lemon.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() })) } catch { /* cache optional */ }
-    return stats
-  } catch (e: any) { return { error: `Lemon: ${e.message}` } }
+  const r = await getStatsForEndpoint('lemon')
+  if (r.kind === 'unconfigured') return { error: 'No Lemon credentials saved' }
+  if (r.kind === 'ok') return r.data
+  return { error: `Lemon: ${r.error}` }
 })
-
-// ─── IPC: Vercel ───────────────────────────────────────────
 
 ipcMain.handle('vercel:getStats', async () => {
-  const token = getKey('vercel-token')
-  if (!token) return null
-  try {
-    const stats = await getVercelStats(token)
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-vercel.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() })) } catch { /* cache optional */ }
-    return stats
-  } catch (e) { console.error('Vercel error:', e); return null }
+  const r = await getStatsForEndpoint('vercel')
+  return r.kind === 'ok' ? r.data : null
 })
 
-// ─── IPC: Supabase ─────────────────────────────────────────
-
 ipcMain.handle('supabase:getStats', async () => {
-  const url = getKey('supabase-url')
-  const key = getKey('supabase-service-key')
-  if (!url || !key) return null
-  try {
-    const stats = await getSupabaseStats(url, key)
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-supabase.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() })) } catch { /* cache optional */ }
-    return stats
-  } catch (e) { console.error('Supabase error:', e); return null }
+  const r = await getStatsForEndpoint('supabase')
+  return r.kind === 'ok' ? r.data : null
 })
 
 // ─── IPC: Projects scanner ────────────────────────────────
@@ -1828,6 +1783,16 @@ app.on('ready', () => {
   createWindow()
   createTray()
   startWebServer() // Auto-start web server for iPhone/browser access
+
+  // Founder metrics: background refresher (30min jittered + resume + IPC).
+  // History goes through the shared backed-up write path; caches write via
+  // the direct encrypt path + broadcast (no versioned-backup churn in iCloud).
+  startFounderRefresher({
+    dataDir,
+    readDataKeyParsed,
+    writeDataKey: (key, data, opts) => writeDataKey(key, data, opts),
+    broadcastDataChanged,
+  })
 
   // Global hotkey: Cmd+Shift+Alt+S to start a 60-min sprint (sends to renderer)
   globalShortcut.register('CommandOrControl+Shift+Alt+S', () => {
