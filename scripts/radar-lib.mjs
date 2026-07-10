@@ -1,6 +1,6 @@
 // radar-lib — pure, deterministic helpers shared by the radar scripts.
 //
-// Two jobs, both root-cause fixes for "everything is X or Web, nothing from LinkedIn":
+// Jobs (all root-cause fixes, all unit-tested in radar-lib.test.mjs):
 //   1. selectHits — pick which scraped hits reach the (capped) classifier. The scraper
 //      pulls every lane (x/linkedin/reddit/instagram/github/web), but X alone routinely
 //      out-numbers the whole MAX_HITS budget, so a naive slice(0, MAX_HITS) starves the
@@ -10,8 +10,17 @@
 //   2. inferSource — the scraper/classifier tags Devpost hits as the generic "web" (there
 //      was no devpost enum value), so the UI showed "Web" for real Devpost hackathons.
 //      Derive the true platform from the post/apply host instead.
+//   3. Deadline intelligence — deadlineTypeOf / rollingFromDeadlineType normalize the
+//      optional deadlineType field over legacy {deadline, rolling} records;
+//      mergeOpportunity refreshes a stored record from a new radar sighting WITHOUT
+//      losing user edits (the old behavior silently DROPPED the incoming record, so
+//      "Thiel Fellowship 2027" could never refresh a stale 2026 entry);
+//      shouldAutoArchive expires fixed-deadline items that closed >7 days ago.
+//   4. stableId — the one content-hash id helper (ingest + catalog seed share it).
 //
 // Kept dependency-free and side-effect-free so scripts/radar-lib.test.mjs can `node --test`.
+
+import { createHash } from "node:crypto"
 
 /** Strip diacritics + lowercase so "Medellín" matches "Medellin". */
 export function deburr(s) {
@@ -106,4 +115,134 @@ export function selectHits(hits, orderTerms = [], maxHits = 180) {
     }
   }
   return out
+}
+
+// ── Shared schema vocab ───────────────────────────────────────────────────────
+// One source of truth for the enums the ingest whitelist, the seed script, and the
+// tests all agree on. The UI + MCP mirror these unions (TypeScript side).
+
+export const DEADLINE_TYPES = new Set(["fixed", "rolling", "recurring", "always-open", "unknown"])
+export const EFFORTS = new Set(["low", "medium", "high"])
+export const CATEGORIES = new Set([
+  "hackathon", "grant", "accelerator", "fellowship", "internship", "exchange",
+  "competition", "pitch", "speaking", "scholarship", "community", "launch",
+  "trending", "program", "residency", "research", "other",
+])
+export const SOURCES = new Set([
+  "x", "linkedin", "reddit", "instagram", "github", "devpost", "luma",
+  "eventbrite", "meetup", "web", "manual", "catalog",
+])
+
+/** Stable content-hash id: 'opp-' + sha1(sourceRef || url || title). Shared by the
+ *  ingest and the catalog seed so the same program maps to the same id forever. */
+export function stableId(o) {
+  const key = (o.sourceRef || o.url || o.title || "").trim().toLowerCase()
+  return "opp-" + createHash("sha1").update(key).digest("hex").slice(0, 12)
+}
+
+/**
+ * Normalize an item's deadline type. Records predating the field derive it:
+ *   rolling === true  -> 'rolling'
+ *   deadline set      -> 'fixed'
+ *   otherwise         -> 'unknown'
+ * An explicit valid deadlineType always wins.
+ */
+export function deadlineTypeOf(item) {
+  const o = item || {}
+  if (o.deadlineType && DEADLINE_TYPES.has(o.deadlineType)) return o.deadlineType
+  if (o.rolling === true) return "rolling"
+  if (o.deadline) return "fixed"
+  return "unknown"
+}
+
+/** The legacy `rolling` boolean, derived from deadlineType — old consumers still read it,
+ *  so every writer keeps the two in sync via this single rule. */
+export function rollingFromDeadlineType(deadlineType) {
+  return deadlineType === "rolling" || deadlineType === "always-open"
+}
+
+/** YYYY-MM-DD string for `days` days after a YYYY-MM-DD `dateStr` (negative = before). */
+export function addDays(dateStr, days) {
+  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+/**
+ * Auto-archive rule (applied at ingest): a FIXED-deadline item whose deadline closed
+ * MORE than 7 days ago and that the user never engaged with (status 'new') is dead
+ * weight — archive it. NEVER touches pursuing/applied/won/lost (user-owned states).
+ * Boundary: deadline exactly 7 days ago is still "recently closed" — NOT archived.
+ */
+export function shouldAutoArchive(item, today) {
+  const o = item || {}
+  if (o.status !== "new") return false
+  if (deadlineTypeOf(o) !== "fixed" || !o.deadline) return false
+  // YYYY-MM-DD strings compare lexicographically as dates.
+  return String(o.deadline).slice(0, 10) < addDays(today, -7)
+}
+
+// Radar-owned string fields refresh from the incoming sighting when it carries a
+// meaningful value; blank incoming values never erase existing intel.
+const refreshStr = (incoming, existing) => {
+  const v = typeof incoming === "string" ? incoming.trim() : ""
+  return v ? incoming : (existing ?? "")
+}
+
+/**
+ * mergeOpportunity — a title-collision is a RE-SIGHTING of a known program, not a dupe
+ * to drop. The radar refreshes what it owns (deadline intel, links, logistics); the
+ * user keeps what they own (id, status, priority, leverage edits, notes).
+ *
+ *   radar-owned  : deadline, deadlineType(+rolling sync), recurrence, nextWindowExpected,
+ *                  amountUsd, reward, url, officialUrl, location, modality, eligibility,
+ *                  tags — refreshed from `incoming` (blank/unknown never overwrite),
+ *                  runId -> the new run, discoveredAt -> kept from the original.
+ *   user-owned   : id, title, host, category, goals, status, priority, leverageScore,
+ *                  leverageNote, source, sourceRef, notes — preserved from `existing`.
+ *   notes        : when the deadline ACTUALLY changed, a one-line
+ *                  "(refreshed for new cycle YYYY-MM-DD)" is appended so the user sees
+ *                  why a "closed" item is live again.
+ *
+ * Pure: returns a new object; inputs are not mutated.
+ */
+export function mergeOpportunity(existing, incoming, { runId, today } = {}) {
+  const prev = existing || {}
+  const next = incoming || {}
+  const day = String(today || runId || "").slice(0, 10)
+
+  // Deadline intel: always trust the fresh sighting (that's the whole point of the
+  // merge — a new cycle replaces the stale one, even fixed -> rolling or date -> null).
+  const deadline = next.deadline !== undefined ? next.deadline : (prev.deadline ?? null)
+  const deadlineType = deadlineTypeOf({ ...next, deadline })
+  const deadlineChanged = (prev.deadline ?? null) !== (deadline ?? null)
+
+  const notes = deadlineChanged && day
+    ? `${String(prev.notes ?? "").replace(/\s+$/, "")}${prev.notes ? "\n" : ""}(refreshed for new cycle ${day})`
+    : (prev.notes ?? "")
+
+  return {
+    ...prev,
+    // radar-owned — refreshed
+    deadline: deadline ?? null,
+    deadlineType,
+    rolling: rollingFromDeadlineType(deadlineType),
+    recurrence: next.recurrence ?? prev.recurrence ?? null,
+    nextWindowExpected: next.nextWindowExpected ?? prev.nextWindowExpected ?? null,
+    amountUsd: Number.isFinite(next.amountUsd) ? next.amountUsd : (Number.isFinite(prev.amountUsd) ? prev.amountUsd : null),
+    reward: refreshStr(next.reward, prev.reward),
+    url: refreshStr(next.url, prev.url),
+    officialUrl: refreshStr(next.officialUrl, prev.officialUrl),
+    location: refreshStr(next.location, prev.location),
+    modality: next.modality && next.modality !== "unknown" ? next.modality : (prev.modality ?? "unknown"),
+    eligibility: next.eligibility && next.eligibility !== "unknown" ? next.eligibility : (prev.eligibility ?? "unknown"),
+    requires18Plus: typeof next.requires18Plus === "boolean" ? next.requires18Plus : (prev.requires18Plus ?? null),
+    effort: next.effort ?? prev.effort ?? null,
+    tags: Array.isArray(next.tags) && next.tags.length ? next.tags : (prev.tags ?? []),
+    runId: runId ?? next.runId ?? prev.runId,
+    discoveredAt: prev.discoveredAt ?? next.discoveredAt,
+    // user-owned — preserved (id/title/host/category/goals/status/priority/leverage*/
+    // source/sourceRef ride along via ...prev)
+    notes,
+  }
 }

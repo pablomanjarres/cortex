@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { localDate } from '@/lib/date-utils'
 import type { WorkoutDay, ActiveWorkoutState, WorkoutSession, ExerciseLog, SetLog } from '@/types/gym'
 import { RestTimer } from './RestTimer'
 import { ExerciseImage } from './ExerciseImage'
 import { platesPerSide } from '@/lib/exercise-media'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { ChevronLeft, ChevronRight, Check, Plus, Minus, Dumbbell, Flag, X, Trash2 } from 'lucide-react'
 
 interface TrainingModeProps {
@@ -26,6 +28,7 @@ const haptic = (p: number | number[] = 12) => {
 }
 
 export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel, previousSession }: TrainingModeProps) {
+  const reduceMotion = useReducedMotion()
   const [restTimeLeft, setRestTimeLeft] = useState(0)
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -245,68 +248,72 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   const isBarbell = /barbell|bench|squat|deadlift|press|row/i.test(currentExercise?.name || '')
 
   return (
-    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mt-4 space-y-4 pb-40">
+    <motion.div
+      initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-4 space-y-4 pb-40"
+    >
       {/* ── Header ── */}
-      <div className="rounded-2xl border border-border bg-card p-4">
+      <div className="surface rounded-xl p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-foreground/10">
+            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-secondary">
               <Dumbbell className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold leading-tight">{plan.name}</h2>
-              <p className="text-xs text-muted-foreground">
+              <h2 className="text-lg font-semibold leading-tight text-foreground">{plan.name}</h2>
+              <p className="font-mono text-2xs tabular-nums text-muted-foreground">
                 {completedSets}/{totalSets} sets · {elapsed}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {confirmCancel ? (
-              <button
-                onClick={onCancel}
-                className="flex h-10 items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/15 px-3 text-sm font-semibold text-red-400 active:scale-95"
-              >
-                <Trash2 className="h-4 w-4" />
+              <Button variant="destructive" className="h-10" onClick={onCancel}>
+                <Trash2 />
                 Discard?
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10"
                 onClick={() => {
                   setConfirmCancel(true)
                   setConfirmFinish(false)
                   setTimeout(() => setConfirmCancel(false), 3000)
                 }}
                 aria-label="Cancel workout"
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-muted-foreground active:scale-95"
               >
                 <X className="h-5 w-5" />
-              </button>
+              </Button>
             )}
             {confirmFinish ? (
-              <button
+              <Button
+                className="h-10 px-4"
                 onClick={() => finishSession(activeWorkout.exerciseLogs, completedSets === totalSets)}
-                className="flex h-10 items-center gap-1.5 rounded-xl bg-foreground px-4 text-sm font-semibold text-background active:scale-95"
               >
-                <Flag className="h-4 w-4" />
+                <Flag />
                 Finish?
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
+                variant="outline"
+                className="h-10 px-4"
                 onClick={() => {
                   setConfirmFinish(true)
                   setConfirmCancel(false)
                   setTimeout(() => setConfirmFinish(false), 3000)
                 }}
-                className="flex h-10 items-center gap-1.5 rounded-xl border border-border px-4 text-sm font-medium text-muted-foreground active:scale-95"
               >
-                <Flag className="h-4 w-4" />
+                <Flag />
                 Finish
-              </button>
+              </Button>
             )}
           </div>
         </div>
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-          <div className="h-full rounded-full bg-green-400 transition-all duration-500" style={{ width: `${overallPct}%` }} />
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
+          <div className="h-full rounded-full bg-success transition-all duration-500" style={{ width: `${overallPct}%` }} />
         </div>
       </div>
 
@@ -317,55 +324,58 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
           const done = log.sets.length > 0 && log.sets.every((s) => s.completed)
           const isCurrent = ei === idx
           return (
-            <button
+            <Chip
               key={ex.id}
+              selectable
+              selected={isCurrent}
+              variant={done ? 'success' : 'neutral'}
               onClick={() => goToExercise(ei)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-medium transition-colors ${
-                isCurrent
-                  ? 'border-foreground/30 bg-foreground text-background'
-                  : done
-                    ? 'border-green-500/30 bg-green-500/10 text-green-400'
-                    : 'border-border bg-card text-muted-foreground'
-              }`}
+              className="shrink-0 px-3 py-2"
             >
-              {done && <Check className="h-3 w-3" />}
+              {done && <Check />}
               <span className="max-w-[9rem] truncate">{ex.name}</span>
-            </button>
+            </Chip>
           )
         })}
       </div>
 
       {/* ── Current exercise ── */}
       {currentExercise && (
-        <div className="overflow-hidden rounded-2xl border border-foreground/15 bg-card">
+        <div className="surface overflow-hidden rounded-xl">
           {/* nav + title */}
           <div className="flex items-center gap-2 border-b border-border/60 p-3">
-            <button
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-11 w-11 shrink-0"
               onClick={() => goToExercise(idx - 1)}
               disabled={idx === 0}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground disabled:opacity-30 active:scale-95"
+              aria-label="Previous exercise"
             >
               <ChevronLeft className="h-5 w-5" />
-            </button>
+            </Button>
             <div className="min-w-0 flex-1 text-center">
-              <h3 className="truncate text-base font-semibold">{currentExercise.name}</h3>
-              <p className="text-xs text-muted-foreground">
+              <h3 className="truncate text-base font-semibold text-foreground">{currentExercise.name}</h3>
+              <p className="font-mono text-2xs tabular-nums text-muted-foreground">
                 Exercise {idx + 1}/{plan.exercises.length} · target {currentExercise.sets}×{currentExercise.repsRange}
               </p>
             </div>
-            <button
+            <Button
+              variant="secondary"
+              size="icon"
+              className="h-11 w-11 shrink-0"
               onClick={() => goToExercise(idx + 1)}
               disabled={idx === plan.exercises.length - 1}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground disabled:opacity-30 active:scale-95"
+              aria-label="Next exercise"
             >
               <ChevronRight className="h-5 w-5" />
-            </button>
+            </Button>
           </div>
 
           {/* demo media */}
           <ExerciseImage name={currentExercise.name} className="h-44 w-full sm:h-52" />
 
-          {currentExercise.notes && <p className="px-4 pt-3 text-xs text-muted-foreground/80">{currentExercise.notes}</p>}
+          {currentExercise.notes && <p className="px-4 pt-3 text-xs text-muted-foreground">{currentExercise.notes}</p>}
 
           {/* set rows */}
           <div className="space-y-2.5 p-3">
@@ -377,15 +387,15 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
                   <button
                     key={si}
                     onClick={() => uncompleteSet(si)}
-                    className="flex w-full items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-left active:scale-[0.99]"
+                    className="flex w-full items-center gap-3 rounded-md border border-success/25 bg-success/10 px-4 py-3 text-left active:scale-[0.99]"
                   >
-                    <Check className="h-5 w-5 shrink-0 text-green-400" />
+                    <Check className="h-5 w-5 shrink-0 text-success" />
                     <span className="w-12 shrink-0 text-sm font-medium text-muted-foreground">Set {si + 1}</span>
-                    <span className="text-lg font-bold tabular-nums text-green-400">
+                    <span className="font-mono text-lg font-medium tabular-nums text-success">
                       {set.weight}
                       <span className="text-sm font-normal text-muted-foreground"> kg</span> × {set.reps}
                     </span>
-                    <span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground/50">tap to edit</span>
+                    <span className="ml-auto font-mono text-3xs uppercase tracking-wide text-foreground-faint">tap to edit</span>
                   </button>
                 )
               }
@@ -393,19 +403,29 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
               return (
                 <div
                   key={si}
-                  className={`rounded-xl border px-3 py-3 ${isCurrent ? 'border-foreground/30 bg-foreground/[0.06]' : 'border-border/70 bg-background/40'}`}
+                  className={`relative overflow-hidden rounded-md border px-3 py-3 ${
+                    isCurrent
+                      ? 'border-border bg-muted/40 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
+                      : 'border-border/60 bg-background/40'
+                  }`}
                 >
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-semibold">Set {si + 1}</span>
+                    <span className="text-sm font-medium text-foreground">Set {si + 1}</span>
                     {prev?.completed ? (
-                      <span className="text-[11px] text-muted-foreground/60">
+                      <span className="font-mono text-2xs tabular-nums text-foreground-faint">
                         last: {prev.weight}kg × {prev.reps}
                       </span>
                     ) : (
                       currentExLog.sets.length > 1 && (
-                        <button onClick={() => removeSet(si)} className="text-muted-foreground/40 active:text-red-400">
-                          <X className="h-4 w-4" />
-                        </button>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeSet(si)}
+                          aria-label={`Remove set ${si + 1}`}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <X />
+                        </Button>
                       )
                     )}
                   </div>
@@ -418,7 +438,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
                       onInc={() => adjust(si, 'weight', WEIGHT_STEP)}
                       onChange={(v) => setValue(si, 'weight', v)}
                     />
-                    <span className="text-muted-foreground/40">×</span>
+                    <span className="text-foreground-faint">×</span>
                     {/* reps stepper */}
                     <Stepper
                       value={set.reps}
@@ -428,30 +448,28 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
                       onChange={(v) => setValue(si, 'reps', v)}
                     />
                     {/* complete */}
-                    <button
+                    <Button
+                      size="icon"
+                      className="ml-auto h-14 w-14 shrink-0"
                       onClick={() => completeSet(si)}
                       aria-label={`Complete set ${si + 1}`}
-                      className="ml-auto flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-foreground text-background transition-transform active:scale-90"
                     >
                       <Check className="h-7 w-7" />
-                    </button>
+                    </Button>
                   </div>
                   {plates.length > 0 && (
-                    <p className="mt-2 text-[11px] text-muted-foreground/60">
-                      plates/side: <span className="font-medium text-muted-foreground">{plates.join(' · ')}</span>
+                    <p className="mt-2 font-mono text-2xs text-foreground-faint">
+                      plates/side: <span className="tabular-nums text-muted-foreground">{plates.join(' · ')}</span>
                     </p>
                   )}
                 </div>
               )
             })}
 
-            <button
-              onClick={addSet}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-3 text-sm font-medium text-muted-foreground active:scale-[0.99]"
-            >
-              <Plus className="h-4 w-4" />
+            <Button variant="outline" className="w-full text-muted-foreground" onClick={addSet}>
+              <Plus />
               Add set
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -483,13 +501,9 @@ interface StepperProps {
 function Stepper({ value, unit, onDec, onInc, onChange }: StepperProps) {
   return (
     <div className="flex items-center gap-1">
-      <button
-        onClick={onDec}
-        aria-label={`Decrease ${unit}`}
-        className="flex h-12 w-9 items-center justify-center rounded-lg bg-secondary text-foreground transition-transform active:scale-90"
-      >
-        <Minus className="h-4 w-4" />
-      </button>
+      <Button variant="secondary" size="icon" className="h-12 w-9" onClick={onDec} aria-label={`Decrease ${unit}`}>
+        <Minus />
+      </Button>
       <div className="flex flex-col items-center">
         <input
           type="text"
@@ -500,17 +514,13 @@ function Stepper({ value, unit, onDec, onInc, onChange }: StepperProps) {
             onChange(Number.isFinite(n) ? n : 0)
           }}
           onFocus={(e) => e.target.select()}
-          className="w-14 bg-transparent text-center text-2xl font-bold tabular-nums outline-none"
+          className="w-14 bg-transparent text-center font-mono text-2xl font-medium tabular-nums text-foreground"
         />
-        <span className="-mt-1 text-[9px] uppercase tracking-wide text-muted-foreground/50">{unit}</span>
+        <span className="-mt-1 font-mono text-3xs uppercase tracking-wide text-foreground-faint">{unit}</span>
       </div>
-      <button
-        onClick={onInc}
-        aria-label={`Increase ${unit}`}
-        className="flex h-12 w-9 items-center justify-center rounded-lg bg-secondary text-foreground transition-transform active:scale-90"
-      >
-        <Plus className="h-4 w-4" />
-      </button>
+      <Button variant="secondary" size="icon" className="h-12 w-9" onClick={onInc} aria-label={`Increase ${unit}`}>
+        <Plus />
+      </Button>
     </div>
   )
 }

@@ -1,8 +1,12 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
-import ReactDOM from 'react-dom'
 import { PageShell } from '@/components/shared/PageShell'
-import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Modal } from '@/components/shared/Modal'
+import { Skeleton } from '@/components/shared/Skeleton'
 import { NotesField } from '@/components/shared/NotesField'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
@@ -15,7 +19,6 @@ import {
   X,
   Minus,
   ClipboardPaste,
-  Camera,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -53,25 +56,9 @@ const sourceLabel: Record<CaptureSource, string> = {
   article: 'Article', screenshot: 'Screenshot', other: 'Other',
 }
 
-const sourceColor: Record<CaptureSource, string> = {
-  x: 'bg-gray-500/15 text-gray-300',
-  tiktok: 'bg-pink-500/15 text-pink-400',
-  linkedin: 'bg-blue-500/15 text-blue-400',
-  reddit: 'bg-orange-500/15 text-orange-400',
-  article: 'bg-emerald-500/15 text-emerald-400',
-  screenshot: 'bg-purple-500/15 text-purple-400',
-  other: 'bg-yellow-500/15 text-yellow-400',
-}
-
-const sourceBorder: Record<CaptureSource, string> = {
-  x: 'border-l-gray-500/40',
-  tiktok: 'border-l-pink-500/40',
-  linkedin: 'border-l-blue-500/40',
-  reddit: 'border-l-orange-500/40',
-  article: 'border-l-emerald-500/40',
-  screenshot: 'border-l-purple-500/40',
-  other: 'border-l-yellow-500/40',
-}
+// Shared token style for native <select> controls (mirrors the Input primitive).
+const selectCls =
+  'w-full h-8 cursor-pointer rounded-md border border-input bg-input/20 px-2 text-xs text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 // ── Media helpers ────────────────────────────────────────────────────────────
 
@@ -165,11 +152,10 @@ export function CapturesPage() {
     return () => clearTimeout(t)
   }, [uploadStatus])
 
-  // Lightbox keyboard navigation
+  // Lightbox keyboard navigation (Escape is handled by the Modal itself)
   useEffect(() => {
     if (!lightbox) return
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setLightbox(null)
       if (e.key === 'ArrowLeft') setLightbox(prev => prev ? { ...prev, index: (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null)
       if (e.key === 'ArrowRight') setLightbox(prev => prev ? { ...prev, index: (prev.index + 1) % prev.imageIds.length } : null)
     }
@@ -363,41 +349,36 @@ export function CapturesPage() {
 
   return (
     <PageShell>
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Captures</h1>
-          <p className="text-xs text-muted-foreground">{captures.length} <span className="text-purple-400/60">items</span> · Paste screenshot or drop image</p>
-        </div>
-        <button
-          onClick={() => addCapture()}
-          className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-500/90 text-white hover:bg-indigo-500 transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" /> Add
-        </button>
-      </div>
+      {/* Section header (the topbar owns the route title — this is the tab-section header) */}
+      <PageHeader
+        title="Captures"
+        subtitle={`${captures.length} items — paste a screenshot or drop an image`}
+        actions={
+          <Button size="sm" onClick={() => addCapture()}>
+            <Plus /> Add
+          </Button>
+        }
+      />
 
       {/* Filters */}
       <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setFilterSource(null)}
-            className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${!filterSource ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}
-          >
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Chip selectable selected={!filterSource} onClick={() => setFilterSource(null)}>
             All
-          </button>
+          </Chip>
           {SOURCES.map(s => (
-            <button
+            <Chip
               key={s}
+              selectable
+              selected={filterSource === s}
               onClick={() => setFilterSource(filterSource === s ? null : s)}
-              className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${filterSource === s ? `${sourceColor[s]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}
             >
-              {sourceLabel[s]} {sourceCounts[s] ? `(${sourceCounts[s]})` : ''}
-            </button>
+              {sourceLabel[s]}{sourceCounts[s] ? ` (${sourceCounts[s]})` : ''}
+            </Chip>
           ))}
         </div>
         <div className="relative max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
           <Input
             placeholder="Search captures..."
             value={search}
@@ -413,22 +394,21 @@ export function CapturesPage() {
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        className={`flex items-center justify-center gap-3 rounded-xl border-2 border-dashed py-6 transition-all ${dragOver ? 'border-indigo-400/50 bg-indigo-500/5' : 'border-border/40 hover:border-purple-500/30'}`}
+        className={`flex items-center justify-center gap-3 rounded-xl border border-dashed py-6 transition-colors duration-150 ${dragOver ? 'border-accent/40 bg-accent/5' : 'border-border/60 hover:border-accent/40'}`}
       >
-        <ClipboardPaste className="h-4 w-4 text-muted-foreground/40" />
-        <p className="text-xs text-muted-foreground/50">
-          <span className="font-medium text-muted-foreground/70">Ctrl+V</span> to paste screenshot or <span className="font-medium text-muted-foreground/70">drop image</span> here
+        <ClipboardPaste className="h-4 w-4 text-foreground-faint" />
+        <p className="text-xs text-foreground-faint">
+          <span className="font-mono text-2xs text-muted-foreground">Ctrl+V</span> to paste screenshot or{' '}
+          <span className="font-medium text-muted-foreground">drop image</span> here
         </p>
       </div>
 
       {/* Grid */}
       {filtered.length === 0 ? (
-        <WidgetCard title="No captures yet" description="Paste a screenshot or click Add to get started" delay={0.1}>
-          <div className="flex flex-col items-center gap-3 py-8">
-            <Camera className="h-10 w-10 text-purple-400/20" />
-            <p className="text-xs text-muted-foreground/50">Your captured ideas, screenshots, and posts will appear here</p>
-          </div>
-        </WidgetCard>
+        <EmptyState
+          message="Nothing captured yet."
+          hint="Paste a screenshot, drop an image, or press Add — everything you save lands here."
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map(cap => {
@@ -441,33 +421,38 @@ export function CapturesPage() {
             return (
               <div
                 key={cap.id}
-                className={`liquid-glass rounded-xl border border-border border-l-2 ${sourceBorder[cap.source]} overflow-hidden transition-all ${isExpanded ? 'sm:col-span-2 lg:col-span-3' : 'cursor-pointer hover:border-foreground/20'}`}
+                className={`surface overflow-hidden rounded-xl transition-colors duration-150 ${isExpanded ? 'sm:col-span-2 lg:col-span-3' : 'cursor-pointer hover:border-input'}`}
                 onClick={() => !isExpanded && setExpanded(cap.id)}
               >
                 {/* Image(s) */}
                 {isExpanded && hasImages ? (
-                  <div className="relative bg-zinc-700/50 max-h-[400px] overflow-hidden border-b border-zinc-600/50" onTouchStart={onTouchStart} onTouchEnd={makeSwipeHandler(cap.id, cap.imageIds.length)}>
-                    {currentSrc && <img src={currentSrc} alt="" className="w-full h-full object-cover cursor-pointer" onClick={e => { e.stopPropagation(); setLightbox({ imageIds: cap.imageIds, index: currentIdx }) }} />}
+                  <div className="relative max-h-[400px] overflow-hidden border-b border-border bg-muted/40" onTouchStart={onTouchStart} onTouchEnd={makeSwipeHandler(cap.id, cap.imageIds.length)}>
+                    {currentSrc && <img src={currentSrc} alt="" className="h-full w-full cursor-pointer object-cover" onClick={e => { e.stopPropagation(); setLightbox({ imageIds: cap.imageIds, index: currentIdx }) }} />}
                     {cap.imageIds.length > 1 && (
                       <>
+                        {/* Compact overlay controls: scrim buttons over imagery (too small
+                            for Button chrome); focus ring comes from the global rule. */}
                         <button
+                          aria-label="Previous image"
                           onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: (currentIdx - 1 + cap.imageIds.length) % cap.imageIds.length })) }}
-                          className="cursor-pointer absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 md:p-1 transition-colors"
+                          className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-full bg-black/50 p-2 text-white transition-colors duration-150 hover:bg-black/70 md:p-1"
                         >
                           <ChevronLeft className="h-5 w-5 md:h-4 md:w-4" />
                         </button>
                         <button
+                          aria-label="Next image"
                           onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: (currentIdx + 1) % cap.imageIds.length })) }}
-                          className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2 md:p-1 transition-colors"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-full bg-black/50 p-2 text-white transition-colors duration-150 hover:bg-black/70 md:p-1"
                         >
                           <ChevronRight className="h-5 w-5 md:h-4 md:w-4" />
                         </button>
-                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
                           {cap.imageIds.map((_, i) => (
                             <button
                               key={i}
+                              aria-label={`Go to image ${i + 1}`}
                               onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: i })) }}
-                              className={`cursor-pointer h-1.5 rounded-full transition-all ${i === currentIdx ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
+                              className={`h-1.5 cursor-pointer rounded-full transition-all duration-150 ${i === currentIdx ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
                             />
                           ))}
                         </div>
@@ -475,10 +460,10 @@ export function CapturesPage() {
                     )}
                   </div>
                 ) : thumbSrc ? (
-                  <div className="bg-zinc-700/50 max-h-[180px] overflow-hidden relative border-b border-zinc-600/50">
-                    <img src={thumbSrc} alt="" className="w-full h-full object-cover" onClick={e => { e.stopPropagation(); setLightbox({ imageIds: cap.imageIds, index: 0 }) }} />
+                  <div className="relative max-h-[180px] overflow-hidden border-b border-border bg-muted/40">
+                    <img src={thumbSrc} alt="" className="h-full w-full object-cover" onClick={e => { e.stopPropagation(); setLightbox({ imageIds: cap.imageIds, index: 0 }) }} />
                     {cap.imageIds.length > 1 && (
-                      <span className="absolute top-2 right-2 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                      <span className="absolute right-2 top-2 rounded-full bg-black/60 px-1.5 py-0.5 font-mono text-2xs tabular-nums text-white">
                         {cap.imageIds.length}
                       </span>
                     )}
@@ -491,17 +476,21 @@ export function CapturesPage() {
                     <div className="flex flex-col gap-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => setExpanded(null)} className="cursor-pointer text-muted-foreground/40 hover:text-foreground transition-colors" title="Collapse">
-                            <Minus className="h-3.5 w-3.5" />
-                          </button>
-                          <span className={`text-[9px] px-2 py-0.5 rounded-full ${sourceColor[cap.source]}`}>
-                            {sourceLabel[cap.source]}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground/50">{timeAgo(cap.createdAt)}</span>
+                          <Button variant="ghost" size="icon-xs" aria-label="Collapse" onClick={() => setExpanded(null)}>
+                            <Minus />
+                          </Button>
+                          <Chip size="sm">{sourceLabel[cap.source]}</Chip>
+                          <span className="font-mono text-2xs text-foreground-faint">{timeAgo(cap.createdAt)}</span>
                         </div>
-                        <button onClick={() => deleteCapture(cap.id)} className="cursor-pointer text-muted-foreground/40 hover:text-red-400 transition-colors" title="Delete">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label="Delete capture"
+                          className="hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => deleteCapture(cap.id)}
+                        >
+                          <Trash2 />
+                        </Button>
                       </div>
                       <Input
                         value={cap.title}
@@ -521,52 +510,54 @@ export function CapturesPage() {
                       />
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-[10px] text-muted-foreground mb-1 block">Source</label>
+                          <label className="mb-1 block text-2xs text-muted-foreground">Source</label>
                           <select
                             value={cap.source}
                             onChange={e => setField(cap.id, { source: e.target.value as CaptureSource })}
-                            className="w-full h-8 rounded-md border border-border bg-input px-2 text-xs outline-none"
+                            className={selectCls}
                           >
                             {SOURCES.map(s => <option key={s} value={s}>{sourceLabel[s]}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="text-[10px] text-muted-foreground mb-1 block">URL</label>
+                          <label className="mb-1 block text-2xs text-muted-foreground">URL</label>
                           <div className="relative">
-                            <Link className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/40" />
+                            <Link className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-foreground-faint" />
                             <Input
                               value={cap.url}
                               onChange={e => setField(cap.id, { url: e.target.value })}
                               placeholder="https://..."
-                              className="h-8 pl-7 text-xs"
+                              className="h-8 pl-7 font-mono text-xs"
                             />
                           </div>
                         </div>
                       </div>
                       {/* Image thumbnails with remove */}
                       {cap.imageIds.length > 0 && (
-                        <div className="flex gap-2 flex-wrap">
+                        <div className="flex flex-wrap gap-2">
                           {cap.imageIds.map((imgId, i) => (
-                            <div key={imgId} className="relative group">
+                            <div key={imgId} className="group relative">
                               {imageCache[imgId] && (
-                                <img src={imageCache[imgId]} alt="" className="h-16 w-16 rounded-md object-cover border border-white/10 ring-1 ring-white/5 cursor-pointer" onClick={() => setLightbox({ imageIds: cap.imageIds, index: i })} />
+                                <img src={imageCache[imgId]} alt="" className="h-16 w-16 cursor-pointer rounded-md border border-border object-cover" onClick={() => setLightbox({ imageIds: cap.imageIds, index: i })} />
                               )}
+                              {/* Compact overlay control: floating remove badge on a thumbnail. */}
                               <button
+                                aria-label="Remove image"
                                 onClick={() => removeImageFromCapture(cap.id, imgId)}
-                                className="cursor-pointer absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                className="absolute -right-1.5 -top-1.5 cursor-pointer rounded-full border border-border bg-background/90 p-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 hover:text-destructive group-hover:opacity-100"
                               >
                                 <X className="h-2.5 w-2.5" />
                               </button>
-                              <span className="absolute bottom-0.5 right-0.5 text-[8px] bg-black/50 text-white px-1 rounded">{i + 1}</span>
+                              <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/50 px-1 font-mono text-3xs tabular-nums text-white">{i + 1}</span>
                             </div>
                           ))}
                         </div>
                       )}
-                      <label className={`flex items-center justify-center gap-2 rounded-lg border border-dashed py-3 text-xs transition-all ${uploading === cap.id ? 'border-purple-500/40 text-purple-300/70 animate-pulse cursor-wait' : 'cursor-pointer border-purple-500/20 text-muted-foreground/50 hover:border-purple-500/40 hover:text-purple-300/70'}`}>
+                      <label className={`flex items-center justify-center gap-2 rounded-md border border-dashed py-3 text-xs transition-colors duration-150 ${uploading === cap.id ? 'cursor-wait border-border/60 text-muted-foreground' : 'cursor-pointer border-border/60 text-foreground-faint hover:border-accent/40 hover:text-accent'}`}>
                         {uploading === cap.id ? (
                           <>
-                            <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" /><path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className="opacity-75" /></svg>
-                            Uploading...
+                            <Skeleton className="h-3.5 w-3.5 rounded-full" />
+                            Uploading…
                           </>
                         ) : (
                           <>
@@ -589,9 +580,9 @@ export function CapturesPage() {
                           }}
                         />
                       </label>
-                      {/* Upload status toast */}
+                      {/* Upload status (transient confirmation) */}
                       {uploadStatus && expanded === cap.id && (
-                        <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all ${uploadStatus.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                        <div className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium ${uploadStatus.type === 'success' ? 'border-success/25 bg-success/10 text-success' : 'border-destructive/25 bg-destructive/10 text-destructive'}`}>
                           {uploadStatus.type === 'success' ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
                           {uploadStatus.msg}
                         </div>
@@ -599,15 +590,13 @@ export function CapturesPage() {
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm font-medium truncate">{cap.title || <span className="text-muted-foreground/40 italic">Untitled</span>}</p>
-                      {cap.content && <p className="text-xs text-muted-foreground/70 line-clamp-2 mt-0.5 leading-relaxed">{cap.content}</p>}
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full ${sourceColor[cap.source]}`}>
-                          {sourceLabel[cap.source]}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground/40">{timeAgo(cap.createdAt)}</span>
+                      <p className="truncate text-sm font-medium">{cap.title || <span className="italic text-foreground-faint">Untitled</span>}</p>
+                      {cap.content && <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{cap.content}</p>}
+                      <div className="mt-2 flex items-center gap-2">
+                        <Chip size="sm">{sourceLabel[cap.source]}</Chip>
+                        <span className="font-mono text-2xs text-foreground-faint">{timeAgo(cap.createdAt)}</span>
                         {cap.imageIds.length > 0 && (
-                          <span className="text-[9px] text-purple-400/50 flex items-center gap-0.5">
+                          <span className="flex items-center gap-0.5 font-mono text-3xs tabular-nums text-foreground-faint">
                             <ImageIcon className="h-2.5 w-2.5" /> {cap.imageIds.length}
                           </span>
                         )}
@@ -620,66 +609,67 @@ export function CapturesPage() {
           })}
         </div>
       )}
-      {/* Fullscreen lightbox */}
-      {lightbox && ReactDOM.createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm [-webkit-app-region:no-drag]"
-          onClick={() => setLightbox(null)}
-          onTouchStart={onTouchStart}
-          onTouchEnd={onLightboxSwipe}
-        >
-          {/* Close button */}
-          <button
-            onClick={(e) => { e.stopPropagation(); setLightbox(null) }}
-            className="cursor-pointer absolute right-4 text-white/70 hover:text-white transition-colors z-10 top-[calc(1rem+env(safe-area-inset-top))] [-webkit-app-region:no-drag]"
+
+      {/* Fullscreen lightbox — the one app Modal, full size */}
+      <Modal
+        open={!!lightbox}
+        onOpenChange={(o) => { if (!o) setLightbox(null) }}
+        size="full"
+        className="grid-rows-[1fr] [-webkit-app-region:no-drag]"
+      >
+        {lightbox && (
+          <div
+            className="relative flex h-full flex-col items-center justify-center gap-3"
+            onTouchStart={onTouchStart}
+            onTouchEnd={onLightboxSwipe}
           >
-            <X className="h-7 w-7" />
-          </button>
-
-          {/* Counter */}
-          {lightbox.imageIds.length > 1 && (
-            <span className="absolute left-1/2 -translate-x-1/2 text-white/70 text-sm top-[calc(1.25rem+env(safe-area-inset-top))]">
-              {lightbox.index + 1} / {lightbox.imageIds.length}
-            </span>
-          )}
-
-          {/* Image */}
-          <img
-            src={imageCache[lightbox.imageIds[lightbox.index]]}
-            alt=""
-            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg"
-            onClick={e => e.stopPropagation()}
-          />
-
-          {/* Navigation */}
-          {lightbox.imageIds.length > 1 && (
-            <>
-              <button
-                onClick={e => { e.stopPropagation(); setLightbox(prev => prev ? { ...prev, index: (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null) }}
-                className="cursor-pointer absolute left-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-3 md:p-2 transition-colors"
-              >
-                <ChevronLeft className="h-7 w-7 md:h-6 md:w-6" />
-              </button>
-              <button
-                onClick={e => { e.stopPropagation(); setLightbox(prev => prev ? { ...prev, index: (prev.index + 1) % prev.imageIds.length } : null) }}
-                className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-3 md:p-2 transition-colors"
-              >
-                <ChevronRight className="h-7 w-7 md:h-6 md:w-6" />
-              </button>
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-2">
-                {lightbox.imageIds.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={e => { e.stopPropagation(); setLightbox(prev => prev ? { ...prev, index: i } : null) }}
-                    className={`cursor-pointer h-2 rounded-full transition-all ${i === lightbox.index ? 'w-6 bg-white' : 'w-2 bg-white/40'}`}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-        </div>,
-        document.body
-      )}
+            {lightbox.imageIds.length > 1 && (
+              <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                {lightbox.index + 1} / {lightbox.imageIds.length}
+              </span>
+            )}
+            <img
+              src={imageCache[lightbox.imageIds[lightbox.index]]}
+              alt=""
+              className="min-h-0 max-w-full flex-1 rounded-md object-contain"
+            />
+            {lightbox.imageIds.length > 1 && (
+              <>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label="Previous image"
+                  className="absolute left-0 top-1/2 -translate-y-1/2"
+                  onClick={() => setLightbox(prev => prev ? { ...prev, index: (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null)}
+                >
+                  <ChevronLeft />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label="Next image"
+                  className="absolute right-0 top-1/2 -translate-y-1/2"
+                  onClick={() => setLightbox(prev => prev ? { ...prev, index: (prev.index + 1) % prev.imageIds.length } : null)}
+                >
+                  <ChevronRight />
+                </Button>
+                <div className="flex gap-2">
+                  {/* Compact gallery-dot pattern — too small for Button chrome;
+                      focus ring comes from the global :focus-visible rule. */}
+                  {lightbox.imageIds.map((_, i) => (
+                    <button
+                      key={i}
+                      aria-label={`Go to image ${i + 1}`}
+                      onClick={() => setLightbox(prev => prev ? { ...prev, index: i } : null)}
+                      className={`h-2 cursor-pointer rounded-full transition-all duration-150 ${i === lightbox.index ? 'w-6 bg-foreground' : 'w-2 bg-muted-foreground/40 hover:bg-muted-foreground'}`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
     </PageShell>
   )
 }

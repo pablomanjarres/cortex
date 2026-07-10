@@ -2,12 +2,12 @@ export interface GitHubStats {
   commitsToday: number
   commitsWeek: number
   prsOpen: number
-  prsMerged: number
-  latestCommit: string | null
+  /** PRs authored by the viewer merged since Monday (local) — matches the "(week)" label. */
+  prsMergedWeek: number
   repoCount: number
+  followers: number
   streak: number
-  topRepos: { name: string; commits: number }[]
-  /** Real per-day commit counts for the last 30 days, across active repos. */
+  /** Real per-day commit counts for the last 30 days, from the contribution calendar. */
   commitTimeline?: { date: string; commits: number }[]
 }
 
@@ -31,6 +31,6 @@ export interface SupabaseStats {
   totalUsers: number
   signupsToday: number
   signupsWeek: number
-  /** Cumulative total users by actual signup date (real cohort curve). */
+  /** Cumulative total users by actual signup date (real cohort curve, 180d). */
   signupTimeline?: { date: string; users: number }[]
 }

@@ -4,7 +4,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createServer, type IncomingMessage } from "http";
 import { z } from "zod";
 
-const BASE = "http://localhost:3456";
+const BASE = process.env.CORTEX_API || "http://localhost:3456";
 
 // ─── Helpers ──────────────────────────────────────────────
 
@@ -24,12 +24,80 @@ async function cortexPost(path: string, body: unknown): Promise<unknown> {
   return res.json();
 }
 
-async function readKey<T = unknown>(key: string): Promise<T> {
-  return cortexGet(`/api/data?key=${encodeURIComponent(key)}`) as Promise<T>;
+/** Thrown by writeKey on HTTP 409 — carries the server's current value + rev. */
+class ConflictError extends Error {
+  constructor(public rev: string | null, public data: unknown, public hasData: boolean) {
+    super("Cortex 409: write conflict");
+  }
 }
 
-async function writeKey(key: string, data: unknown): Promise<void> {
-  await cortexPost("/api/data", { key, data });
+/**
+ * Thrown inside a mutateKey callback to skip the write and make `result` the
+ * tool's return value (soft errors like "not found" — never an exception).
+ */
+class MutationAbort extends Error {
+  constructor(public result: unknown) {
+    super("mutation aborted");
+  }
+}
+
+/** Sentinel a mutateKey callback can return to skip the write entirely. */
+const NO_WRITE = Symbol("no-write");
+
+async function readKeyWithRev<T = unknown>(key: string): Promise<{ data: T | null; rev: string | null }> {
+  const res = await fetch(`${BASE}/api/data?key=${encodeURIComponent(key)}`);
+  if (!res.ok) throw new Error(`Cortex ${res.status}: ${await res.text()}`);
+  const rev = res.headers.get("x-cortex-rev");
+  return { data: (await res.json()) as T | null, rev };
+}
+
+async function readKey<T = unknown>(key: string): Promise<T> {
+  return (await readKeyWithRev<T>(key)).data as T;
+}
+
+async function writeKey(key: string, data: unknown, baseRev?: string | null): Promise<void> {
+  const res = await fetch(`${BASE}/api/data`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(baseRev != null ? { key, data, baseRev } : { key, data }),
+  });
+  if (res.status === 409) {
+    let body: { rev?: string | null; data?: unknown } | null = null;
+    try { body = (await res.json()) as { rev?: string | null; data?: unknown }; } catch { /* keep null */ }
+    throw new ConflictError(body?.rev ?? null, body ? body.data : undefined, body != null);
+  }
+  if (!res.ok) throw new Error(`Cortex ${res.status}: ${await res.text()}`);
+}
+
+/**
+ * Optimistic-concurrency read-modify-write: read (capturing X-Cortex-Rev) →
+ * fn → write with baseRev. On a 409 conflict the server's current value
+ * becomes the new base and fn re-runs, up to 3 retries. fn MUST be safe to
+ * re-run against fresh data. Return NO_WRITE from fn to skip the write, or
+ * throw MutationAbort to skip it AND set the tool result.
+ */
+async function mutateKey<T>(
+  key: string,
+  fn: (current: T) => T | typeof NO_WRITE | Promise<T | typeof NO_WRITE>,
+  fallback: T,
+): Promise<T> {
+  let { data, rev } = await readKeyWithRev<T>(key);
+  for (let attempt = 0; ; attempt++) {
+    const base = (data ?? fallback) as T;
+    const next = await fn(base);
+    if (next === NO_WRITE) return base;
+    try {
+      await writeKey(key, next, rev);
+      return next;
+    } catch (e) {
+      if (e instanceof ConflictError && attempt < 3) {
+        if (e.hasData) { data = e.data as T | null; rev = e.rev; }
+        else ({ data, rev } = await readKeyWithRev<T>(key));
+        continue;
+      }
+      throw e;
+    }
+  }
 }
 
 function today(): string {
@@ -55,6 +123,7 @@ async function run<T>(fn: () => Promise<T>): Promise<ToolResult> {
   try {
     return ok(await fn());
   } catch (e: unknown) {
+    if (e instanceof MutationAbort) return ok(e.result); // soft result (e.g. "not found"), not an error
     const error = e as Error & { cause?: { code?: string } };
     if (error?.cause?.code === "ECONNREFUSED" || error?.message?.includes("ECONNREFUSED")) {
       return err("Cortex app is not running. Start the Cortex Electron app first (it hosts the API on localhost:3456).");
@@ -79,7 +148,7 @@ const server = new McpServer(
       "- When he shares a THOUGHT, idea, reflection, realization, or opinion worth keeping, offer to save it with add_thought (e.g. \"Want me to save that as a thought in Cortex?\"). Don't save silently.",
       "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
       "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
-      "- Opportunities (hackathons, grants, internships, fellowships): get_opportunities to read the radar + active hunt orders; add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it.",
+      "- Opportunities (fellowships, grants, accelerators, programs, residencies, hackathons, internships): get_opportunities to read the radar + active hunt orders (filter by category or deadline_type); add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders; include the deadline-intelligence fields); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it. The curated program catalog seeds via `node scripts/radar-seed-programs.mjs --write`.",
       "",
       "Prefer domain-specific tools over the generic read_data / write_data. Confirm before overwriting existing data. Values are stored per calendar day/week under keys like cortex-nutrition-YYYY-MM-DD and cortex-market-<mondayDate>; today's date is the default when omitted.",
     ].join("\n"),
@@ -110,7 +179,6 @@ server.tool(
   async ({ date, task, duration, startedAt, completedAt }) => run(async () => {
     const d = date || today();
     const key = `cortex-daily-sessions-${d}`;
-    const sessions = ((await readKey(key)) || []) as unknown[];
     const session = {
       id: uid("session"),
       task,
@@ -118,8 +186,10 @@ server.tool(
       startedAt: startedAt || new Date().toISOString(),
       completedAt: completedAt || new Date().toISOString(),
     };
-    (sessions as unknown[]).push(session);
-    await writeKey(key, sessions);
+    await mutateKey<unknown[]>(key, (sessions) => {
+      sessions.push(session);
+      return sessions;
+    }, []);
     return { ok: true, session };
   })
 );
@@ -167,12 +237,13 @@ server.tool(
   },
   async ({ habitId, date, done }) => run(async () => {
     const d = date || today();
-    const key = "cortex-habits-history";
-    const history = ((await readKey(key)) || {}) as Record<string, Record<string, boolean>>;
-    if (!history[d]) history[d] = {};
-    history[d][habitId] = done ?? true;
-    await writeKey(key, history);
-    return { ok: true, date: d, habitId, done: history[d][habitId] };
+    const value = done ?? true;
+    await mutateKey<Record<string, Record<string, boolean>>>("cortex-habits-history", (history) => {
+      if (!history[d]) history[d] = {};
+      history[d][habitId] = value;
+      return history;
+    }, {});
+    return { ok: true, date: d, habitId, done: value };
   })
 );
 
@@ -234,7 +305,6 @@ server.tool(
   },
   async ({ name, emoji, category, cadence, goal, context }) => run(async () => {
     if (!name.trim()) throw new Error("Habit name is required.");
-    const habits = ((await readKey("cortex-habits")) || []) as HabitDef[];
     const cad = cadence ?? "weekly";
     const habit: HabitDef = {
       id: Date.now().toString(),
@@ -247,8 +317,10 @@ server.tool(
         : { weeklyGoal: clampHabitGoal("weekly", goal) }),
       ...(context && context.trim() ? { context: context.trim() } : {}),
     };
-    habits.push(habit);
-    await writeKey("cortex-habits", habits);
+    await mutateKey<HabitDef[]>("cortex-habits", (habits) => {
+      habits.push(habit);
+      return habits;
+    }, []);
     return { ok: true, habit };
   })
 );
@@ -266,38 +338,41 @@ server.tool(
     context: z.string().optional().describe("Free-form note explaining what the habit means and what counts as done; empty string clears it."),
   },
   async ({ habitId, name, emoji, category, cadence, goal, context }) => run(async () => {
-    const habits = ((await readKey("cortex-habits")) || []) as HabitDef[];
-    const idx = habits.findIndex((h) => h.id === habitId);
-    if (idx === -1) throw new Error(`No habit found with id "${habitId}". Use get_habits to list ids.`);
-    const habit = { ...habits[idx] };
-    if (name !== undefined) {
-      if (!name.trim()) throw new Error("Habit name cannot be empty.");
-      habit.name = name.trim();
-    }
-    if (emoji !== undefined && emoji) habit.emoji = emoji;
-    if (category !== undefined) {
-      if (category) habit.category = category;
-      else delete habit.category;
-    }
-    if (context !== undefined) {
-      if (context.trim()) habit.context = context.trim();
-      else delete habit.context;
-    }
-    // Re-normalize goal fields only when cadence or goal is provided (matches the UI's edit save).
-    if (cadence !== undefined || goal !== undefined) {
-      const cad = cadence ?? habit.cadence ?? "weekly";
-      habit.cadence = cad;
-      if (cad === "monthly") {
-        habit.monthlyGoal = clampHabitGoal("monthly", goal ?? habit.monthlyGoal);
-        delete habit.weeklyGoal;
-      } else {
-        habit.weeklyGoal = clampHabitGoal("weekly", goal ?? habit.weeklyGoal);
-        delete habit.monthlyGoal;
+    let updated: HabitDef | undefined;
+    await mutateKey<HabitDef[]>("cortex-habits", (habits) => {
+      const idx = habits.findIndex((h) => h.id === habitId);
+      if (idx === -1) throw new Error(`No habit found with id "${habitId}". Use get_habits to list ids.`);
+      const habit = { ...habits[idx] };
+      if (name !== undefined) {
+        if (!name.trim()) throw new Error("Habit name cannot be empty.");
+        habit.name = name.trim();
       }
-    }
-    habits[idx] = habit;
-    await writeKey("cortex-habits", habits);
-    return { ok: true, habit };
+      if (emoji !== undefined && emoji) habit.emoji = emoji;
+      if (category !== undefined) {
+        if (category) habit.category = category;
+        else delete habit.category;
+      }
+      if (context !== undefined) {
+        if (context.trim()) habit.context = context.trim();
+        else delete habit.context;
+      }
+      // Re-normalize goal fields only when cadence or goal is provided (matches the UI's edit save).
+      if (cadence !== undefined || goal !== undefined) {
+        const cad = cadence ?? habit.cadence ?? "weekly";
+        habit.cadence = cad;
+        if (cad === "monthly") {
+          habit.monthlyGoal = clampHabitGoal("monthly", goal ?? habit.monthlyGoal);
+          delete habit.weeklyGoal;
+        } else {
+          habit.weeklyGoal = clampHabitGoal("weekly", goal ?? habit.weeklyGoal);
+          delete habit.monthlyGoal;
+        }
+      }
+      habits[idx] = habit;
+      updated = habit;
+      return habits;
+    }, []);
+    return { ok: true, habit: updated };
   })
 );
 
@@ -308,26 +383,29 @@ server.tool(
     habitId: z.string().describe("Habit ID (from get_habits)"),
   },
   async ({ habitId }) => run(async () => {
-    const habits = ((await readKey("cortex-habits")) || []) as HabitDef[];
-    const removed = habits.find((h) => h.id === habitId);
-    if (!removed) throw new Error(`No habit found with id "${habitId}". Use get_habits to list ids.`);
-    await writeKey("cortex-habits", habits.filter((h) => h.id !== habitId));
+    let removed: HabitDef | undefined;
+    await mutateKey<HabitDef[]>("cortex-habits", (habits) => {
+      removed = habits.find((h) => h.id === habitId);
+      if (!removed) throw new Error(`No habit found with id "${habitId}". Use get_habits to list ids.`);
+      return habits.filter((h) => h.id !== habitId);
+    }, []);
     // Clean completion history so streaks/scores don't count a deleted habit.
-    const history = ((await readKey("cortex-habits-history")) || {}) as Record<string, Record<string, boolean>>;
-    let historyTouched = false;
-    for (const date of Object.keys(history)) {
-      if (history[date] && habitId in history[date]) {
-        delete history[date][habitId];
-        historyTouched = true;
+    await mutateKey<Record<string, Record<string, boolean>>>("cortex-habits-history", (history) => {
+      let touched = false;
+      for (const date of Object.keys(history)) {
+        if (history[date] && habitId in history[date]) {
+          delete history[date][habitId];
+          touched = true;
+        }
       }
-    }
-    if (historyTouched) await writeKey("cortex-habits-history", history);
+      return touched ? history : NO_WRITE;
+    }, {});
     // Clean the legacy weekly grid too, in case it still holds this id.
-    const grid = ((await readKey("cortex-habits-grid")) || {}) as Record<string, unknown>;
-    if (grid && habitId in grid) {
+    await mutateKey<Record<string, unknown>>("cortex-habits-grid", (grid) => {
+      if (!(habitId in grid)) return NO_WRITE;
       delete grid[habitId];
-      await writeKey("cortex-habits-grid", grid);
-    }
+      return grid;
+    }, {});
     return { ok: true, deleted: removed };
   })
 );
@@ -397,7 +475,6 @@ server.tool(
   },
   async ({ title, detail, area, period, targetDate, progress, milestones, status }) => run(async () => {
     if (!title.trim()) throw new Error("Goal title is required.");
-    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
     const st = status ?? "active";
     const goal: GoalDef = {
       id: uid("goal"),
@@ -412,8 +489,10 @@ server.tool(
       ...(milestones && milestones.length ? { milestones: milestones.map((t) => ({ id: uid("ms"), title: t, done: false })) } : {}),
       ...(st === "done" ? { completedAt: new Date().toISOString() } : {}),
     };
-    goals.push(goal);
-    await writeKey("cortex-goals", goals);
+    await mutateKey<GoalDef[]>("cortex-goals", (goals) => {
+      goals.push(goal);
+      return goals;
+    }, []);
     return { ok: true, goal: withPct(goal) };
   })
 );
@@ -433,33 +512,36 @@ server.tool(
     milestones: z.array(z.object({ title: z.string(), done: z.boolean().optional() })).optional().describe("Replaces the entire milestone list"),
   },
   async ({ goalId, title, detail, area, period, targetDate, progress, status, milestones }) => run(async () => {
-    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
-    const idx = goals.findIndex((g) => g.id === goalId);
-    if (idx === -1) throw new Error(`No goal found with id "${goalId}". Use get_goals to list ids.`);
-    const g = { ...goals[idx] };
-    if (title !== undefined) {
-      if (!title.trim()) throw new Error("Goal title cannot be empty.");
-      g.title = title.trim();
-    }
-    const setOrClear = (key: "detail" | "area" | "period" | "targetDate", val: string | undefined) => {
-      if (val === undefined) return;
-      if (val) g[key] = val;
-      else delete g[key];
-    };
-    setOrClear("detail", detail);
-    setOrClear("area", area);
-    setOrClear("period", period);
-    setOrClear("targetDate", targetDate);
-    if (progress !== undefined) g.progress = Math.min(Math.max(progress, 0), 100);
-    if (milestones !== undefined) g.milestones = milestones.map((m) => ({ id: uid("ms"), title: m.title, done: m.done ?? false }));
-    if (status !== undefined) {
-      g.status = status;
-      if (status === "done") g.completedAt = g.completedAt ?? new Date().toISOString();
-      else delete g.completedAt;
-    }
-    goals[idx] = g;
-    await writeKey("cortex-goals", goals);
-    return { ok: true, goal: withPct(g) };
+    let updated: GoalDef | undefined;
+    await mutateKey<GoalDef[]>("cortex-goals", (goals) => {
+      const idx = goals.findIndex((g) => g.id === goalId);
+      if (idx === -1) throw new Error(`No goal found with id "${goalId}". Use get_goals to list ids.`);
+      const g = { ...goals[idx] };
+      if (title !== undefined) {
+        if (!title.trim()) throw new Error("Goal title cannot be empty.");
+        g.title = title.trim();
+      }
+      const setOrClear = (key: "detail" | "area" | "period" | "targetDate", val: string | undefined) => {
+        if (val === undefined) return;
+        if (val) g[key] = val;
+        else delete g[key];
+      };
+      setOrClear("detail", detail);
+      setOrClear("area", area);
+      setOrClear("period", period);
+      setOrClear("targetDate", targetDate);
+      if (progress !== undefined) g.progress = Math.min(Math.max(progress, 0), 100);
+      if (milestones !== undefined) g.milestones = milestones.map((m) => ({ id: uid("ms"), title: m.title, done: m.done ?? false }));
+      if (status !== undefined) {
+        g.status = status;
+        if (status === "done") g.completedAt = g.completedAt ?? new Date().toISOString();
+        else delete g.completedAt;
+      }
+      goals[idx] = g;
+      updated = g;
+      return goals;
+    }, []);
+    return { ok: true, goal: withPct(updated!) };
   })
 );
 
@@ -472,14 +554,17 @@ server.tool(
     done: z.boolean().optional().describe("true to check, false to uncheck; omit to toggle"),
   },
   async ({ goalId, milestoneId, done }) => run(async () => {
-    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
-    const g = goals.find((x) => x.id === goalId);
-    if (!g) throw new Error(`No goal found with id "${goalId}".`);
-    const m = (g.milestones ?? []).find((x) => x.id === milestoneId);
-    if (!m) throw new Error(`No milestone "${milestoneId}" on goal "${goalId}".`);
-    m.done = done ?? !m.done;
-    await writeKey("cortex-goals", goals);
-    return { ok: true, goal: withPct(g) };
+    let updated: GoalDef | undefined;
+    await mutateKey<GoalDef[]>("cortex-goals", (goals) => {
+      const g = goals.find((x) => x.id === goalId);
+      if (!g) throw new Error(`No goal found with id "${goalId}".`);
+      const m = (g.milestones ?? []).find((x) => x.id === milestoneId);
+      if (!m) throw new Error(`No milestone "${milestoneId}" on goal "${goalId}".`);
+      m.done = done ?? !m.done;
+      updated = g;
+      return goals;
+    }, []);
+    return { ok: true, goal: withPct(updated!) };
   })
 );
 
@@ -488,10 +573,12 @@ server.tool(
   "Delete a goal by id.",
   { goalId: z.string().describe("Goal id (from get_goals)") },
   async ({ goalId }) => run(async () => {
-    const goals = ((await readKey("cortex-goals")) || []) as GoalDef[];
-    const removed = goals.find((g) => g.id === goalId);
-    if (!removed) throw new Error(`No goal found with id "${goalId}". Use get_goals to list ids.`);
-    await writeKey("cortex-goals", goals.filter((g) => g.id !== goalId));
+    let removed: GoalDef | undefined;
+    await mutateKey<GoalDef[]>("cortex-goals", (goals) => {
+      removed = goals.find((g) => g.id === goalId);
+      if (!removed) throw new Error(`No goal found with id "${goalId}". Use get_goals to list ids.`);
+      return goals.filter((g) => g.id !== goalId);
+    }, []);
     return { ok: true, deleted: removed };
   })
 );
@@ -570,7 +657,6 @@ server.tool(
     if (parsedDays.length === 0) throw new Error("At least one valid day is required, e.g. ['Mon','Wed'].");
     if (!isHHMM(startTime)) throw new Error("startTime must be 24h 'HH:MM', e.g. '10:00'.");
     if (!isHHMM(endTime)) throw new Error("endTime must be 24h 'HH:MM', e.g. '11:30'.");
-    const classes = ((await readKey("cortex-classes")) || []) as ClassDef[];
     const cls: ClassDef = {
       id: uid("class"),
       courseId: courseId?.trim() || slugify(courseName),
@@ -582,8 +668,10 @@ server.tool(
       termStart: termStart || CLASS_TERM_START,
       termEnd: termEnd || CLASS_TERM_END,
     };
-    classes.push(cls);
-    await writeKey("cortex-classes", classes);
+    await mutateKey<ClassDef[]>("cortex-classes", (classes) => {
+      classes.push(cls);
+      return classes;
+    }, []);
     return { ok: true, class: withDayNames(cls) };
   })
 );
@@ -602,20 +690,23 @@ server.tool(
     termEnd: z.string().optional().describe("YYYY-MM-DD"),
   },
   async ({ classId, courseName, days, startTime, endTime, room, termStart, termEnd }) => run(async () => {
-    const classes = ((await readKey("cortex-classes")) || []) as ClassDef[];
-    const idx = classes.findIndex((c) => c.id === classId);
-    if (idx === -1) throw new Error(`No class found with id "${classId}". Use get_classes to list ids.`);
-    const c = { ...classes[idx] };
-    if (courseName !== undefined) { if (!courseName.trim()) throw new Error("courseName cannot be empty."); c.courseName = courseName.trim(); }
-    if (days !== undefined) { const p = parseDays(days); if (p.length === 0) throw new Error("At least one valid day is required."); c.days = p; }
-    if (startTime !== undefined) { if (!isHHMM(startTime)) throw new Error("startTime must be 24h 'HH:MM'."); c.startTime = startTime; }
-    if (endTime !== undefined) { if (!isHHMM(endTime)) throw new Error("endTime must be 24h 'HH:MM'."); c.endTime = endTime; }
-    if (room !== undefined) { if (room.trim()) c.room = room.trim(); else delete c.room; }
-    if (termStart !== undefined) c.termStart = termStart;
-    if (termEnd !== undefined) c.termEnd = termEnd;
-    classes[idx] = c;
-    await writeKey("cortex-classes", classes);
-    return { ok: true, class: withDayNames(c) };
+    let updated: ClassDef | undefined;
+    await mutateKey<ClassDef[]>("cortex-classes", (classes) => {
+      const idx = classes.findIndex((c) => c.id === classId);
+      if (idx === -1) throw new Error(`No class found with id "${classId}". Use get_classes to list ids.`);
+      const c = { ...classes[idx] };
+      if (courseName !== undefined) { if (!courseName.trim()) throw new Error("courseName cannot be empty."); c.courseName = courseName.trim(); }
+      if (days !== undefined) { const p = parseDays(days); if (p.length === 0) throw new Error("At least one valid day is required."); c.days = p; }
+      if (startTime !== undefined) { if (!isHHMM(startTime)) throw new Error("startTime must be 24h 'HH:MM'."); c.startTime = startTime; }
+      if (endTime !== undefined) { if (!isHHMM(endTime)) throw new Error("endTime must be 24h 'HH:MM'."); c.endTime = endTime; }
+      if (room !== undefined) { if (room.trim()) c.room = room.trim(); else delete c.room; }
+      if (termStart !== undefined) c.termStart = termStart;
+      if (termEnd !== undefined) c.termEnd = termEnd;
+      classes[idx] = c;
+      updated = c;
+      return classes;
+    }, []);
+    return { ok: true, class: withDayNames(updated!) };
   })
 );
 
@@ -624,10 +715,12 @@ server.tool(
   "Delete a saved class by id. Its purple calendar event is removed on the app's next reconcile.",
   { classId: z.string().describe("Class ID (from get_classes)") },
   async ({ classId }) => run(async () => {
-    const classes = ((await readKey("cortex-classes")) || []) as ClassDef[];
-    const removed = classes.find((c) => c.id === classId);
-    if (!removed) throw new Error(`No class found with id "${classId}". Use get_classes to list ids.`);
-    await writeKey("cortex-classes", classes.filter((c) => c.id !== classId));
+    let removed: ClassDef | undefined;
+    await mutateKey<ClassDef[]>("cortex-classes", (classes) => {
+      removed = classes.find((c) => c.id === classId);
+      if (!removed) throw new Error(`No class found with id "${classId}". Use get_classes to list ids.`);
+      return classes.filter((c) => c.id !== classId);
+    }, []);
     return { ok: true, deleted: removed };
   })
 );
@@ -671,7 +764,6 @@ server.tool(
     language: z.string().optional().describe("'en' or 'es'"),
   },
   async ({ title, author, status, genre, notes, language }) => run(async () => {
-    const books = ((await readKey("cortex-books")) || []) as unknown[];
     const book = {
       id: uid("book"),
       title,
@@ -684,8 +776,10 @@ server.tool(
       start: "",
       finished: "",
     };
-    books.push(book);
-    await writeKey("cortex-books", books);
+    await mutateKey<unknown[]>("cortex-books", (books) => {
+      books.push(book);
+      return books;
+    }, []);
     return { ok: true, book };
   })
 );
@@ -703,12 +797,15 @@ server.tool(
     finished: z.string().optional().describe("Date finished"),
   },
   async ({ id, ...updates }) => run(async () => {
-    const books = ((await readKey("cortex-books")) || []) as Record<string, unknown>[];
-    const book = books.find(b => b.id === id);
-    if (!book) return { error: `Book ${id} not found` };
-    Object.entries(updates).forEach(([k, v]) => { if (v !== undefined) book[k] = v; });
-    await writeKey("cortex-books", books);
-    return { ok: true, book };
+    let updated: Record<string, unknown> | undefined;
+    await mutateKey<Record<string, unknown>[]>("cortex-books", (books) => {
+      const book = books.find(b => b.id === id);
+      if (!book) throw new MutationAbort({ error: `Book ${id} not found` });
+      Object.entries(updates).forEach(([k, v]) => { if (v !== undefined) book[k] = v; });
+      updated = book;
+      return books;
+    }, []);
+    return { ok: true, book: updated };
   })
 );
 
@@ -749,7 +846,6 @@ server.tool(
     url: z.string().optional(),
   },
   async ({ title, content, source, url }) => run(async () => {
-    const caps = ((await readKey("cortex-captures")) || []) as unknown[];
     const capture = {
       id: uid("cap"),
       title,
@@ -759,8 +855,10 @@ server.tool(
       images: [],
       createdAt: new Date().toISOString(),
     };
-    caps.push(capture);
-    await writeKey("cortex-captures", caps);
+    await mutateKey<unknown[]>("cortex-captures", (caps) => {
+      caps.push(capture);
+      return caps;
+    }, []);
     return { ok: true, capture };
   })
 );
@@ -770,10 +868,11 @@ server.tool(
   "Delete a capture by ID",
   { id: z.string() },
   async ({ id }) => run(async () => {
-    const caps = ((await readKey("cortex-captures")) || []) as Record<string, unknown>[];
-    const filtered = caps.filter(c => c.id !== id);
-    if (filtered.length === caps.length) return { error: `Capture ${id} not found` };
-    await writeKey("cortex-captures", filtered);
+    await mutateKey<Record<string, unknown>[]>("cortex-captures", (caps) => {
+      const filtered = caps.filter(c => c.id !== id);
+      if (filtered.length === caps.length) throw new MutationAbort({ error: `Capture ${id} not found` });
+      return filtered;
+    }, []);
     return { ok: true, deleted: id };
   })
 );
@@ -816,7 +915,6 @@ server.tool(
     highValue: z.boolean().optional().describe("Mark as high-value insight"),
   },
   async ({ name, subline, topic, book, highValue }) => run(async () => {
-    const thoughts = ((await readKey("cortex-thoughts")) || []) as unknown[];
     const thought = {
       id: uid("thought"),
       name,
@@ -826,8 +924,10 @@ server.tool(
       highValue: highValue ?? false,
       createdAt: new Date().toISOString(),
     };
-    thoughts.push(thought);
-    await writeKey("cortex-thoughts", thoughts);
+    await mutateKey<unknown[]>("cortex-thoughts", (thoughts) => {
+      thoughts.push(thought);
+      return thoughts;
+    }, []);
     return { ok: true, thought };
   })
 );
@@ -844,12 +944,15 @@ server.tool(
     highValue: z.boolean().optional(),
   },
   async ({ id, ...updates }) => run(async () => {
-    const thoughts = ((await readKey("cortex-thoughts")) || []) as Record<string, unknown>[];
-    const thought = thoughts.find(t => t.id === id);
-    if (!thought) return { error: `Thought ${id} not found` };
-    Object.entries(updates).forEach(([k, v]) => { if (v !== undefined) thought[k] = v; });
-    await writeKey("cortex-thoughts", thoughts);
-    return { ok: true, thought };
+    let updated: Record<string, unknown> | undefined;
+    await mutateKey<Record<string, unknown>[]>("cortex-thoughts", (thoughts) => {
+      const thought = thoughts.find(t => t.id === id);
+      if (!thought) throw new MutationAbort({ error: `Thought ${id} not found` });
+      Object.entries(updates).forEach(([k, v]) => { if (v !== undefined) thought[k] = v; });
+      updated = thought;
+      return thoughts;
+    }, []);
+    return { ok: true, thought: updated };
   })
 );
 
@@ -909,7 +1012,6 @@ server.tool(
     notes: z.string().optional(),
   },
   async ({ name, categories, birthday, phone, email, interval, nickname, title, notes }) => run(async () => {
-    const contacts = ((await readKey("cortex-contacts")) || []) as unknown[];
     const contact = {
       id: uid("contact"),
       name,
@@ -923,8 +1025,10 @@ server.tool(
       lastContact: "",
       notes: notes || "",
     };
-    contacts.push(contact);
-    await writeKey("cortex-contacts", contacts);
+    await mutateKey<unknown[]>("cortex-contacts", (contacts) => {
+      contacts.push(contact);
+      return contacts;
+    }, []);
     return { ok: true, contact };
   })
 );
@@ -946,12 +1050,15 @@ server.tool(
     lastContact: z.string().optional().describe("YYYY-MM-DD of last contact"),
   },
   async ({ id, ...updates }) => run(async () => {
-    const contacts = ((await readKey("cortex-contacts")) || []) as Record<string, unknown>[];
-    const contact = contacts.find(c => c.id === id);
-    if (!contact) return { error: `Contact ${id} not found` };
-    Object.entries(updates).forEach(([k, v]) => { if (v !== undefined) contact[k] = v; });
-    await writeKey("cortex-contacts", contacts);
-    return { ok: true, contact };
+    let updated: Record<string, unknown> | undefined;
+    await mutateKey<Record<string, unknown>[]>("cortex-contacts", (contacts) => {
+      const contact = contacts.find(c => c.id === id);
+      if (!contact) throw new MutationAbort({ error: `Contact ${id} not found` });
+      Object.entries(updates).forEach(([k, v]) => { if (v !== undefined) contact[k] = v; });
+      updated = contact;
+      return contacts;
+    }, []);
+    return { ok: true, contact: updated };
   })
 );
 
@@ -1006,11 +1113,6 @@ server.tool(
     tags: z.array(z.string()).optional(),
   },
   async ({ orgId, name, company, role, email, phone, status, value, notes, tags }) => run(async () => {
-    const crm = ((await readKey("cortex-crm")) || { organizations: [] }) as Record<string, unknown>;
-    const orgs = (crm.organizations || []) as Record<string, unknown>[];
-    const org = orgs.find(o => o.id === orgId);
-    if (!org) return { error: `Organization ${orgId} not found` };
-    const contacts = (org.contacts || []) as unknown[];
     const contact = {
       id: uid("crm"),
       name,
@@ -1025,9 +1127,15 @@ server.tool(
       lastContact: "",
       createdAt: new Date().toISOString(),
     };
-    contacts.push(contact);
-    org.contacts = contacts;
-    await writeKey("cortex-crm", crm);
+    await mutateKey<Record<string, unknown>>("cortex-crm", (crm) => {
+      const orgs = (crm.organizations || []) as Record<string, unknown>[];
+      const org = orgs.find(o => o.id === orgId);
+      if (!org) throw new MutationAbort({ error: `Organization ${orgId} not found` });
+      const contacts = (org.contacts || []) as unknown[];
+      contacts.push(contact);
+      org.contacts = contacts;
+      return crm;
+    }, { organizations: [] });
     return { ok: true, contact };
   })
 );
@@ -1049,18 +1157,21 @@ server.tool(
     lastContact: z.string().optional(),
   },
   async ({ contactId, ...updates }) => run(async () => {
-    const crm = ((await readKey("cortex-crm")) || { organizations: [] }) as Record<string, unknown>;
-    const orgs = (crm.organizations || []) as Record<string, unknown>[];
-    for (const org of orgs) {
-      const contacts = (org.contacts || []) as Record<string, unknown>[];
-      const contact = contacts.find(c => c.id === contactId);
-      if (contact) {
-        Object.entries(updates).forEach(([k, v]) => { if (v !== undefined) contact[k] = v; });
-        await writeKey("cortex-crm", crm);
-        return { ok: true, contact };
+    let updated: Record<string, unknown> | undefined;
+    await mutateKey<Record<string, unknown>>("cortex-crm", (crm) => {
+      const orgs = (crm.organizations || []) as Record<string, unknown>[];
+      for (const org of orgs) {
+        const contacts = (org.contacts || []) as Record<string, unknown>[];
+        const contact = contacts.find(c => c.id === contactId);
+        if (contact) {
+          Object.entries(updates).forEach(([k, v]) => { if (v !== undefined) contact[k] = v; });
+          updated = contact;
+          return crm;
+        }
       }
-    }
-    return { error: `Contact ${contactId} not found in any organization` };
+      throw new MutationAbort({ error: `Contact ${contactId} not found in any organization` });
+    }, { organizations: [] });
+    return { ok: true, contact: updated };
   })
 );
 
@@ -1161,15 +1272,16 @@ server.tool(
   async ({ date, ...metrics }) => run(async () => {
     const d = date || today();
     const key = `cortex-gtm-log-${d}`;
-    const existing = ((await readKey(key)) || {
+    const log = await mutateKey<Record<string, unknown>>(key, (existing) => {
+      Object.entries(metrics).forEach(([k, v]) => { if (v !== undefined) existing[k] = v; });
+      existing.date = d;
+      return existing;
+    }, {
       date: d, dmsSent: 0, dmResponses: 0, demoCalls: 0, xReplies: 0,
       xFollowers: 0, redditComments: 0, linkedinMessages: 0, postsPublished: 0,
       channelOfSignup: "", notes: "",
-    }) as Record<string, unknown>;
-    Object.entries(metrics).forEach(([k, v]) => { if (v !== undefined) existing[k] = v; });
-    existing.date = d;
-    await writeKey(key, existing);
-    return { ok: true, log: existing };
+    });
+    return { ok: true, log };
   })
 );
 
@@ -1368,17 +1480,6 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// GROUP 16: Content Pipeline
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-server.tool(
-  "get_content_pipeline",
-  "Get daily content pipeline state (video/post ideas, drafts, published items)",
-  {},
-  async () => run(() => readKey("cortex-content-pipeline-daily"))
-);
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP 17: Founder Metrics
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1528,32 +1629,32 @@ server.tool(
   async ({ store, date, total, deductFromFinances, items }) => run(async () => {
     const d = date || today();
 
-    // 1) Market: append to the week's log
+    // 1) Market: append to the week's log. Grocery records are minted once so a
+    // conflict retry (which re-runs the callback on fresh data) can't change ids.
     const wk = weekStartMonday(d);
     const marketKey = `cortex-market-${wk}`;
-    const log: McpWeeklyMarketLog = ((await readKey(marketKey)) as McpWeeklyMarketLog | null) ?? { weekStart: wk, items: [] };
-    if (!Array.isArray(log.items)) log.items = [];
-    const addedGrocery: McpGroceryItem[] = [];
     let computedTotal = 0;
-    for (const it of items) {
+    const addedGrocery: McpGroceryItem[] = items.map((it) => {
       const qty = it.quantity ?? 1;
       computedTotal += it.price * qty;
-      const g: McpGroceryItem = { id: uid("grc"), name: it.name, price: it.price, quantity: qty, store: it.store || store || "Other", category: it.category || "Other" };
-      log.items.push(g);
-      addedGrocery.push(g);
-    }
-    await writeKey(marketKey, log);
+      return { id: uid("grc"), name: it.name, price: it.price, quantity: qty, store: it.store || store || "Other", category: it.category || "Other" };
+    });
+    await mutateKey<McpWeeklyMarketLog>(marketKey, (log) => {
+      if (!Array.isArray(log.items)) log.items = [];
+      log.items.push(...addedGrocery);
+      return log;
+    }, { weekStart: wk, items: [] });
 
     // 2) Nutrition pantry: create loggable objects for edible items
-    const pantry: McpPantryItem[] = ((await readKey("cortex-nutrition-pantry")) as McpPantryItem[] | null) ?? [];
-    const addedPantry: McpPantryItem[] = [];
-    for (const it of items) {
-      if (!it.nutrition) continue;
-      const p: McpPantryItem = { id: uid("pan"), name: it.name, protein: it.nutrition.protein, calories: it.nutrition.calories, serving: it.nutrition.serving, quantity: it.nutrition.servings, category: it.category, source: "bill", addedAt: new Date().toISOString() };
-      pantry.push(p);
-      addedPantry.push(p);
+    const addedPantry: McpPantryItem[] = items
+      .filter((it) => it.nutrition)
+      .map((it) => ({ id: uid("pan"), name: it.name, protein: it.nutrition!.protein, calories: it.nutrition!.calories, serving: it.nutrition!.serving, quantity: it.nutrition!.servings, category: it.category, source: "bill", addedAt: new Date().toISOString() }));
+    if (addedPantry.length) {
+      await mutateKey<McpPantryItem[]>("cortex-nutrition-pantry", (pantry) => {
+        pantry.push(...addedPantry);
+        return pantry;
+      }, []);
     }
-    if (addedPantry.length) await writeKey("cortex-nutrition-pantry", pantry);
 
     // 3) Finances: the Food budget's "spent" for the month = the month's total market spend
     // (recomputed from the ledger, incl. the items we just added — never a blind increment,
@@ -1561,8 +1662,8 @@ server.tool(
     const billTotal = total ?? computedTotal;
     let finances: { deducted: boolean; month?: number; foodBudget?: number; foodSpent?: number; remaining?: number } = { deducted: false };
     if (deductFromFinances !== false) {
-      const fin = (await readKey("cortex-finances")) as McpFinanceData | null;
-      if (fin && Array.isArray(fin.items)) {
+      await mutateKey<McpFinanceData | null>("cortex-finances", async (fin) => {
+        if (!fin || !Array.isArray(fin.items)) return NO_WRITE;
         const when = new Date(d + "T00:00:00");
         const month = when.getMonth();
         const monthSpent = await marketMonthTotal(when.getFullYear(), month);
@@ -1579,9 +1680,9 @@ server.tool(
         paidAmounts[month] = monthSpent;
         paid[month] = (months[month] || 0) > 0 && monthSpent >= months[month];
         food.months = months; food.paidAmounts = paidAmounts; food.paid = paid;
-        await writeKey("cortex-finances", fin);
         finances = { deducted: true, month, foodBudget: months[month] || 0, foodSpent: monthSpent, remaining: (months[month] || 0) - monthSpent };
-      }
+        return fin;
+      }, null);
     }
 
     return { ok: true, week: wk, billTotal, market: { key: marketKey, added: addedGrocery.length, items: addedGrocery }, pantry: { created: addedPantry.length, items: addedPantry }, finances };
@@ -1604,27 +1705,31 @@ server.tool(
   async ({ date, meal, foods }) => run(async () => {
     const d = date || today();
     const key = `cortex-nutrition-${d}`;
-    const day: McpDailyNutrition = ((await readKey(key)) as McpDailyNutrition | null) ?? emptyDailyNutrition(d);
-    if (!Array.isArray(day.meals) || day.meals.length === 0) day.meals = emptyDailyNutrition(d).meals;
-    const mealName = (meal || "Snack").toLowerCase();
-    let target: McpMealEntry | undefined = day.meals.find(m => m.name.toLowerCase() === mealName || m.id.toLowerCase() === mealName);
-    if (!target) { target = { id: uid("meal"), name: meal || "Snack", foods: [] }; day.meals.push(target); }
     const pantry: McpPantryItem[] = ((await readKey("cortex-nutrition-pantry")) as McpPantryItem[] | null) ?? [];
-    const added: McpFoodItem[] = [];
-    for (const f of foods) {
-      let protein = f.protein, calories = f.calories;
-      if (protein === undefined || calories === undefined) {
-        const match = pantry.find(p => p.name.toLowerCase() === f.name.toLowerCase());
-        if (match) { protein = protein ?? match.protein; calories = calories ?? match.calories; }
+    let added: McpFoodItem[] = [];
+    let mealNameOut = meal || "Snack";
+    const day = await mutateKey<McpDailyNutrition>(key, (day) => {
+      if (!Array.isArray(day.meals) || day.meals.length === 0) day.meals = emptyDailyNutrition(d).meals;
+      const mealName = (meal || "Snack").toLowerCase();
+      let target: McpMealEntry | undefined = day.meals.find(m => m.name.toLowerCase() === mealName || m.id.toLowerCase() === mealName);
+      if (!target) { target = { id: uid("meal"), name: meal || "Snack", foods: [] }; day.meals.push(target); }
+      added = [];
+      for (const f of foods) {
+        let protein = f.protein, calories = f.calories;
+        if (protein === undefined || calories === undefined) {
+          const match = pantry.find(p => p.name.toLowerCase() === f.name.toLowerCase());
+          if (match) { protein = protein ?? match.protein; calories = calories ?? match.calories; }
+        }
+        const food: McpFoodItem = { name: f.name, protein: protein ?? 0, calories: calories ?? 0, quantity: f.quantity };
+        target.foods.push(food);
+        added.push(food);
       }
-      const food: McpFoodItem = { name: f.name, protein: protein ?? 0, calories: calories ?? 0, quantity: f.quantity };
-      target.foods.push(food);
-      added.push(food);
-    }
-    await writeKey(key, day);
+      mealNameOut = target.name;
+      return day;
+    }, emptyDailyNutrition(d));
     const targets = ((await readKey("cortex-nutrition-targets")) as McpNutritionTargets | null) ?? DEFAULT_TARGETS;
     const totals = nutritionTotals(day);
-    return { ok: true, date: d, meal: target.name, added, totals, targets, remaining: { protein: targets.protein - totals.protein, calories: targets.calories - totals.calories } };
+    return { ok: true, date: d, meal: mealNameOut, added, totals, targets, remaining: { protein: targets.protein - totals.protein, calories: targets.calories - totals.calories } };
   })
 );
 
@@ -1679,15 +1784,16 @@ server.tool(
     })).describe("The meals in this template"),
   },
   async ({ name, description, meals }) => run(async () => {
-    const templates: McpMealTemplate[] = ((await readKey("cortex-meal-templates")) as McpMealTemplate[] | null) ?? [];
     const template: McpMealTemplate = {
       id: uid("tmpl"),
       name,
       description: description || "",
       meals: meals.map(m => ({ id: m.name.toLowerCase().replace(/\s+/g, "-"), name: m.name, foods: m.foods.map(f => ({ name: f.name, protein: f.protein, calories: f.calories, quantity: f.quantity })) })),
     };
-    templates.push(template);
-    await writeKey("cortex-meal-templates", templates);
+    const templates = await mutateKey<McpMealTemplate[]>("cortex-meal-templates", (templates) => {
+      templates.push(template);
+      return templates;
+    }, []);
     return { ok: true, template, totalTemplates: templates.length };
   })
 );
@@ -1748,6 +1854,10 @@ interface McpOpportunity {
   deadline: string | null; rolling: boolean; location: string; modality?: string;
   eligibility: string; reward: string; url: string; source: string; sourceRef: string;
   discoveredAt: string; runId?: string; notes: string; tags: string[];
+  // Deadline intelligence (optional — legacy records derive them at read time)
+  deadlineType?: string; recurrence?: string | null; nextWindowExpected?: string | null;
+  amountUsd?: number | null; requires18Plus?: boolean | null; officialUrl?: string;
+  effort?: string | null;
 }
 interface McpObjective { id: string; text: string; reply?: string; parsed?: unknown; status: string; active: boolean; createdAt: string; error?: string }
 interface McpOppData {
@@ -1758,21 +1868,34 @@ interface McpOppData {
 
 const normOppUrl = (u: string): string => (u || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
 
+// Normalize an item's deadline type (mirrors scripts/radar-lib.mjs + the UI):
+// explicit valid value wins; legacy records derive rolling→'rolling',
+// dated→'fixed', else 'unknown'.
+const OPP_DEADLINE_TYPES = new Set(["fixed", "rolling", "recurring", "always-open", "unknown"]);
+const oppDeadlineTypeOf = (o: McpOpportunity): string => {
+  if (o.deadlineType && OPP_DEADLINE_TYPES.has(o.deadlineType)) return o.deadlineType;
+  if (o.rolling === true) return "rolling";
+  if (o.deadline) return "fixed";
+  return "unknown";
+};
+
 server.tool(
   "get_opportunities",
-  "Read the Opportunity Radar: sourced opportunities, active hunt orders, the latest run report, and run status. Use before sourcing to avoid duplicates and to read what the user is hunting for.",
+  "Read the Opportunity Radar: sourced opportunities (hackathons AND the programs lane — fellowships, grants, accelerators, residencies), active hunt orders, the latest run report, and run status. Use before sourcing to avoid duplicates and to read what the user is hunting for. A curated 30-program catalog can be (re)seeded with `node scripts/radar-seed-programs.mjs --write`.",
   {
     status: z.string().optional().describe("Filter by status: new|pursuing|applied|won|lost|archived"),
-    category: z.string().optional().describe("Filter by category"),
+    category: z.string().optional().describe("Filter by category (e.g. fellowship, grant, program, accelerator, hackathon)"),
+    deadline_type: z.enum(["fixed", "rolling", "recurring", "always-open", "unknown"]).optional().describe("Filter by deadline behavior (legacy records derive it: rolling flag → rolling, dated → fixed, else unknown)"),
     limit: z.number().optional().describe("Max items to return, default 50"),
     includeArchived: z.boolean().optional().describe("Include archived items, default false"),
   },
-  async ({ status, category, limit, includeArchived }) => run(async () => {
+  async ({ status, category, deadline_type, limit, includeArchived }) => run(async () => {
     const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
     let items = Array.isArray(data.items) ? data.items : [];
     if (!includeArchived) items = items.filter(o => o.status !== "archived");
     if (status) items = items.filter(o => o.status === status);
     if (category) items = items.filter(o => o.category === category);
+    if (deadline_type) items = items.filter(o => oppDeadlineTypeOf(o) === deadline_type);
     const total = items.length;
     items = items.slice(0, limit && limit > 0 ? limit : 50);
     const activeHuntOrders = (data.objectives || []).filter(o => o.active).map(o => ({ id: o.id, text: o.text, status: o.status }));
@@ -1785,95 +1908,118 @@ server.tool(
   "Add a natural-language hunt order that personalizes the radar (e.g. '20 remote AI internships paying $2k+/mo, deadline before Sept'). Active hunt orders steer the next radar run.",
   { text: z.string().describe("What to hunt for, in plain language") },
   async ({ text }) => run(async () => {
-    const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
-    if (!Array.isArray(data.objectives)) data.objectives = [];
     const objective: McpObjective = { id: `obj-${Date.now()}`, text, status: "thinking", active: true, createdAt: new Date().toISOString() };
-    data.objectives.unshift(objective);
-    await writeKey("cortex-opportunities", data);
-    return { ok: true, objective, activeCount: data.objectives.filter(o => o.active).length };
+    const data = await mutateKey<McpOppData>("cortex-opportunities", (data) => {
+      if (!Array.isArray(data.objectives)) data.objectives = [];
+      data.objectives.unshift(objective);
+      return data;
+    }, { items: [], lastRun: null });
+    return { ok: true, objective, activeCount: (data.objectives || []).filter(o => o.active).length };
   })
 );
 
 server.tool(
   "run_opportunity_radar",
-  "Trigger the native Opportunity Radar pipeline — the same as the app's 'Run radar' button. Requests a run that the local radar watcher executes (scrape → classify → ingest). Depends on the local watcher daemon + scraper VM being up. Optionally pass a hunt order to personalize this run. To source opportunities WITHOUT the external scraper (Claude Code does its own web research), use add_opportunities instead.",
+  "Trigger the native Opportunity Radar pipeline — the same as the app's 'Run radar' button. Requests a run that the local radar watcher executes (scrape → classify → ingest); the scrape runs natively on this Mac, so only the local watcher daemon needs to be up. Optionally pass a hunt order to personalize this run. To source opportunities WITHOUT the native scraper (Claude Code does its own web research), use add_opportunities instead.",
   { huntOrder: z.string().optional().describe("Optional plain-language focus for this run; added as an active hunt order first") },
   async ({ huntOrder }) => run(async () => {
-    const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
-    if (data.runStatus === "requested" || data.runStatus === "running") {
-      return { ok: false, alreadyRunning: true, runStatus: data.runStatus, message: "A radar run is already in progress." };
-    }
-    if (huntOrder && huntOrder.trim()) {
-      if (!Array.isArray(data.objectives)) data.objectives = [];
-      data.objectives.unshift({ id: `obj-${Date.now()}`, text: huntOrder.trim(), status: "thinking", active: true, createdAt: new Date().toISOString() });
-    }
-    data.runRequestedAt = new Date().toISOString();
-    data.runStatus = "requested";
-    data.runError = undefined;
-    await writeKey("cortex-opportunities", data);
-    return { ok: true, runStatus: "requested", requestedAt: data.runRequestedAt, note: "The radar watcher (launchd) will run the pipeline. Poll runStatus via get_opportunities." };
+    const requestedAt = new Date().toISOString();
+    await mutateKey<McpOppData>("cortex-opportunities", (data) => {
+      if (data.runStatus === "requested" || data.runStatus === "running") {
+        throw new MutationAbort({ ok: false, alreadyRunning: true, runStatus: data.runStatus, message: "A radar run is already in progress." });
+      }
+      if (huntOrder && huntOrder.trim()) {
+        if (!Array.isArray(data.objectives)) data.objectives = [];
+        data.objectives.unshift({ id: `obj-${Date.now()}`, text: huntOrder.trim(), status: "thinking", active: true, createdAt: new Date().toISOString() });
+      }
+      data.runRequestedAt = requestedAt;
+      data.runStatus = "requested";
+      data.runError = undefined;
+      return data;
+    }, { items: [], lastRun: null });
+    return { ok: true, runStatus: "requested", requestedAt, note: "The radar watcher (launchd) will run the pipeline. Poll runStatus via get_opportunities." };
   })
 );
 
 server.tool(
   "add_opportunities",
-  "Add opportunities YOU (Claude Code) sourced via your own web research directly into the Radar. This IS the personalized radar when the external scraper isn't used: first read the user's profile (scripts/radar-profile.md) and active hunt orders (get_opportunities), research matching opportunities on the web, then submit them here. Dedupes against existing items by URL and title+host, stamps them with a runId, and updates the run report.",
+  "Add opportunities YOU (Claude Code) sourced via your own web research directly into the Radar. This IS the personalized radar when the external scraper isn't used: first read the user's profile (scripts/radar-profile.md) and active hunt orders (get_opportunities), research matching opportunities on the web, then submit them here. Fellowships, grants, accelerators, residencies and structured builder programs are first-class targets (categories program/fellowship/grant/accelerator/residency) — fill in the deadline-intelligence fields (deadlineType, recurrence, nextWindowExpected, amountUsd, requires18Plus, officialUrl, effort) whenever known. A curated 30-program baseline also exists: `node scripts/radar-seed-programs.mjs --write` (source 'catalog'). Dedupes against existing items by URL and title+host, stamps them with a runId, and updates the run report.",
   {
     runId: z.string().optional().describe("Label/stamp for this radar run; defaults to an ISO timestamp"),
     report: z.string().optional().describe("Optional markdown digest (what you found + top picks) shown on the Radar tab"),
     opportunities: z.array(z.object({
       title: z.string(),
       host: z.string().describe("Organization / host"),
-      category: z.enum(["hackathon", "grant", "accelerator", "fellowship", "internship", "exchange", "competition", "pitch", "speaking", "scholarship", "community", "launch", "trending", "other"]),
+      category: z.enum(["hackathon", "grant", "accelerator", "fellowship", "internship", "exchange", "competition", "pitch", "speaking", "scholarship", "community", "launch", "trending", "program", "residency", "research", "other"]),
       url: z.string().describe("Direct link"),
       goals: z.array(z.enum(["internship", "exchange", "funding", "social-growth", "users"])).optional(),
       priority: z.enum(["low", "medium", "high"]).optional(),
       leverageScore: z.number().min(1).max(5).optional().describe("1-5, how high-leverage for the user"),
       leverageNote: z.string().optional().describe("Why it matters for the user"),
       deadline: z.string().nullable().optional().describe("YYYY-MM-DD or null"),
-      rolling: z.boolean().optional().describe("Rolling / no fixed deadline"),
+      deadlineType: z.enum(["fixed", "rolling", "recurring", "always-open", "unknown"]).optional().describe("How the application window behaves; keeps the legacy rolling boolean in sync"),
+      rolling: z.boolean().optional().describe("Legacy rolling flag — derived from deadlineType when that is provided"),
+      recurrence: z.string().nullable().optional().describe("Cadence when known, e.g. 'annual', 'rolling cohorts', '2 batches/yr'"),
+      nextWindowExpected: z.string().nullable().optional().describe("Freeform estimate of the next application window (mark estimates)"),
+      amountUsd: z.number().nullable().optional().describe("Representative USD amount (grant/stipend/top prize) as a number, or null"),
+      requires18Plus: z.boolean().nullable().optional().describe("true ONLY for an explicit 18+/legal-age rule; false when minors explicitly allowed; null/omit when unstated"),
+      officialUrl: z.string().optional().describe("Canonical program homepage when identifiable (url stays the apply/discovery link)"),
+      effort: z.enum(["low", "medium", "high"]).nullable().optional().describe("Application effort: low = form, medium = essays/submission, high = multi-stage"),
       location: z.string().optional().describe("City/country, or 'Remote'"),
       modality: z.enum(["remote", "hybrid", "in-person", "unknown"]).optional(),
       eligibility: z.enum(["remote-global", "latam", "us-eu", "other", "unknown"]).optional(),
       reward: z.string().optional().describe("Prize / stipend / reward"),
-      source: z.enum(["x", "linkedin", "reddit", "instagram", "github", "devpost", "luma", "eventbrite", "meetup", "web", "manual"]).optional(),
+      source: z.enum(["x", "linkedin", "reddit", "instagram", "github", "devpost", "luma", "eventbrite", "meetup", "web", "manual", "catalog"]).optional(),
       sourceRef: z.string().optional().describe("Where you found it (handle, post URL, search)"),
       notes: z.string().optional(),
       tags: z.array(z.string()).optional(),
     })).describe("The opportunities you found"),
   },
   async ({ runId, report, opportunities }) => run(async () => {
-    const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
-    if (!Array.isArray(data.items)) data.items = [];
     const stamp = runId || new Date().toISOString();
     const now = new Date().toISOString();
-    const seenUrl = new Set(data.items.map(o => normOppUrl(o.url)).filter(Boolean));
-    const seenTitleHost = new Set(data.items.map(o => `${(o.title || "").trim().toLowerCase()}|${(o.host || "").trim().toLowerCase()}`));
-    const added: McpOpportunity[] = [];
-    const skipped: string[] = [];
-    for (const o of opportunities) {
-      const u = normOppUrl(o.url);
-      const th = `${o.title.trim().toLowerCase()}|${o.host.trim().toLowerCase()}`;
-      if ((u && seenUrl.has(u)) || seenTitleHost.has(th)) { skipped.push(o.title); continue; }
-      const rec: McpOpportunity = {
-        id: `opp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        title: o.title, host: o.host, category: o.category, goals: o.goals ?? [],
-        priority: o.priority ?? "medium", leverageScore: o.leverageScore ?? 3, leverageNote: o.leverageNote ?? "",
-        status: "new", deadline: o.deadline ?? null, rolling: o.rolling ?? false,
-        location: o.location ?? "", modality: o.modality ?? "unknown", eligibility: o.eligibility ?? "unknown",
-        reward: o.reward ?? "", url: o.url, source: o.source ?? "web", sourceRef: o.sourceRef ?? "",
-        discoveredAt: now, runId: stamp, notes: o.notes ?? "", tags: o.tags ?? [],
-      };
-      data.items.unshift(rec);
-      if (u) seenUrl.add(u);
-      seenTitleHost.add(th);
-      added.push(rec);
-    }
-    data.lastRun = now;
-    data.lastRunId = stamp;
-    if (report) data.report = report;
-    await writeKey("cortex-opportunities", data);
-    return { ok: true, added: added.length, skippedDuplicates: skipped.length, skipped, runId: stamp, totalItems: data.items.length };
+    let added: McpOpportunity[] = [];
+    let skipped: string[] = [];
+    let totalItems = 0;
+    await mutateKey<McpOppData>("cortex-opportunities", (data) => {
+      if (!Array.isArray(data.items)) data.items = [];
+      const seenUrl = new Set(data.items.map(o => normOppUrl(o.url)).filter(Boolean));
+      const seenTitleHost = new Set(data.items.map(o => `${(o.title || "").trim().toLowerCase()}|${(o.host || "").trim().toLowerCase()}`));
+      added = [];
+      skipped = [];
+      for (const o of opportunities) {
+        const u = normOppUrl(o.url);
+        const th = `${o.title.trim().toLowerCase()}|${o.host.trim().toLowerCase()}`;
+        if ((u && seenUrl.has(u)) || seenTitleHost.has(th)) { skipped.push(o.title); continue; }
+        // Deadline intelligence: explicit deadlineType wins and re-derives the legacy
+        // rolling boolean (rolling|always-open → true); legacy callers derive the type.
+        const deadline = o.deadline ?? null;
+        const deadlineType = o.deadlineType ?? (o.rolling ? "rolling" : deadline ? "fixed" : "unknown");
+        const rolling = deadlineType === "rolling" || deadlineType === "always-open";
+        const rec: McpOpportunity = {
+          id: `opp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          title: o.title, host: o.host, category: o.category, goals: o.goals ?? [],
+          priority: o.priority ?? "medium", leverageScore: o.leverageScore ?? 3, leverageNote: o.leverageNote ?? "",
+          status: "new", deadline, deadlineType, rolling,
+          recurrence: o.recurrence ?? null, nextWindowExpected: o.nextWindowExpected ?? null,
+          amountUsd: o.amountUsd ?? null, requires18Plus: o.requires18Plus ?? null,
+          officialUrl: o.officialUrl ?? "", effort: o.effort ?? null,
+          location: o.location ?? "", modality: o.modality ?? "unknown", eligibility: o.eligibility ?? "unknown",
+          reward: o.reward ?? "", url: o.url, source: o.source ?? "web", sourceRef: o.sourceRef ?? "",
+          discoveredAt: now, runId: stamp, notes: o.notes ?? "", tags: o.tags ?? [],
+        };
+        data.items.unshift(rec);
+        if (u) seenUrl.add(u);
+        seenTitleHost.add(th);
+        added.push(rec);
+      }
+      data.lastRun = now;
+      data.lastRunId = stamp;
+      if (report) data.report = report;
+      totalItems = data.items.length;
+      return data;
+    }, { items: [], lastRun: null });
+    return { ok: true, added: added.length, skippedDuplicates: skipped.length, skipped, runId: stamp, totalItems };
   })
 );
 

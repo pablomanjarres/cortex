@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { StatTile } from '@/components/shared/StatTile'
+import { EmptyState } from '@/components/shared/EmptyState'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { useStore, readStore, writeStore } from '@/lib/store'
 import { localDate, getWeekDates } from '@/lib/date-utils'
 import { foodBudgetForMonth, foodSpentPrimary, withFoodSpent, withFoodBudget, sumMarket, type FinanceDataLike } from '@/lib/food-budget'
@@ -96,6 +100,7 @@ function getWeekLabel(weekStart: string): string {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function MarketLog() {
+  const reduceMotion = useReducedMotion()
   const today = localDate()
   const todayWeekStart = getWeekDates(today)[0]
 
@@ -295,16 +300,16 @@ export function MarketLog() {
   return (
     <div className="mt-4 space-y-4">
       {/* Month + Week navigation */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+      <motion.div initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         {/* Month selector */}
-        <div className="flex items-center justify-between mb-3">
-          <button onClick={prevMonth} className="p-1 rounded hover:bg-foreground/10 transition-colors">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="text-sm font-semibold">{MONTHS[viewMonth]} {viewYear}</span>
-          <button onClick={nextMonth} className="p-1 rounded hover:bg-foreground/10 transition-colors">
-            <ChevronRight className="h-4 w-4" />
-          </button>
+        <div className="mb-3 flex items-center justify-between">
+          <Button variant="ghost" size="icon-sm" onClick={prevMonth} aria-label="Previous month">
+            <ChevronLeft />
+          </Button>
+          <span className="font-mono text-sm font-medium text-foreground">{MONTHS[viewMonth]} {viewYear}</span>
+          <Button variant="ghost" size="icon-sm" onClick={nextMonth} aria-label="Next month">
+            <ChevronRight />
+          </Button>
         </div>
 
         {/* Week tabs */}
@@ -315,60 +320,49 @@ export function MarketLog() {
               <button
                 key={w}
                 onClick={() => setSelectedWeek(w)}
-                className={`shrink-0 rounded-lg px-3 py-2 text-left transition-colors ${
+                aria-pressed={selectedWeek === w}
+                className={`shrink-0 rounded-md border px-3 py-2 text-left transition-colors ${
                   selectedWeek === w
-                    ? 'bg-foreground/10 border border-foreground/20'
-                    : 'bg-card border border-border hover:bg-foreground/5'
+                    ? 'border-accent/40 bg-accent/10'
+                    : 'border-border bg-card hover:bg-muted/40'
                 } ${w === todayWeekStart ? 'ring-1 ring-foreground/20' : ''}`}
               >
-                <p className={`text-[10px] font-medium ${selectedWeek === w ? 'text-foreground' : 'text-muted-foreground'}`}>
+                <p className={`font-mono text-2xs ${selectedWeek === w ? 'text-foreground' : 'text-muted-foreground'}`}>
                   Week {i + 1}
                 </p>
-                <p className="text-[9px] text-muted-foreground/50 tabular-nums">{getWeekLabel(w)}</p>
-                {weekTotal > 0 && <p className="text-[9px] text-muted-foreground/50 tabular-nums mt-0.5">{fmtCOP(weekTotal)}</p>}
+                <p className="font-mono text-3xs tabular-nums text-foreground-faint">{getWeekLabel(w)}</p>
+                {weekTotal > 0 && <p className="mt-0.5 font-mono text-3xs tabular-nums text-foreground-faint">{fmtCOP(weekTotal)}</p>}
               </button>
             )
           })}
         </div>
       </motion.div>
 
-      {/* Summary cards */}
+      {/* Summary tiles */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <ShoppingCart className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{log.items.length}</p>
-          <p className="text-[10px] text-muted-foreground">Items this week</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <Store className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{fmtCOP(weeklyTotal)}</p>
-          <p className="text-[10px] text-muted-foreground">Week total</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <TrendingUp className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{fmtCOP(monthlyTotal)}</p>
-          <p className="text-[10px] text-muted-foreground">Month total</p>
-        </div>
+        <StatTile label="Items this week" value={log.items.length} icon={<ShoppingCart />} />
+        <StatTile label="Week total" value={fmtCOP(weeklyTotal)} icon={<Store />} />
+        <StatTile label="Month total" value={fmtCOP(monthlyTotal)} icon={<TrendingUp />} />
         <div
-          className="rounded-xl border border-border bg-card p-3 text-center cursor-pointer hover:bg-foreground/5 transition-colors"
+          className="surface cursor-pointer rounded-xl p-4"
           onClick={() => { setEditingBudget(true); setBudgetInput(String(foodBudget)) }}
           title="Synced with the Finances Food budget"
         >
-          <p className="text-xs text-muted-foreground mb-1">Food budget</p>
+          <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Food budget</p>
           {editingBudget ? (
             <input
               value={budgetInput}
               onChange={(e) => setBudgetInput(e.target.value.replace(/\D/g, ''))}
               onKeyDown={(e) => { if (e.key === 'Enter') { const v = Number(budgetInput) || 0; setFinances(prev => withFoodBudget(prev, viewMonth, v)); setBudget(() => v || 646000); setEditingBudget(false) } }}
               onBlur={() => { const v = Number(budgetInput) || 0; setFinances(prev => withFoodBudget(prev, viewMonth, v)); setBudget(() => v || 646000); setEditingBudget(false) }}
-              className="w-full text-center text-xl font-bold tabular-nums bg-transparent outline-none border-b border-foreground/20"
+              className="mt-1.5 w-full border-b border-input bg-transparent font-mono text-2xl font-medium tabular-nums text-foreground"
               autoFocus
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <p className="text-xl font-bold tabular-nums">{fmtCOP(foodBudget)}</p>
+            <p className="mt-1.5 font-mono text-2xl font-medium leading-none tabular-nums text-foreground">{fmtCOP(foodBudget)}</p>
           )}
-          <p className={`text-[10px] ${monthlyTotal <= foodBudget ? 'text-green-400' : 'text-red-400'}`}>
+          <p className={`mt-1.5 font-mono text-2xs tabular-nums ${monthlyTotal <= foodBudget ? 'text-success' : 'text-destructive'}`}>
             {monthlyTotal <= foodBudget ? `${fmtCOP(foodBudget - monthlyTotal)} left` : `Over by ${fmtCOP(monthlyTotal - foodBudget)}`}
           </p>
         </div>
@@ -377,54 +371,61 @@ export function MarketLog() {
       {/* Suggested shopping list (populated by an MCP tool) */}
       <WidgetCard title="Shopping List" compact delay={0.03}>
         {!marketList || marketList.items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No list yet — ask Claude to build one from your previous buys.</p>
+          <EmptyState
+            message="No list yet."
+            hint="Ask Claude to build one from your previous buys."
+            className="py-4"
+          />
         ) : (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-muted-foreground/50">
+              <span className="font-mono text-2xs tabular-nums text-foreground-faint">
                 {marketList.generatedAt ? `Generated ${fmtRelDate(marketList.generatedAt)}` : ''}
                 {typeof marketList.weeksAnalyzed === 'number' ? ` · ${marketList.weeksAnalyzed}w analyzed` : ''}
               </span>
-              <button
+              <Button
+                variant="ghost"
+                size="xs"
                 onClick={clearMarketList}
-                className="text-[10px] text-muted-foreground/40 hover:text-red-400 transition-colors"
+                className="text-foreground-faint hover:text-destructive"
               >
                 Clear
-              </button>
+              </Button>
             </div>
             {marketList.items.map((li, i) => (
               <div
                 key={`${li.name}-${i}`}
-                className="flex items-center justify-between gap-2 text-xs border-t border-border/30 pt-2 first:border-t-0 first:pt-0"
+                className="flex items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs first:border-t-0 first:pt-0"
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <button
                     onClick={() => toggleListItem(i)}
                     className="shrink-0"
-                    title={li.checked ? 'Uncheck' : 'Check off'}
+                    aria-label={li.checked ? `Uncheck ${li.name}` : `Check off ${li.name}`}
                   >
                     {li.checked
-                      ? <CheckSquare className="h-4 w-4 text-green-400" />
-                      : <Square className="h-4 w-4 text-muted-foreground/40" />}
+                      ? <CheckSquare className="h-4 w-4 text-success" />
+                      : <Square className="h-4 w-4 text-foreground-faint" />}
                   </button>
-                  <span className={`truncate ${li.checked ? 'line-through text-muted-foreground/40' : 'text-foreground'}`}>
+                  <span className={`truncate ${li.checked ? 'text-foreground-faint line-through' : 'text-foreground'}`}>
                     {li.name}
                   </span>
-                  <span className="shrink-0 text-muted-foreground/40 tabular-nums">{li.quantity} · {fmtFull(li.price)}</span>
+                  <span className="shrink-0 font-mono tabular-nums text-foreground-faint">{li.quantity} · {fmtFull(li.price)}</span>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="hidden sm:inline text-muted-foreground/50">{li.store}</span>
-                  <span className="hidden sm:inline text-muted-foreground/50">{li.category}</span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Chip size="sm" className="hidden sm:inline-flex">{li.store}</Chip>
+                  <Chip size="sm" className="hidden sm:inline-flex">{li.category}</Chip>
                   {typeof li.timesBought === 'number' && li.timesBought > 0 && (
-                    <span className="text-[10px] text-muted-foreground/40 tabular-nums">{li.timesBought}x</span>
+                    <span className="font-mono text-2xs tabular-nums text-foreground-faint">{li.timesBought}x</span>
                   )}
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
                     onClick={() => addListItemToWeek(i)}
-                    className="rounded-lg bg-foreground/10 p-1.5 hover:bg-foreground/20 active:bg-foreground/25 transition-colors"
-                    title="Add to this week"
+                    aria-label={`Add ${li.name} to this week`}
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
+                    <Plus />
+                  </Button>
                 </div>
               </div>
             ))}
@@ -433,64 +434,74 @@ export function MarketLog() {
       </WidgetCard>
 
       {/* Quick Add */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+      <div className="surface space-y-3 rounded-xl p-4">
         <div className="flex items-center justify-between">
-          <button onClick={() => setShowQuickAdd(!showQuickAdd)} className="flex items-center gap-2">
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/50">Quick Add</h4>
-            <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground/40 transition-transform ${showQuickAdd ? 'rotate-180' : ''}`} />
-          </button>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => setShowQuickAdd(!showQuickAdd)}
+            className="-ml-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground"
+            aria-expanded={showQuickAdd}
+          >
+            Quick Add
+            <ChevronDown className={`transition-transform ${showQuickAdd ? 'rotate-180' : ''}`} />
+          </Button>
           {showQuickAdd && (
-            <button
+            <Button
+              variant={editingPresets ? 'secondary' : 'ghost'}
+              size="icon-xs"
               onClick={() => setEditingPresets(!editingPresets)}
-              className={`p-1 rounded transition-colors ${editingPresets ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground/40 hover:text-muted-foreground'}`}
+              aria-label={editingPresets ? 'Done editing presets' : 'Edit presets'}
             >
-              <Pencil className="h-3 w-3" />
-            </button>
+              <Pencil />
+            </Button>
           )}
         </div>
         {showQuickAdd && (
           <>
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-1.5">
               {presets.map((preset, i) => (
-                <div key={`${preset.name}-${i}`} className="relative group">
+                <div key={`${preset.name}-${i}`} className="group relative">
                   <button
                     onClick={() => !editingPresets && quickAddItem(preset)}
-                    className={`w-full rounded-lg border border-border bg-foreground/5 px-3 py-2.5 sm:px-2.5 sm:py-1.5 text-xs text-left transition-colors ${
-                      editingPresets ? 'pr-7 cursor-default' : 'hover:bg-foreground/10 active:bg-foreground/15'
+                    className={`w-full rounded-md border border-border bg-muted/40 px-3 py-2.5 text-left text-xs transition-colors sm:px-2.5 sm:py-1.5 ${
+                      editingPresets ? 'cursor-default pr-7' : 'hover:bg-muted/70 active:bg-muted'
                     }`}
                   >
                     <span className="text-foreground">{preset.name}</span>
-                    <span className="text-muted-foreground/40 ml-1">{fmtCOP(preset.price)}</span>
+                    <span className="ml-1 font-mono text-2xs tabular-nums text-foreground-faint">{fmtCOP(preset.price)}</span>
                   </button>
                   {editingPresets && (
-                    <button
+                    <Button
+                      variant="destructive"
+                      size="icon-xs"
+                      className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full"
                       onClick={() => removePreset(i)}
-                      className="absolute -top-1.5 -right-1.5 rounded-full bg-red-500/80 hover:bg-red-500 p-1 sm:p-0.5 transition-colors"
+                      aria-label={`Remove preset ${preset.name}`}
                     >
-                      <X className="h-3 w-3 sm:h-2.5 sm:w-2.5 text-white" />
-                    </button>
+                      <X />
+                    </Button>
                   )}
                 </div>
               ))}
             </div>
             {/* Custom preset form */}
-            <div className="flex gap-2 items-end flex-wrap">
-              <input placeholder="Name" value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
-                className="h-8 flex-1 min-w-[120px] rounded border border-border bg-background px-2 text-xs text-foreground outline-none" />
-              <input type="number" placeholder="Price" value={newPresetPrice} onChange={(e) => setNewPresetPrice(e.target.value)}
-                className="h-8 w-20 rounded border border-border bg-background px-2 text-xs text-foreground outline-none" />
+            <div className="flex flex-wrap items-end gap-2">
+              <Input placeholder="Name" value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
+                className="h-8 min-w-[120px] flex-1 text-xs" />
+              <Input type="number" placeholder="Price" value={newPresetPrice} onChange={(e) => setNewPresetPrice(e.target.value)}
+                className="h-8 w-20 text-xs" />
               <select value={newPresetStore} onChange={(e) => setNewPresetStore(e.target.value)}
-                className="h-8 rounded border border-border bg-background px-2 text-xs text-foreground outline-none">
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground">
                 {STORES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
               <select value={newPresetCategory} onChange={(e) => setNewPresetCategory(e.target.value)}
-                className="h-8 rounded border border-border bg-background px-2 text-xs text-foreground outline-none">
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground">
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <button onClick={saveToPresets}
-                className="rounded-lg bg-foreground/10 p-2 hover:bg-foreground/20 transition-colors shrink-0" title="Save preset">
-                <Bookmark className="h-3.5 w-3.5" />
-              </button>
+              <Button variant="secondary" size="icon" onClick={saveToPresets} aria-label="Save preset">
+                <Bookmark />
+              </Button>
             </div>
           </>
         )}
@@ -498,34 +509,34 @@ export function MarketLog() {
 
       {/* Add item form — only for current or future weeks */}
       <WidgetCard title={`Add Purchase — ${getWeekLabel(selectedWeek)}`} compact delay={0.05}>
-        <div className="flex flex-wrap gap-2 items-end">
-          <div className="flex-1 min-w-[120px]">
-            <label className="text-[10px] text-muted-foreground">Item</label>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[120px] flex-1">
+            <label className="text-2xs text-muted-foreground">Item</label>
             <Input placeholder="Pollo, leche..." value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />
           </div>
           <div className="w-20">
-            <label className="text-[10px] text-muted-foreground">Price (COP)</label>
+            <label className="text-2xs text-muted-foreground">Price (COP)</label>
             <Input type="number" placeholder="12000" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />
           </div>
           <div className="w-14">
-            <label className="text-[10px] text-muted-foreground">Qty</label>
+            <label className="text-2xs text-muted-foreground">Qty</label>
             <Input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} className="h-8 text-xs" min={1} />
           </div>
           <div className="w-20">
-            <label className="text-[10px] text-muted-foreground">Store</label>
-            <select value={newStore} onChange={(e) => setNewStore(e.target.value)} className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground">
+            <label className="text-2xs text-muted-foreground">Store</label>
+            <select value={newStore} onChange={(e) => setNewStore(e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground">
               {STORES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div className="w-20">
-            <label className="text-[10px] text-muted-foreground">Category</label>
-            <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground">
+            <label className="text-2xs text-muted-foreground">Category</label>
+            <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground">
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
-          <button onClick={addItem} className="rounded-lg bg-foreground/10 h-8 px-3 text-xs font-medium hover:bg-foreground/20 transition-colors shrink-0">
-            <Plus className="h-3.5 w-3.5" />
-          </button>
+          <Button variant="secondary" size="sm" className="h-8 shrink-0" onClick={addItem} aria-label="Add purchase">
+            <Plus />
+          </Button>
         </div>
       </WidgetCard>
 
@@ -535,35 +546,41 @@ export function MarketLog() {
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-muted-foreground/50">
-                  <th className="text-left font-medium pb-2">Item</th>
-                  <th className="text-left font-medium pb-2 w-16">Store</th>
-                  <th className="text-left font-medium pb-2 w-16">Category</th>
-                  <th className="text-right font-medium pb-2 w-16">Price</th>
-                  <th className="text-right font-medium pb-2 w-10">Qty</th>
-                  <th className="text-right font-medium pb-2 w-16">Total</th>
+                <tr className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">
+                  <th className="pb-2 text-left font-medium">Item</th>
+                  <th className="w-16 pb-2 text-left font-medium">Store</th>
+                  <th className="w-16 pb-2 text-left font-medium">Category</th>
+                  <th className="w-16 pb-2 text-right font-medium">Price</th>
+                  <th className="w-10 pb-2 text-right font-medium">Qty</th>
+                  <th className="w-16 pb-2 text-right font-medium">Total</th>
                   <th className="w-8 pb-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {log.items.map((item) => (
-                  <tr key={item.id} className="border-t border-border/30 group">
+                  <tr key={item.id} className="group border-t border-border/60">
                     <td className="py-1.5 text-foreground">{item.name}</td>
                     <td className="py-1.5 text-muted-foreground">{item.store}</td>
                     <td className="py-1.5 text-muted-foreground">{item.category}</td>
-                    <td className="py-1.5 text-right text-muted-foreground tabular-nums">{fmtFull(item.price)}</td>
-                    <td className="py-1.5 text-right text-muted-foreground tabular-nums">{item.quantity}</td>
-                    <td className="py-1.5 text-right text-foreground tabular-nums font-medium">{fmtFull(item.price * item.quantity)}</td>
+                    <td className="py-1.5 text-right font-mono tabular-nums text-muted-foreground">{fmtFull(item.price)}</td>
+                    <td className="py-1.5 text-right font-mono tabular-nums text-muted-foreground">{item.quantity}</td>
+                    <td className="py-1.5 text-right font-mono font-medium tabular-nums text-foreground">{fmtFull(item.price * item.quantity)}</td>
                     <td className="py-1.5 text-right">
-                      <button onClick={() => removeItem(item.id)} className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 transition-all">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => removeItem(item.id)}
+                        aria-label={`Remove ${item.name}`}
+                        className="text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                      >
+                        <Trash2 />
+                      </Button>
                     </td>
                   </tr>
                 ))}
                 <tr className="border-t border-border/50 font-medium">
                   <td colSpan={5} className="py-2 text-muted-foreground">Total</td>
-                  <td className="py-2 text-right tabular-nums">{fmtFull(weeklyTotal)}</td>
+                  <td className="py-2 text-right font-mono tabular-nums">{fmtFull(weeklyTotal)}</td>
                   <td></td>
                 </tr>
               </tbody>
@@ -571,9 +588,7 @@ export function MarketLog() {
           </div>
         </WidgetCard>
       ) : (
-        <div className="rounded-xl border border-border bg-card p-6 text-center">
-          <p className="text-sm text-muted-foreground">No purchases logged for this week.</p>
-        </div>
+        <EmptyState message="No purchases logged for this week." />
       )}
 
       {/* Breakdown */}
@@ -585,10 +600,10 @@ export function MarketLog() {
                 <div key={store} className="flex items-center justify-between text-xs">
                   <span className="text-foreground">{store}</span>
                   <div className="flex items-center gap-2">
-                    <div className="h-1.5 rounded-full bg-foreground/10 w-24">
+                    <div className="h-1 w-24 rounded-full bg-muted/60">
                       <div className="h-full rounded-full bg-foreground/40" style={{ width: `${(total / weeklyTotal) * 100}%` }} />
                     </div>
-                    <span className="text-muted-foreground tabular-nums w-14 text-right">{fmtCOP(total)}</span>
+                    <span className="w-14 text-right font-mono tabular-nums text-muted-foreground">{fmtCOP(total)}</span>
                   </div>
                 </div>
               ))}
@@ -601,10 +616,10 @@ export function MarketLog() {
                 <div key={cat} className="flex items-center justify-between text-xs">
                   <span className="text-foreground">{cat}</span>
                   <div className="flex items-center gap-2">
-                    <div className="h-1.5 rounded-full bg-foreground/10 w-24">
+                    <div className="h-1 w-24 rounded-full bg-muted/60">
                       <div className="h-full rounded-full bg-foreground/40" style={{ width: `${(total / weeklyTotal) * 100}%` }} />
                     </div>
-                    <span className="text-muted-foreground tabular-nums w-14 text-right">{fmtCOP(total)}</span>
+                    <span className="w-14 text-right font-mono tabular-nums text-muted-foreground">{fmtCOP(total)}</span>
                   </div>
                 </div>
               ))}

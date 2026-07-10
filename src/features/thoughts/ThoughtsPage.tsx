@@ -1,7 +1,11 @@
 import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { Badge } from '@/components/ui/badge'
+import { StatTile } from '@/components/shared/StatTile'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
+import { Input } from '@/components/ui/input'
 import { Search, Plus, Trash2, Star, Lightbulb, BookOpen } from 'lucide-react'
 import { useStore } from '@/lib/store'
 
@@ -99,13 +103,11 @@ const defaultBooks: Book[] = []
 
 const ALL_TOPICS: Topic[] = ['Personal', 'Finance', 'Business', 'Study', 'Health', 'Programming', 'Love', 'TODO', 'Digital Marketing', 'Job']
 
-const topicColor: Record<string, string> = {
-  Personal: 'bg-purple-500/15 text-purple-400', Finance: 'bg-green-500/15 text-green-400',
-  Business: 'bg-gray-500/15 text-gray-300', Study: 'bg-blue-500/15 text-blue-400',
-  Health: 'bg-pink-500/15 text-pink-400', Programming: 'bg-orange-500/15 text-orange-400',
-  Love: 'bg-red-500/15 text-red-400', TODO: 'bg-yellow-500/15 text-yellow-400',
-  'Digital Marketing': 'bg-cyan-500/15 text-cyan-400', Job: 'bg-amber-500/15 text-amber-400',
-}
+// Shared token style for native <select> controls (mirrors the Input primitive).
+const selectCls =
+  'w-full h-8 cursor-pointer rounded-md border border-input bg-input/20 px-2 text-xs text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
+const labelCls = 'text-2xs text-muted-foreground'
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -160,66 +162,43 @@ export function ThoughtsPage() {
     <PageShell>
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="flex items-center gap-3 rounded-xl border border-border px-4 py-3">
-          <Lightbulb className="h-5 w-5 text-yellow-400" />
-          <div>
-            <p className="text-xl font-bold tabular-nums">{thoughts.length}</p>
-            <p className="text-[10px] text-muted-foreground">Total ideas</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 rounded-xl border border-border px-4 py-3">
-          <Star className="h-5 w-5 text-yellow-400 fill-yellow-400" />
-          <div>
-            <p className="text-xl font-bold tabular-nums text-yellow-400">{thoughts.filter((t) => t.highValue).length}</p>
-            <p className="text-[10px] text-muted-foreground">High-value</p>
-          </div>
-        </div>
+        <StatTile label="Total ideas" value={thoughts.length} icon={<Lightbulb />} />
+        <StatTile label="High-value" value={thoughts.filter((t) => t.highValue).length} icon={<Star />} />
         {ALL_TOPICS.slice(0, 2).map((topic) => (
-          <div key={topic} className="flex items-center gap-3 rounded-xl border border-border px-4 py-3">
-            <div className={`h-2.5 w-2.5 rounded-full ${topicColor[topic]?.replace('bg-', 'bg-').split(' ')[0]}`} />
-            <div>
-              <p className="text-xl font-bold tabular-nums">{topicCounts[topic] || 0}</p>
-              <p className="text-[10px] text-muted-foreground">{topic}</p>
-            </div>
-          </div>
+          <StatTile key={topic} label={topic} value={topicCounts[topic] || 0} />
         ))}
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 flex-1 min-w-[200px] rounded-lg border border-border px-3 py-1.5">
-          <Search className="h-3.5 w-3.5 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search thoughts..." className="bg-transparent outline-none text-xs flex-1 placeholder:text-muted-foreground/40" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search thoughts..." className="h-8 pl-8 text-xs" />
         </div>
-        <button onClick={() => setFilterHV(!filterHV)}
-          className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all flex items-center gap-1 ${filterHV ? 'bg-yellow-500/15 text-yellow-400 border-yellow-400/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-          <Star className={`h-3 w-3 ${filterHV ? 'fill-yellow-400' : ''}`} /> High-value
-        </button>
-        <div className="flex gap-1.5 flex-wrap">
+        <Chip selectable selected={filterHV} onClick={() => setFilterHV(!filterHV)}>
+          <Star className={filterHV ? 'fill-accent' : ''} /> High-value
+        </Chip>
+        <div className="flex flex-wrap gap-1.5">
           {ALL_TOPICS.map((topic) => (
-            <button key={topic} onClick={() => setFilterTopic(filterTopic === topic ? null : topic)}
-              className={`cursor-pointer text-[10px] px-2 py-1 rounded-full border transition-all ${filterTopic === topic ? `${topicColor[topic]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+            <Chip key={topic} selectable selected={filterTopic === topic} onClick={() => setFilterTopic(filterTopic === topic ? null : topic)}>
               {topic} ({topicCounts[topic] || 0})
-            </button>
+            </Chip>
           ))}
         </div>
-        <button onClick={addThought} className="cursor-pointer flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground px-2.5 py-1 rounded-lg border border-border hover:bg-secondary transition-all">
-          <Plus className="h-3 w-3" /> Add
-        </button>
+        <Button variant="secondary" size="sm" onClick={addThought}>
+          <Plus /> Add
+        </Button>
       </div>
 
       {/* Book filter */}
       {booksWithThoughts.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <BookOpen className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
-          <div className="flex gap-1.5 flex-wrap">
+        <div className="flex flex-wrap items-center gap-2">
+          <BookOpen className="h-3.5 w-3.5 shrink-0 text-foreground-faint" />
+          <div className="flex flex-wrap gap-1.5">
             {booksWithThoughts.map(([book, count]) => (
-              <button key={book} onClick={() => setFilterBook(filterBook === book ? null : book)}
-                className={`cursor-pointer text-[10px] px-2 py-1 rounded-full border transition-all ${
-                  filterBook === book ? 'bg-amber-500/15 text-amber-400 border-amber-400/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'
-                }`}>
+              <Chip key={book} selectable selected={filterBook === book} onClick={() => setFilterBook(filterBook === book ? null : book)}>
                 {book} ({count})
-              </button>
+              </Chip>
             ))}
           </div>
         </div>
@@ -227,61 +206,73 @@ export function ThoughtsPage() {
 
       {/* Thoughts List */}
       <WidgetCard title="Ideas" description={`${filtered.length} thoughts`} delay={0.1}>
-        <div className="flex flex-col gap-1">
-          {filtered.map((t) => (
-            <div key={t.id} className="group">
-              <div
-                onClick={() => setExpanded(expanded === t.id ? null : t.id)}
-                className={`cursor-pointer flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-secondary/30 ${expanded === t.id ? 'bg-secondary/20' : ''}`}
-              >
-                <button
-                  onClick={(e) => { e.stopPropagation(); setField(t.id, { highValue: !t.highValue }) }}
-                  className="cursor-pointer shrink-0 mt-0.5"
+        {filtered.length === 0 ? (
+          <EmptyState message="No thoughts match." hint="Clear a filter, or press Add to keep a new one." />
+        ) : (
+          <div className="flex flex-col gap-1">
+            {filtered.map((t) => (
+              <div key={t.id} className="group">
+                <div
+                  onClick={() => setExpanded(expanded === t.id ? null : t.id)}
+                  className={`flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-secondary/30 ${expanded === t.id ? 'bg-secondary/20' : ''}`}
                 >
-                  <Star className={`h-3.5 w-3.5 ${t.highValue ? 'text-yellow-400 fill-yellow-400' : 'text-muted-foreground/20 hover:text-yellow-400/50'}`} />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium leading-snug">{t.name || 'Untitled'}</p>
-                  {t.subline && <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">{t.subline}</p>}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {t.book && <span className="text-[9px] text-muted-foreground/60">{t.book}</span>}
-                  {t.topic && <Badge className={`text-[8px] px-1.5 py-0 ${topicColor[t.topic]}`}>{t.topic}</Badge>}
-                  <button onClick={(e) => { e.stopPropagation(); deleteThought(t.id) }} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all">
-                    <Trash2 className="h-3 w-3" />
+                  {/* Compact inline toggle: the high-value star marker (accent = marked). */}
+                  <button
+                    aria-label={t.highValue ? 'Unmark high-value' : 'Mark high-value'}
+                    aria-pressed={t.highValue}
+                    onClick={(e) => { e.stopPropagation(); setField(t.id, { highValue: !t.highValue }) }}
+                    className="mt-0.5 shrink-0 cursor-pointer"
+                  >
+                    <Star className={`h-3.5 w-3.5 transition-colors ${t.highValue ? 'fill-accent text-accent' : 'text-foreground-faint/40 hover:text-accent/60'}`} />
                   </button>
-                </div>
-              </div>
-              {expanded === t.id && (
-                <div className="px-3 py-3 ml-6 border-l border-border/30 mb-1">
-                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                    <div className="flex flex-col gap-2">
-                      <input value={t.name} onChange={(e) => setField(t.id, { name: e.target.value })} placeholder="Thought..." className="bg-transparent outline-none text-sm font-medium border-b border-border/30 pb-1 placeholder:text-muted-foreground/30" />
-                      <textarea value={t.subline} onChange={(e) => setField(t.id, { subline: e.target.value })} rows={3} placeholder="Details..." className="bg-transparent outline-none text-xs border border-border/30 rounded-lg p-2 resize-none placeholder:text-muted-foreground/30" />
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <div><label className="text-[10px] text-muted-foreground">Topic</label>
-                        <select value={t.topic} onChange={(e) => setField(t.id, { topic: e.target.value as Topic })} className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
-                          <option value="">None</option>
-                          {ALL_TOPICS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
-                        </select></div>
-                      <div><label className="text-[10px] text-muted-foreground">Book source</label>
-                        <select value={t.book} onChange={(e) => setField(t.id, { book: e.target.value })}
-                          className="cursor-pointer w-full bg-transparent outline-none text-xs border-b border-border/30 py-1">
-                          <option value="">No book</option>
-                          {books.map((b) => <option key={b.id} value={b.title}>{b.title}</option>)}
-                          {/* Show current value if not in books list */}
-                          {t.book && !books.some((b) => b.title === t.book) && (
-                            <option value={t.book}>{t.book}</option>
-                          )}
-                        </select></div>
-                    </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium leading-snug">{t.name || 'Untitled'}</p>
+                    {t.subline && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{t.subline}</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {t.book && <span className="text-2xs text-foreground-faint">{t.book}</span>}
+                    {t.topic && <Chip size="sm">{t.topic}</Chip>}
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Delete thought"
+                      className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                      onClick={(e) => { e.stopPropagation(); deleteThought(t.id) }}
+                    >
+                      <Trash2 />
+                    </Button>
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+                {expanded === t.id && (
+                  <div className="mb-1 ml-6 border-l border-border/60 px-3 py-3">
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      <div className="flex flex-col gap-2">
+                        <input value={t.name} onChange={(e) => setField(t.id, { name: e.target.value })} placeholder="Thought..." className="border-b border-border/60 bg-transparent pb-1 text-sm font-medium outline-none placeholder:text-foreground-faint" />
+                        <textarea value={t.subline} onChange={(e) => setField(t.id, { subline: e.target.value })} rows={3} placeholder="Details..." className="resize-none rounded-md border border-input bg-input/20 p-2 text-xs outline-none placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <div><label className={labelCls}>Topic</label>
+                          <select value={t.topic} onChange={(e) => setField(t.id, { topic: e.target.value as Topic })} className={selectCls}>
+                            <option value="">None</option>
+                            {ALL_TOPICS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
+                          </select></div>
+                        <div><label className={labelCls}>Book source</label>
+                          <select value={t.book} onChange={(e) => setField(t.id, { book: e.target.value })} className={selectCls}>
+                            <option value="">No book</option>
+                            {books.map((b) => <option key={b.id} value={b.title}>{b.title}</option>)}
+                            {/* Show current value if not in books list */}
+                            {t.book && !books.some((b) => b.title === t.book) && (
+                              <option value={t.book}>{t.book}</option>
+                            )}
+                          </select></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </WidgetCard>
     </PageShell>
   )

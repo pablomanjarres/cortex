@@ -1,7 +1,10 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
+import { Input } from '@/components/ui/input'
 import {
   Phone,
   Mail,
@@ -48,26 +51,7 @@ import { syncBirthdayToCalendar } from '@/lib/calendar-sync'
 
 const ALL_CATEGORIES = ['Relative 👨‍👩‍👦', 'High Potential 🚀', 'Ally 🤝', 'Connector 🧠', 'Friend 😊', 'Acquaintance 👋', 'Routine Contact 🧺', 'Dormant 💤', 'Positive Rival 🥊', 'Mentor 🧓', 'Close Friend 🫂']
 
-const catColor: Record<string, string> = {
-  'Relative 👨‍👩‍👦': 'bg-yellow-500/15 text-yellow-400',
-  'High Potential 🚀': 'bg-gray-500/15 text-gray-300',
-  'Ally 🤝': 'bg-purple-500/15 text-purple-400',
-  'Connector 🧠': 'bg-orange-500/15 text-orange-400',
-  'Friend 😊': 'bg-purple-500/15 text-purple-400',
-  'Acquaintance 👋': 'bg-red-500/15 text-red-400',
-  'Routine Contact 🧺': 'bg-gray-500/15 text-gray-400',
-  'Dormant 💤': 'bg-amber-900/15 text-amber-600',
-  'Positive Rival 🥊': 'bg-pink-500/15 text-pink-400',
-  'Mentor 🧓': 'bg-blue-500/15 text-blue-400',
-  'Close Friend 🫂': 'bg-purple-500/15 text-purple-400',
-}
-
-const fieldColor: Record<string, string> = {
-  Tech: 'bg-orange-500/15 text-orange-400', Business: 'bg-gray-500/15 text-gray-400', Education: 'bg-amber-700/15 text-amber-500',
-  Health: 'bg-purple-500/15 text-purple-400', Design: 'bg-red-500/15 text-red-400', Law: 'bg-gray-500/15 text-gray-300',
-  Gastronomy: 'bg-green-500/15 text-green-400', Music: 'bg-blue-500/15 text-blue-400', Industry: 'bg-pink-500/15 text-pink-400',
-  Media: 'bg-yellow-500/15 text-yellow-400', Construction: 'bg-yellow-500/15 text-yellow-400', Fin: 'bg-yellow-500/15 text-yellow-400',
-}
+const ALL_FIELDS = ['Tech', 'Business', 'Education', 'Health', 'Design', 'Law', 'Gastronomy', 'Music', 'Industry', 'Media', 'Construction', 'Fin']
 
 function daysUntilBirthday(bday: string): number | null {
   if (!bday) return null
@@ -91,6 +75,13 @@ function fmtDate(d: string) {
   if (!d) return '—'
   return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
+
+// Shared token styles: native <select>-free page, but the same quiet
+// inline-edit patterns as the rest of the app.
+const lineInputCls = 'w-full border-b border-border/60 bg-transparent py-1 text-xs outline-none placeholder:text-foreground-faint'
+const labelCls = 'text-2xs text-muted-foreground'
+const thCls = 'py-2 text-left font-mono text-2xs font-normal uppercase tracking-wider'
+const thBtnCls = 'flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground'
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -189,22 +180,23 @@ export function SocialPage() {
         {/* Upcoming Birthdays */}
         <WidgetCard title="Upcoming Birthdays" description={`${upcomingBdays.length} in 30 days`} delay={0}>
           {upcomingBdays.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-3 text-center">No birthdays soon</p>
+            <EmptyState className="py-4" message="No birthdays soon." />
           ) : (
             <div className="flex flex-col gap-1">
               {upcomingBdays.map((c) => {
                 const days = daysUntilBirthday(c.birthday)!
                 const age = calcAge(c.birthday)
+                const imminent = days <= 3
                 return (
-                  <button key={c.id} onClick={() => setExpanded(expanded === c.id ? null : c.id)} className={`cursor-pointer w-full text-left flex items-center gap-3 rounded-lg px-3 py-2 ${days <= 3 ? 'bg-pink-500/[0.05]' : 'hover:bg-secondary/50'} ${expanded === c.id ? 'ring-1 ring-foreground/20' : ''} transition-all`}>
-                    <Cake className={`h-3.5 w-3.5 shrink-0 ${days <= 3 ? 'text-pink-400' : 'text-muted-foreground'}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{c.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{c.title}{age !== null ? ` · turns ${age + 1}` : ''}</p>
+                  <button key={c.id} onClick={() => setExpanded(expanded === c.id ? null : c.id)} className={`flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left transition-colors duration-150 ${imminent ? 'bg-warning/5 hover:bg-warning/10' : 'hover:bg-secondary/50'} ${expanded === c.id ? 'ring-1 ring-accent/40' : ''}`}>
+                    <Cake className={`h-3.5 w-3.5 shrink-0 ${imminent ? 'text-warning' : 'text-muted-foreground'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{c.name}</p>
+                      <p className="text-2xs text-muted-foreground">{c.title}{age !== null ? ` · turns ${age + 1}` : ''}</p>
                     </div>
-                    <Badge variant="secondary" className={`text-[10px] tabular-nums ${days <= 3 ? 'text-pink-400' : ''}`}>
-                      {days === 0 ? 'Today!' : `${days}d`}
-                    </Badge>
+                    <Chip size="sm" variant={imminent ? 'warning' : 'neutral'} className="tabular-nums">
+                      {days === 0 ? 'Today' : `${days}d`}
+                    </Chip>
                   </button>
                 )
               })}
@@ -215,29 +207,31 @@ export function SocialPage() {
         {/* Reach Out */}
         <WidgetCard title="Reach Out" description={`${needsReachOut.length} overdue`} delay={0.05} className="lg:col-span-2">
           {needsReachOut.length === 0 ? (
-            <p className="text-xs text-muted-foreground py-3 text-center">All caught up</p>
+            <EmptyState className="py-4" message="All caught up." />
           ) : (
-            <div className="flex flex-col gap-1 max-h-[200px] overflow-y-auto">
+            <div className="flex max-h-[200px] flex-col gap-1 overflow-y-auto">
               {needsReachOut.map((c) => {
                 const daysSince = Math.ceil((Date.now() - new Date(c.lastContact).getTime()) / 86_400_000)
                 const overdue = daysSince - c.interval
                 return (
-                  <div key={c.id} className={`flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-secondary/50 ${expanded === c.id ? 'ring-1 ring-foreground/20' : ''} transition-all`}>
-                    <button onClick={() => setExpanded(expanded === c.id ? null : c.id)} className="cursor-pointer flex items-center gap-3 flex-1 min-w-0 text-left">
-                      <Clock className="h-3.5 w-3.5 text-orange-400 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{c.name}</p>
-                        <p className="text-[10px] text-muted-foreground">{c.title} · last: {fmtDate(c.lastContact)}</p>
+                  <div key={c.id} className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors duration-150 hover:bg-secondary/50 ${expanded === c.id ? 'ring-1 ring-accent/40' : ''}`}>
+                    <button onClick={() => setExpanded(expanded === c.id ? null : c.id)} className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left">
+                      <Clock className="h-3.5 w-3.5 shrink-0 text-warning" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{c.name}</p>
+                        <p className="text-2xs text-muted-foreground">{c.title} · last: <span className="font-mono">{fmtDate(c.lastContact)}</span></p>
                       </div>
-                      <Badge variant="secondary" className="text-[10px] tabular-nums text-orange-400">{overdue}d overdue</Badge>
+                      <Chip size="sm" variant="warning" className="tabular-nums">{overdue}d overdue</Chip>
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setField(c.id, { lastContact: '' }) }}
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Reset last contact"
                       title="Reset last contact"
-                      className="cursor-pointer shrink-0 text-muted-foreground/30 hover:text-foreground transition-colors"
+                      onClick={(e) => { e.stopPropagation(); setField(c.id, { lastContact: '' }) }}
                     >
-                      <RotateCcw className="h-3 w-3" />
-                    </button>
+                      <RotateCcw />
+                    </Button>
                   </div>
                 )
               })}
@@ -247,79 +241,76 @@ export function SocialPage() {
       </div>
 
       {/* Search + Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2 flex-1 min-w-[200px] rounded-lg border border-border px-3 py-1.5">
-          <Search className="h-3.5 w-3.5 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search contacts..." className="bg-transparent outline-none text-xs flex-1 placeholder:text-muted-foreground/40" />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search contacts..." className="h-8 pl-8 text-xs" />
         </div>
-        <div className="flex gap-1.5 flex-wrap">
+        <div className="flex flex-wrap gap-1.5">
           {ALL_CATEGORIES.slice(0, 8).map((cat) => (
-            <button key={cat} onClick={() => setFilterCat(filterCat === cat ? null : cat)}
-              className={`cursor-pointer text-[10px] px-2 py-1 rounded-full border transition-all ${filterCat === cat ? `${catColor[cat]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
+            <Chip key={cat} selectable selected={filterCat === cat} onClick={() => setFilterCat(filterCat === cat ? null : cat)}>
               {cat}
-            </button>
+            </Chip>
           ))}
         </div>
-        <button onClick={addContact} className="cursor-pointer flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground px-2.5 py-1 rounded-lg border border-border hover:bg-secondary transition-all">
-          <Plus className="h-3 w-3" /> Add
-        </button>
+        <Button variant="secondary" size="sm" onClick={addContact}>
+          <Plus /> Add
+        </Button>
       </div>
 
       {/* Mobile: Contact cards */}
       <div className="flex flex-col gap-3 md:hidden">
         {filtered.map((c) => (
-          <div key={c.id} className="liquid-glass rounded-xl border border-border p-4" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
+          <div key={c.id} className="surface rounded-xl p-4" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
             <div className="flex items-start justify-between">
               <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{c.name}{c.nickname ? <span className="ml-1 text-[10px] text-muted-foreground">({c.nickname})</span> : null}</p>
-                <p className="text-xs text-muted-foreground truncate">{c.title || 'No title'}</p>
+                <p className="truncate text-sm font-medium">{c.name}{c.nickname ? <span className="ml-1 text-2xs text-muted-foreground">({c.nickname})</span> : null}</p>
+                <p className="truncate text-xs text-muted-foreground">{c.title || 'No title'}</p>
               </div>
-              <button onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }} className="cursor-pointer p-1.5 text-muted-foreground/40 active:text-red-400 shrink-0">
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              <Button variant="ghost" size="icon-sm" aria-label="Delete contact" className="shrink-0 active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
+                <Trash2 />
+              </Button>
             </div>
-            <div className="flex flex-wrap gap-1 mt-2">
-              {c.categories.map((cat) => <Badge key={cat} className={`text-[8px] px-1.5 py-0 ${catColor[cat] ?? 'bg-secondary'}`}>{cat}</Badge>)}
-              {c.fields.map((f) => <Badge key={f} className={`text-[8px] px-1.5 py-0 ${fieldColor[f] ?? 'bg-secondary'}`}>{f}</Badge>)}
+            <div className="mt-2 flex flex-wrap gap-1">
+              {c.categories.map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}
+              {c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}
             </div>
-            <div className="flex items-center gap-3 mt-2 text-[11px] text-muted-foreground">
+            <div className="mt-2 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
               {c.phone && <span>{c.phone}</span>}
-              {calcAge(c.birthday) != null && <span>Age {calcAge(c.birthday)}</span>}
+              {calcAge(c.birthday) != null && <span className="tabular-nums">Age {calcAge(c.birthday)}</span>}
               {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
             </div>
             {expanded === c.id && (
-              <div className="mt-4 pt-3 border-t border-border/30 flex flex-col gap-3" onClick={(e) => e.stopPropagation()}>
-                <div><label className="text-[10px] text-muted-foreground">Name</label><input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className="w-full bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" /></div>
+              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3" onClick={(e) => e.stopPropagation()}>
+                <div><label className={labelCls}>Name</label><input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} /></div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div><label className="text-[10px] text-muted-foreground">Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                  <div><label className="text-[10px] text-muted-foreground">Nickname</label><input value={c.nickname} onChange={(e) => setField(c.id, { nickname: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                  <div><label className="text-[10px] text-muted-foreground">Birthday</label><input type="date" value={c.birthday} onChange={(e) => setField(c.id, { birthday: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
-                  <div><label className="text-[10px] text-muted-foreground">Interval (days)</label><input type="number" value={c.interval || ''} onChange={(e) => setField(c.id, { interval: parseInt(e.target.value) || 0 })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 tabular-nums" /></div>
+                  <div><label className={labelCls}>Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className={lineInputCls} /></div>
+                  <div><label className={labelCls}>Nickname</label><input value={c.nickname} onChange={(e) => setField(c.id, { nickname: e.target.value })} className={lineInputCls} /></div>
+                  <div><label className={labelCls}>Birthday</label><input type="date" value={c.birthday} onChange={(e) => setField(c.id, { birthday: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
+                  <div><label className={labelCls}>Interval (days)</label><input type="number" value={c.interval || ''} onChange={(e) => setField(c.id, { interval: parseInt(e.target.value) || 0 })} className={`${lineInputCls} font-mono tabular-nums`} /></div>
                 </div>
-                <div><label className="text-[10px] text-muted-foreground">Address</label><input value={c.address} onChange={(e) => setField(c.id, { address: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                <div><label className="text-[10px] text-muted-foreground">Social Profiles</label><input value={c.socialProfiles} onChange={(e) => setField(c.id, { socialProfiles: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                <div><label className="text-[10px] text-muted-foreground">Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
-                <label className="text-[10px] text-muted-foreground">Categories</label>
+                <div><label className={labelCls}>Address</label><input value={c.address} onChange={(e) => setField(c.id, { address: e.target.value })} className={lineInputCls} /></div>
+                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className={`${lineInputCls} flex-1 font-mono`} /></div>
+                <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className={`${lineInputCls} flex-1`} /></div>
+                <div><label className={labelCls}>Social Profiles</label><input value={c.socialProfiles} onChange={(e) => setField(c.id, { socialProfiles: e.target.value })} className={lineInputCls} /></div>
+                <div><label className={labelCls}>Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
+                <label className={labelCls}>Categories</label>
                 <div className="flex flex-wrap gap-1">
                   {ALL_CATEGORIES.map((cat) => {
                     const on = c.categories.includes(cat)
-                    return <button key={cat} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })}
-                      className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${catColor[cat]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{cat}</button>
+                    return <Chip key={cat} size="sm" selectable selected={on} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })}>{cat}</Chip>
                   })}
                 </div>
-                <label className="text-[10px] text-muted-foreground">Fields</label>
+                <label className={labelCls}>Fields</label>
                 <div className="flex flex-wrap gap-1">
-                  {Object.keys(fieldColor).map((f) => {
+                  {ALL_FIELDS.map((f) => {
                     const on = c.fields.includes(f)
-                    return <button key={f} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}
-                      className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${fieldColor[f]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{f}</button>
+                    return <Chip key={f} size="sm" selectable selected={on} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}>{f}</Chip>
                   })}
                 </div>
-                <button onClick={() => deleteContact(c.id)} className="cursor-pointer flex items-center justify-center gap-1.5 text-xs text-red-400/60 active:text-red-400 px-3 py-2.5 rounded-lg border border-red-400/20">
-                  <Trash2 className="h-3 w-3" /> Delete contact
-                </button>
+                <Button variant="destructive" size="sm" className="w-full" onClick={() => deleteContact(c.id)}>
+                  <Trash2 /> Delete contact
+                </Button>
               </div>
             )}
           </div>
@@ -328,77 +319,84 @@ export function SocialPage() {
 
       {/* Desktop: Table */}
       <WidgetCard title="Contacts" description={`${filtered.length} of ${contacts.length}`} delay={0.1} className="hidden md:block">
-        <div className="overflow-x-auto -mx-5">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border/50 text-muted-foreground">
-                <th className="px-5 py-2 text-left font-medium"><button onClick={() => toggleSort('name')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Name <SortIcon k="name" /></button></th>
-                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('title')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Title <SortIcon k="title" /></button></th>
-                <th className="py-2 text-left font-medium">Category</th>
-                <th className="py-2 text-left font-medium">Field</th>
-                <th className="py-2 text-center font-medium"><button onClick={() => toggleSort('birthday')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Age <SortIcon k="birthday" /></button></th>
-                <th className="py-2 text-left font-medium">Phone</th>
-                <th className="py-2 text-left font-medium"><button onClick={() => toggleSort('lastContact')} className="cursor-pointer flex items-center gap-1 hover:text-foreground">Last <SortIcon k="lastContact" /></button></th>
-                <th className="py-2 w-6"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c) => (
-                <>
-                  <tr key={c.id} ref={(el) => { rowRefs.current[c.id] = el }} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-                    className={`cursor-pointer border-b border-border/20 transition-colors hover:bg-secondary/30 group ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                    <td className="px-5 py-2.5"><span className="font-medium">{c.name}</span>{c.nickname && <span className="ml-1.5 text-[10px] text-muted-foreground">({c.nickname})</span>}</td>
-                    <td className="py-2.5 text-muted-foreground">{c.title}</td>
-                    <td className="py-2.5"><div className="flex gap-1 flex-wrap">{c.categories.slice(0, 2).map((cat) => <Badge key={cat} className={`text-[8px] px-1 py-0 ${catColor[cat] ?? 'bg-secondary'}`}>{cat}</Badge>)}{c.categories.length > 2 && <span className="text-[9px] text-muted-foreground">+{c.categories.length - 2}</span>}</div></td>
-                    <td className="py-2.5"><div className="flex gap-1 flex-wrap">{c.fields.map((f) => <Badge key={f} className={`text-[8px] px-1 py-0 ${fieldColor[f] ?? 'bg-secondary'}`}>{f}</Badge>)}</div></td>
-                    <td className="py-2.5 text-center tabular-nums text-muted-foreground">{calcAge(c.birthday) ?? '—'}</td>
-                    <td className="py-2.5 text-muted-foreground">{c.phone || '—'}</td>
-                    <td className="py-2.5 text-muted-foreground tabular-nums">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
-                    <td className="py-2.5 pr-4"><button onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }} className="cursor-pointer opacity-0 group-hover:opacity-100 text-muted-foreground/40 hover:text-red-400 transition-all"><Trash2 className="h-3 w-3" /></button></td>
-                  </tr>
-                  {expanded === c.id && (
-                    <tr key={`${c.id}-edit`}>
-                      <td colSpan={8} className="px-5 py-4 border-b border-border/20 bg-foreground/[0.02]">
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                          <div className="flex flex-col gap-2">
-                            <label className="text-[10px] text-muted-foreground">Name</label>
-                            <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className="bg-transparent outline-none text-sm font-semibold border-b border-border/30 pb-1" />
-                            <div className="grid grid-cols-2 gap-2">
-                              <div><label className="text-[10px] text-muted-foreground">Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                              <div><label className="text-[10px] text-muted-foreground">Nickname</label><input value={c.nickname} onChange={(e) => setField(c.id, { nickname: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                              <div><label className="text-[10px] text-muted-foreground">Birthday</label><input type="date" value={c.birthday} onChange={(e) => setField(c.id, { birthday: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
-                              <div><label className="text-[10px] text-muted-foreground">Interval (days)</label><input type="number" value={c.interval || ''} onChange={(e) => setField(c.id, { interval: parseInt(e.target.value) || 0 })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 tabular-nums" /></div>
-                            </div>
-                            <div><label className="text-[10px] text-muted-foreground">Address</label><input value={c.address} onChange={(e) => setField(c.id, { address: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                            <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className="bg-transparent outline-none text-xs flex-1 border-b border-border/30 py-1 placeholder:text-muted-foreground/30" /></div>
-                            <div><label className="text-[10px] text-muted-foreground">Social Profiles</label><input value={c.socialProfiles} onChange={(e) => setField(c.id, { socialProfiles: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1" /></div>
-                            <div><label className="text-[10px] text-muted-foreground">Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className="w-full bg-transparent outline-none text-xs border-b border-border/30 py-1 cursor-pointer" /></div>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <label className="text-[10px] text-muted-foreground">Categories</label>
-                            <div className="flex flex-wrap gap-1">
-                              {ALL_CATEGORIES.map((cat) => { const on = c.categories.includes(cat); return <button key={cat} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })} className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${catColor[cat]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{cat}</button> })}
-                            </div>
-                            <label className="text-[10px] text-muted-foreground mt-1">Fields</label>
-                            <div className="flex flex-wrap gap-1">
-                              {Object.keys(fieldColor).map((f) => { const on = c.fields.includes(f); return <button key={f} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })} className={`cursor-pointer text-[9px] px-2 py-0.5 rounded-full border transition-all ${on ? `${fieldColor[f]} border-current/20` : 'text-muted-foreground/30 border-border'}`}>{f}</button> })}
-                            </div>
-                          </div>
-                          <div className="flex items-end justify-end lg:col-span-3 pt-2">
-                            <button onClick={() => deleteContact(c.id)} className="cursor-pointer flex items-center gap-1.5 text-xs text-red-400/60 hover:text-red-400 transition-colors px-3 py-1.5 rounded-lg border border-red-400/20 hover:border-red-400/40 hover:bg-red-400/5"><Trash2 className="h-3 w-3" /> Delete contact</button>
-                          </div>
-                        </div>
-                      </td>
+        {filtered.length === 0 ? (
+          <EmptyState message="No one here yet." hint="Press Add to keep your first contact." />
+        ) : (
+          <div className="-mx-4 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border/60 text-muted-foreground">
+                  {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
+                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon k="name" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title <SortIcon k="title" /></button></th>
+                  <th className={thCls}>Category</th>
+                  <th className={thCls}>Field</th>
+                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age <SortIcon k="birthday" /></button></th>
+                  <th className={thCls}>Phone</th>
+                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last <SortIcon k="lastContact" /></button></th>
+                  <th className="w-6 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((c) => (
+                  <Fragment key={c.id}>
+                    <tr ref={(el) => { rowRefs.current[c.id] = el }} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                      className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
+                      <td className="px-4 py-2.5"><span className="font-medium">{c.name}</span>{c.nickname && <span className="ml-1.5 text-2xs text-muted-foreground">({c.nickname})</span>}</td>
+                      <td className="py-2.5 text-muted-foreground">{c.title}</td>
+                      <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.categories.slice(0, 2).map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}{c.categories.length > 2 && <span className="font-mono text-3xs text-foreground-faint">+{c.categories.length - 2}</span>}</div></td>
+                      <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}</div></td>
+                      <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{calcAge(c.birthday) ?? '—'}</td>
+                      <td className="py-2.5 font-mono text-muted-foreground">{c.phone || '—'}</td>
+                      <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
+                      <td className="py-2.5 pr-4"><Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}><Trash2 /></Button></td>
                     </tr>
-                  )}
-                </>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    {expanded === c.id && (
+                      <tr>
+                        <td colSpan={8} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
+                          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                            <div className="flex flex-col gap-2">
+                              <label className={labelCls}>Name</label>
+                              <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} />
+                              <div className="grid grid-cols-2 gap-2">
+                                <div><label className={labelCls}>Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className={lineInputCls} /></div>
+                                <div><label className={labelCls}>Nickname</label><input value={c.nickname} onChange={(e) => setField(c.id, { nickname: e.target.value })} className={lineInputCls} /></div>
+                                <div><label className={labelCls}>Birthday</label><input type="date" value={c.birthday} onChange={(e) => setField(c.id, { birthday: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
+                                <div><label className={labelCls}>Interval (days)</label><input type="number" value={c.interval || ''} onChange={(e) => setField(c.id, { interval: parseInt(e.target.value) || 0 })} className={`${lineInputCls} font-mono tabular-nums`} /></div>
+                              </div>
+                              <div><label className={labelCls}>Address</label><input value={c.address} onChange={(e) => setField(c.id, { address: e.target.value })} className={lineInputCls} /></div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className={`${lineInputCls} flex-1 font-mono`} /></div>
+                              <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className={`${lineInputCls} flex-1`} /></div>
+                              <div><label className={labelCls}>Social Profiles</label><input value={c.socialProfiles} onChange={(e) => setField(c.id, { socialProfiles: e.target.value })} className={lineInputCls} /></div>
+                              <div><label className={labelCls}>Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <label className={labelCls}>Categories</label>
+                              <div className="flex flex-wrap gap-1">
+                                {ALL_CATEGORIES.map((cat) => { const on = c.categories.includes(cat); return <Chip key={cat} size="sm" selectable selected={on} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })}>{cat}</Chip> })}
+                              </div>
+                              <label className={`${labelCls} mt-1`}>Fields</label>
+                              <div className="flex flex-wrap gap-1">
+                                {ALL_FIELDS.map((f) => { const on = c.fields.includes(f); return <Chip key={f} size="sm" selectable selected={on} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}>{f}</Chip> })}
+                              </div>
+                            </div>
+                            <div className="flex items-end justify-end pt-2 lg:col-span-3">
+                              <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
+                                <Trash2 /> Delete contact
+                              </Button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </WidgetCard>
     </PageShell>
   )

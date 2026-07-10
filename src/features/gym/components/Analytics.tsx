@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
-import { motion } from 'framer-motion'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { StatTile } from '@/components/shared/StatTile'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Chip } from '@/components/ui/chip'
+import { ThemedTooltip, axisProps, chartColors, cssVar, gridProps } from '@/lib/chart-theme'
 import { readStore } from '@/lib/store'
-import { getLastNDays } from '@/lib/date-utils'
+import { getLastNDays, localDate } from '@/lib/date-utils'
 import type { WorkoutDay, WorkoutSession, BodyStats, DailyNutrition } from '@/types/gym'
 import { PROTEIN_TARGET, CALORIE_TARGET } from '@/types/gym'
 import {
@@ -19,7 +22,7 @@ import {
   CartesianGrid,
   Cell,
 } from 'recharts'
-import { TrendingUp, Activity, Scale, Target, Zap, Flame, Utensils } from 'lucide-react'
+import { TrendingUp, Activity, Scale, Target, Zap, Flame } from 'lucide-react'
 
 interface AnalyticsProps {
   plans: WorkoutDay[]
@@ -27,14 +30,31 @@ interface AnalyticsProps {
 }
 
 const RANGE_OPTIONS = [7, 14, 30, 90]
-const TOOLTIP_STYLE = { background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, fontSize: 11 }
-const COLORS: Record<string, string> = { PUSH: '#60a5fa', PULL: '#34d399', LEGS: '#fbbf24', SWIM: '#22d3ee' }
+// Workout types map onto the chart family in a fixed order (never inline hex).
+const TYPE_ORDER = ['PUSH', 'PULL', 'LEGS', 'SWIM']
+const typeColor = (name: string, colors: string[]) => {
+  const i = TYPE_ORDER.indexOf(name)
+  return i >= 0 ? colors[i % colors.length] : colors[4]
+}
+
+/** Mono percent-of-target readout — success ink once the target is met. */
+function TargetPct({ value, target }: { value: number; target: number }) {
+  const pct = Math.round((value / target) * 100)
+  return (
+    <span className={`font-mono text-2xs tabular-nums ${pct >= 100 ? 'text-success' : 'text-muted-foreground'}`}>
+      {pct}%
+    </span>
+  )
+}
 
 export function Analytics({ bodyStats }: AnalyticsProps) {
   const [range, setRange] = useState(30)
   const [sessions, setSessions] = useState<WorkoutSession[]>([])
   const [nutritionDays, setNutritionDays] = useState<DailyNutrition[]>([])
   const [selectedExercise, setSelectedExercise] = useState('')
+  // Token palette is static at runtime — resolve the CSS vars once.
+  const colors = useMemo(() => chartColors(), [])
+  const [c1] = colors
 
   // Load sessions + nutrition for date range
   useEffect(() => {
@@ -86,13 +106,14 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
   const volumeData = useMemo(() => sessions.map(s => {
     const totalSets = s.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).length, 0)
     const totalVolume = s.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).reduce((v, set) => v + set.weight * set.reps, 0), 0)
-    return { date: s.date.slice(5), sets: totalSets, volume: totalVolume, type: s.workoutName, fill: COLORS[s.workoutName] || '#888' }
-  }), [sessions])
+    return { date: s.date.slice(5), sets: totalSets, volume: totalVolume, type: s.workoutName, fill: typeColor(s.workoutName, colors) }
+  }), [sessions, colors])
 
-  // Weight trend
+  // Weight trend — compare YYYY-MM-DD strings directly: `new Date('YYYY-MM-DD')`
+  // parses as UTC midnight, which shifts entries across day boundaries locally.
   const weightData = useMemo(() => {
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - range)
-    return bodyStats.filter(s => new Date(s.date) >= cutoff).sort((a, b) => a.date.localeCompare(b.date)).map(s => ({ date: s.date.slice(5), weight: s.weight }))
+    const cutoff = getLastNDays(range)[0] // oldest local day in range
+    return bodyStats.filter(s => s.date >= cutoff).sort((a, b) => a.date.localeCompare(b.date)).map(s => ({ date: s.date.slice(5), weight: s.weight }))
   }, [bodyStats, range])
 
   // Personal records
@@ -116,8 +137,8 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
   const typeDistribution = useMemo(() => {
     const counts = new Map<string, number>()
     for (const s of sessions) counts.set(s.workoutName, (counts.get(s.workoutName) || 0) + 1)
-    return Array.from(counts.entries()).map(([name, count]) => ({ name, count, fill: COLORS[name] || '#888' }))
-  }, [sessions])
+    return Array.from(counts.entries()).map(([name, count]) => ({ name, count, fill: typeColor(name, colors) }))
+  }, [sessions, colors])
 
   // Nutrition trend
   const nutritionData = useMemo(() => {
@@ -143,17 +164,21 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
   const totalSets = sessions.reduce((s, sess) => s + sess.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).length, 0), 0)
   const totalVolume = sessions.reduce((s, sess) => s + sess.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).reduce((v, set) => v + set.weight * set.reps, 0), 0), 0)
 
-  // Weekly streak
+  // Weekly streak — week boundaries as local YYYY-MM-DD strings, compared
+  // against session date strings (avoids the UTC-midnight parse of new Date(s)).
   const weeklyStreak = useMemo(() => {
     let streak = 0
-    const now = new Date()
+    const monday = new Date()
+    monday.setHours(0, 0, 0, 0)
+    monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7) // this week's Monday
     for (let w = 0; w < 12; w++) {
-      const weekStart = new Date(now)
-      weekStart.setDate(now.getDate() - (now.getDay() + 6) % 7 - w * 7)
-      const weekSessions = sessions.filter(s => {
-        const d = new Date(s.date)
-        return d >= weekStart && d < new Date(weekStart.getTime() + 7 * 86400000)
-      })
+      const weekStart = new Date(monday)
+      weekStart.setDate(monday.getDate() - w * 7)
+      const weekEnd = new Date(weekStart)
+      weekEnd.setDate(weekStart.getDate() + 7)
+      const startStr = localDate(weekStart)
+      const endStr = localDate(weekEnd)
+      const weekSessions = sessions.filter(s => s.date >= startStr && s.date < endStr)
       if (weekSessions.length >= 3) streak++
       else if (w > 0) break // don't break on current incomplete week
     }
@@ -165,52 +190,24 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
       {/* Range selector */}
       <div className="flex gap-1.5">
         {RANGE_OPTIONS.map(r => (
-          <button key={r} onClick={() => setRange(r)}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${range === r ? 'bg-foreground text-background' : 'bg-foreground/10 text-muted-foreground hover:bg-foreground/20'}`}
-          >{r}d</button>
+          <Chip key={r} selectable selected={range === r} onClick={() => setRange(r)}>
+            {r}d
+          </Chip>
         ))}
       </div>
 
-      {/* KPI cards — always show */}
+      {/* KPI tiles — always show */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <Target className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{completionRate}%</p>
-          <p className="text-[10px] text-muted-foreground">Completion</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <Activity className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{sessions.length}</p>
-          <p className="text-[10px] text-muted-foreground">Sessions ({range}d)</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <TrendingUp className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{totalSets}</p>
-          <p className="text-[10px] text-muted-foreground">Total Sets</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <Zap className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{totalVolume > 0 ? `${Math.round(totalVolume / 1000)}K` : '0'}</p>
-          <p className="text-[10px] text-muted-foreground">Volume (kg)</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <Scale className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{bodyStats.length > 0 ? `${bodyStats[bodyStats.length - 1].weight}kg` : '-'}</p>
-          <p className="text-[10px] text-muted-foreground">Current Weight</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-3 text-center">
-          <Flame className="h-4 w-4 text-muted-foreground mx-auto mb-1" />
-          <p className="text-xl font-bold tabular-nums">{weeklyStreak}</p>
-          <p className="text-[10px] text-muted-foreground">Week Streak</p>
-        </div>
+        <StatTile label="Completion" value={`${completionRate}%`} icon={<Target />} />
+        <StatTile label={`Sessions (${range}d)`} value={sessions.length} icon={<Activity />} />
+        <StatTile label="Total sets" value={totalSets} icon={<TrendingUp />} />
+        <StatTile label="Volume (kg)" value={totalVolume > 0 ? `${Math.round(totalVolume / 1000)}K` : '0'} icon={<Zap />} />
+        <StatTile label="Weight" value={bodyStats.length > 0 ? `${bodyStats[bodyStats.length - 1].weight}kg` : '-'} icon={<Scale />} />
+        <StatTile label="Week streak" value={weeklyStreak} icon={<Flame />} />
       </div>
 
       {sessions.length === 0 ? (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-xl border border-border bg-card p-8 text-center">
-          <Activity className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">No workout data yet.</p>
-          <p className="text-xs text-muted-foreground/50 mt-1">Complete a workout to see charts.</p>
-        </motion.div>
+        <EmptyState message="No workout data yet." hint="Complete a workout to see charts." />
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -218,22 +215,22 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
             <WidgetCard title="Progressive Overload" description="Max weight per session" delay={0.05}>
               <div className="mb-3">
                 <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}
-                  className="rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground">
+                  className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground">
                   {exerciseNames.map(name => <option key={name} value={name}>{name}</option>)}
                 </select>
               </div>
               {overloadData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={180}>
                   <AreaChart data={overloadData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#555" />
-                    <YAxis tick={{ fontSize: 10 }} stroke="#555" unit="kg" />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
-                    <Area type="monotone" dataKey="weight" stroke="#fff" fill="#fff" fillOpacity={0.1} strokeWidth={2} dot={{ r: 3 }} />
+                    <CartesianGrid {...gridProps()} />
+                    <XAxis dataKey="date" {...axisProps()} />
+                    <YAxis unit="kg" {...axisProps()} />
+                    <Tooltip content={<ThemedTooltip />} cursor={{ stroke: cssVar('--border') }} />
+                    <Area type="monotone" dataKey="weight" stroke={c1} fill={c1} fillOpacity={0.12} strokeWidth={2} dot={{ r: 3, fill: c1, strokeWidth: 0 }} />
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <p className="text-xs text-muted-foreground/40 py-8 text-center">No data for this exercise</p>
+                <EmptyState message="No data for this exercise." className="py-6" />
               )}
             </WidgetCard>
 
@@ -241,10 +238,10 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
             <WidgetCard title="Volume per Session" description="Total completed sets" delay={0.1}>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={volumeData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#555" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#555" />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <CartesianGrid {...gridProps()} />
+                  <XAxis dataKey="date" {...axisProps()} />
+                  <YAxis {...axisProps()} />
+                  <Tooltip content={<ThemedTooltip />} cursor={{ fill: cssVar('--muted'), fillOpacity: 0.35 }} />
                   <Bar dataKey="sets" radius={[4, 4, 0, 0]}>
                     {volumeData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
                   </Bar>
@@ -259,11 +256,11 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
               <WidgetCard title="Total Volume Trend" description="Weight x Reps per session (kg)" delay={0.15}>
                 <ResponsiveContainer width="100%" height={180}>
                   <AreaChart data={volumeData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#555" />
-                    <YAxis tick={{ fontSize: 10 }} stroke="#555" />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
-                    <Area type="monotone" dataKey="volume" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.1} strokeWidth={2} dot={{ r: 3 }} />
+                    <CartesianGrid {...gridProps()} />
+                    <XAxis dataKey="date" {...axisProps()} />
+                    <YAxis {...axisProps()} />
+                    <Tooltip content={<ThemedTooltip />} cursor={{ stroke: cssVar('--border') }} />
+                    <Area type="monotone" dataKey="volume" stroke={c1} fill={c1} fillOpacity={0.12} strokeWidth={2} dot={{ r: 3, fill: c1, strokeWidth: 0 }} />
                   </AreaChart>
                 </ResponsiveContainer>
               </WidgetCard>
@@ -275,13 +272,17 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
                 <div className="space-y-3 py-2">
                   {typeDistribution.map(({ name, count, fill }) => (
                     <div key={name} className="flex items-center gap-3">
-                      <span className="text-xs font-medium w-12" style={{ color: fill }}>{name}</span>
-                      <div className="flex-1 h-6 rounded-md bg-foreground/5 overflow-hidden">
-                        <div className="h-full rounded-md transition-all duration-500 flex items-center px-2"
-                          style={{ width: `${Math.max(10, (count / sessions.length) * 100)}%`, backgroundColor: fill + '30', borderLeft: `3px solid ${fill}` }}>
-                          <span className="text-xs font-medium tabular-nums">{count}</span>
-                        </div>
+                      <span className="flex w-16 items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
+                        <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: fill }} />
+                        {name}
+                      </span>
+                      <div className="h-1 flex-1 rounded-full bg-muted/60">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${Math.max(4, (count / sessions.length) * 100)}%`, backgroundColor: fill }}
+                        />
                       </div>
+                      <span className="w-6 text-right font-mono text-xs tabular-nums text-foreground">{count}</span>
                     </div>
                   ))}
                 </div>
@@ -294,14 +295,14 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
             <WidgetCard title="Personal Records" description="Best weight per exercise" delay={0.25}>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
                 {personalRecords.map(([name, pr]) => (
-                  <div key={name} className="flex items-center justify-between rounded-lg bg-foreground/5 px-3 py-2">
+                  <div key={name} className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2">
                     <div className="min-w-0">
-                      <p className="text-xs font-medium truncate text-foreground">{name}</p>
-                      <p className="text-[10px] text-muted-foreground/50">{pr.date}</p>
+                      <p className="truncate text-xs font-medium text-foreground">{name}</p>
+                      <p className="font-mono text-2xs text-foreground-faint">{pr.date}</p>
                     </div>
-                    <div className="text-right shrink-0 ml-2">
-                      <p className="text-sm font-bold tabular-nums">{pr.weight}kg</p>
-                      <p className="text-[10px] text-muted-foreground/50">{pr.reps} reps</p>
+                    <div className="ml-2 shrink-0 text-right">
+                      <p className="font-mono text-sm font-medium tabular-nums text-foreground">{pr.weight}kg</p>
+                      <p className="font-mono text-2xs tabular-nums text-foreground-faint">{pr.reps} reps</p>
                     </div>
                   </div>
                 ))}
@@ -314,11 +315,11 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
             <WidgetCard title="Weight Trend" description={`Body weight · ${bodyStats.length} weigh-in${bodyStats.length !== 1 ? 's' : ''}`} delay={0.3}>
               <ResponsiveContainer width="100%" height={180}>
                 <LineChart data={weightData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#555" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#555" unit="kg" domain={['dataMin - 1', 'dataMax + 1']} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} />
-                  <Line type="monotone" dataKey="weight" stroke="#60a5fa" strokeWidth={2} dot={{ r: 4, fill: '#60a5fa' }} />
+                  <CartesianGrid {...gridProps()} />
+                  <XAxis dataKey="date" {...axisProps()} />
+                  <YAxis unit="kg" domain={['dataMin - 1', 'dataMax + 1']} {...axisProps()} />
+                  <Tooltip content={<ThemedTooltip />} cursor={{ stroke: cssVar('--border') }} />
+                  <Line type="monotone" dataKey="weight" stroke={c1} strokeWidth={2} dot={{ r: 4, fill: c1, strokeWidth: 0 }} />
                 </LineChart>
               </ResponsiveContainer>
             </WidgetCard>
@@ -329,39 +330,32 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
       {/* Nutrition Analytics — always show if data exists */}
       {nutritionData.length > 0 && (
         <>
-          <div className="flex items-center gap-2 pt-2">
-            <Utensils className="h-4 w-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold">Nutrition Analytics</h3>
-            <span className="text-xs text-muted-foreground">({nutritionData.length} days tracked)</span>
+          <div className="flex items-baseline gap-2 pt-2">
+            <h3 className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Nutrition Analytics</h3>
+            <span className="font-mono text-2xs tabular-nums text-foreground-faint">{nutritionData.length} days tracked</span>
           </div>
 
           {/* Nutrition KPIs */}
           {avgNutrition && (
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl border border-border bg-card p-3 text-center">
-                <p className="text-xl font-bold tabular-nums">{avgNutrition.protein}g</p>
-                <p className="text-[10px] text-muted-foreground">Avg Protein ({PROTEIN_TARGET}g target)</p>
-                <div className="h-1 rounded-full bg-foreground/10 mt-1.5">
-                  <div className={`h-full rounded-full ${avgNutrition.protein >= PROTEIN_TARGET ? 'bg-green-400' : 'bg-foreground/30'}`}
-                    style={{ width: `${Math.min(100, (avgNutrition.protein / PROTEIN_TARGET) * 100)}%` }} />
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-3 text-center">
-                <p className="text-xl font-bold tabular-nums">{avgNutrition.calories}</p>
-                <p className="text-[10px] text-muted-foreground">Avg Calories ({CALORIE_TARGET} target)</p>
-                <div className="h-1 rounded-full bg-foreground/10 mt-1.5">
-                  <div className={`h-full rounded-full ${avgNutrition.calories >= CALORIE_TARGET ? 'bg-green-400' : 'bg-foreground/30'}`}
-                    style={{ width: `${Math.min(100, (avgNutrition.calories / CALORIE_TARGET) * 100)}%` }} />
-                </div>
-              </div>
-              <div className="rounded-xl border border-border bg-card p-3 text-center">
-                <p className="text-xl font-bold tabular-nums">{avgNutrition.water}L</p>
-                <p className="text-[10px] text-muted-foreground">Avg Water (2.5L target)</p>
-                <div className="h-1 rounded-full bg-foreground/10 mt-1.5">
-                  <div className={`h-full rounded-full ${avgNutrition.water >= 2.5 ? 'bg-blue-400' : 'bg-blue-400/40'}`}
-                    style={{ width: `${Math.min(100, (avgNutrition.water / 2.5) * 100)}%` }} />
-                </div>
-              </div>
+              <StatTile
+                label="Avg protein"
+                value={`${avgNutrition.protein}g`}
+                sub={`of ${PROTEIN_TARGET}g target`}
+                delta={<TargetPct value={avgNutrition.protein} target={PROTEIN_TARGET} />}
+              />
+              <StatTile
+                label="Avg calories"
+                value={avgNutrition.calories}
+                sub={`of ${CALORIE_TARGET} target`}
+                delta={<TargetPct value={avgNutrition.calories} target={CALORIE_TARGET} />}
+              />
+              <StatTile
+                label="Avg water"
+                value={`${avgNutrition.water}L`}
+                sub="of 2.5L target"
+                delta={<TargetPct value={avgNutrition.water} target={2.5} />}
+              />
             </div>
           )}
 
@@ -370,11 +364,11 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
             <WidgetCard title="Protein Trend" description={`Daily intake vs ${PROTEIN_TARGET}g target`} delay={0.35}>
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={nutritionData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#555" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#555" unit="g" />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} />
-                  <Area type="monotone" dataKey="protein" stroke="#34d399" fill="#34d399" fillOpacity={0.1} strokeWidth={2} dot={{ r: 3 }} />
+                  <CartesianGrid {...gridProps()} />
+                  <XAxis dataKey="date" {...axisProps()} />
+                  <YAxis unit="g" {...axisProps()} />
+                  <Tooltip content={<ThemedTooltip />} cursor={{ stroke: cssVar('--border') }} />
+                  <Area type="monotone" dataKey="protein" stroke={c1} fill={c1} fillOpacity={0.12} strokeWidth={2} dot={{ r: 3, fill: c1, strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </WidgetCard>
@@ -382,11 +376,11 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
             <WidgetCard title="Calorie Trend" description={`Daily intake vs ${CALORIE_TARGET} target`} delay={0.4}>
               <ResponsiveContainer width="100%" height={180}>
                 <AreaChart data={nutritionData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="#555" />
-                  <YAxis tick={{ fontSize: 10 }} stroke="#555" />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} />
-                  <Area type="monotone" dataKey="calories" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.1} strokeWidth={2} dot={{ r: 3 }} />
+                  <CartesianGrid {...gridProps()} />
+                  <XAxis dataKey="date" {...axisProps()} />
+                  <YAxis {...axisProps()} />
+                  <Tooltip content={<ThemedTooltip />} cursor={{ stroke: cssVar('--border') }} />
+                  <Area type="monotone" dataKey="calories" stroke={c1} fill={c1} fillOpacity={0.12} strokeWidth={2} dot={{ r: 3, fill: c1, strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </WidgetCard>

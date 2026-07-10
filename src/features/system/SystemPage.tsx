@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { StatTile } from '@/components/shared/StatTile'
+import { Skeleton } from '@/components/shared/Skeleton'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Cpu, MemoryStick, HardDrive, Activity, Server, AlertCircle, Clock, ShieldCheck, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react'
-import { SpendSection } from '@/features/spend/SpendPage'
-import { PaperclipSection } from '@/features/paperclip/PaperclipSection'
+import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { HostHistory } from './HostHistory'
 
@@ -24,7 +25,7 @@ interface GlancesPayload {
   processlist: Array<{ pid: number; name: string; cpu_percent: number; memory_percent: number; username: string }>
 }
 
-type HostKey = 'mac' | 'vm'
+type HostKey = 'mac'
 
 interface HostSpec {
   key: HostKey
@@ -42,7 +43,6 @@ const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 
 
 const HOSTS: HostSpec[] = [
   { key: 'mac', label: 'Mac mini', path: '/api/system/mac', noteIfDown: 'glances launchd service not running' },
-  { key: 'vm',  label: 'Lima VM', path: '/api/system/vm', noteIfDown: 'VM unreachable or glances service down' },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -58,58 +58,42 @@ function fmtRate(bytesPerSec: number): string {
   return `${fmtBytes(bytesPerSec, 1)}/s`
 }
 
-function pctColor(pct: number): string {
-  if (pct >= 90) return 'text-red-400'
-  if (pct >= 75) return 'text-yellow-400'
-  if (pct >= 50) return 'text-amber-300'
-  return 'text-emerald-400'
+/** Gauge text tone — semantic thresholds only (warning >70%, destructive >90%). */
+function pctTone(pct: number): string {
+  if (pct > 90) return 'text-destructive'
+  if (pct > 70) return 'text-warning'
+  return ''
 }
 
-function pctBar(pct: number): string {
-  if (pct >= 90) return 'bg-red-500/70'
-  if (pct >= 75) return 'bg-yellow-500/70'
-  if (pct >= 50) return 'bg-amber-500/70'
-  return 'bg-emerald-500/70'
+/** Sparkline stroke tone — accent at rest, semantic past thresholds. */
+function sparkTone(pct: number): string {
+  return pctTone(pct) || 'text-accent'
+}
+
+/** Gauge fill — accent at rest, semantic past thresholds (meter convention). */
+function barTone(pct: number): string {
+  if (pct > 90) return 'bg-destructive'
+  if (pct > 70) return 'bg-warning'
+  return 'bg-accent'
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────
-
-function StatTile({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  pct,
-}: {
-  icon: typeof Cpu
-  label: string
-  value: string
-  sub?: string
-  pct?: number
-}) {
-  const color = pct !== undefined ? pctColor(pct) : 'text-foreground'
-  return (
-    <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
-        <Icon className="h-3 w-3" />
-        {label}
-      </div>
-      <div className={`text-xl font-semibold tabular-nums ${color}`}>{value}</div>
-      {sub && <div className="text-[10px] text-muted-foreground/60 mt-0.5">{sub}</div>}
-    </div>
-  )
-}
 
 function Bar({ pct, label, right }: { pct: number; label: string; right?: string }) {
   const clamped = Math.max(0, Math.min(100, pct))
   return (
     <div>
-      <div className="flex items-center justify-between mb-1 text-[11px]">
+      <div className="mb-1 flex items-center justify-between text-2xs">
         <span className="text-muted-foreground">{label}</span>
-        <span className={`tabular-nums ${pctColor(clamped)}`}>{right ?? `${clamped.toFixed(1)}%`}</span>
+        <span className={`font-mono tabular-nums ${pctTone(clamped) || 'text-muted-foreground'}`}>
+          {right ?? `${clamped.toFixed(1)}%`}
+        </span>
       </div>
-      <div className="h-1.5 w-full rounded-full bg-secondary/40 overflow-hidden">
-        <div className={`h-full transition-all duration-700 ${pctBar(clamped)}`} style={{ width: `${clamped}%` }} />
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary/40">
+        <div
+          className={`h-full motion-safe:transition-all motion-safe:duration-700 ${barTone(clamped)}`}
+          style={{ width: `${clamped}%` }}
+        />
       </div>
     </div>
   )
@@ -179,9 +163,15 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   if (!data && !error) {
     return (
       <WidgetCard title={host.label} description="Connecting…" delay={delay}>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-2 w-2 rounded-full bg-yellow-400/70 animate-pulse" />
-          Awaiting first sample
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+          </div>
+          <Skeleton className="h-8 w-full" />
+          <Skeleton className="h-8 w-2/3" />
         </div>
       </WidgetCard>
     )
@@ -191,13 +181,8 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   if (!data && error) {
     return (
       <WidgetCard title={host.label} description="Offline" variant="urgent" delay={delay}>
-        <div className="flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-foreground">{error}</p>
-            <p className="text-[11px] text-muted-foreground/70 mt-1">{host.noteIfDown}</p>
-          </div>
-        </div>
+        <p className="text-xs text-destructive">{error}</p>
+        <p className="mt-1 text-2xs text-foreground-faint">{host.noteIfDown}</p>
       </WidgetCard>
     )
   }
@@ -213,6 +198,7 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   const swap = data.memswap
   const load1 = data.load?.min1 ?? 0
   const cores = data.load?.cpucore ?? data.core?.log ?? 1
+  const loadPct = Math.min(100, (load1 / Math.max(1, cores)) * 100)
 
   const fsList = (data.fs || [])
     .filter((f) => f.size > 1024 * 1024 * 1024) // >1GB
@@ -250,37 +236,40 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
     >
       <div className="flex flex-col gap-4">
         {/* Live indicator + uptime */}
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+        <div className="flex items-center justify-between text-2xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className={`h-1.5 w-1.5 rounded-full ${stale ? 'bg-yellow-400 animate-pulse' : 'bg-emerald-400 animate-pulse'}`} />
+            <div className={`h-1.5 w-1.5 rounded-full motion-safe:animate-pulse ${stale ? 'bg-warning' : 'bg-success'}`} />
             <span>{stale ? 'Reconnecting…' : 'Live'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Clock className="h-3 w-3" />
-            <span className="tabular-nums">{data.uptime}</span>
+            <span className="font-mono tabular-nums">{data.uptime}</span>
           </div>
         </div>
 
         {/* Stat tiles */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <StatTile icon={Cpu} label="CPU" value={`${cpuPct.toFixed(1)}%`} sub={`${cores} cores`} pct={cpuPct} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile
-            icon={MemoryStick}
+            label="CPU"
+            icon={<Cpu />}
+            value={<span className={pctTone(cpuPct)}>{`${cpuPct.toFixed(1)}%`}</span>}
+            sub={`${cores} cores`}
+          />
+          <StatTile
             label="RAM"
-            value={`${memPct.toFixed(1)}%`}
+            icon={<MemoryStick />}
+            value={<span className={pctTone(memPct)}>{`${memPct.toFixed(1)}%`}</span>}
             sub={`${fmtBytes(memUsed, 1)} / ${fmtBytes(memTotal, 1)}`}
-            pct={memPct}
           />
           <StatTile
-            icon={Activity}
             label="Load 1m"
-            value={load1.toFixed(2)}
+            icon={<Activity />}
+            value={<span className={pctTone(loadPct)}>{load1.toFixed(2)}</span>}
             sub={`${(load1 / Math.max(1, cores) * 100).toFixed(0)}% of ${cores}c`}
-            pct={Math.min(100, (load1 / Math.max(1, cores)) * 100)}
           />
           <StatTile
-            icon={Server}
             label="Procs"
+            icon={<Server />}
             value={`${data.processcount?.total ?? 0}`}
             sub={`${data.processcount?.running ?? 0} running`}
           />
@@ -288,12 +277,12 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
 
         {/* CPU + RAM sparklines */}
         <div className="grid grid-cols-2 gap-3">
-          <div className={pctColor(cpuPct)}>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">CPU history (60s)</div>
+          <div className={sparkTone(cpuPct)}>
+            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">CPU history (60s)</div>
             <Sparkline values={cpuHistory.current} max={100} />
           </div>
-          <div className={pctColor(memPct)}>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-1">RAM history (60s)</div>
+          <div className={sparkTone(memPct)}>
+            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">RAM history (60s)</div>
             <Sparkline values={memHistory.current} max={100} />
           </div>
         </div>
@@ -309,7 +298,7 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         {/* Disk */}
         {fsList.length > 0 && (
           <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70">
+            <div className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
               <HardDrive className="h-3 w-3" />
               Disk
             </div>
@@ -327,13 +316,13 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         {/* Network */}
         {nets.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Network</div>
+            <div className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Network</div>
             {nets.map((n) => (
-              <div key={n.interface_name} className="flex items-center justify-between text-[11px] tabular-nums">
-                <span className="text-muted-foreground">{n.interface_name}</span>
-                <div className="flex gap-3">
-                  <span className="text-blue-300">↓ {fmtRate(n.bytes_recv_rate_per_sec ?? 0)}</span>
-                  <span className="text-pink-300">↑ {fmtRate(n.bytes_sent_rate_per_sec ?? 0)}</span>
+              <div key={n.interface_name} className="flex items-center justify-between text-2xs">
+                <span className="font-mono text-muted-foreground">{n.interface_name}</span>
+                <div className="flex gap-3 font-mono tabular-nums">
+                  <span className="text-muted-foreground">↓ {fmtRate(n.bytes_recv_rate_per_sec ?? 0)}</span>
+                  <span className="text-foreground-faint">↑ {fmtRate(n.bytes_sent_rate_per_sec ?? 0)}</span>
                 </div>
               </div>
             ))}
@@ -343,17 +332,17 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         {/* Top processes */}
         {topProcs.length > 0 && (
           <div className="flex flex-col gap-1">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">Top processes</div>
-            <div className="flex flex-col gap-0.5 text-[11px]">
-              <div className="flex items-center gap-2 text-muted-foreground/50 px-1">
+            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Top processes</div>
+            <div className="flex flex-col gap-0.5 font-mono text-2xs">
+              <div className="flex items-center gap-2 px-1 text-3xs uppercase tracking-wider text-foreground-faint">
                 <span className="flex-1">name</span>
                 <span className="w-12 text-right">cpu</span>
                 <span className="w-12 text-right">mem</span>
               </div>
               {topProcs.map((p) => (
-                <div key={p.pid} className="flex items-center gap-2 px-1 py-0.5 rounded hover:bg-secondary/20">
-                  <span className="flex-1 truncate" title={`${p.name} (pid ${p.pid}, ${p.username})`}>{p.name}</span>
-                  <span className={`w-12 text-right tabular-nums ${pctColor(p.cpu_percent)}`}>{p.cpu_percent.toFixed(1)}%</span>
+                <div key={p.pid} className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-secondary/20">
+                  <span className="flex-1 truncate text-muted-foreground" title={`${p.name} (pid ${p.pid}, ${p.username})`}>{p.name}</span>
+                  <span className={`w-12 text-right tabular-nums ${pctTone(p.cpu_percent) || 'text-foreground'}`}>{p.cpu_percent.toFixed(1)}%</span>
                   <span className="w-12 text-right tabular-nums text-muted-foreground">{p.memory_percent.toFixed(1)}%</span>
                 </div>
               ))}
@@ -362,251 +351,11 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         )}
 
         {/* History expander */}
-        <button
-          onClick={() => setShowHistory((v) => !v)}
-          className="flex items-center justify-center gap-1.5 mt-1 -mx-1 px-3 py-1.5 rounded-md border border-border bg-secondary/15 hover:bg-secondary/30 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {showHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        <Button variant="secondary" size="sm" className="mt-1 w-full" onClick={() => setShowHistory((v) => !v)}>
+          {showHistory ? <ChevronUp /> : <ChevronDown />}
           {showHistory ? 'Hide history' : 'Show history & averages'}
-        </button>
+        </Button>
         {showHistory && <HostHistory host={host.key} />}
-      </div>
-    </WidgetCard>
-  )
-}
-
-// ── Uptime Kuma panel ─────────────────────────────────────────────────────
-
-interface KumaMonitor { id: number; name: string; type: string }
-interface KumaHeartbeat { status: 0 | 1 | 2 | 3; time: string; msg?: string; ping?: number }
-interface KumaPayload {
-  config?: {
-    config: { slug: string; title: string }
-    publicGroupList: Array<{ id: number; name: string; monitorList: KumaMonitor[] }>
-  }
-  heartbeat?: {
-    heartbeatList: Record<string, KumaHeartbeat[]>
-    uptimeList: Record<string, number>
-  }
-  error?: string
-}
-
-function statusDot(s?: 0 | 1 | 2 | 3): { color: string; label: string } {
-  if (s === 1) return { color: 'bg-emerald-400', label: 'Up' }
-  if (s === 0) return { color: 'bg-red-400', label: 'Down' }
-  if (s === 2) return { color: 'bg-yellow-400', label: 'Pending' }
-  if (s === 3) return { color: 'bg-blue-400', label: 'Maint.' }
-  return { color: 'bg-zinc-500', label: '—' }
-}
-
-function HeartbeatBars({ beats }: { beats: KumaHeartbeat[] }) {
-  // Latest 24 beats, oldest left -> newest right
-  const last = beats.slice(-24)
-  return (
-    <div className="flex gap-0.5">
-      {last.map((b, i) => {
-        const c = b.status === 1 ? 'bg-emerald-400/70' : b.status === 0 ? 'bg-red-400/80' : 'bg-yellow-400/70'
-        return <div key={i} className={`h-4 w-1 rounded-sm ${c}`} title={`${b.time} · ${b.status === 1 ? 'up' : b.status === 0 ? 'down' : 'pending'}${b.ping ? ` · ${b.ping}ms` : ''}`} />
-      })}
-    </div>
-  )
-}
-
-function UptimePanel({ delay }: { delay: number }) {
-  const [data, setData] = useState<KumaPayload | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const tick = async () => {
-      try {
-        const r = await fetch(`${API_BASE}/api/uptime`, { cache: 'no-store' })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const json = (await r.json()) as KumaPayload
-        if (cancelled) return
-        if (json.error) throw new Error(json.error)
-        setData(json)
-        setError(null)
-      } catch (e: any) {
-        if (cancelled) return
-        setError(e?.message ?? 'fetch failed')
-      } finally {
-        if (!cancelled) timer = setTimeout(tick, 10_000)
-      }
-    }
-    tick()
-    return () => { cancelled = true; if (timer) clearTimeout(timer) }
-  }, [])
-
-  if (!data && !error) {
-    return (
-      <WidgetCard title="Uptime Kuma" description="Connecting…" delay={delay}>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="h-2 w-2 rounded-full bg-yellow-400/70 animate-pulse" />
-          Awaiting first poll
-        </div>
-      </WidgetCard>
-    )
-  }
-  if (!data && error) {
-    return (
-      <WidgetCard title="Uptime Kuma" description="Offline" variant="urgent" delay={delay}>
-        <div className="flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-foreground">{error}</p>
-            <p className="text-[11px] text-muted-foreground/70 mt-1">Lima VM (100.121.121.114:3001) unreachable or status page unpublished</p>
-          </div>
-        </div>
-      </WidgetCard>
-    )
-  }
-  if (!data) return null
-
-  const groups = data.config?.publicGroupList ?? []
-  const beats = data.heartbeat?.heartbeatList ?? {}
-  const uptimes = data.heartbeat?.uptimeList ?? {}
-  const allMonitors = groups.flatMap((g) => g.monitorList)
-  const downCount = allMonitors.filter((m) => {
-    const last = beats[String(m.id)]?.slice(-1)?.[0]
-    return last?.status === 0
-  }).length
-
-  return (
-    <WidgetCard
-      title="Uptime Kuma"
-      description={`${data.config?.config.title ?? 'Status'} · ${allMonitors.length} monitors${downCount > 0 ? ` · ${downCount} down` : ''}`}
-      variant={downCount > 0 ? 'urgent' : 'default'}
-      delay={delay}
-    >
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="h-3 w-3" />
-            <span>polled every 10s</span>
-          </div>
-          <a
-            href="http://100.121.121.114:3001"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 hover:text-foreground transition-colors"
-          >
-            <ExternalLink className="h-3 w-3" />
-            Open Kuma
-          </a>
-        </div>
-
-        {groups.map((group) => (
-          <div key={group.id} className="flex flex-col gap-1.5">
-            {groups.length > 1 && (
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{group.name}</div>
-            )}
-            {group.monitorList.map((m) => {
-              const mb = beats[String(m.id)] ?? []
-              const last = mb[mb.length - 1]
-              const dot = statusDot(last?.status)
-              const up24 = uptimes[`${m.id}_24`]
-              return (
-                <div key={m.id} className="flex items-center gap-3 px-2 py-1.5 rounded-lg bg-secondary/10 hover:bg-secondary/20 transition-colors">
-                  <div className={`h-2 w-2 rounded-full shrink-0 ${dot.color} ${last?.status === 1 ? 'animate-pulse' : ''}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[12px] font-medium truncate">{m.name}</span>
-                      <span className="text-[9px] text-muted-foreground/50 uppercase">{m.type}</span>
-                    </div>
-                    {last?.msg && last.status !== 1 && (
-                      <p className="text-[10px] text-red-300/80 truncate mt-0.5" title={last.msg}>{last.msg}</p>
-                    )}
-                  </div>
-                  <HeartbeatBars beats={mb} />
-                  <div className="flex flex-col items-end gap-0 shrink-0 min-w-[64px]">
-                    <span className="text-[11px] tabular-nums text-foreground">
-                      {up24 != null ? `${(up24 * 100).toFixed(2)}%` : '—'}
-                    </span>
-                    <span className="text-[9px] text-muted-foreground/60 tabular-nums">
-                      {last?.ping != null ? `${last.ping}ms` : '—'}
-                    </span>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        ))}
-      </div>
-    </WidgetCard>
-  )
-}
-
-// ── ADC reauth tile ───────────────────────────────────────────────────────
-
-interface AdcRun {
-  id: string
-  taskName: string
-  timestamp: string
-  status: 'success' | 'error' | 'pending-approval'
-  summary: string
-  fullOutput: string
-}
-
-function AdcHealthTile({ delay }: { delay: number }) {
-  const [run, setRun] = useState<AdcRun | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const tick = async () => {
-      try {
-        const r = await fetch(`${API_BASE}/api/data?key=cortex-automations`, { cache: 'no-store' })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const json = (await r.json()) as { runs?: AdcRun[] }
-        if (cancelled) return
-        const latest = (json.runs ?? []).find((x) => x.taskName === 'adc-health') ?? null
-        setRun(latest)
-        setError(null)
-      } catch (e: any) {
-        if (cancelled) return
-        setError(e?.message ?? 'fetch failed')
-      } finally {
-        if (!cancelled) timer = setTimeout(tick, 30_000)
-      }
-    }
-    tick()
-    return () => { cancelled = true; if (timer) clearTimeout(timer) }
-  }, [])
-
-  const status = run?.status
-  const ageMin = run ? Math.round((Date.now() - new Date(run.timestamp).getTime()) / 60_000) : null
-  const stale = ageMin != null && ageMin > 15
-  const isUrgent = status === 'error' || stale
-
-  let dotColor = 'bg-zinc-500'
-  let pulse = ''
-  if (status === 'success' && !stale) { dotColor = 'bg-emerald-400'; pulse = 'animate-pulse' }
-  else if (status === 'error') dotColor = 'bg-red-400'
-  else if (stale) dotColor = 'bg-yellow-400'
-
-  let body: string
-  if (error) body = error
-  else if (!run) body = 'Awaiting first watchdog tick (vm-watchdog every 5 min)'
-  else if (status === 'error') body = run.summary || 'Reauth needed: gcloud auth application-default login on VM (as openclaw)'
-  else if (stale) body = `Last check ${ageMin}m ago — vm-watchdog may be stuck`
-  else body = run.summary || 'Vertex/Gemini auth healthy'
-
-  return (
-    <WidgetCard
-      title="ADC reauth"
-      description={run ? `${status === 'success' ? 'Healthy' : 'Reauth needed'}${ageMin != null ? ` · ${ageMin}m ago` : ''}` : 'No data yet'}
-      variant={isUrgent ? 'urgent' : 'default'}
-      delay={delay}
-    >
-      <div className="flex items-start gap-3">
-        <div className={`h-2 w-2 rounded-full shrink-0 mt-1.5 ${dotColor} ${pulse}`} />
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-foreground/90 break-words">{body}</p>
-          <p className="text-[10px] text-muted-foreground/60 mt-1">vm-watchdog: ADC token mint check, vertex/gemini auth on Lima VM</p>
-        </div>
       </div>
     </WidgetCard>
   )
@@ -617,44 +366,24 @@ function AdcHealthTile({ delay }: { delay: number }) {
 export function SystemPage() {
   return (
     <PageShell>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">System</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Hosts, uptime & spend</p>
-        </div>
-      </div>
-
       <Tabs defaultValue="live">
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="live">Live</TabsTrigger>
-          <TabsTrigger value="spend">Spend</TabsTrigger>
-          <TabsTrigger value="paperclip">Paperclip</TabsTrigger>
           <TabsTrigger value="automations">Automations</TabsTrigger>
         </TabsList>
 
         <TabsContent value="live">
           <div className="flex flex-col gap-4">
-            <p className="text-xs text-muted-foreground">
+            <p className="font-mono text-2xs text-foreground-faint">
               Live host metrics · polled every 2s · history sampled every 5s · powered by Glances
             </p>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               {HOSTS.map((host, i) => (
                 <HostCard key={host.key} host={host} delay={i * 0.05} />
               ))}
             </div>
-
-            <UptimePanel delay={0.15} />
-            <AdcHealthTile delay={0.20} />
           </div>
-        </TabsContent>
-
-        <TabsContent value="spend">
-          <SpendSection />
-        </TabsContent>
-
-        <TabsContent value="paperclip">
-          <PaperclipSection />
         </TabsContent>
 
         <TabsContent value="automations">

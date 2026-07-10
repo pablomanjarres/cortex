@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { motion } from 'framer-motion'
+import { motion, useReducedMotion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
 interface WidgetCardProps {
@@ -7,30 +7,49 @@ interface WidgetCardProps {
   description?: string
   children: ReactNode
   className?: string
+  /** Stagger delay in seconds — capped at 0.45s total */
   delay?: number
   variant?: 'default' | 'urgent' | 'success'
   compact?: boolean
 }
 
-export function WidgetCard({ title, description, children, className, delay = 0, variant = 'default', compact = false }: WidgetCardProps) {
+/** Total entrance stagger never exceeds this (seconds). */
+const MAX_STAGGER = 0.45
+
+/**
+ * WidgetCard — the standard dashboard panel. Title is forced to the
+ * mono-uppercase card-title style via CSS, so caller casing never matters.
+ * urgent/success variants use the semantic hairline + soft glow classes.
+ */
+export function WidgetCard({
+  title,
+  description,
+  children,
+  className,
+  delay = 0,
+  variant = 'default',
+  compact = false,
+}: WidgetCardProps) {
+  const reduceMotion = useReducedMotion()
   return (
     <motion.div
-      initial={{ opacity: 0, y: 16 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay, ease: 'easeOut' }}
+      transition={{ duration: 0.5, delay: Math.min(delay, MAX_STAGGER), ease: 'easeOut' }}
       className={cn(
-        'rounded-xl',
-        variant === 'default' && 'surface',
-        compact ? 'p-4' : 'p-5',
-        variant === 'urgent' && 'border border-red-500/40 bg-red-500/[0.06] shadow-[0_12px_28px_rgba(0,0,0,0.30),0_0_24px_rgba(239,68,68,0.10)]',
-        variant === 'success' && 'border border-green-500/40 bg-green-500/[0.06] shadow-[0_12px_28px_rgba(0,0,0,0.30),0_0_24px_rgba(34,197,94,0.10)]',
+        'surface rounded-xl',
+        compact ? 'p-3' : 'p-4',
+        variant === 'urgent' && 'glow-danger',
+        variant === 'success' && 'glow-success',
         className
       )}
     >
-      <div className={compact ? 'mb-2' : 'mb-4'}>
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+      <div className={compact ? 'mb-2' : 'mb-3'}>
+        <h3 className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">
+          {title}
+        </h3>
         {description && (
-          <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+          <p className="mt-0.5 text-xs text-foreground-faint">{description}</p>
         )}
       </div>
       {children}

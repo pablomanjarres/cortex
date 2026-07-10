@@ -1,9 +1,13 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
-import ReactDOM from 'react-dom'
 import { PageShell } from '@/components/shared/PageShell'
-import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { Skeleton } from '@/components/shared/Skeleton'
+import { Modal } from '@/components/shared/Modal'
 import { NotesField } from '@/components/shared/NotesField'
 import { Input } from '@/components/ui/input'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
@@ -36,7 +40,7 @@ interface CourseItem {
   updatedAt?: string
 }
 
-// ── Category styling ─────────────────────────────────────────────────────────
+// ── Categories (labels + icons — categories are text, never per-item hues) ───
 
 const CATEGORIES: Category[] = ['course', 'pdf', 'note', 'reference', 'link', 'other']
 
@@ -44,27 +48,14 @@ const catLabel: Record<Category, string> = {
   course: 'Course', pdf: 'PDF', note: 'Note', reference: 'Reference', link: 'Link', other: 'Other',
 }
 
-const catColor: Record<Category, string> = {
-  course: 'bg-indigo-500/15 text-indigo-300',
-  pdf: 'bg-rose-500/15 text-rose-300',
-  note: 'bg-amber-500/15 text-amber-300',
-  reference: 'bg-emerald-500/15 text-emerald-300',
-  link: 'bg-sky-500/15 text-sky-300',
-  other: 'bg-zinc-500/15 text-zinc-300',
-}
-
-const catBorder: Record<Category, string> = {
-  course: 'border-l-indigo-500/50',
-  pdf: 'border-l-rose-500/50',
-  note: 'border-l-amber-500/50',
-  reference: 'border-l-emerald-500/50',
-  link: 'border-l-sky-500/50',
-  other: 'border-l-zinc-500/50',
-}
-
 const catIcon: Record<Category, typeof BookOpen> = {
   course: GraduationCap, pdf: FileText, note: BookOpen, reference: BookOpen, link: LinkIcon, other: Paperclip,
 }
+
+// Shared token style for native <select> controls (mirrors the Input primitive;
+// the global :focus-visible rule supplies the focus ring).
+const selectCls =
+  'cursor-pointer rounded-md border border-input bg-input/20 text-foreground transition-colors duration-150 outline-none'
 
 // ── File helpers ─────────────────────────────────────────────────────────────
 
@@ -103,21 +94,21 @@ function FilePreview({ file, src, className }: { file: StoredFile; src?: string 
     // Chromium (Electron) renders PDFs natively; show the first page as a
     // non-interactive thumbnail. Click handling lives on the parent.
     return (
-      <div className={cn('relative overflow-hidden bg-zinc-800/50', className)}>
+      <div className={cn('relative overflow-hidden bg-muted/40', className)}>
         <iframe
           src={`${src}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`}
           title={file.name}
           tabIndex={-1}
-          className="absolute inset-0 w-full h-full pointer-events-none border-0 bg-white"
+          className="pointer-events-none absolute inset-0 h-full w-full border-0 bg-white"
         />
       </div>
     )
   }
   const Icon = isPdf(file) ? FileText : Paperclip
   return (
-    <div className={cn('flex flex-col items-center justify-center gap-1 bg-zinc-800/50 text-muted-foreground/50', className)}>
+    <div className={cn('flex flex-col items-center justify-center gap-1 bg-muted/40 text-foreground-faint', className)}>
       <Icon className="h-6 w-6" />
-      <span className="text-[9px] uppercase">{extFor(file.name, file.mime)}</span>
+      <span className="font-mono text-3xs uppercase">{extFor(file.name, file.mime)}</span>
     </div>
   )
 }
@@ -159,14 +150,6 @@ export function CoursesPage() {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [lightbox])
-
-  // Close the PDF viewer on Esc
-  useEffect(() => {
-    if (!pdfView) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPdfView(null) }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [pdfView])
 
   const setField = (id: string, patch: Partial<CourseItem>) =>
     updateItems(prev => prev.map(it => it.id === id ? { ...it, ...patch, updatedAt: new Date().toISOString() } : it))
@@ -309,59 +292,56 @@ export function CoursesPage() {
   return (
     <PageShell>
       <div
-        className={cn('relative flex flex-col gap-6 rounded-xl transition-all', pageDrag && 'ring-2 ring-indigo-400/40 ring-offset-4 ring-offset-background')}
+        className={cn('relative flex flex-col gap-6 rounded-xl transition-all', pageDrag && 'ring-2 ring-accent/40 ring-offset-4 ring-offset-background')}
         onDragEnter={onPageDragEnter}
         onDragOver={onPageDragOver}
         onDragLeave={onPageDragLeave}
         onDrop={e => { e.preventDefault(); resetDrag(); handleDrop(e.dataTransfer) }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold">Courses</h1>
-            <p className="text-xs text-muted-foreground">
-              {items.length} <span className="text-indigo-400/70">items</span> · drag a PDF, image or article here
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors">
-              <Upload className="h-3.5 w-3.5" /> PDF
-              <input type="file" accept="application/pdf" multiple className="hidden" onChange={e => {
-                const files = e.target.files ? Array.from(e.target.files) : []
-                if (files.length) addItemWithFiles(files)
-                e.target.value = ''
-              }} />
-            </label>
-            <button onClick={() => addItem()} className="cursor-pointer flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-500/90 text-white hover:bg-indigo-500 transition-colors">
-              <Plus className="h-3.5 w-3.5" /> Add
-            </button>
-          </div>
-        </div>
+        {/* Section header (the topbar owns the route title) */}
+        <PageHeader
+          kicker="Collection"
+          title="Courses"
+          subtitle={`${items.length} items · drag a PDF, image or article here`}
+          actions={
+            <>
+              <label className={cn(buttonVariants({ variant: 'secondary', size: 'sm' }), 'cursor-pointer')}>
+                <Upload /> PDF
+                <input type="file" accept="application/pdf" multiple className="hidden" onChange={e => {
+                  const files = e.target.files ? Array.from(e.target.files) : []
+                  if (files.length) addItemWithFiles(files)
+                  e.target.value = ''
+                }} />
+              </label>
+              <Button size="sm" onClick={() => addItem()}>
+                <Plus /> Add
+              </Button>
+            </>
+          }
+        />
 
         {/* Filters */}
         <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => setFilterCat(null)} className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${!filterCat ? 'bg-foreground/10 text-foreground border-foreground/20' : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>All</button>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Chip selectable selected={!filterCat} onClick={() => setFilterCat(null)}>All</Chip>
             {CATEGORIES.map(c => (
-              <button key={c} onClick={() => setFilterCat(filterCat === c ? null : c)} className={`cursor-pointer text-[10px] px-2.5 py-1 rounded-full border transition-all ${filterCat === c ? `${catColor[c]} border-current/20` : 'border-border text-muted-foreground/40 hover:text-muted-foreground'}`}>
-                {catLabel[c]} {counts[c] ? `(${counts[c]})` : ''}
-              </button>
+              <Chip key={c} selectable selected={filterCat === c} onClick={() => setFilterCat(filterCat === c ? null : c)}>
+                {catLabel[c]}{counts[c] ? ` (${counts[c]})` : ''}
+              </Chip>
             ))}
           </div>
           <div className="relative max-w-xs">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50" />
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
             <Input placeholder="Search courses, notes, subjects…" value={search} onChange={e => setSearch(e.target.value)} className="h-7 pl-8 text-xs" />
           </div>
         </div>
 
         {/* Grid */}
         {filtered.length === 0 ? (
-          <WidgetCard title="Nothing here yet" description="Drag a PDF or an article in, or click Add" delay={0.1}>
-            <div className="flex flex-col items-center gap-3 py-10">
-              <GraduationCap className="h-10 w-10 text-indigo-400/20" />
-              <p className="text-xs text-muted-foreground/50">Drop files or links anywhere on this page to file them</p>
-            </div>
-          </WidgetCard>
+          <EmptyState
+            message="Nothing filed here yet."
+            hint="Drop a PDF, image or article anywhere on this page — or click Add."
+          />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filtered.map(it => {
@@ -376,10 +356,9 @@ export function CoursesPage() {
                 <div
                   key={it.id}
                   className={cn(
-                    'liquid-glass rounded-xl border border-border border-l-2 overflow-hidden transition-all',
-                    catBorder[it.category],
-                    isExp ? 'sm:col-span-2 lg:col-span-3' : 'cursor-pointer hover:border-foreground/20',
-                    isDropTarget && 'ring-2 ring-indigo-400/70',
+                    'overflow-hidden rounded-xl border border-border bg-card shadow-card transition-all',
+                    isExp ? 'sm:col-span-2 lg:col-span-3' : 'cursor-pointer hover:border-input',
+                    isDropTarget && 'ring-2 ring-accent/50',
                   )}
                   onClick={() => !isExp && setExpanded(it.id)}
                   onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; setDragCard(it.id) }}
@@ -388,9 +367,9 @@ export function CoursesPage() {
                 >
                   {/* Cover preview */}
                   {!isExp && cover && (
-                    <div className="relative bg-zinc-800/40 border-b border-border/60" onClick={e => { e.stopPropagation(); setExpanded(it.id) }}>
+                    <div className="relative border-b border-border/60 bg-muted/40" onClick={e => { e.stopPropagation(); setExpanded(it.id) }}>
                       <FilePreview file={cover} src={cache[cover.id]} className="h-[150px] w-full" />
-                      {isDropTarget && <div className="absolute inset-0 bg-indigo-500/20 flex items-center justify-center text-xs text-white font-medium">Drop to attach</div>}
+                      {isDropTarget && <div className="absolute inset-0 flex items-center justify-center bg-background/70 font-mono text-2xs text-accent">Drop to attach</div>}
                     </div>
                   )}
 
@@ -413,18 +392,18 @@ export function CoursesPage() {
                     ) : (
                       <>
                         <div className="flex items-start gap-2">
-                          <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground/50" />
-                          <p className="text-sm font-medium leading-snug line-clamp-2">
-                            {it.title || <span className="text-muted-foreground/40 italic">Untitled</span>}
+                          <Icon className="mt-0.5 h-4 w-4 shrink-0 text-foreground-faint" />
+                          <p className="line-clamp-2 text-sm font-medium leading-snug">
+                            {it.title || <span className="italic text-foreground-faint">Untitled</span>}
                           </p>
                         </div>
-                        {it.content && <p className="text-xs text-muted-foreground/70 line-clamp-2 mt-1.5 leading-relaxed">{it.content.replace(/[#>*`_]/g, '')}</p>}
-                        <div className="flex items-center gap-2 mt-3 flex-wrap">
-                          <span className={`text-[9px] px-2 py-0.5 rounded-full ${catColor[it.category]}`}>{catLabel[it.category]}</span>
-                          {it.subject && <span className="text-[9px] px-2 py-0.5 rounded-full bg-foreground/[0.06] text-muted-foreground/70">{it.subject}</span>}
-                          {docs.length > 0 && <span className="text-[9px] text-rose-300/60 flex items-center gap-0.5"><FileText className="h-2.5 w-2.5" /> {docs.length}</span>}
-                          {images.length > 0 && <span className="text-[9px] text-indigo-300/60 flex items-center gap-0.5"><ImageIcon className="h-2.5 w-2.5" /> {images.length}</span>}
-                          <span className="text-[10px] text-muted-foreground/40 ml-auto">{timeAgo(it.createdAt)}</span>
+                        {it.content && <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{it.content.replace(/[#>*`_]/g, '')}</p>}
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Chip size="sm">{catLabel[it.category]}</Chip>
+                          {it.subject && <Chip size="sm">{it.subject}</Chip>}
+                          {docs.length > 0 && <span className="flex items-center gap-0.5 font-mono text-3xs tabular-nums text-foreground-faint"><FileText className="h-2.5 w-2.5" /> {docs.length}</span>}
+                          {images.length > 0 && <span className="flex items-center gap-0.5 font-mono text-3xs tabular-nums text-foreground-faint"><ImageIcon className="h-2.5 w-2.5" /> {images.length}</span>}
+                          <span className="ml-auto font-mono text-2xs text-foreground-faint">{timeAgo(it.createdAt)}</span>
                         </div>
                       </>
                     )}
@@ -437,47 +416,70 @@ export function CoursesPage() {
 
         {/* Drop hint pill */}
         {pageDrag && (
-          <div className="pointer-events-none fixed left-1/2 -translate-x-1/2 bottom-8 z-[60] flex items-center gap-2 rounded-full bg-indigo-500 text-white text-xs font-medium px-4 py-2 shadow-lg">
+          <div className="pointer-events-none fixed bottom-8 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background shadow-lift">
             <Download className="h-3.5 w-3.5" /> {dragCard ? 'Drop to attach to this item' : 'Drop to file it here'}
           </div>
         )}
       </div>
 
       {/* Lightbox */}
-      {lightbox && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/90 backdrop-blur-sm [-webkit-app-region:no-drag]" onClick={() => setLightbox(null)}>
-          <button onClick={e => { e.stopPropagation(); setLightbox(null) }} className="cursor-pointer absolute right-4 top-[calc(1rem+env(safe-area-inset-top))] text-white/70 hover:text-white z-10"><X className="h-7 w-7" /></button>
-          {lightbox.ids.length > 1 && <span className="absolute left-1/2 -translate-x-1/2 top-[calc(1.25rem+env(safe-area-inset-top))] text-white/70 text-sm">{lightbox.index + 1} / {lightbox.ids.length}</span>}
-          <img src={cache[lightbox.ids[lightbox.index]]} alt="" className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg" onClick={e => e.stopPropagation()} />
-          {lightbox.ids.length > 1 && (
-            <>
-              <button onClick={e => { e.stopPropagation(); setLightbox(p => p ? { ...p, index: (p.index - 1 + p.ids.length) % p.ids.length } : null) }} className="cursor-pointer absolute left-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2"><ChevronLeft className="h-6 w-6" /></button>
-              <button onClick={e => { e.stopPropagation(); setLightbox(p => p ? { ...p, index: (p.index + 1) % p.ids.length } : null) }} className="cursor-pointer absolute right-2 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-white/20 text-white rounded-full p-2"><ChevronRight className="h-6 w-6" /></button>
-            </>
-          )}
-        </div>,
-        document.body,
+      {lightbox && (
+        <Modal
+          open
+          onOpenChange={o => { if (!o) setLightbox(null) }}
+          size="full"
+          className="grid-rows-[minmax(0,1fr)]"
+        >
+          <div className="relative flex h-full min-h-0 items-center justify-center">
+            {lightbox.ids.length > 1 && (
+              <span className="absolute left-1/2 top-1 -translate-x-1/2 font-mono text-2xs tabular-nums text-muted-foreground">
+                {lightbox.index + 1} / {lightbox.ids.length}
+              </span>
+            )}
+            <img src={cache[lightbox.ids[lightbox.index]]} alt="" className="max-h-full max-w-full rounded-md object-contain" />
+            {lightbox.ids.length > 1 && (
+              <>
+                <Button variant="ghost" size="icon-lg" aria-label="Previous image" className="absolute left-2 top-1/2 -translate-y-1/2" onClick={() => setLightbox(p => p ? { ...p, index: (p.index - 1 + p.ids.length) % p.ids.length } : null)}>
+                  <ChevronLeft className="size-5" />
+                </Button>
+                <Button variant="ghost" size="icon-lg" aria-label="Next image" className="absolute right-2 top-1/2 -translate-y-1/2" onClick={() => setLightbox(p => p ? { ...p, index: (p.index + 1) % p.ids.length } : null)}>
+                  <ChevronRight className="size-5" />
+                </Button>
+              </>
+            )}
+          </div>
+        </Modal>
       )}
 
       {/* PDF viewer */}
-      {pdfView && ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[9999] flex flex-col bg-background/95 backdrop-blur-sm [-webkit-app-region:no-drag]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-          <div className="flex items-center justify-between px-4 md:pl-20 py-3 border-b border-border [-webkit-app-region:no-drag]">
-            <button onClick={() => setPdfView(null)} className="cursor-pointer flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-              <ChevronLeft className="h-4 w-4" /> Close
-            </button>
-            <span className="text-xs text-muted-foreground/70 truncate max-w-[50%]">{pdfView.name}</span>
-            <a href={cache[pdfView.id]} download={pdfView.name} className="cursor-pointer flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
-              <Download className="h-4 w-4" /> Save
-            </a>
+      {pdfView && (
+        <Modal
+          open
+          onOpenChange={o => { if (!o) setPdfView(null) }}
+          size="full"
+          className="grid-rows-[minmax(0,1fr)]"
+        >
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="flex items-center justify-between gap-3 border-b border-border pb-3 pr-8">
+              <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{pdfView.name}</span>
+              {cache[pdfView.id] && (
+                <a href={cache[pdfView.id]} download={pdfView.name} className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
+                  <Download /> Save
+                </a>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 pt-3">
+              {cache[pdfView.id]
+                ? <iframe src={cache[pdfView.id]} title={pdfView.name} className="h-full w-full border-0" />
+                : (
+                  <div className="flex h-full flex-col gap-2">
+                    <Skeleton className="h-4 w-40" />
+                    <Skeleton className="min-h-0 flex-1 w-full" />
+                  </div>
+                )}
+            </div>
           </div>
-          <div className="flex-1 bg-zinc-900/40">
-            {cache[pdfView.id]
-              ? <iframe src={cache[pdfView.id]} title={pdfView.name} className="w-full h-full border-0" />
-              : <div className="flex items-center justify-center h-full text-sm text-muted-foreground/50">Loading…</div>}
-          </div>
-        </div>,
-        document.body,
+        </Modal>
       )}
     </PageShell>
   )
@@ -513,32 +515,32 @@ function ExpandedItem({
       {/* top bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <button onClick={onCollapse} className="cursor-pointer text-muted-foreground/40 hover:text-foreground transition-colors" title="Collapse"><Minus className="h-3.5 w-3.5" /></button>
-          <span className={`text-[9px] px-2 py-0.5 rounded-full ${catColor[item.category]}`}>{catLabel[item.category]}</span>
-          <span className="text-[10px] text-muted-foreground/50">{timeAgo(item.updatedAt || item.createdAt)}</span>
+          <Button variant="ghost" size="icon-xs" onClick={onCollapse} title="Collapse" aria-label="Collapse"><Minus /></Button>
+          <Chip size="sm">{catLabel[item.category]}</Chip>
+          <span className="font-mono text-2xs text-foreground-faint">{timeAgo(item.updatedAt || item.createdAt)}</span>
         </div>
-        <button onClick={onDelete} className="cursor-pointer text-muted-foreground/40 hover:text-red-400 transition-colors" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+        <Button variant="ghost" size="icon-xs" onClick={onDelete} title="Delete" aria-label="Delete" className="hover:text-destructive"><Trash2 /></Button>
       </div>
 
       {/* Title */}
       <Input value={item.title} onChange={e => onField({ title: e.target.value })} placeholder="Title" className="h-10 text-base font-semibold" />
 
       {/* Meta row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
         <div>
-          <label className="text-[10px] text-muted-foreground mb-1 block">Category</label>
-          <select value={item.category} onChange={e => onField({ category: e.target.value as Category })} className="w-full h-8 rounded-md border border-border bg-input px-2 text-xs outline-none">
+          <label className="mb-1 block text-2xs text-muted-foreground">Category</label>
+          <select value={item.category} onChange={e => onField({ category: e.target.value as Category })} className={`${selectCls} h-8 w-full px-2 text-xs`}>
             {CATEGORIES.map(c => <option key={c} value={c}>{catLabel[c]}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-[10px] text-muted-foreground mb-1 block">Subject</label>
+          <label className="mb-1 block text-2xs text-muted-foreground">Subject</label>
           <Input value={item.subject} onChange={e => onField({ subject: e.target.value })} placeholder="e.g. Formal Languages" className="h-8 text-xs" />
         </div>
         <div>
-          <label className="text-[10px] text-muted-foreground mb-1 block">Link</label>
+          <label className="mb-1 block text-2xs text-muted-foreground">Link</label>
           <div className="relative">
-            <LinkIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground/40" />
+            <LinkIcon className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-foreground-faint" />
             <Input value={item.url} onChange={e => onField({ url: e.target.value })} placeholder="https://…" className="h-8 pl-7 text-xs" />
           </div>
         </div>
@@ -546,7 +548,7 @@ function ExpandedItem({
 
       {/* Notes */}
       <div>
-        <label className="text-[10px] text-muted-foreground mb-1 block">Notes</label>
+        <label className="mb-1 block text-2xs text-muted-foreground">Notes</label>
         <NotesField
           value={item.content}
           onChange={v => onField({ content: v })}
@@ -562,30 +564,54 @@ function ExpandedItem({
       {/* File previews */}
       {item.files.length > 0 && (
         <div>
-          <label className="text-[10px] text-muted-foreground mb-1.5 block">Files</label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+          <label className="mb-1.5 block text-2xs text-muted-foreground">Files</label>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
             {item.files.map(f => (
-              <div key={f.id} className="group relative rounded-lg border border-border overflow-hidden bg-input/40">
-                <button onClick={() => openFile(f)} className="cursor-pointer block w-full" title={`Open ${f.name}`}>
+              <div key={f.id} className="group relative overflow-hidden rounded-md border border-border bg-muted/20">
+                {/* Clickable file preview — documented compact pattern (tile-shaped trigger). */}
+                <button onClick={() => openFile(f)} className="block w-full cursor-pointer" title={`Open ${f.name}`}>
                   <FilePreview file={f} src={cache[f.id]} className="h-28 w-full" />
                 </button>
-                <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-border/60">
-                  {isPdf(f) ? <FileText className="h-3 w-3 shrink-0 text-rose-300/70" /> : isImage(f) ? <ImageIcon className="h-3 w-3 shrink-0 text-indigo-300/70" /> : <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground/60" />}
-                  <span className="text-[10px] truncate flex-1" title={f.name}>{f.name}</span>
-                  {f.size > 0 && <span className="text-[9px] text-muted-foreground/40 shrink-0">{formatBytes(f.size)}</span>}
+                <div className="flex items-center gap-1.5 border-t border-border/60 px-2 py-1.5">
+                  {isPdf(f) ? <FileText className="h-3 w-3 shrink-0 text-foreground-faint" /> : isImage(f) ? <ImageIcon className="h-3 w-3 shrink-0 text-foreground-faint" /> : <Paperclip className="h-3 w-3 shrink-0 text-foreground-faint" />}
+                  <span className="min-w-0 flex-1 truncate font-mono text-2xs" title={f.name}>{f.name}</span>
+                  {f.size > 0 && <span className="shrink-0 font-mono text-3xs tabular-nums text-foreground-faint">{formatBytes(f.size)}</span>}
                 </div>
                 {cache[f.id] && (
-                  <a href={cache[f.id]} download={f.name} onClick={e => e.stopPropagation()} className="cursor-pointer absolute top-1 left-1 bg-background/70 rounded p-1 text-muted-foreground/60 hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity" title="Download"><Download className="h-3 w-3" /></a>
+                  <a
+                    href={cache[f.id]}
+                    download={f.name}
+                    onClick={e => e.stopPropagation()}
+                    title="Download"
+                    aria-label={`Download ${f.name}`}
+                    className={cn(buttonVariants({ variant: 'ghost', size: 'icon-xs' }), 'absolute left-1 top-1 bg-background/70 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100')}
+                  >
+                    <Download />
+                  </a>
                 )}
-                <button onClick={() => onRemoveFile(f.id)} className="cursor-pointer absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity" title="Remove"><X className="h-2.5 w-2.5" /></button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onRemoveFile(f.id)}
+                  title="Remove"
+                  aria-label={`Remove ${f.name}`}
+                  className="absolute right-1 top-1 bg-background/70 opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <X />
+                </Button>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Add files */}
-      <label className={`flex items-center justify-center gap-2 rounded-lg border border-dashed py-3 text-xs transition-all ${busy ? 'border-indigo-500/40 text-indigo-300/70 animate-pulse cursor-wait' : 'cursor-pointer border-indigo-500/20 text-muted-foreground/50 hover:border-indigo-500/40 hover:text-indigo-300/70'}`}>
+      {/* Add files — hairline dashed dropzone, accent on hover */}
+      <label className={cn(
+        'flex items-center justify-center gap-2 rounded-md border border-dashed border-border py-3 text-xs transition-colors',
+        busy
+          ? 'cursor-wait text-muted-foreground motion-safe:animate-pulse'
+          : 'cursor-pointer text-muted-foreground hover:border-accent/40 hover:text-accent'
+      )}>
         {busy ? 'Uploading…' : (<><Upload className="h-3.5 w-3.5" /> Add or drop a file</>)}
         <input type="file" accept="*/*" multiple className="hidden" disabled={busy} onChange={async e => {
           const files = e.target.files ? Array.from(e.target.files) : []

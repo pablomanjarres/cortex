@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { WidgetCard } from '@/components/widgets/WidgetCard'
 import type { DailyNutrition, MealTemplate, FoodItem } from '@/types/gym'
 import { DEFAULT_MEAL_TEMPLATES } from '@/types/gym'
 import { useStore } from '@/lib/store'
@@ -85,165 +87,172 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Meal Templates</h3>
-        <button
-          onClick={() => { setEditing(!editing); setAddingMealId(null) }}
-          className={`p-1.5 rounded-lg transition-colors ${editing ? 'bg-foreground/10 text-foreground' : 'text-muted-foreground/50 hover:text-muted-foreground'}`}
-        >
-          {editing ? <Check className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-
-      {/* Template selector tabs */}
-      <div className="flex gap-1.5">
-        {templates.map(t => {
-          const totals = templateTotals[t.id] ?? { protein: 0, calories: 0 }
-          return (
-            <button
-              key={t.id}
-              onClick={() => setSelectedId(t.id)}
-              className={`flex-1 rounded-lg px-3 py-2.5 text-left transition-colors ${
-                selectedId === t.id
-                  ? 'bg-foreground/10 border border-foreground/20'
-                  : 'bg-card border border-border hover:bg-foreground/5'
-              }`}
-            >
-              <p className={`text-xs font-medium ${selectedId === t.id ? 'text-foreground' : 'text-muted-foreground'}`}>
-                {t.name}
-              </p>
-              <p className="text-[10px] text-muted-foreground/50 tabular-nums">
-                {totals.protein}g · {totals.calories} kcal
-              </p>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Editable name/description */}
-      {editing && selected && (
-        <div className="flex gap-2">
-          <Input
-            value={selected.name}
-            onChange={e => updateTemplateName(e.target.value)}
-            className="h-7 text-xs flex-1"
-            placeholder="Template name"
-          />
-          <Input
-            value={selected.description}
-            onChange={e => updateTemplateDescription(e.target.value)}
-            className="h-7 text-xs flex-[2]"
-            placeholder="Description"
-          />
+    <WidgetCard title="Meal Templates" className="mt-4" delay={0.1}>
+      <div className="space-y-4">
+        {/* Template selector tabs + edit toggle */}
+        <div className="flex items-start gap-1.5">
+          <div className="flex flex-1 gap-1.5">
+            {templates.map(t => {
+              const totals = templateTotals[t.id] ?? { protein: 0, calories: 0 }
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setSelectedId(t.id)}
+                  aria-pressed={selectedId === t.id}
+                  className={`flex-1 rounded-md border px-3 py-2.5 text-left transition-colors ${
+                    selectedId === t.id
+                      ? 'border-accent/40 bg-accent/10'
+                      : 'border-border bg-card hover:bg-muted/40'
+                  }`}
+                >
+                  <p className={`text-xs font-medium ${selectedId === t.id ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {t.name}
+                  </p>
+                  <p className="font-mono text-2xs tabular-nums text-foreground-faint">
+                    {totals.protein}g · {totals.calories} kcal
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+          <Button
+            variant={editing ? 'secondary' : 'ghost'}
+            size="icon-sm"
+            onClick={() => { setEditing(!editing); setAddingMealId(null) }}
+            aria-label={editing ? 'Done editing templates' : 'Edit templates'}
+          >
+            {editing ? <Check /> : <Pencil />}
+          </Button>
         </div>
-      )}
 
-      {/* Selected template detail */}
-      {selected && (
-        <div className="space-y-3">
-          {!editing && (
-            <p className="text-xs text-muted-foreground/50">{selected.description}</p>
-          )}
+        {/* Editable name/description */}
+        {editing && selected && (
+          <div className="flex gap-2">
+            <Input
+              value={selected.name}
+              onChange={e => updateTemplateName(e.target.value)}
+              className="h-7 flex-1 text-xs"
+              placeholder="Template name"
+            />
+            <Input
+              value={selected.description}
+              onChange={e => updateTemplateDescription(e.target.value)}
+              className="h-7 flex-[2] text-xs"
+              placeholder="Description"
+            />
+          </div>
+        )}
 
-          {selected.meals.map(meal => {
-            const mealProtein = meal.foods.reduce((s, f) => s + f.protein, 0)
-            const mealCals = meal.foods.reduce((s, f) => s + f.calories, 0)
-            return (
-              <div key={meal.id} className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-foreground">{meal.name}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-muted-foreground/50 tabular-nums">
-                      {mealProtein}g · {mealCals} kcal
-                    </span>
-                    {editing && (
-                      <button
-                        onClick={() => setAddingMealId(addingMealId === meal.id ? null : meal.id)}
-                        className="text-muted-foreground/50 hover:text-foreground transition-colors"
-                      >
-                        <Plus className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                </div>
+        {/* Selected template detail */}
+        {selected && (
+          <div className="space-y-3">
+            {!editing && (
+              <p className="text-xs text-foreground-faint">{selected.description}</p>
+            )}
 
-                {meal.foods.map((food, fi) => (
-                  <div key={fi} className="flex items-center justify-between text-xs border-t border-border/30 pt-1.5 pb-0.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="truncate text-foreground">{food.name}</span>
-                      {food.quantity && (
-                        <span className="text-muted-foreground/50 shrink-0">{food.quantity}</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-muted-foreground tabular-nums">{food.protein}g · {food.calories}</span>
+            {selected.meals.map(meal => {
+              const mealProtein = meal.foods.reduce((s, f) => s + f.protein, 0)
+              const mealCals = meal.foods.reduce((s, f) => s + f.calories, 0)
+              return (
+                <div key={meal.id} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-foreground">{meal.name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-2xs tabular-nums text-foreground-faint">
+                        {mealProtein}g · {mealCals} kcal
+                      </span>
                       {editing && (
-                        <button
-                          onClick={() => removeFood(meal.id, fi)}
-                          className="text-red-400/60 hover:text-red-400 transition-colors p-0.5 -m-0.5"
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => setAddingMealId(addingMealId === meal.id ? null : meal.id)}
+                          aria-label={`Add food to ${meal.name}`}
                         >
-                          <X className="h-3 w-3" />
-                        </button>
+                          <Plus />
+                        </Button>
                       )}
                     </div>
                   </div>
-                ))}
 
-                {/* Inline add food */}
-                {editing && addingMealId === meal.id && (
-                  <div className="flex gap-1.5 items-center pt-1">
-                    <Input
-                      placeholder="Name"
-                      value={newName}
-                      onChange={e => setNewName(e.target.value)}
-                      className="h-7 text-xs flex-1"
-                      onKeyDown={e => e.key === 'Enter' && addFood(meal.id)}
-                    />
-                    <Input
-                      type="number"
-                      placeholder="Prot"
-                      value={newProtein}
-                      onChange={e => setNewProtein(e.target.value)}
-                      className="h-7 text-xs w-14"
-                    />
-                    <Input
-                      type="number"
-                      placeholder="Cal"
-                      value={newCalories}
-                      onChange={e => setNewCalories(e.target.value)}
-                      className="h-7 text-xs w-14"
-                    />
-                    <Input
-                      placeholder="Qty"
-                      value={newQuantity}
-                      onChange={e => setNewQuantity(e.target.value)}
-                      className="h-7 text-xs w-16"
-                      onKeyDown={e => e.key === 'Enter' && addFood(meal.id)}
-                    />
-                    <button
-                      onClick={() => addFood(meal.id)}
-                      className="rounded-lg bg-foreground/10 p-1.5 hover:bg-foreground/20 transition-colors shrink-0"
-                    >
-                      <Plus className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
+                  {meal.foods.map((food, fi) => (
+                    <div key={fi} className="flex items-center justify-between border-t border-border/60 pb-0.5 pt-1.5 text-xs">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-foreground">{food.name}</span>
+                        {food.quantity && (
+                          <span className="shrink-0 text-foreground-faint">{food.quantity}</span>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="font-mono tabular-nums text-muted-foreground">{food.protein}g · {food.calories}</span>
+                        {editing && (
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            onClick={() => removeFood(meal.id, fi)}
+                            aria-label={`Remove ${food.name}`}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
 
-      {/* Load into today */}
-      <button
-        onClick={loadIntoToday}
-        className="w-full flex items-center justify-center gap-2 rounded-lg bg-foreground/10 px-4 py-2.5 text-xs font-medium text-foreground hover:bg-foreground/15 active:bg-foreground/20 transition-colors"
-      >
-        <Download className="h-3.5 w-3.5" />
-        Load into today
-      </button>
-    </div>
+                  {/* Inline add food */}
+                  {editing && addingMealId === meal.id && (
+                    <div className="flex items-center gap-1.5 pt-1">
+                      <Input
+                        placeholder="Name"
+                        value={newName}
+                        onChange={e => setNewName(e.target.value)}
+                        className="h-7 flex-1 text-xs"
+                        onKeyDown={e => e.key === 'Enter' && addFood(meal.id)}
+                      />
+                      <Input
+                        type="number"
+                        placeholder="Prot"
+                        value={newProtein}
+                        onChange={e => setNewProtein(e.target.value)}
+                        className="h-7 w-14 text-xs"
+                      />
+                      <Input
+                        type="number"
+                        placeholder="Cal"
+                        value={newCalories}
+                        onChange={e => setNewCalories(e.target.value)}
+                        className="h-7 w-14 text-xs"
+                      />
+                      <Input
+                        placeholder="Qty"
+                        value={newQuantity}
+                        onChange={e => setNewQuantity(e.target.value)}
+                        className="h-7 w-16 text-xs"
+                        onKeyDown={e => e.key === 'Enter' && addFood(meal.id)}
+                      />
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        className="shrink-0"
+                        onClick={() => addFood(meal.id)}
+                        aria-label="Add food"
+                      >
+                        <Plus />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Load into today */}
+        <Button variant="secondary" size="sm" className="w-full" onClick={loadIntoToday}>
+          <Download />
+          Load into today
+        </Button>
+      </div>
+    </WidgetCard>
   )
 }

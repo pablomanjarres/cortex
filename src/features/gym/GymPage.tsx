@@ -3,6 +3,7 @@ import { PageShell } from '@/components/shared/PageShell'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useStore, readStore } from '@/lib/store'
 import { localDate, getWeekDates } from '@/lib/date-utils'
+import { useToday } from '@/lib/use-today'
 import type {
   WorkoutDay,
   ActiveWorkoutState,
@@ -30,7 +31,14 @@ function normalizeSessions(data: unknown): WorkoutSession[] {
 }
 
 export function GymPage() {
-  const today = localDate()
+  // Reactive day key: at midnight the key changes and the whole day-scoped
+  // page remounts, so cortex-gym-session-* / cortex-nutrition-* re-key to the
+  // new day instead of silently writing into yesterday's data.
+  const today = useToday()
+  return <GymPageDay key={today} today={today} />
+}
+
+function GymPageDay({ today }: { today: string }) {
   const [plans, setPlans] = useStore<WorkoutDay[]>('cortex-gym-plans', DEFAULT_WORKOUT_PLANS)
   const [activeWorkout, setActiveWorkout] = useStore<ActiveWorkoutState | null>('cortex-gym-active', null)
   const [todaySessionsRaw, setTodaySessions] = useStore<WorkoutSession[] | null>(`cortex-gym-session-${today}`, null)
@@ -126,13 +134,6 @@ export function GymPage() {
 
   return (
     <PageShell>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Gym</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Training, nutrition, market & analytics</p>
-        </div>
-      </div>
-
       <Tabs defaultValue="training">
         <TabsList className="w-full sm:w-auto">
           <TabsTrigger value="training">Training</TabsTrigger>

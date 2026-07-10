@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { Modal } from '@/components/shared/Modal'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
+import { Input } from '@/components/ui/input'
 import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
 import {
@@ -12,7 +16,6 @@ import {
   Waves,
   Square,
   ChevronDown,
-  X,
 } from 'lucide-react'
 
 interface WorkoutPlanProps {
@@ -105,7 +108,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
 
   return (
     <>
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 mt-4">
+    <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
       {plans.map((day, idx) => (
         <WidgetCard
           key={day.id}
@@ -123,35 +126,29 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
               </div>
               {isCompletedToday(day.id) ? (
                 <div className="flex items-center gap-3">
-                  <span className="flex items-center gap-1.5 text-green-400 text-sm">
+                  <span className="flex items-center gap-1.5 text-sm text-success">
                     <CheckCircle2 className="h-4 w-4" />
-                    Completed — {getSession(day.id)?.exercises[0]?.sets[0]?.reps ?? '?'}m
+                    Completed — <span className="font-mono tabular-nums">{getSession(day.id)?.exercises[0]?.sets[0]?.reps ?? '?'}m</span>
                   </span>
-                  <button onClick={() => onResetSession(day.id)} className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors">
+                  <Button variant="ghost" size="xs" onClick={() => onResetSession(day.id)}>
                     Redo
-                  </button>
+                  </Button>
                 </div>
               ) : swimStartedAt ? (
                 <div className="flex flex-col items-center gap-3 py-2">
-                  <span className="text-4xl font-mono font-bold tabular-nums text-foreground">
+                  <span className="font-mono text-4xl font-medium tabular-nums text-foreground">
                     {formatTimer(swimElapsed)}
                   </span>
-                  <button
-                    onClick={() => stopSwimTimer(day.id)}
-                    className="flex items-center gap-1.5 rounded-lg bg-red-500/20 text-red-400 px-4 py-2 text-sm font-medium hover:bg-red-500/30 transition-colors"
-                  >
-                    <Square className="h-3.5 w-3.5 fill-current" />
+                  <Button variant="destructive" size="sm" onClick={() => stopSwimTimer(day.id)}>
+                    <Square className="fill-current" />
                     Stop & Log
-                  </button>
+                  </Button>
                 </div>
               ) : (
-                <button
-                  onClick={startSwimTimer}
-                  className="flex items-center gap-1.5 rounded-lg bg-foreground/10 px-3 py-1.5 text-sm font-medium hover:bg-foreground/20 transition-colors"
-                >
-                  <Play className="h-3.5 w-3.5" />
+                <Button variant="secondary" size="sm" onClick={startSwimTimer}>
+                  <Play />
                   Start Swim
-                </button>
+                </Button>
               )}
             </div>
           ) : (
@@ -159,27 +156,27 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
             <div className="space-y-3">
               {/* Day metadata editing */}
               {editingDay === day.id && (
-                <div className="space-y-1.5 pb-2 border-b border-border/30">
+                <div className="space-y-1.5 border-b border-border/60 pb-2">
                   <div className="flex items-center gap-2">
-                    <label className="text-[10px] text-muted-foreground/50 w-12 shrink-0">Name</label>
-                    <input
+                    <label className="w-12 shrink-0 text-2xs text-muted-foreground">Name</label>
+                    <Input
                       value={day.name}
                       onChange={(e) => updateDay(day.id, { name: e.target.value })}
-                      className="h-7 flex-1 rounded border border-border bg-background px-2 text-xs font-semibold text-foreground outline-none focus:border-foreground/30"
+                      className="h-7 flex-1 text-xs font-medium"
                     />
                   </div>
                   <div className="flex items-center gap-2">
-                    <label className="text-[10px] text-muted-foreground/50 w-12 shrink-0">Day</label>
-                    <input
+                    <label className="w-12 shrink-0 text-2xs text-muted-foreground">Day</label>
+                    <Input
                       value={day.dayOfWeek}
                       onChange={(e) => updateDay(day.id, { dayOfWeek: e.target.value })}
-                      className="h-7 w-28 rounded border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-foreground/30"
+                      className="h-7 w-28 text-xs"
                     />
-                    <label className="text-[10px] text-muted-foreground/50 w-10 shrink-0">Time</label>
-                    <input
+                    <label className="w-10 shrink-0 text-2xs text-muted-foreground">Time</label>
+                    <Input
                       value={day.time}
                       onChange={(e) => updateDay(day.id, { time: e.target.value })}
-                      className="h-7 flex-1 rounded border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-foreground/30"
+                      className="h-7 flex-1 text-xs"
                     />
                   </div>
                 </div>
@@ -190,61 +187,64 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="text-muted-foreground/60">
-                        <th className="text-left font-medium pb-1.5 pr-2">Exercise</th>
-                        <th className="text-left font-medium pb-1.5 pr-2 w-16">Sets</th>
-                        <th className="text-left font-medium pb-1.5 pr-2 w-20">Weight</th>
+                      <tr className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">
+                        <th className="pb-1.5 pr-2 text-left font-medium">Exercise</th>
+                        <th className="w-16 pb-1.5 pr-2 text-left font-medium">Sets</th>
+                        <th className="w-20 pb-1.5 pr-2 text-left font-medium">Weight</th>
                         <th className="w-8 pb-1.5"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {day.exercises.map((ex) => (
-                        <tr key={ex.id} className="group border-t border-border/30">
+                        <tr key={ex.id} className="group border-t border-border/60">
                           <td className="py-1.5 pr-2">
                             <div>
-                              <input
+                              <Input
                                 value={ex.name}
                                 onChange={(e) => updateExercise(day.id, ex.id, { name: e.target.value })}
-                                className="h-7 w-full rounded border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-foreground/30"
+                                className="h-7 text-xs"
                               />
-                              <input
+                              <Input
                                 value={ex.notes}
                                 onChange={(e) => updateExercise(day.id, ex.id, { notes: e.target.value })}
                                 placeholder="Notes..."
-                                className="mt-1 h-6 w-full rounded border border-border/50 bg-background px-2 text-[10px] text-muted-foreground outline-none focus:border-foreground/30"
+                                className="mt-1 h-6 text-2xs text-muted-foreground"
                               />
                             </div>
                           </td>
                           <td className="py-1.5 pr-2 text-muted-foreground">
                             <div className="flex items-center gap-1">
-                              <input
+                              <Input
                                 type="number"
                                 value={ex.sets}
                                 onChange={(e) => updateExercise(day.id, ex.id, { sets: Number(e.target.value) })}
-                                className="h-7 w-12 rounded border border-border bg-background px-2 text-xs text-foreground outline-none tabular-nums"
+                                className="h-7 w-12 text-xs tabular-nums"
                               />
-                              <span className="text-muted-foreground/50">x</span>
-                              <input
+                              <span className="text-foreground-faint">x</span>
+                              <Input
                                 value={ex.repsRange}
                                 onChange={(e) => updateExercise(day.id, ex.id, { repsRange: e.target.value })}
-                                className="h-7 w-16 rounded border border-border bg-background px-2 text-xs text-foreground outline-none"
+                                className="h-7 w-16 text-xs"
                               />
                             </div>
                           </td>
-                          <td className="py-1.5 pr-2 text-muted-foreground/60">
-                            <input
+                          <td className="py-1.5 pr-2">
+                            <Input
                               value={ex.startWeight}
                               onChange={(e) => updateExercise(day.id, ex.id, { startWeight: e.target.value })}
-                              className="h-7 w-full rounded border border-border bg-background px-2 text-xs text-foreground outline-none"
+                              className="h-7 text-xs"
                             />
                           </td>
                           <td className="py-1.5">
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
                               onClick={() => removeExercise(day.id, ex.id)}
-                              className="text-red-400/60 hover:text-red-400 transition-colors"
+                              aria-label={`Remove ${ex.name}`}
+                              className="text-muted-foreground hover:text-destructive"
                             >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
+                              <Trash2 />
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -256,41 +256,39 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                   {day.exercises.map((ex) => {
                     const expanded = expandedEx.has(ex.id)
                     return (
-                      <div key={ex.id} className="rounded-xl transition-colors hover:bg-foreground/[0.04]">
+                      <div key={ex.id} className="rounded-md transition-colors hover:bg-muted/40">
                         <div className="flex items-center gap-3 px-1.5 py-2">
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => setPreview(ex)}
                             aria-label={`Preview ${ex.name}`}
-                            className="shrink-0 overflow-hidden rounded-xl ring-1 ring-border/60 transition-transform active:scale-95"
+                            className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border/60 p-0"
                           >
                             <ExerciseImage name={ex.name} showBadge={false} className="h-14 w-14" />
-                          </button>
+                          </Button>
                           <button
                             onClick={() => ex.notes && toggleExpand(ex.id)}
                             className="flex min-w-0 flex-1 items-center gap-2 text-left"
                           >
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-[15px] font-semibold text-foreground">{ex.name}</p>
+                              <p className="truncate text-sm font-medium text-foreground">{ex.name}</p>
                               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <span className="rounded-md bg-foreground/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground/90">
+                                <Chip size="sm" className="tabular-nums text-foreground">
                                   {ex.sets}×{ex.repsRange}
-                                </span>
-                                {ex.startWeight && (
-                                  <span className="rounded-md bg-foreground/10 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                                    {ex.startWeight}
-                                  </span>
-                                )}
+                                </Chip>
+                                {ex.startWeight && <Chip size="sm">{ex.startWeight}</Chip>}
                               </div>
                             </div>
                             {ex.notes && (
                               <ChevronDown
-                                className={`h-5 w-5 shrink-0 text-muted-foreground/50 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                                className={`h-5 w-5 shrink-0 text-foreground-faint transition-transform ${expanded ? 'rotate-180' : ''}`}
                               />
                             )}
                           </button>
                         </div>
                         {expanded && ex.notes && (
-                          <p className="pb-2.5 pl-[4.75rem] pr-3 text-[13px] leading-relaxed text-muted-foreground/80">{ex.notes}</p>
+                          <p className="pb-2.5 pl-[4.75rem] pr-3 text-xs leading-relaxed text-muted-foreground">{ex.notes}</p>
                         )}
                       </div>
                     )
@@ -301,13 +299,10 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
               {/* Edit mode actions */}
               {editingDay === day.id && (
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => addExercise(day.id)}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
+                  <Button variant="ghost" size="xs" onClick={() => addExercise(day.id)}>
+                    <Plus />
                     Add exercise
-                  </button>
+                  </Button>
                 </div>
               )}
 
@@ -327,7 +322,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                         ? Math.round((new Date(session.finishedAt).getTime() - new Date(session.startedAt).getTime()) / 60000)
                         : null
                       return (
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums">
+                        <div className="flex items-center gap-3 font-mono text-xs tabular-nums text-muted-foreground">
                           <span>{completedSets}/{totalSets} sets</span>
                           {totalVolume > 0 && <span>{Math.round(totalVolume)} kg</span>}
                           {duration !== null && duration > 0 && <span>{duration} min</span>}
@@ -335,61 +330,62 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                       )
                     })()}
                     <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1.5 text-green-400 text-sm">
+                      <span className="flex items-center gap-1.5 text-sm text-success">
                         <CheckCircle2 className="h-4 w-4" />
                         Completed today
                       </span>
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="xs"
                         onClick={() => {
                           if (confirm('This will start a new session and overwrite today\'s logged workout for ' + day.name + '. Continue?')) {
                             onStartWorkout(day.id)
                           }
                         }}
-                        className="text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors"
                       >
                         Redo
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ) : todaySessions.length > 0 ? (
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="opacity-50"
                     onClick={() => {
                       const done = todaySessions.map(s => s.workoutName).join(', ')
                       if (confirm(`You already completed ${done} today. Starting ${day.name} will replace it. Continue?`)) {
                         onStartWorkout(day.id)
                       }
                     }}
-                    className="flex items-center gap-1.5 rounded-lg bg-foreground/10 px-3 py-1.5 text-sm font-medium hover:bg-foreground/20 transition-colors opacity-50"
                   >
-                    <Play className="h-3.5 w-3.5" />
+                    <Play />
                     Start Workout
-                  </button>
+                  </Button>
                 ) : (
-                  <button
-                    onClick={() => onStartWorkout(day.id)}
-                    className="flex items-center gap-1.5 rounded-lg bg-foreground/10 px-3 py-1.5 text-sm font-medium hover:bg-foreground/20 transition-colors"
-                  >
-                    <Play className="h-3.5 w-3.5" />
+                  <Button variant="secondary" size="sm" onClick={() => onStartWorkout(day.id)}>
+                    <Play />
                     Start Workout
-                  </button>
+                  </Button>
                 )}
 
-                <button
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={() => setEditingDay(editingDay === day.id ? null : day.id)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground/50 hover:text-muted-foreground transition-colors"
                 >
                   {editingDay === day.id ? (
                     <>
-                      <Check className="h-3 w-3" />
+                      <Check />
                       Done
                     </>
                   ) : (
                     <>
-                      <Pencil className="h-3 w-3" />
+                      <Pencil />
                       Edit
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -397,38 +393,25 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
       ))}
     </div>
 
-    {preview && (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-        onClick={() => setPreview(null)}
-      >
-        <div
-          className="relative w-full max-w-sm rounded-2xl border border-border bg-card p-4 shadow-2xl"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            onClick={() => setPreview(null)}
-            aria-label="Close preview"
-            className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white transition-transform active:scale-90"
-          >
-            <X className="h-5 w-5" />
-          </button>
+    <Modal
+      open={!!preview}
+      onOpenChange={(o) => !o && setPreview(null)}
+      title={preview?.name}
+      size="sm"
+    >
+      {preview && (
+        <div>
           <ExerciseImage name={preview.name} className="h-64 w-full" />
-          <h3 className="mt-3 text-lg font-bold text-foreground">{preview.name}</h3>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <span className="rounded-md bg-foreground/15 px-2 py-0.5 text-xs font-semibold tabular-nums text-foreground/90">
+          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+            <Chip size="sm" className="tabular-nums text-foreground">
               {preview.sets}×{preview.repsRange}
-            </span>
-            {preview.startWeight && (
-              <span className="rounded-md bg-foreground/10 px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {preview.startWeight}
-              </span>
-            )}
+            </Chip>
+            {preview.startWeight && <Chip size="sm">{preview.startWeight}</Chip>}
           </div>
           {preview.notes && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{preview.notes}</p>}
         </div>
-      </div>
-    )}
+      )}
+    </Modal>
     </>
   )
 }

@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { useStore } from '@/lib/store'
-import { localDate } from '@/lib/date-utils'
+import { localDate, getWeekLabel } from '@/lib/date-utils'
+import { cn } from '@/lib/utils'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { Badge } from '@/components/ui/badge'
+import { StatTile } from '@/components/shared/StatTile'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
 import { Flame, Trophy, Plus, X, Pencil, Check, ChevronLeft, ChevronRight, StickyNote } from 'lucide-react'
 
@@ -38,6 +41,11 @@ const defaultHabits: Habit[] = [
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+// Form-control style for the raw <select>s (no Select primitive exists yet) —
+// mirrors the Input primitive's hairline/fill/focus treatment.
+const selectClass =
+  'rounded-md border border-input bg-input/20 text-foreground outline-none transition-colors duration-150 focus-visible:border-ring/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+
 function getWeekDatesWithOffset(offset: number): string[] {
   const now = new Date()
   const day = now.getDay()
@@ -50,13 +58,6 @@ function getWeekDatesWithOffset(offset: number): string[] {
     dates.push(localDate(d))
   }
   return dates
-}
-
-function getWeekLabel(dates: string[]): string {
-  const start = new Date(dates[0] + 'T00:00:00')
-  const end = new Date(dates[6] + 'T00:00:00')
-  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return `${fmt(start)} – ${fmt(end)}`
 }
 
 // All calendar dates (YYYY-MM-DD) in the month containing the anchor date.
@@ -249,28 +250,30 @@ export function HabitsPage() {
   // Small sticky-note toggle shown next to a habit name. Lit when the habit has
   // context, faint-on-hover when empty.
   const renderNoteButton = (habit: Habit, opts?: { mobile?: boolean }) => (
-    <button
+    <Button
+      variant="ghost"
+      size={opts?.mobile ? 'icon-sm' : 'icon-xs'}
       onClick={() => toggleNote(habit.id)}
       title={habit.context ? 'Context — click to edit' : 'Add context'}
       aria-label={habit.context ? 'Edit habit context' : 'Add habit context'}
-      className={`flex items-center justify-center rounded transition-colors ${opts?.mobile ? 'h-7 w-7 p-1.5' : 'h-5 w-5'} ${
+      className={cn(
         expandedNoteId === habit.id
           ? 'text-foreground'
           : habit.context
-            ? 'text-amber-400/80 hover:text-amber-300'
+            ? 'text-warning/80 hover:text-warning'
             : opts?.mobile
-              ? 'text-muted-foreground/40 active:bg-foreground/10'
-              : 'text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-foreground'
-      }`}
+              ? 'text-foreground-faint'
+              : 'text-foreground-faint opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
+      )}
     >
-      <StickyNote className={opts?.mobile ? 'h-3.5 w-3.5' : 'h-3 w-3'} />
-    </button>
+      <StickyNote />
+    </Button>
   )
 
   // The inline panel to write "what this habit means / what has to be done".
   const renderNoteEditor = (habit: Habit) => (
-    <div className="rounded-lg border border-border/60 bg-secondary/30 p-3">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+    <div className="rounded-md border border-border/60 bg-secondary/30 p-3">
+      <div className="mb-1.5 flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
         <StickyNote className="h-3 w-3" />
         What this means · what counts as done
       </div>
@@ -279,7 +282,7 @@ export function HabitsPage() {
         onChange={(e) => setHabitContext(habit.id, e.target.value)}
         autoFocus
         placeholder="Write the full meaning of this habit and exactly what has to be done to check it off…"
-        className="w-full min-h-[72px] resize-y rounded-md border border-border bg-input px-2.5 py-2 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-foreground/30"
+        className="min-h-[72px] w-full resize-y rounded-md border border-input bg-input/20 px-2.5 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors duration-150 placeholder:text-foreground-faint focus-visible:border-ring/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       />
     </div>
   )
@@ -356,17 +359,17 @@ export function HabitsPage() {
 
   const renderHabitRow = (habit: Habit) => (
     <Fragment key={habit.id}>
-    <tr className="border-t border-border/50 group">
+    <tr className="group border-t border-border/60">
       <td className="py-2.5 pr-4 text-sm text-foreground">
         {editingId === habit.id ? (
           <div className="flex items-center gap-1.5">
-            <Input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="h-7 w-10 bg-input px-1 text-center text-sm" />
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-7 bg-input text-sm" autoFocus />
-            <select value={editCadence} onChange={(e) => setEditCadence(e.target.value as Cadence)} className="h-7 rounded-md border border-border bg-input px-1 text-xs text-foreground">
+            <Input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="h-7 w-10 px-1 text-center text-sm" />
+            <Input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-7 text-sm" autoFocus />
+            <select value={editCadence} onChange={(e) => setEditCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-7 px-1 text-xs')}>
               <option value="weekly">/wk</option>
               <option value="monthly">/mo</option>
             </select>
-            <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-7 w-12 bg-input px-1 text-center text-sm" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
+            <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-7 w-12 px-1 text-center text-sm" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
           </div>
         ) : (
           <span className="inline-flex items-center">
@@ -375,45 +378,55 @@ export function HabitsPage() {
           </span>
         )}
       </td>
-      {weekDays.map((day, dayIndex) => (
-        <td key={day} className="py-2.5 text-center">
-          <button
-            onClick={() => toggle(habit.id, dayIndex)}
-            className={`h-7 w-7 rounded-md transition-all ${
-              habitHistory[weekDates[dayIndex]]?.[habit.id]
-                ? 'bg-foreground text-background'
-                : 'bg-secondary hover:bg-secondary/80'
-            }`}
-          >
-            {habitHistory[weekDates[dayIndex]]?.[habit.id] && <span className="text-xs">✓</span>}
-          </button>
-        </td>
-      ))}
+      {weekDays.map((day, dayIndex) => {
+        const checked = !!habitHistory[weekDates[dayIndex]]?.[habit.id]
+        return (
+          <td key={day} className="py-2.5 text-center">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => toggle(habit.id, dayIndex)}
+              aria-pressed={checked}
+              aria-label={`${habit.name} — ${day}`}
+              className={cn(
+                checked
+                  ? 'border-success/25 bg-success/10 text-success hover:bg-success/15 hover:text-success'
+                  : 'bg-secondary hover:bg-secondary/80'
+              )}
+            >
+              {checked && <span className="text-xs">✓</span>}
+            </Button>
+          </td>
+        )
+      })}
       <td className="py-2.5 text-center">
         {(() => {
           const p = getProgress(habit)
           return (
-            <span className={`text-sm font-semibold tabular-nums ${p.goal === 0 ? 'text-muted-foreground/40' : p.met ? 'text-green-400' : 'text-muted-foreground'}`}>
+            <span className={cn(
+              'font-mono text-sm tabular-nums',
+              p.goal === 0 ? 'text-foreground-faint' : p.met ? 'text-success' : 'text-muted-foreground'
+            )}>
               {Math.min(p.done, p.goal)}/{p.goal}
-              {p.cadence === 'monthly' && <span className="ml-0.5 text-[9px] font-normal text-muted-foreground/50" title={`Monthly goal · ${monthLabel}`}>/mo</span>}
+              {p.cadence === 'monthly' && <span className="ml-0.5 text-3xs font-normal text-foreground-faint" title={`Monthly goal · ${monthLabel}`}>/mo</span>}
             </span>
           )
         })()}
       </td>
       <td className="py-2.5 text-center">
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           {editingId === habit.id ? (
-            <button onClick={saveEdit} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-              <Check className="h-3.5 w-3.5" />
-            </button>
+            <Button variant="ghost" size="icon-xs" onClick={saveEdit} aria-label="Save habit">
+              <Check />
+            </Button>
           ) : (
-            <button onClick={() => startEdit(habit)} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
+            <Button variant="ghost" size="icon-xs" onClick={() => startEdit(habit)} aria-label="Edit habit">
+              <Pencil />
+            </Button>
           )}
-          <button onClick={() => removeHabit(habit.id)} className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-secondary transition-colors">
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <Button variant="ghost" size="icon-xs" onClick={() => removeHabit(habit.id)} aria-label="Delete habit" className="hover:text-destructive">
+            <X />
+          </Button>
         </div>
       </td>
     </tr>
@@ -431,24 +444,26 @@ export function HabitsPage() {
     <PageShell>
       {/* ── Week navigation ──────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold md:text-2xl md:font-bold">Habits</h2>
-          <span className="text-xs text-muted-foreground md:text-sm">{totalCompleted}/{totalGoals}</span>
-          <span className="text-2xl font-bold tabular-nums md:hidden">{weeklyScore}%</span>
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-2xs uppercase tracking-widest text-foreground-faint">Week score</span>
+          <span className="font-mono text-2xl font-medium tabular-nums md:hidden">{weeklyScore}%</span>
+          <span className="font-mono text-xs tabular-nums text-muted-foreground md:text-sm">{totalCompleted}/{totalGoals}</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setWeekOffset(w => w - 1)} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon-sm" onClick={() => setWeekOffset(w => w - 1)} aria-label="Previous week">
+            <ChevronLeft />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setWeekOffset(0)}
-            className={`text-xs font-medium px-2 py-1 rounded-md transition-colors ${weekOffset === 0 ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            className={cn('font-mono', weekOffset === 0 && 'text-foreground')}
           >
-            {weekOffset === 0 ? 'This week' : getWeekLabel(weekDates)}
-          </button>
-          <button onClick={() => setWeekOffset(w => Math.min(w + 1, 0))} className="p-1.5 rounded-lg hover:bg-foreground/10 transition-colors" disabled={weekOffset >= 0}>
-            <ChevronRight className={`h-4 w-4 ${weekOffset >= 0 ? 'opacity-30' : ''}`} />
-          </button>
+            {weekOffset === 0 ? 'This week' : getWeekLabel(weekDates[0])}
+          </Button>
+          <Button variant="ghost" size="icon-sm" onClick={() => setWeekOffset(w => Math.min(w + 1, 0))} aria-label="Next week" disabled={weekOffset >= 0}>
+            <ChevronRight />
+          </Button>
         </div>
       </div>
 
@@ -460,7 +475,7 @@ export function HabitsPage() {
           return (
             <div key={cat || 'none'} className="space-y-3">
               {cat && (
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/40 pt-2">{cat}</p>
+                <p className="pt-2 font-mono text-2xs uppercase tracking-widest text-foreground-faint">{cat}</p>
               )}
               {catHabits.map((habit) => {
           const { cadence, goal, done, met } = getProgress(habit)
@@ -468,48 +483,52 @@ export function HabitsPage() {
           const streakUnit = cadence === 'monthly' ? 'mo' : 'd'
 
           return (
-            <div key={habit.id} className="liquid-glass rounded-xl border border-border p-4">
+            <div key={habit.id} className="surface rounded-xl p-4">
               {editingId === habit.id ? (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">
-                    <Input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="h-9 w-12 bg-input px-1 text-center" />
-                    <Input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-9 bg-input flex-1" autoFocus />
-                    <select value={editCadence} onChange={(e) => setEditCadence(e.target.value as Cadence)} className="h-9 rounded-md border border-border bg-input px-1 text-xs text-foreground">
+                    <Input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="h-9 w-12 px-1 text-center" />
+                    <Input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-9 flex-1" autoFocus />
+                    <select value={editCadence} onChange={(e) => setEditCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-9 px-1 text-xs')}>
                       <option value="weekly">/wk</option>
                       <option value="monthly">/mo</option>
                     </select>
-                    <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-9 w-14 bg-input px-1 text-center" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
+                    <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-9 w-14 px-1 text-center" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={saveEdit} className="flex-1 h-9 rounded-lg bg-foreground/10 text-sm font-medium">Save</button>
-                    <button onClick={() => setEditingId(null)} className="h-9 px-3 rounded-lg text-sm text-muted-foreground">Cancel</button>
+                    <Button size="lg" className="flex-1" onClick={saveEdit}>Save</Button>
+                    <Button variant="ghost" size="lg" onClick={() => setEditingId(null)}>Cancel</Button>
                   </div>
                 </div>
               ) : (
                 <>
                   {/* Header row: emoji + name + streak + actions */}
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2 min-w-0">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="flex min-w-0 items-center gap-2">
                       <span className="text-lg">{habit.emoji}</span>
-                      <span className="text-sm font-medium truncate">{habit.name}</span>
+                      <span className="truncate text-sm font-medium">{habit.name}</span>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex shrink-0 items-center gap-2">
                       {streak > 0 && (
-                        <span className="text-xs text-muted-foreground flex items-center gap-0.5">
-                          <Flame className="h-3 w-3" />{streak}{streakUnit}
-                        </span>
+                        <Chip size="sm" variant="success" className="tabular-nums">
+                          <Flame />
+                          {streak}{streakUnit}
+                        </Chip>
                       )}
-                      <span className={`text-xs font-semibold tabular-nums ${goal === 0 ? 'text-muted-foreground/40' : met ? 'text-green-400' : 'text-muted-foreground'}`}>
+                      <span className={cn(
+                        'font-mono text-xs tabular-nums',
+                        goal === 0 ? 'text-foreground-faint' : met ? 'text-success' : 'text-muted-foreground'
+                      )}>
                         {Math.min(done, goal)}/{goal}
-                        {cadence === 'monthly' && <span className="ml-0.5 text-[9px] font-normal text-muted-foreground/50">/mo</span>}
+                        {cadence === 'monthly' && <span className="ml-0.5 text-3xs font-normal text-foreground-faint">/mo</span>}
                       </span>
                       {renderNoteButton(habit, { mobile: true })}
-                      <button onClick={() => startEdit(habit)} className="p-1.5 rounded-lg text-muted-foreground/40 active:bg-foreground/10">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => removeHabit(habit.id)} className="p-1.5 rounded-lg text-muted-foreground/40 active:text-red-400 active:bg-red-500/10">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => startEdit(habit)} aria-label="Edit habit">
+                        <Pencil />
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => removeHabit(habit.id)} aria-label="Delete habit" className="active:text-destructive">
+                        <X />
+                      </Button>
                     </div>
                   </div>
                   {/* Day circles */}
@@ -518,22 +537,26 @@ export function HabitsPage() {
                       const isChecked = !!habitHistory[weekDates[i]]?.[habit.id]
                       const isToday = i === todayDayIndex
                       return (
-                        <button
+                        <Button
                           key={day}
+                          variant="ghost"
                           onClick={() => toggle(habit.id, i)}
-                          className="flex flex-col items-center gap-1"
+                          aria-pressed={isChecked}
+                          aria-label={`${habit.name} — ${day}`}
+                          className="h-auto flex-col gap-1 px-1 py-1"
                         >
-                          <span className={`text-[10px] ${isToday ? 'text-foreground font-semibold' : 'text-muted-foreground/50'}`}>{day}</span>
-                          <div className={`h-9 w-9 rounded-full flex items-center justify-center transition-all ${
+                          <span className={cn('font-mono text-2xs', isToday ? 'text-foreground' : 'text-foreground-faint')}>{day}</span>
+                          <span className={cn(
+                            'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
                             isChecked
-                              ? 'bg-foreground text-background'
+                              ? 'border border-success/25 bg-success/10 text-success'
                               : isToday
-                                ? 'bg-foreground/10 ring-1 ring-foreground/30'
+                                ? 'bg-secondary ring-1 ring-input'
                                 : 'bg-secondary'
-                          }`}>
+                          )}>
                             {isChecked && <span className="text-sm">✓</span>}
-                          </div>
-                        </button>
+                          </span>
+                        </Button>
                       )
                     })}
                   </div>
@@ -551,43 +574,43 @@ export function HabitsPage() {
 
         {/* Add new habit — mobile */}
         <div className="flex flex-wrap items-center gap-2 pt-2">
-          <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="🎯" className="h-10 w-12 bg-input px-1 text-center" />
-          <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addHabit()} placeholder="New habit..." className="h-10 bg-input flex-1 min-w-[120px]" />
+          <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="🎯" className="h-10 w-12 px-1 text-center" />
+          <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addHabit()} placeholder="New habit..." className="h-10 min-w-[120px] flex-1" />
           {customCategory ? (
-            <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="Category name" className="h-10 w-28 bg-input text-sm" autoFocus onKeyDown={(e) => e.key === 'Escape' && setCustomCategory(false)} />
+            <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="Category name" className="h-10 w-28 text-sm" autoFocus onKeyDown={(e) => e.key === 'Escape' && setCustomCategory(false)} />
           ) : (
-            <select value={newCategory} onChange={(e) => handleCategoryChange(e.target.value)} className="h-10 rounded-md border border-border bg-input px-2 text-sm text-foreground">
+            <select value={newCategory} onChange={(e) => handleCategoryChange(e.target.value)} className={cn(selectClass, 'h-10 px-2 text-sm')}>
               <option value="">No category</option>
               {categories.map(c => <option key={c} value={c}>{c}</option>)}
               <option value="__new">+ New...</option>
             </select>
           )}
-          <select value={newCadence} onChange={(e) => setNewCadence(e.target.value as Cadence)} className="h-10 rounded-md border border-border bg-input px-2 text-sm text-foreground">
+          <select value={newCadence} onChange={(e) => setNewCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-10 px-2 text-sm')}>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
           </select>
-          <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={newCadence === 'monthly' ? 31 : 7} className="h-10 w-14 bg-input px-1 text-center" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
-          <button onClick={addHabit} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-foreground active:bg-secondary/80">
-            <Plus className="h-5 w-5" />
-          </button>
+          <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={newCadence === 'monthly' ? 31 : 7} className="h-10 w-14 px-1 text-center" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
+          <Button variant="secondary" size="icon-lg" className="size-10" onClick={addHabit} aria-label="Add habit">
+            <Plus className="size-5" />
+          </Button>
         </div>
       </div>
 
       {/* ── Desktop: table layout ─────────────────────────────────── */}
-      <div className="hidden md:grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="hidden grid-cols-1 gap-6 md:grid xl:grid-cols-3">
         {/* Habit Grid */}
-        <WidgetCard title="Weekly Habit Grid" className="xl:col-span-2" delay={0}>
+        <WidgetCard title="Weekly habit grid" className="xl:col-span-2" delay={0}>
           <table className="w-full">
             <thead>
               <tr>
-                <th className="pb-3 text-left text-xs font-medium text-muted-foreground">Habit</th>
+                <th className="pb-3 text-left font-mono text-2xs font-medium uppercase tracking-wider text-muted-foreground">Habit</th>
                 {weekDays.map((day) => (
-                  <th key={day} className="pb-3 text-center text-xs font-medium text-muted-foreground w-12">
+                  <th key={day} className="w-12 pb-3 text-center font-mono text-2xs font-medium uppercase tracking-wider text-muted-foreground">
                     {day}
                   </th>
                 ))}
-                <th className="pb-3 text-center text-xs font-medium text-muted-foreground w-14">Goal</th>
-                <th className="pb-3 w-16" />
+                <th className="w-14 pb-3 text-center font-mono text-2xs font-medium uppercase tracking-wider text-muted-foreground">Goal</th>
+                <th className="w-16 pb-3" />
               </tr>
             </thead>
             <tbody>
@@ -596,8 +619,8 @@ export function HabitsPage() {
                 if (catHabits.length === 0) return null
                 return [
                   <tr key={`cat-${cat}`}>
-                    <td colSpan={weekDays.length + 3} className="pt-4 pb-1 px-0">
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/40">{cat}</span>
+                    <td colSpan={weekDays.length + 3} className="px-0 pb-1 pt-4">
+                      <span className="font-mono text-2xs uppercase tracking-widest text-foreground-faint">{cat}</span>
                     </td>
                   </tr>,
                   ...catHabits.map((habit) => renderHabitRow(habit)),
@@ -608,37 +631,36 @@ export function HabitsPage() {
           </table>
 
           {/* Add new habit */}
-          <div className="mt-4 flex items-center gap-2 border-t border-border/50 pt-4">
-            <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="🎯" className="h-8 w-12 bg-input px-1 text-center text-sm" />
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addHabit()} placeholder="New habit..." className="h-8 bg-input text-sm flex-1" />
+          <div className="mt-4 flex items-center gap-2 border-t border-border/60 pt-4">
+            <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="🎯" className="h-8 w-12 px-1 text-center text-sm" />
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addHabit()} placeholder="New habit..." className="h-8 flex-1 text-sm" />
             {customCategory ? (
-              <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="Category name" className="h-8 w-28 bg-input text-xs" autoFocus onKeyDown={(e) => e.key === 'Escape' && setCustomCategory(false)} />
+              <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="Category name" className="h-8 w-28 text-xs" autoFocus onKeyDown={(e) => e.key === 'Escape' && setCustomCategory(false)} />
             ) : (
-              <select value={newCategory} onChange={(e) => handleCategoryChange(e.target.value)} className="h-8 rounded-md border border-border bg-input px-2 text-xs text-foreground">
+              <select value={newCategory} onChange={(e) => handleCategoryChange(e.target.value)} className={cn(selectClass, 'h-8 px-2 text-xs')}>
                 <option value="">No category</option>
                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
                 <option value="__new">+ New...</option>
               </select>
             )}
-            <select value={newCadence} onChange={(e) => setNewCadence(e.target.value as Cadence)} className="h-8 rounded-md border border-border bg-input px-2 text-xs text-foreground" title="Cadence">
+            <select value={newCadence} onChange={(e) => setNewCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-8 px-2 text-xs')} title="Cadence">
               <option value="weekly">Weekly</option>
               <option value="monthly">Monthly</option>
             </select>
-            <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={newCadence === 'monthly' ? 31 : 7} className="h-8 w-14 bg-input px-1 text-center text-sm" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
-            <button onClick={addHabit} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-foreground transition-colors hover:bg-secondary/80">
-              <Plus className="h-4 w-4" />
-            </button>
+            <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={newCadence === 'monthly' ? 31 : 7} className="h-8 w-14 px-1 text-center text-sm" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
+            <Button variant="secondary" size="icon" onClick={addHabit} aria-label="Add habit">
+              <Plus />
+            </Button>
           </div>
         </WidgetCard>
 
         {/* Stats Column */}
         <div className="flex flex-col gap-6">
-          <WidgetCard title="Weekly Consistency" delay={0.1}>
-            <div className="flex flex-col items-center gap-3 py-4">
-              <span className="text-4xl font-bold tabular-nums">{weeklyScore}%</span>
-              <p className="text-xs text-muted-foreground">{totalCompleted} of {totalGoals} goal completions</p>
-            </div>
-          </WidgetCard>
+          <StatTile
+            label="Weekly consistency"
+            value={`${weeklyScore}%`}
+            sub={`${totalCompleted} of ${totalGoals} goal completions`}
+          />
 
           <WidgetCard title="Streaks" delay={0.2}>
             <div className="flex flex-col gap-2">
@@ -646,15 +668,17 @@ export function HabitsPage() {
                 const { cadence, goal } = getProgress(habit)
                 const unit = cadence === 'monthly' ? 'mo' : 'd'
                 const label = cadence === 'monthly' ? `${goal}x/mo` : (goal < 7 ? `${goal}x/wk` : null)
+                const streak = getStreakFor(habit)
                 return (
-                  <div key={habit.id} className="flex items-center justify-between rounded-lg px-2 py-1.5">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-sm text-foreground truncate">{habit.emoji} {habit.name}</span>
-                      {label && <span className="text-[9px] text-muted-foreground/50 shrink-0">{label}</span>}
+                  <div key={habit.id} className="flex items-center justify-between rounded-md px-2 py-1.5">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-sm text-foreground">{habit.emoji} {habit.name}</span>
+                      {label && <span className="shrink-0 font-mono text-3xs text-foreground-faint">{label}</span>}
                     </div>
-                    <Badge variant="secondary" className="tabular-nums shrink-0">
-                      <Flame className="mr-1 h-3 w-3" />{getStreakFor(habit)}{unit}
-                    </Badge>
+                    <Chip variant={streak > 0 ? 'success' : 'neutral'} className="shrink-0 tabular-nums">
+                      <Flame />
+                      {streak}{unit}
+                    </Chip>
                   </div>
                 )
               })}
@@ -669,9 +693,12 @@ export function HabitsPage() {
                 { label: '100% week', unlocked: weeklyScore === 100 },
                 { label: 'Early bird (5 days)', unlocked: false },
               ].map((achievement) => (
-                <div key={achievement.label} className={`flex items-center gap-3 rounded-lg px-2 py-1.5 ${achievement.unlocked ? '' : 'opacity-40'}`}>
-                  <Trophy className="h-4 w-4" />
-                  <span className="text-sm">{achievement.label}</span>
+                <div key={achievement.label} className="flex items-center gap-3 rounded-md px-2 py-1.5">
+                  <Trophy className={cn('h-4 w-4', achievement.unlocked ? 'text-foreground' : 'text-foreground-faint')} />
+                  <span className={cn('text-sm', achievement.unlocked ? 'text-foreground' : 'text-muted-foreground')}>{achievement.label}</span>
+                  <Chip size="sm" variant={achievement.unlocked ? 'success' : 'neutral'} className="ml-auto">
+                    {achievement.unlocked ? 'unlocked' : 'locked'}
+                  </Chip>
                 </div>
               ))}
             </div>

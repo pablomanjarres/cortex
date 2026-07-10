@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, shell, clipboard, globalShortcut, Notification } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Tray, Menu, nativeImage, shell, clipboard, globalShortcut, Notification } from 'electron'
 import path from 'path'
 import http from 'http'
 import os from 'os'
@@ -8,13 +8,10 @@ import { fileURLToPath } from 'url'
 import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
 import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
-import { initEncryption, encrypt, encryptAndWrite, readAndDecrypt, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
-import { getGitHubStats } from './integrations/github.js'
-import { getLemonStats } from './integrations/lemon.js'
-import { getVercelStats } from './integrations/vercel.js'
-import { getSupabaseStats } from './integrations/supabase.js'
+import { initEncryption, encrypt, encryptAndWrite, encryptAndWriteAsync, readAndDecrypt, readAndDecryptAsync, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
+import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.js'
+import type { FounderSource } from './founder-refresher.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
-import { createPaperclipClient } from './integrations/paperclip.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -28,12 +25,25 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let webServer: http.Server | null = null
 let currentStats = { tasks: '0/0', habits: '0/0', score: '—' }
-const WEB_PORT = 3456
 
-// Self-host VM (Lima, tailnet node openclaw-vm-1). Bare MagicDNS name doesn't
-// resolve from the Mac, so we use the stable tailnet IP. Hosts glances (61208),
-// Uptime Kuma (3001), and Paperclip (3100).
-const VM_HOST = '100.121.121.114'
+// Web server port — overridable via CORTEX_PORT (int, default 3456).
+const WEB_PORT = (() => {
+  const raw = process.env.CORTEX_PORT
+  const p = raw ? parseInt(raw, 10) : NaN
+  if (raw && (!Number.isInteger(p) || p <= 0 || p > 65535)) {
+    console.warn(`[Cortex] Ignoring invalid CORTEX_PORT="${raw}" — using 3456`)
+    return 3456
+  }
+  return Number.isInteger(p) && p > 0 && p <= 65535 ? p : 3456
+})()
+
+// ─── Store key / media id sanitization ────────────────────
+// Keys become file names inside dataDir/mediaDir — enforce a strict charset
+// at every boundary (HTTP + IPC) so no key can traverse out of the data dir.
+const KEY_RE = /^[A-Za-z0-9._-]{1,200}$/
+const MAX_BODY_BYTES = 25 * 1024 * 1024 // HTTP JSON body cap (~25MB)
+const VERSIONED_BACKUPS_KEPT = 10
+const DAILY_FILE_RETENTION_DAYS = 90 // StatsPage reads 90 days back
 
 // ─── Tray live data (events, sprint, habits) ─────────────
 let cachedEvents: { title: string; startTime: string; endTime: string; isAllDay: boolean }[] = []
@@ -44,7 +54,7 @@ let traySprintTask: string | null = null
 let traySprintInterval: ReturnType<typeof setInterval> | null = null
 let trayRefreshTimer: ReturnType<typeof setInterval> | null = null
 
-// ─── Live system stats (from Glances on Mac mini + VM) ───
+// ─── Live system stats (from Glances on the Mac mini) ───
 interface HostStats {
   cpu: number; mem: number; memUsed: number; memTotal: number
   swap: number; load1: number; cores: number; uptime: string
@@ -53,12 +63,10 @@ interface HostStats {
 }
 let cachedMacStats: HostStats | null = null
 let macStatsError: string | null = null
-let cachedVmStats: HostStats | null = null
-let vmStatsError: string | null = null
 let traySystemTimer: ReturnType<typeof setInterval> | null = null
 
 // ─── System history (rolling 24h ring buffer per host) ───
-type SystemHostKey = 'mac' | 'vm'
+type SystemHostKey = 'mac'
 interface SystemHistorySample {
   t: number       // epoch ms
   cpu: number     // % 0–100
@@ -76,7 +84,7 @@ interface SystemHistorySample {
 // Keep raw, downsample on read.
 const SYSTEM_HISTORY_MAX = 120_960
 const SYSTEM_HISTORY_RETAIN_MS = 7 * 24 * 3600 * 1000
-const systemHistory: Record<SystemHostKey, SystemHistorySample[]> = { mac: [], vm: [] }
+const systemHistory: Record<SystemHostKey, SystemHistorySample[]> = { mac: [] }
 let systemHistoryDirty = false
 let systemHistoryPersistTimer: ReturnType<typeof setInterval> | null = null
 
@@ -123,27 +131,22 @@ function showAndNavigate(route: string) {
 async function refreshTrayData() {
   try { cachedEvents = await getTodayEvents() } catch { cachedEvents = [] }
   try {
-    const habitsFile = path.join(dataDir, 'cortex-habits.json')
-    if (fs.existsSync(habitsFile)) cachedHabits = JSON.parse(readAndDecrypt(habitsFile))
-    else cachedHabits = []
+    cachedHabits = await readDataKeyParsed<{ id: string; name: string; emoji: string }[]>('cortex-habits', [])
   } catch { cachedHabits = [] }
   try {
     const today = localDate()
-    const historyFile = path.join(dataDir, 'cortex-habits-history.json')
-    if (fs.existsSync(historyFile)) {
-      const history = JSON.parse(readAndDecrypt(historyFile))
-      cachedHabitHistory = history[today] || {}
-    } else { cachedHabitHistory = {} }
+    const history = await readDataKeyParsed<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
+    cachedHabitHistory = history[today] || {}
   } catch { cachedHabitHistory = {} }
   if (tray) tray.setContextMenu(buildTrayMenu())
 }
 
-// ─── System stats refresh (Mac mini + VM via Glances) ─────
-// Pulls from local Glances on 127.0.0.1:61208 (Mac) and the Lima VM
-// at VM_HOST:61208 every 5s. Updates tray title + menu.
+// ─── System stats refresh (Mac mini via Glances) ──────────
+// Pulls from local Glances on 127.0.0.1:61208 every 5s.
+// Updates tray title + menu.
 
 async function fetchHostStats(host: string): Promise<HostStats> {
-  const opts = { signal: AbortSignal.timeout(host === '127.0.0.1' ? 3000 : 5000) }
+  const opts = { signal: AbortSignal.timeout(3000) }
   const base = `http://${host}:61208/api/4`
   const [cpuR, memR, loadR, upR, fsR, swR, netR] = await Promise.all([
     fetch(`${base}/cpu`, opts),
@@ -234,7 +237,7 @@ function loadSystemHistory() {
     const dir = getSystemHistoryDir()
     if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); return }
     const cutoff = Date.now() - SYSTEM_HISTORY_RETAIN_MS
-    for (const host of ['mac', 'vm'] as SystemHostKey[]) {
+    for (const host of ['mac'] as SystemHostKey[]) {
       const file = path.join(dir, `${host}.json`)
       if (!fs.existsSync(file)) continue
       try {
@@ -257,7 +260,7 @@ function persistSystemHistory() {
   try {
     const dir = getSystemHistoryDir()
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    for (const host of ['mac', 'vm'] as SystemHostKey[]) {
+    for (const host of ['mac'] as SystemHostKey[]) {
       const file = path.join(dir, `${host}.json`)
       const tmp = `${file}.tmp`
       fs.writeFileSync(tmp, JSON.stringify(systemHistory[host]))
@@ -360,20 +363,14 @@ function avg(arr: number[]): number {
 }
 
 async function refreshSystemStats() {
-  const [macRes, vmRes] = await Promise.allSettled([
-    fetchHostStats('127.0.0.1'),
-    fetchHostStats(VM_HOST),
-  ])
-  if (macRes.status === 'fulfilled') {
-    cachedMacStats = macRes.value
+  try {
+    const stats = await fetchHostStats('127.0.0.1')
+    cachedMacStats = stats
     macStatsError = null
-    pushHistorySample('mac', macRes.value)
-  } else { macStatsError = (macRes.reason as Error)?.message ?? 'fetch failed' }
-  if (vmRes.status === 'fulfilled') {
-    cachedVmStats = vmRes.value
-    vmStatsError = null
-    pushHistorySample('vm', vmRes.value)
-  } else { vmStatsError = (vmRes.reason as Error)?.message ?? 'fetch failed' }
+    pushHistorySample('mac', stats)
+  } catch (e) {
+    macStatsError = (e as Error)?.message ?? 'fetch failed'
+  }
   updateTraySystemTitle()
   if (tray) tray.setContextMenu(buildTrayMenu())
 }
@@ -384,7 +381,6 @@ function updateTraySystemTitle() {
   if (traySprintEndMs && traySprintEndMs > Date.now()) return
   const parts: string[] = []
   if (cachedMacStats) parts.push(`Mac ${Math.round(cachedMacStats.cpu)}·${Math.round(cachedMacStats.mem)}`)
-  if (cachedVmStats) parts.push(`VM ${Math.round(cachedVmStats.cpu)}·${Math.round(cachedVmStats.mem)}`)
   tray.setTitle(parts.join('  '))
 }
 
@@ -424,28 +420,20 @@ function clearTraySprintState() {
   if (tray) tray.setContextMenu(buildTrayMenu())
 }
 
-function saveSession(session: { id: string; task: string; duration: number; startedAt: string; completedAt: string }) {
-  const today = localDate()
-  const file = path.join(dataDir, `cortex-daily-sessions-${today}.json`)
-  let sessions: any[] = []
-  try { if (fs.existsSync(file)) sessions = JSON.parse(readAndDecrypt(file)) } catch { /* fresh */ }
-  sessions.push(session)
-  if (fs.existsSync(file)) fs.copyFileSync(file, path.join(backupDir, `cortex-daily-sessions-${today}.bak.json`))
-  encryptAndWrite(file, JSON.stringify(sessions, null, 2))
-}
-
-
-function toggleHabitFromTray(habitId: string) {
-  const today = localDate()
-  const historyFile = path.join(dataDir, 'cortex-habits-history.json')
-  let history: Record<string, Record<string, boolean>> = {}
-  try { if (fs.existsSync(historyFile)) history = JSON.parse(readAndDecrypt(historyFile)) } catch { /* fresh */ }
-  if (!history[today]) history[today] = {}
-  history[today][habitId] = !history[today][habitId]
-  if (fs.existsSync(historyFile)) fs.copyFileSync(historyFile, path.join(backupDir, 'cortex-habits-history.bak.json'))
-  encryptAndWrite(historyFile, JSON.stringify(history, null, 2))
-  cachedHabitHistory = history[today]
-  if (tray) tray.setContextMenu(buildTrayMenu())
+// Tray habit toggle goes through the shared write path (source 'main') so the
+// renderer gets a data:changed push instead of silently racing this write.
+async function toggleHabitFromTray(habitId: string) {
+  try {
+    const today = localDate()
+    const history = await readDataKeyParsed<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
+    if (!history[today]) history[today] = {}
+    history[today][habitId] = !history[today][habitId]
+    await writeDataKey('cortex-habits-history', history, { source: 'main' })
+    cachedHabitHistory = history[today]
+    if (tray) tray.setContextMenu(buildTrayMenu())
+  } catch (e) {
+    console.error('[Cortex] tray habit toggle failed:', e)
+  }
 }
 
 function fmtBytesShort(n: number): string {
@@ -478,7 +466,6 @@ function buildHostStatsItems(label: string, s: HostStats | null, err: string | n
 function buildMacStatsMenuItems(): Electron.MenuItemConstructorOptions[] {
   return [
     ...buildHostStatsItems('Mac mini', cachedMacStats, macStatsError),
-    ...buildHostStatsItems('Lima VM', cachedVmStats, vmStatsError),
     { label: 'Open System page', click: () => showAndNavigate('/system') },
   ]
 }
@@ -588,7 +575,14 @@ function buildTrayMenu() {
     { type: 'separator' },
     ...(webServer ? [
       { label: `localhost:${WEB_PORT}`, click: () => shell.openExternal(`http://localhost:${WEB_PORT}`) },
-      { label: `${getLanIP()}:${WEB_PORT}`, click: () => { clipboard.writeText(`http://${getLanIP()}:${WEB_PORT}`); shell.openExternal(`http://${getLanIP()}:${WEB_PORT}`) } },
+      // Only advertise the Tailscale URL when a 100.x address exists — the
+      // socket gate rejects plain LAN clients, so a LAN URL would never work.
+      ...((): Electron.MenuItemConstructorOptions[] => {
+        const ts = getTailscaleIP()
+        if (!ts) return []
+        const tsUrl = `http://${ts}:${WEB_PORT}`
+        return [{ label: `${ts}:${WEB_PORT} (Tailscale)`, click: () => { clipboard.writeText(tsUrl); shell.openExternal(tsUrl) } }]
+      })(),
     ] : [
       {
         label: 'Open in Browser',
@@ -630,14 +624,21 @@ function createTray() {
 
 // ─── Web server ────────────────────────────────────────────
 
-function getLanIP(): string {
+// The web server's socket gate only accepts localhost + Tailscale (100.64/10),
+// so the tray must only advertise URLs that gate actually accepts. Plain LAN
+// IPs are deliberately NOT advertised.
+function getTailscaleIP(): string | null {
   const interfaces = os.networkInterfaces()
   for (const name of Object.keys(interfaces)) {
     for (const iface of interfaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address
+      if (iface.family !== 'IPv4' || iface.internal) continue
+      const parts = iface.address.split('.')
+      const first = parseInt(parts[0], 10)
+      const second = parseInt(parts[1], 10)
+      if (first === 100 && second >= 64 && second <= 127) return iface.address
     }
   }
-  return 'localhost'
+  return null
 }
 
 const mimeTypes: Record<string, string> = {
@@ -663,6 +664,35 @@ function isTailscaleOrLocal(ip: string): boolean {
   const first = parseInt(parts[0], 10)
   const second = parseInt(parts[1], 10)
   return first === 100 && second >= 64 && second <= 127
+}
+
+/**
+ * Accumulate a request body with a size cap. On overflow it answers 413 and
+ * resolves null (the caller must just `return`). Also resolves null on stream error.
+ */
+function readBody(req: http.IncomingMessage, res: http.ServerResponse): Promise<string | null> {
+  return new Promise((resolve) => {
+    let body = ''
+    let size = 0
+    let done = false
+    req.on('data', (chunk: Buffer) => {
+      if (done) return
+      size += chunk.length
+      if (size > MAX_BODY_BYTES) {
+        done = true
+        try {
+          res.writeHead(413, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'payload too large' }))
+        } catch { /* headers may already be gone */ }
+        req.destroy()
+        resolve(null)
+        return
+      }
+      body += chunk.toString()
+    })
+    req.on('end', () => { if (!done) { done = true; resolve(body) } })
+    req.on('error', () => { if (!done) { done = true; resolve(null) } })
+  })
 }
 
 // ─── Claude scheduled-tasks discovery ─────────────────────────────
@@ -709,36 +739,62 @@ function startWebServer() {
     // ─── JSON API for data sync (used by browser/iPhone) ──────
     if (url.pathname === '/api/data' && req.method === 'GET') {
       const key = url.searchParams.get('key')
-      if (!key) { res.writeHead(400); res.end('Missing key'); return }
-      const file = path.join(dataDir, `${key}.json`)
+      if (!key || !KEY_RE.test(key)) { res.writeHead(400); res.end('Invalid key'); return }
       try {
-        if (fs.existsSync(file)) {
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
-          res.end(readAndDecrypt(file))
-        } else {
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
-          res.end('null')
+        const { text, rev } = await readDataFile(key)
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': getAllowedOrigin(req),
+          'Access-Control-Expose-Headers': 'X-Cortex-Rev',
         }
+        if (rev !== null) headers['X-Cortex-Rev'] = rev
+        res.writeHead(200, headers)
+        res.end(text ?? 'null')
+      } catch { res.writeHead(500); res.end('Read error') }
+      return
+    }
+
+    // Batch read for the renderer's shared poller:
+    // GET /api/data/batch?keys=a,b,c → { values: {key: data|null}, revs: {key: rev|null} }
+    if (url.pathname === '/api/data/batch' && req.method === 'GET') {
+      const keys = (url.searchParams.get('keys') ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+      if (keys.length === 0 || keys.length > 200 || keys.some((k) => !KEY_RE.test(k))) {
+        res.writeHead(400); res.end('Invalid keys'); return
+      }
+      try {
+        const values: Record<string, unknown> = {}
+        const revs: Record<string, string | null> = {}
+        for (const key of keys) {
+          const { text, rev } = await readDataFile(key)
+          revs[key] = rev
+          if (text === null) { values[key] = null; continue }
+          try { values[key] = JSON.parse(text) } catch { values[key] = null }
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+        res.end(JSON.stringify({ values, revs }))
       } catch { res.writeHead(500); res.end('Read error') }
       return
     }
 
     if (url.pathname === '/api/data' && req.method === 'POST') {
-      let body = ''
-      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      req.on('end', () => {
-        try {
-          const { key, data } = JSON.parse(body)
-          if (!key) { res.writeHead(400); res.end('Missing key'); return }
-          const file = path.join(dataDir, `${key}.json`)
-          if (fs.existsSync(file)) {
-            fs.copyFileSync(file, path.join(backupDir, `${key}.bak.json`))
-          }
-          encryptAndWrite(file, JSON.stringify(data, null, 2))
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
-          res.end('true')
-        } catch { res.writeHead(500); res.end('Write error') }
-      })
+      const body = await readBody(req, res)
+      if (body === null) return
+      try {
+        const { key, data, baseRev } = JSON.parse(body)
+        if (typeof key !== 'string' || !KEY_RE.test(key)) { res.writeHead(400); res.end('Invalid key'); return }
+        const result = await writeDataKey(key, data, { baseRev: baseRev ?? null, source: 'http' })
+        const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) }
+        if (result.ok) {
+          res.writeHead(200, headers)
+          res.end(JSON.stringify({ ok: true, rev: result.rev }))
+        } else if (result.conflict) {
+          res.writeHead(409, headers)
+          res.end(JSON.stringify({ error: 'conflict', rev: result.rev, data: result.data }))
+        } else {
+          res.writeHead(result.error === 'invalid key' ? 400 : 500, headers)
+          res.end(JSON.stringify({ error: result.error }))
+        }
+      } catch { res.writeHead(500); res.end('Write error') }
       return
     }
 
@@ -755,48 +811,46 @@ function startWebServer() {
 
     // ─── Automation API (scheduled task output ingestion) ────
     if (url.pathname === '/api/automation/run' && req.method === 'POST') {
-      let body = ''
-      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      req.on('end', () => {
+      const body = await readBody(req, res)
+      if (body === null) return
+      try {
+        const { taskName, status, summary, fullOutput } = JSON.parse(body)
+        if (!taskName) { res.writeHead(400); res.end('Missing taskName'); return }
+        const data = await readDataKeyParsed<{ runs: any[] }>('cortex-automations', { runs: [] })
+        if (!Array.isArray(data.runs)) data.runs = []
+        const run = {
+          id: `run-${Date.now()}`,
+          taskName,
+          timestamp: new Date().toISOString(),
+          status: status || 'success',
+          summary: summary || '',
+          fullOutput: fullOutput || '',
+        }
+        data.runs.unshift(run)
+        data.runs = data.runs.slice(0, 100) // keep last 100
+        await writeDataKey('cortex-automations', data, { source: 'http' })
+
+        // Send Pushover notification for all runs
         try {
-          const { taskName, status, summary, fullOutput } = JSON.parse(body)
-          if (!taskName) { res.writeHead(400); res.end('Missing taskName'); return }
-          const automFile = path.join(dataDir, 'cortex-automations.json')
-          let data: { runs: any[] } = { runs: [] }
-          try { if (fs.existsSync(automFile)) data = JSON.parse(readAndDecrypt(automFile)) } catch { /* fresh */ }
-          const run = {
-            id: `run-${Date.now()}`,
-            taskName,
-            timestamp: new Date().toISOString(),
-            status: status || 'success',
-            summary: summary || '',
-            fullOutput: fullOutput || '',
+          const { execFile: ef } = require('child_process')
+          const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
+          if (fs.existsSync(notifyScript)) {
+            const category = status === 'pending-approval' ? 'local-approval'
+              : status === 'error' ? 'scheduled-alert'
+              : 'scheduled-task'
+            ef(notifyScript, [
+              '-c', category,
+              '-m', `${taskName}: ${summary || (status === 'pending-approval' ? 'Needs your approval' : 'Completed')}`,
+              // Only advertise URLs the socket gate accepts (localhost + Tailscale).
+              '--url', `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}/automations`,
+              '--url-title', 'Open Cortex',
+            ], { timeout: 10000 }, () => { /* fire and forget */ })
           }
-          data.runs.unshift(run)
-          data.runs = data.runs.slice(0, 100) // keep last 100
-          encryptAndWrite(automFile, JSON.stringify(data, null, 2))
+        } catch { /* pushover optional */ }
 
-          // Send Pushover notification for all runs
-          try {
-            const { execFile: ef } = require('child_process')
-            const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
-            if (fs.existsSync(notifyScript)) {
-              const category = status === 'pending-approval' ? 'local-approval'
-                : status === 'error' ? 'scheduled-alert'
-                : 'scheduled-task'
-              ef(notifyScript, [
-                '-c', category,
-                '-m', `${taskName}: ${summary || (status === 'pending-approval' ? 'Needs your approval' : 'Completed')}`,
-                '--url', `http://${getLanIP()}:${WEB_PORT}/automations`,
-                '--url-title', 'Open Cortex',
-              ], { timeout: 10000 }, () => { /* fire and forget */ })
-            }
-          } catch { /* pushover optional */ }
-
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
-          res.end(JSON.stringify({ ok: true, id: run.id }))
-        } catch { res.writeHead(500); res.end('Error') }
-      })
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+        res.end(JSON.stringify({ ok: true, id: run.id }))
+      } catch { res.writeHead(500); res.end('Error') }
       return
     }
 
@@ -813,18 +867,15 @@ function startWebServer() {
       const runId = parts[3]
       const action = parts[4] as 'approve' | 'reject'
       try {
-        const automFile = path.join(dataDir, 'cortex-automations.json')
-        if (fs.existsSync(automFile)) {
-          const data = JSON.parse(readAndDecrypt(automFile))
-          const run = data.runs.find((r: any) => r.id === runId)
-          if (run) {
-            run.status = action === 'approve' ? 'success' : 'error'
-            run.approved = action === 'approve'
-            encryptAndWrite(automFile, JSON.stringify(data, null, 2))
-            res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
-            res.end(JSON.stringify({ ok: true, action }))
-            return
-          }
+        const data = await readDataKeyParsed<{ runs: any[] } | null>('cortex-automations', null)
+        const run = data?.runs?.find((r: any) => r.id === runId)
+        if (data && run) {
+          run.status = action === 'approve' ? 'success' : 'error'
+          run.approved = action === 'approve'
+          await writeDataKey('cortex-automations', data, { source: 'http' })
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+          res.end(JSON.stringify({ ok: true, action }))
+          return
         }
         res.writeHead(404); res.end('Run not found')
       } catch { res.writeHead(500); res.end('Error') }
@@ -843,43 +894,37 @@ function startWebServer() {
     }
 
     if (url.pathname === '/api/calendar/sync-birthdays' && req.method === 'POST') {
-      let body = ''
-      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      req.on('end', async () => {
-        try {
-          const birthdays = JSON.parse(body)
-          const calEmail = getKey('calendar-email') || undefined
-          const result = await syncBirthdays(birthdays, calEmail)
-          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-        } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      })
+      const body = await readBody(req, res)
+      if (body === null) return
+      try {
+        const birthdays = JSON.parse(body)
+        const calEmail = getKey('calendar-email') || undefined
+        const result = await syncBirthdays(birthdays, calEmail)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
       return
     }
 
     if (url.pathname === '/api/calendar/create' && req.method === 'POST') {
-      let body = ''
-      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      req.on('end', async () => {
-        try {
-          const payload = JSON.parse(body)
-          const result = await createCalendarEvent(payload)
-          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-        } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      })
+      const body = await readBody(req, res)
+      if (body === null) return
+      try {
+        const payload = JSON.parse(body)
+        const result = await createCalendarEvent(payload)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
       return
     }
 
     if (url.pathname?.startsWith('/api/calendar/update/') && req.method === 'POST') {
       const eventId = decodeURIComponent(url.pathname.slice('/api/calendar/update/'.length))
-      let body = ''
-      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      req.on('end', async () => {
-        try {
-          const payload = JSON.parse(body)
-          const result = await updateCalendarEvent(eventId, payload)
-          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-        } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      })
+      const body = await readBody(req, res)
+      if (body === null) return
+      try {
+        const payload = JSON.parse(body)
+        const result = await updateCalendarEvent(eventId, payload)
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
       return
     }
 
@@ -902,70 +947,26 @@ function startWebServer() {
       return
     }
 
-    if (url.pathname === '/api/integrations/github' && req.method === 'GET') {
+    // Founder integrations (MCP get_*_stats): cache-first via the refresher —
+    // fresh cache (<10min) is served as-is, otherwise a live refresh of just
+    // that source runs. MCP calls no longer hammer the upstream APIs.
+    const integrationMatch = url.pathname.match(/^\/api\/integrations\/(github|lemon|vercel|supabase)$/)
+    if (integrationMatch && req.method === 'GET') {
+      const source = integrationMatch[1] as FounderSource
       try {
-        const token = getKey('github-token')
-        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No GitHub token saved' })); return }
-        const stats = await getGitHubStats(token)
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname === '/api/integrations/lemon' && req.method === 'GET') {
-      try {
-        const apiKey = getKey('lemon-api-key')
-        const storeId = getKey('lemon-store-id')
-        if (!apiKey || !storeId) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No Lemon credentials saved' })); return }
-        const stats = await getLemonStats(apiKey, storeId)
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname === '/api/integrations/vercel' && req.method === 'GET') {
-      try {
-        const token = getKey('vercel-token')
-        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify(null)); return }
-        const stats = await getVercelStats(token)
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname === '/api/integrations/supabase' && req.method === 'GET') {
-      try {
-        const sbUrl = getKey('supabase-url')
-        const sbKey = getKey('supabase-service-key')
-        if (!sbUrl || !sbKey) { res.writeHead(200, corsHeaders); res.end(JSON.stringify(null)); return }
-        const stats = await getSupabaseStats(sbUrl, sbKey)
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname.startsWith('/api/integrations/paperclip') && req.method === 'GET') {
-      try {
-        const token = getKey('paperclip-token')
-        if (!token) { res.writeHead(200, corsHeaders); res.end(JSON.stringify({ error: 'No Paperclip token saved' })); return }
-        const baseUrl = getKey('paperclip-base-url') || `http://${VM_HOST}:3100`
-        const client = createPaperclipClient({ baseUrl, token })
-        const sub = url.pathname.replace('/api/integrations/paperclip', '')
-        let data: unknown
-        if (sub === '/companies') {
-          data = await client.listCompanies()
+        const result = await getStatsForEndpoint(source)
+        if (result.kind === 'unconfigured') {
+          // Preserve the legacy per-source unconfigured contracts.
+          const body = source === 'github' ? { error: 'No GitHub token saved' }
+            : source === 'lemon' ? { error: 'No Lemon credentials saved' }
+            : null
+          res.writeHead(200, corsHeaders); res.end(JSON.stringify(body))
+        } else if (result.kind === 'ok') {
+          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result.data))
         } else {
-          const m = sub.match(/^\/companies\/([^/]+)\/(agents|heartbeat-runs|activity|live-runs)$/)
-          if (!m) { res.writeHead(404, corsHeaders); res.end(JSON.stringify({ error: 'Unknown paperclip route' })); return }
-          const [, companyId, kind] = m
-          const limit = parseInt(url.searchParams.get('limit') || '20')
-          if (kind === 'agents') data = await client.listAgents(companyId)
-          else if (kind === 'heartbeat-runs') data = await client.listHeartbeatRuns(companyId, limit)
-          else if (kind === 'activity') data = await client.listActivity(companyId, limit)
-          else data = await client.liveRuns(companyId)
+          res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: result.error }))
         }
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify(data))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: (e as Error).message })) }
       return
     }
 
@@ -980,16 +981,14 @@ function startWebServer() {
     }
 
     if (url.pathname === '/api/mars/journal' && req.method === 'POST') {
-      let body = ''
-      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      req.on('end', () => {
-        try {
-          const { text, date, tag } = JSON.parse(body)
-          if (!text) { res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'Missing text' })); return }
-          const result = writeJournalLine(text, { date, tag })
-          res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-        } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      })
+      const body = await readBody(req, res)
+      if (body === null) return
+      try {
+        const { text, date, tag } = JSON.parse(body)
+        if (!text) { res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'Missing text' })); return }
+        const result = writeJournalLine(text, { date, tag })
+        res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
+      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
       return
     }
 
@@ -1021,19 +1020,9 @@ function startWebServer() {
 
     // ─── System metrics (Glances proxy) ─────────────────────
     // Mac mini: glances launchd service on 127.0.0.1:61208
-    // Lima VM: glances systemd service on VM_HOST:61208 (Tailscale)
     if (url.pathname === '/api/system/mac' && req.method === 'GET') {
       try {
         const r = await fetch('http://127.0.0.1:61208/api/4/all', { signal: AbortSignal.timeout(4000) })
-        if (!r.ok) throw new Error(`glances ${r.status}`)
-        res.writeHead(200, corsHeaders); res.end(await r.text())
-      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
-      return
-    }
-
-    if (url.pathname === '/api/system/vm' && req.method === 'GET') {
-      try {
-        const r = await fetch(`http://${VM_HOST}:61208/api/4/all`, { signal: AbortSignal.timeout(5000) })
         if (!r.ok) throw new Error(`glances ${r.status}`)
         res.writeHead(200, corsHeaders); res.end(await r.text())
       } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
@@ -1044,8 +1033,8 @@ function startWebServer() {
     if (url.pathname === '/api/system/history' && req.method === 'GET') {
       try {
         const hostParam = url.searchParams.get('host') as SystemHostKey | null
-        if (hostParam !== 'mac' && hostParam !== 'vm') {
-          res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'host must be mac or vm' })); return
+        if (hostParam !== 'mac') {
+          res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'host must be mac' })); return
         }
         const win = url.searchParams.get('window') ?? '1h'
         const windowMs =
@@ -1060,23 +1049,6 @@ function startWebServer() {
       } catch (e: any) {
         res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e?.message ?? 'history failed' }))
       }
-      return
-    }
-
-    // ─── Uptime Kuma proxy (status page on Lima VM) ─────────────
-    if (url.pathname === '/api/uptime' && req.method === 'GET') {
-      const slug = url.searchParams.get('slug') || 'main'
-      try {
-        const opts = { signal: AbortSignal.timeout(5000) }
-        const [confR, hbR] = await Promise.all([
-          fetch(`http://${VM_HOST}:3001/api/status-page/${slug}`, opts),
-          fetch(`http://${VM_HOST}:3001/api/status-page/heartbeat/${slug}`, opts),
-        ])
-        if (!confR.ok || !hbR.ok) throw new Error(`uptime-kuma ${confR.status}/${hbR.status}`)
-        const config = await confR.json()
-        const heartbeat = await hbR.json()
-        res.writeHead(200, corsHeaders); res.end(JSON.stringify({ config, heartbeat }))
-      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
       return
     }
 
@@ -1103,24 +1075,23 @@ function startWebServer() {
 
     // ─── Media API (images for captures — sync from phone) ─────
     if (url.pathname === '/api/media' && req.method === 'POST') {
-      let body = ''
-      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      req.on('end', () => {
-        try {
-          const { id, base64 } = JSON.parse(body)
-          if (!id || !base64) { res.writeHead(400); res.end('Missing id or base64'); return }
-          const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
-          fs.writeFileSync(path.join(mediaDir, id), buffer)
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
-          res.end('true')
-        } catch { res.writeHead(500); res.end('Save error') }
-      })
+      const body = await readBody(req, res)
+      if (body === null) return
+      try {
+        const { id, base64 } = JSON.parse(body)
+        if (!id || !base64) { res.writeHead(400); res.end('Missing id or base64'); return }
+        if (typeof id !== 'string' || !KEY_RE.test(id)) { res.writeHead(400); res.end('Invalid id'); return }
+        const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
+        await fs.promises.writeFile(path.join(mediaDir, id), buffer)
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+        res.end('true')
+      } catch { res.writeHead(500); res.end('Save error') }
       return
     }
 
     if (url.pathname === '/api/media' && req.method === 'GET') {
       const id = url.searchParams.get('id')
-      if (!id) { res.writeHead(400); res.end('Missing id'); return }
+      if (!id || !KEY_RE.test(id)) { res.writeHead(400); res.end('Invalid id'); return }
       try {
         const file = path.join(mediaDir, id)
         if (!fs.existsSync(file)) {
@@ -1128,7 +1099,7 @@ function startWebServer() {
           res.end('null')
           return
         }
-        const buffer = fs.readFileSync(file)
+        const buffer = await fs.promises.readFile(file)
         const ext = id.split('.').pop()?.toLowerCase() || 'png'
         const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/png'
         const b64 = `data:${mime};base64,${buffer.toString('base64')}`
@@ -1139,18 +1110,17 @@ function startWebServer() {
     }
 
     if (url.pathname === '/api/media/delete' && req.method === 'POST') {
-      let body = ''
-      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
-      req.on('end', () => {
-        try {
-          const { id } = JSON.parse(body)
-          if (!id) { res.writeHead(400); res.end('Missing id'); return }
-          const file = path.join(mediaDir, id)
-          if (fs.existsSync(file)) fs.unlinkSync(file)
-          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
-          res.end('true')
-        } catch { res.writeHead(500); res.end('Delete error') }
-      })
+      const body = await readBody(req, res)
+      if (body === null) return
+      try {
+        const { id } = JSON.parse(body)
+        if (!id) { res.writeHead(400); res.end('Missing id'); return }
+        if (typeof id !== 'string' || !KEY_RE.test(id)) { res.writeHead(400); res.end('Invalid id'); return }
+        const file = path.join(mediaDir, id)
+        if (fs.existsSync(file)) await fs.promises.unlink(file)
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+        res.end('true')
+      } catch { res.writeHead(500); res.end('Delete error') }
       return
     }
 
@@ -1217,55 +1187,31 @@ ipcMain.handle('keychain:delete', async (_event, service: string) => deleteKey(s
 ipcMain.handle('keychain:has', async (_event, service: string) => hasKey(service))
 ipcMain.handle('keychain:list', async () => listKeys())
 
-// ─── IPC: GitHub ───────────────────────────────────────────
+// ─── IPC: Founder integrations (legacy per-source handlers) ──
+// Route through the refresher so every path shares one cache shape/write.
 
 ipcMain.handle('github:getStats', async () => {
-  const token = getKey('github-token')
-  if (!token) return { error: 'No GitHub token saved' }
-  try {
-    const stats = await getGitHubStats(token)
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-github.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
-    return stats
-  } catch (e: any) { return { error: `GitHub: ${e.message}` } }
+  const r = await getStatsForEndpoint('github')
+  if (r.kind === 'unconfigured') return { error: 'No GitHub token saved' }
+  if (r.kind === 'ok') return r.data
+  return { error: `GitHub: ${r.error}` }
 })
-
-// ─── IPC: Lemon Squeezy ───────────────────────────────────
 
 ipcMain.handle('lemon:getStats', async () => {
-  const apiKey = getKey('lemon-api-key')
-  const storeId = getKey('lemon-store-id')
-  if (!apiKey) return { error: 'No Lemon API key saved' }
-  if (!storeId) return { error: 'No Lemon Store ID saved' }
-  try {
-    const stats = await getLemonStats(apiKey, storeId)
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-lemon.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
-    return stats
-  } catch (e: any) { return { error: `Lemon: ${e.message}` } }
+  const r = await getStatsForEndpoint('lemon')
+  if (r.kind === 'unconfigured') return { error: 'No Lemon credentials saved' }
+  if (r.kind === 'ok') return r.data
+  return { error: `Lemon: ${r.error}` }
 })
-
-// ─── IPC: Vercel ───────────────────────────────────────────
 
 ipcMain.handle('vercel:getStats', async () => {
-  const token = getKey('vercel-token')
-  if (!token) return null
-  try {
-    const stats = await getVercelStats(token)
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-vercel.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
-    return stats
-  } catch (e) { console.error('Vercel error:', e); return null }
+  const r = await getStatsForEndpoint('vercel')
+  return r.kind === 'ok' ? r.data : null
 })
 
-// ─── IPC: Supabase ─────────────────────────────────────────
-
 ipcMain.handle('supabase:getStats', async () => {
-  const url = getKey('supabase-url')
-  const key = getKey('supabase-service-key')
-  if (!url || !key) return null
-  try {
-    const stats = await getSupabaseStats(url, key)
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-supabase.json'), JSON.stringify({ data: stats, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
-    return stats
-  } catch (e) { console.error('Supabase error:', e); return null }
+  const r = await getStatsForEndpoint('supabase')
+  return r.kind === 'ok' ? r.data : null
 })
 
 // ─── IPC: Projects scanner ────────────────────────────────
@@ -1434,7 +1380,7 @@ ipcMain.handle('projects:scan', async () => {
       } catch { /* skip broken symlinks */ }
     }
     const sorted = projects.sort((a, b) => a.name.localeCompare(b.name))
-    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-projects.json'), JSON.stringify({ data: sorted, lastUpdated: new Date().toISOString() }, null, 2)) } catch { /* cache optional */ }
+    try { encryptAndWrite(path.join(dataDir, 'cortex-cache-projects.json'), JSON.stringify({ data: sorted, lastUpdated: new Date().toISOString() })) } catch { /* cache optional */ }
     return sorted
   } catch (e) { console.error('[Cortex] projects:scan error:', e); return [] }
 })
@@ -1442,20 +1388,30 @@ ipcMain.handle('projects:scan', async () => {
 // ─── Data persistence (JSON files in project data/) ───────
 
 // In dev: data/ in project root. In prod: iCloud Drive for cross-device sync.
-// Never write inside the asar archive.
+// CORTEX_DATA_DIR (absolute path) overrides both. Never write inside the asar archive.
 const iCloudDir = path.join(
   app.getPath('home'),
   'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Cortex'
 )
 const legacyDir = path.join(app.getPath('home'), 'Projects', 'cortex', 'data')
 
-const dataDir = isDev
+const envDataDir = (() => {
+  const raw = process.env.CORTEX_DATA_DIR
+  if (!raw) return null
+  if (!path.isAbsolute(raw)) {
+    console.warn(`[Cortex] Ignoring CORTEX_DATA_DIR="${raw}" — must be an absolute path`)
+    return null
+  }
+  return raw
+})()
+
+const dataDir = envDataDir ?? (isDev
   ? path.join(__dirname, '..', 'data')
-  : iCloudDir
+  : iCloudDir)
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true })
 
-// Migrate existing data from legacy location to iCloud
-if (!isDev && fs.existsSync(legacyDir) && legacyDir !== dataDir) {
+// Migrate existing data from legacy location to iCloud (skipped when CORTEX_DATA_DIR overrides)
+if (!isDev && !envDataDir && fs.existsSync(legacyDir) && legacyDir !== dataDir) {
   const legacyFiles = fs.readdirSync(legacyDir)
   if (legacyFiles.length > 0) {
     console.log(`[Cortex] Migrating ${legacyFiles.length} items from legacy dir to iCloud...`)
@@ -1486,79 +1442,156 @@ if (!isDev && fs.existsSync(legacyDir) && legacyDir !== dataDir) {
 const backupDir = path.join(dataDir, 'backups')
 if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
 
+// ─── Shared store read/write path ──────────────────────────
+// ONE write pipeline used by IPC data:write, HTTP POST /api/data, and
+// main-process writers (tray habit toggle, automations): sanitize →
+// versioned backups → encrypt + atomic write → broadcast data:changed.
+
+type DataChangeSource = 'ipc' | 'http' | 'main'
+
+type WriteOutcome =
+  | { ok: true; rev: string }
+  | { ok: false; conflict: true; rev: string | null; data: unknown }
+  | { ok: false; conflict?: undefined; error: string }
+
+function broadcastDataChanged(key: string, source: DataChangeSource, rev: string | null) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    try { win.webContents.send('data:changed', { key, source, rev }) } catch { /* window closing */ }
+  }
+}
+
+/** rev = the key file's mtimeMs as a string; null when the file doesn't exist. */
+async function statRev(file: string): Promise<string | null> {
+  try { return String((await fs.promises.stat(file)).mtimeMs) } catch { return null }
+}
+
+/**
+ * Read a store key (async), falling back to .bak / versioned backups when the
+ * main file is corrupt. Returns the decrypted JSON text plus the main file's rev.
+ */
+async function readDataFile(key: string): Promise<{ text: string | null; rev: string | null }> {
+  const file = path.join(dataDir, `${key}.json`)
+  const rev = await statRev(file)
+  if (rev === null) return { text: null, rev: null }
+  try {
+    const text = await readAndDecryptAsync(file)
+    JSON.parse(text) // validate — corrupt content triggers the backup fallbacks
+    return { text, rev }
+  } catch (e) {
+    console.warn(`[Cortex] data read: main file corrupt for "${key}", falling back to backup...`)
+    // Fallback 1: the .bak.json
+    try {
+      const text = await readAndDecryptAsync(path.join(backupDir, `${key}.bak.json`))
+      JSON.parse(text)
+      console.warn(`[Cortex] data read: recovered "${key}" from .bak`)
+      return { text, rev }
+    } catch { /* continue to versioned fallback */ }
+    // Fallback 2: latest readable versioned backup
+    try {
+      const versionsDir = path.join(backupDir, 'versions', key)
+      const versions = (await fs.promises.readdir(versionsDir)).sort().reverse()
+      for (const v of versions) {
+        try {
+          const text = await readAndDecryptAsync(path.join(versionsDir, v))
+          JSON.parse(text)
+          console.warn(`[Cortex] data read: recovered "${key}" from version ${v}`)
+          return { text, rev }
+        } catch { /* try next version */ }
+      }
+    } catch { /* no versions dir */ }
+    console.error(`[Cortex] data read: all fallbacks failed for "${key}":`, e)
+    return { text: null, rev }
+  }
+}
+
+// Serialize writes per key so concurrent writers can't interleave the
+// stat-check → backup → write sequence.
+const keyWriteLocks = new Map<string, Promise<unknown>>()
+function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = keyWriteLocks.get(key) ?? Promise.resolve()
+  const next = prev.then(fn, fn)
+  keyWriteLocks.set(key, next.then(() => undefined, () => undefined))
+  return next
+}
+
+async function writeDataKey(
+  key: string,
+  data: unknown,
+  opts: { baseRev?: string | number | null; source: DataChangeSource },
+): Promise<WriteOutcome> {
+  if (typeof key !== 'string' || !KEY_RE.test(key)) return { ok: false, error: 'invalid key' }
+
+  let serialized: string
+  try {
+    // Compact JSON — the plaintext is encrypted at rest anyway.
+    serialized = JSON.stringify(data)
+    if (serialized === undefined) throw new Error('value is not JSON-serializable')
+  } catch (serErr) {
+    console.error(`[Cortex] data write: serialization failed for "${key}":`, serErr)
+    return { ok: false, error: 'serialization failed' }
+  }
+  if (serialized.length > 5 * 1024 * 1024) {
+    console.warn(`[Cortex] data write: "${key}" is ${(serialized.length / 1024 / 1024).toFixed(1)}MB — consider cleanup`)
+  }
+
+  const baseRev = opts.baseRev == null ? null : String(opts.baseRev)
+
+  return withKeyLock(key, async (): Promise<WriteOutcome> => {
+    const file = path.join(dataDir, `${key}.json`)
+    const currentRev = await statRev(file)
+
+    // Optimistic concurrency — only enforced when the writer sent a baseRev.
+    // Rev-less writes (deployed old writers) behave exactly as before.
+    if (baseRev !== null && baseRev !== currentRev) {
+      const { text } = await readDataFile(key)
+      let currentData: unknown = null
+      if (text !== null) { try { currentData = JSON.parse(text) } catch { /* corrupt */ } }
+      return { ok: false, conflict: true, rev: currentRev, data: currentData }
+    }
+
+    try {
+      if (currentRev !== null) {
+        // .bak + versioned backup of the previous file (copies encrypted bytes as-is)
+        await fs.promises.copyFile(file, path.join(backupDir, `${key}.bak.json`))
+        const versionsDir = path.join(backupDir, 'versions', key)
+        await fs.promises.mkdir(versionsDir, { recursive: true })
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+        await fs.promises.copyFile(file, path.join(versionsDir, `${timestamp}.json`))
+        const versions = (await fs.promises.readdir(versionsDir)).sort().reverse()
+        for (const v of versions.slice(VERSIONED_BACKUPS_KEPT)) {
+          try { await fs.promises.unlink(path.join(versionsDir, v)) } catch { /* ignore */ }
+        }
+      }
+
+      await encryptAndWriteAsync(file, serialized)
+      const rev = (await statRev(file)) ?? String(Date.now())
+      broadcastDataChanged(key, opts.source, rev)
+      return { ok: true, rev }
+    } catch (e) {
+      console.error(`data:write error for ${key}:`, e)
+      return { ok: false, error: String((e as Error)?.message ?? e) }
+    }
+  })
+}
+
+/** Read + parse a store key in the main process (backup-fallback included). */
+async function readDataKeyParsed<T>(key: string, fallback: T): Promise<T> {
+  const { text } = await readDataFile(key)
+  if (text === null) return fallback
+  try { return JSON.parse(text) as T } catch { return fallback }
+}
+
 ipcMain.handle('automation:scheduledTasks', async () => readScheduledTasks())
 
 ipcMain.handle('data:read', async (_event, key: string) => {
-  const file = path.join(dataDir, `${key}.json`)
-  try {
-    if (fs.existsSync(file)) return JSON.parse(readAndDecrypt(file))
-  } catch (e) {
-    console.warn(`[Cortex] data:read: main file corrupt for "${key}", falling back to backup...`)
-    // Fallback 1: try the .bak.json
-    try {
-      const bakFile = path.join(backupDir, `${key}.bak.json`)
-      if (fs.existsSync(bakFile)) {
-        const data = JSON.parse(readAndDecrypt(bakFile))
-        console.warn(`[Cortex] data:read: recovered "${key}" from .bak`)
-        return data
-      }
-    } catch { /* continue to versioned fallback */ }
-    // Fallback 2: try latest versioned backup
-    try {
-      const versionsDir = path.join(backupDir, 'versions', key)
-      if (fs.existsSync(versionsDir)) {
-        const versions = fs.readdirSync(versionsDir).sort().reverse()
-        for (const v of versions) {
-          try {
-            const data = JSON.parse(readAndDecrypt(path.join(versionsDir, v)))
-            console.warn(`[Cortex] data:read: recovered "${key}" from version ${v}`)
-            return data
-          } catch { /* try next version */ }
-        }
-      }
-    } catch (vErr) {
-      console.error(`[Cortex] data:read: all fallbacks failed for "${key}":`, vErr)
-    }
-  }
-  return null
+  if (typeof key !== 'string' || !KEY_RE.test(key)) return { data: null, rev: null, error: 'invalid key' }
+  const { text, rev } = await readDataFile(key)
+  if (text === null) return { data: null, rev }
+  try { return { data: JSON.parse(text), rev } } catch { return { data: null, rev } }
 })
 
-ipcMain.handle('data:write', async (_event, key: string, data: unknown) => {
-  const file = path.join(dataDir, `${key}.json`)
-  try {
-    // Validate serialization before writing
-    let serialized: string
-    try {
-      serialized = JSON.stringify(data, null, 2)
-    } catch (serErr) {
-      console.error(`[Cortex] data:write: serialization failed for "${key}":`, serErr)
-      return false
-    }
-
-    if (serialized.length > 5 * 1024 * 1024) {
-      console.warn(`[Cortex] data:write: "${key}" is ${(serialized.length / 1024 / 1024).toFixed(1)}MB — consider cleanup`)
-    }
-
-    // Keep .bak + versioned backup of previous file (copies encrypted bytes as-is)
-    if (fs.existsSync(file)) {
-      fs.copyFileSync(file, path.join(backupDir, `${key}.bak.json`))
-      // Versioned backup: keep last 10
-      const versionsDir = path.join(backupDir, 'versions', key)
-      if (!fs.existsSync(versionsDir)) fs.mkdirSync(versionsDir, { recursive: true })
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-      fs.copyFileSync(file, path.join(versionsDir, `${timestamp}.json`))
-      // Prune old versions
-      const versions = fs.readdirSync(versionsDir).sort().reverse()
-      for (const v of versions.slice(10)) {
-        try { fs.unlinkSync(path.join(versionsDir, v)) } catch { /* ignore */ }
-      }
-    }
-
-    // Encrypt + atomic write
-    encryptAndWrite(file, serialized)
-    return true
-  } catch (e) { console.error(`data:write error for ${key}:`, e); return false }
-})
+ipcMain.handle('data:write', async (_event, key: string, data: unknown, baseRev?: string | null) =>
+  writeDataKey(key, data, { baseRev: baseRev ?? null, source: 'ipc' }))
 
 // ── Media storage (images for captures) ────────────────────────────────────
 const mediaDir = path.join(dataDir, 'media')
@@ -1566,17 +1599,19 @@ if (!fs.existsSync(mediaDir)) fs.mkdirSync(mediaDir, { recursive: true })
 
 ipcMain.handle('media:save', async (_event, id: string, base64: string) => {
   try {
+    if (typeof id !== 'string' || !KEY_RE.test(id)) return false
     const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ''), 'base64')
-    fs.writeFileSync(path.join(mediaDir, id), buffer)
+    await fs.promises.writeFile(path.join(mediaDir, id), buffer)
     return true
   } catch (e) { console.error('media:save error:', e); return false }
 })
 
 ipcMain.handle('media:load', async (_event, id: string) => {
   try {
+    if (typeof id !== 'string' || !KEY_RE.test(id)) return null
     const file = path.join(mediaDir, id)
     if (!fs.existsSync(file)) return null
-    const buffer = fs.readFileSync(file)
+    const buffer = await fs.promises.readFile(file)
     const ext = id.split('.').pop()?.toLowerCase() || 'png'
     const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'gif' ? 'image/gif' : ext === 'webp' ? 'image/webp' : 'image/png'
     return `data:${mime};base64,${buffer.toString('base64')}`
@@ -1585,8 +1620,9 @@ ipcMain.handle('media:load', async (_event, id: string) => {
 
 ipcMain.handle('media:delete', async (_event, id: string) => {
   try {
+    if (typeof id !== 'string' || !KEY_RE.test(id)) return false
     const file = path.join(mediaDir, id)
-    if (fs.existsSync(file)) fs.unlinkSync(file)
+    if (fs.existsSync(file)) await fs.promises.unlink(file)
     return true
   } catch (e) { console.error('media:delete error:', e); return false }
 })
@@ -1631,16 +1667,18 @@ ipcMain.handle('data:importAll', async (_event, json: string) => {
     // Backup everything first
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const importBackupDir = path.join(backupDir, `pre-import-${timestamp}`)
-    fs.mkdirSync(importBackupDir, { recursive: true })
-    for (const f of fs.readdirSync(dataDir).filter(f => f.endsWith('.json'))) {
-      fs.copyFileSync(path.join(dataDir, f), path.join(importBackupDir, f))
+    await fs.promises.mkdir(importBackupDir, { recursive: true })
+    for (const f of (await fs.promises.readdir(dataDir)).filter(f => f.endsWith('.json'))) {
+      await fs.promises.copyFile(path.join(dataDir, f), path.join(importBackupDir, f))
     }
-    // Write imported data (encrypted)
+    // Write imported data through the shared path ('main' so every window,
+    // including the importer, reloads the fresh values).
     let count = 0
     for (const [key, value] of Object.entries(bundle)) {
       if (key === '_meta') continue
-      encryptAndWrite(path.join(dataDir, `${key}.json`), JSON.stringify(value, null, 2))
-      count++
+      if (!KEY_RE.test(key)) { console.warn(`[Cortex] importAll: skipping invalid key "${key}"`); continue }
+      const result = await writeDataKey(key, value, { source: 'main' })
+      if (result.ok) count++
     }
     return { success: true, count }
   } catch (e) { console.error('data:importAll error:', e); return { success: false, error: String(e) } }
@@ -1664,7 +1702,7 @@ function cleanupOldDailyFiles() {
   try {
     const files = fs.readdirSync(dataDir).filter(f => f.startsWith('cortex-daily-') && f.endsWith('.json'))
     const now = Date.now()
-    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000
+    const retentionMs = DAILY_FILE_RETENTION_DAYS * 24 * 60 * 60 * 1000
     let cleaned = 0
 
     for (const file of files) {
@@ -1674,14 +1712,14 @@ function cleanupOldDailyFiles() {
       const fileDate = new Date(dateStr)
       if (isNaN(fileDate.getTime())) continue // skip if date can't be parsed
 
-      if (now - fileDate.getTime() > thirtyDaysMs) {
+      if (now - fileDate.getTime() > retentionMs) {
         fs.unlinkSync(path.join(dataDir, file))
         cleaned++
       }
     }
 
     if (cleaned > 0) {
-      console.log(`[Cortex] Cleaned up ${cleaned} daily file${cleaned === 1 ? '' : 's'} older than 30 days`)
+      console.log(`[Cortex] Cleaned up ${cleaned} daily file${cleaned === 1 ? '' : 's'} older than ${DAILY_FILE_RETENTION_DAYS} days`)
     }
   } catch (e) {
     console.error('[Cortex] Daily file cleanup failed:', e)
@@ -1690,26 +1728,26 @@ function cleanupOldDailyFiles() {
 
 // ─── Auto-export every 30 minutes ─────────────────────────
 
-function autoExport() {
+async function autoExport() {
   try {
-    const files = fs.readdirSync(dataDir).filter(f => f.endsWith('.json') && !f.includes('.bak') && !f.startsWith('cortex-backup'))
+    const files = (await fs.promises.readdir(dataDir)).filter(f => f.endsWith('.json') && !f.includes('.bak') && !f.startsWith('cortex-backup'))
     if (files.length === 0) return
     const bundle: Record<string, unknown> = {
       _meta: { version: '1.0', exported: new Date().toISOString(), app: 'Cortex', auto: true }
     }
     for (const f of files) {
       const key = f.replace('.json', '')
-      try { bundle[key] = JSON.parse(readAndDecrypt(path.join(dataDir, f))) } catch { /* skip corrupted */ }
+      try { bundle[key] = JSON.parse(await readAndDecryptAsync(path.join(dataDir, f))) } catch { /* skip corrupted */ }
     }
-    const json = JSON.stringify(bundle, null, 2)
-    encryptAndWrite(path.join(backupDir, 'cortex-backup-latest.json'), json)
+    const json = JSON.stringify(bundle) // compact — this copy is encrypted, not human-facing
+    await encryptAndWriteAsync(path.join(backupDir, 'cortex-backup-latest.json'), json)
     // Also save compressed encrypted version
     try {
       if (isEncryptionEnabled()) {
         const encrypted = encrypt(json)
-        fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json.gz'), zlib.gzipSync(encrypted))
+        await fs.promises.writeFile(path.join(backupDir, 'cortex-backup-latest.json.gz'), zlib.gzipSync(encrypted))
       } else {
-        fs.writeFileSync(path.join(backupDir, 'cortex-backup-latest.json.gz'), zlib.gzipSync(json))
+        await fs.promises.writeFile(path.join(backupDir, 'cortex-backup-latest.json.gz'), zlib.gzipSync(json))
       }
     } catch { /* compression optional */ }
     console.log(`[Cortex] Auto-export: ${files.length} stores saved to data/backups/`)
@@ -1721,9 +1759,21 @@ let autoExportInterval: ReturnType<typeof setInterval> | null = null
 // ─── App lifecycle ─────────────────────────────────────────
 
 app.on('ready', () => {
+  console.log(`[Cortex] Web port: ${WEB_PORT}${process.env.CORTEX_PORT ? ' (CORTEX_PORT)' : ''} — data dir: ${dataDir}${envDataDir ? ' (CORTEX_DATA_DIR)' : ''}`)
+
   // Initialize at-rest encryption before any data access
-  const encOk = initEncryption()
-  if (!encOk) {
+  const encResult = initEncryption(dataDir)
+  if (encResult === 'key-loss') {
+    // The data dir holds CTX1-encrypted files but the master key is gone.
+    // Minting a new key would silently orphan every existing file — refuse.
+    dialog.showErrorBox(
+      'Cortex — encryption key missing',
+      `Your Cortex data is encrypted, but the master key file is missing or unreadable:\n\n${path.join(app.getPath('userData'), 'cortex-keys.enc')}\n\nCortex will NOT create a new key, because that would permanently orphan all existing data in:\n${dataDir}\n\nRestore cortex-keys.enc from a backup (e.g. Time Machine) and launch Cortex again.`,
+    )
+    app.exit(1)
+    return
+  }
+  if (encResult === 'unavailable') {
     console.warn('[Cortex] safeStorage unavailable — data will NOT be encrypted at rest')
   } else {
     migrateToEncrypted(dataDir, backupDir)
@@ -1733,6 +1783,16 @@ app.on('ready', () => {
   createWindow()
   createTray()
   startWebServer() // Auto-start web server for iPhone/browser access
+
+  // Founder metrics: background refresher (30min jittered + resume + IPC).
+  // History goes through the shared backed-up write path; caches write via
+  // the direct encrypt path + broadcast (no versioned-backup churn in iCloud).
+  startFounderRefresher({
+    dataDir,
+    readDataKeyParsed,
+    writeDataKey: (key, data, opts) => writeDataKey(key, data, opts),
+    broadcastDataChanged,
+  })
 
   // Global hotkey: Cmd+Shift+Alt+S to start a 60-min sprint (sends to renderer)
   globalShortcut.register('CommandOrControl+Shift+Alt+S', () => {
@@ -1749,7 +1809,8 @@ app.on('ready', () => {
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (mainWindow === null) createWindow() })
-app.on('before-quit', () => {
+let quitExportDone = false
+app.on('before-quit', (event) => {
   globalShortcut.unregisterAll()
   if (traySprintInterval) clearInterval(traySprintInterval)
   if (trayRefreshTimer) clearInterval(trayRefreshTimer)
@@ -1759,5 +1820,11 @@ app.on('before-quit', () => {
   systemHistoryDirty = true
   persistSystemHistory()
   if (autoExportInterval) clearInterval(autoExportInterval)
-  autoExport() // One final export on quit
+  // One final export on quit — autoExport is async now, so hold the quit
+  // until it lands, then resume (guarded so the second pass falls through).
+  if (!quitExportDone) {
+    quitExportDone = true
+    event.preventDefault()
+    autoExport().finally(() => app.quit())
+  }
 })

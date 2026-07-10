@@ -1,6 +1,9 @@
 import { useState, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Flame, Plus, X, Pencil, Check, ChevronDown, AlertTriangle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { useStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import type { HardBan, BanViolation } from '@/types/gym'
@@ -16,6 +19,7 @@ function daysBetween(a: string, b: string): number {
 }
 
 export function HardBans() {
+  const reduceMotion = useReducedMotion()
   const [bans, setBans] = useStore<HardBan[]>('cortex-hard-bans', DEFAULT_HARD_BANS)
   const [violations, setViolations] = useStore<BanViolation[]>('cortex-ban-violations', [])
   const [editing, setEditing] = useState(false)
@@ -78,17 +82,21 @@ export function HardBans() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Hard Bans</h3>
-        <button
-          onClick={() => setEditing(e => !e)}
-          className="p-1.5 rounded-lg hover:bg-foreground/10 text-muted-foreground transition-colors"
-        >
-          {editing ? <Check size={16} /> : <Pencil size={16} />}
-        </button>
-      </div>
+    <div className="mt-4 space-y-4">
+      <PageHeader
+        kicker="Discipline"
+        title="Hard bans"
+        actions={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setEditing(e => !e)}
+            aria-label={editing ? 'Done editing' : 'Edit bans'}
+          >
+            {editing ? <Check /> : <Pencil />}
+          </Button>
+        }
+      />
 
       {/* Bans grouped by category */}
       {CATEGORIES.map(cat => {
@@ -96,14 +104,14 @@ export function HardBans() {
         if (catBans.length === 0 && !editing) return null
         return (
           <div key={cat}>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 mb-1.5">
+            <p className="mb-1.5 font-mono text-2xs uppercase tracking-widest text-foreground-faint">
               {cat}
             </p>
-            <div className="rounded-xl border border-border bg-card divide-y divide-border/30">
+            <div className="surface divide-y divide-border/60 rounded-xl">
               {catBans.map(ban => (
                 <div key={ban.id}>
                   <div
-                    className="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-foreground/5 transition-colors"
+                    className="flex cursor-pointer items-center justify-between px-4 py-2.5 transition-colors hover:bg-muted/40"
                     onClick={() => {
                       if (editing) return
                       setExpandedBanId(prev => prev === ban.id ? null : ban.id)
@@ -112,18 +120,21 @@ export function HardBans() {
                   >
                     <div className="flex items-center gap-2">
                       {editing && (
-                        <button
+                        <Button
+                          variant="destructive"
+                          size="icon-xs"
+                          className="rounded-full"
                           onClick={(e) => { e.stopPropagation(); removeBan(ban.id) }}
-                          className="p-0.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+                          aria-label={`Remove ban ${ban.name}`}
                         >
-                          <X size={12} />
-                        </button>
+                          <X />
+                        </Button>
                       )}
                       <span className="text-sm text-foreground">{ban.name}</span>
                     </div>
-                    <div className="flex items-center gap-1 text-xs tabular-nums">
-                      <Flame size={12} className={streakMap[ban.id] > 7 ? 'text-orange-400' : 'text-muted-foreground/50'} />
-                      <span className={streakMap[ban.id] > 7 ? 'text-orange-400 font-medium' : 'text-muted-foreground'}>
+                    <div className="flex items-center gap-1 font-mono text-xs tabular-nums">
+                      <Flame size={12} className={streakMap[ban.id] > 7 ? 'text-success' : 'text-foreground-faint'} />
+                      <span className={streakMap[ban.id] > 7 ? 'font-medium text-success' : 'text-muted-foreground'}>
                         {streakMap[ban.id]}d
                       </span>
                     </div>
@@ -133,27 +144,24 @@ export function HardBans() {
                   <AnimatePresence>
                     {expandedBanId === ban.id && !editing && (
                       <motion.div
-                        initial={{ height: 0, opacity: 0 }}
+                        initial={reduceMotion ? false : { height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.15 }}
+                        exit={reduceMotion ? undefined : { height: 0, opacity: 0 }}
+                        transition={{ duration: reduceMotion ? 0 : 0.15 }}
                         className="overflow-hidden"
                       >
-                        <div className="px-4 pb-3 space-y-2">
+                        <div className="space-y-2 px-4 pb-3">
                           <textarea
                             value={violationNotes}
                             onChange={e => setViolationNotes(e.target.value)}
                             placeholder="What happened?"
                             rows={2}
-                            className="w-full resize-none rounded-lg border border-border/30 bg-foreground/5 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-border"
+                            className="w-full resize-none rounded-md border border-input bg-input/20 px-3 py-2 text-sm text-foreground placeholder:text-foreground-faint"
                           />
-                          <button
-                            onClick={() => logViolation(ban.id)}
-                            className="flex items-center gap-1.5 rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/30 transition-colors"
-                          >
-                            <AlertTriangle size={12} />
+                          <Button variant="destructive" size="sm" onClick={() => logViolation(ban.id)}>
+                            <AlertTriangle />
                             Log Violation
-                          </button>
+                          </Button>
                         </div>
                       </motion.div>
                     )}
@@ -167,29 +175,26 @@ export function HardBans() {
 
       {/* Add ban row (edit mode only) */}
       {editing && (
-        <div className="rounded-xl border border-border bg-card p-3 space-y-2">
+        <div className="surface space-y-2 rounded-xl p-3">
           <div className="flex items-center gap-2">
-            <input
+            <Input
               type="text"
               value={newName}
               onChange={e => setNewName(e.target.value)}
               placeholder="New ban name"
-              className="flex-1 rounded-lg border border-border/30 bg-foreground/5 px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-border"
+              className="flex-1"
               onKeyDown={e => e.key === 'Enter' && addBan()}
             />
             <select
               value={newCategory}
               onChange={e => setNewCategory(e.target.value as HardBan['category'])}
-              className="rounded-lg border border-border/30 bg-foreground/5 px-2 py-1.5 text-xs text-foreground focus:outline-none"
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
             >
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <button
-              onClick={addBan}
-              className="p-1.5 rounded-lg bg-foreground/10 text-foreground hover:bg-foreground/20 transition-colors"
-            >
-              <Plus size={14} />
-            </button>
+            <Button variant="secondary" size="icon-sm" onClick={addBan} aria-label="Add ban">
+              <Plus />
+            </Button>
           </div>
         </div>
       )}
@@ -197,30 +202,27 @@ export function HardBans() {
       {/* Recent Violations */}
       {recentViolations.length > 0 && (
         <div>
-          <button
-            onClick={() => setShowRecent(v => !v)}
-            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronDown size={14} className={`transition-transform ${showRecent ? 'rotate-0' : '-rotate-90'}`} />
+          <Button variant="ghost" size="xs" onClick={() => setShowRecent(v => !v)}>
+            <ChevronDown className={`transition-transform ${showRecent ? 'rotate-0' : '-rotate-90'}`} />
             Recent Violations ({recentViolations.length})
-          </button>
+          </Button>
           <AnimatePresence>
             {showRecent && (
               <motion.div
-                initial={{ height: 0, opacity: 0 }}
+                initial={reduceMotion ? false : { height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.15 }}
+                exit={reduceMotion ? undefined : { height: 0, opacity: 0 }}
+                transition={{ duration: reduceMotion ? 0 : 0.15 }}
                 className="overflow-hidden"
               >
-                <div className="mt-2 rounded-xl border border-border bg-card divide-y divide-border/30">
+                <div className="surface mt-2 divide-y divide-border/60 rounded-xl">
                   {recentViolations.map(v => (
-                    <div key={v.id} className="px-4 py-2.5 flex items-start justify-between gap-3">
+                    <div key={v.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-foreground">{getBanName(v.banId)}</p>
-                        {v.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate">{v.notes}</p>}
+                        {v.notes && <p className="mt-0.5 truncate text-xs text-muted-foreground">{v.notes}</p>}
                       </div>
-                      <span className="text-[10px] text-muted-foreground/50 shrink-0 tabular-nums whitespace-nowrap">
+                      <span className="shrink-0 whitespace-nowrap font-mono text-2xs tabular-nums text-foreground-faint">
                         {v.date}
                       </span>
                     </div>

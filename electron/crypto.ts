@@ -14,32 +14,73 @@ const KEY_SERVICE = 'cortex-data-encryption-key'
 let _masterKey: Buffer | null = null
 let _encryptionAvailable = false
 
-export function initEncryption(): boolean {
+/**
+ * True if `dir` contains any top-level .json file that starts with the CTX1
+ * magic header (i.e. data encrypted with a previous master key). Only the
+ * first 4 bytes of each file are read.
+ */
+export function hasEncryptedDataFiles(dir: string): boolean {
+  try {
+    if (!fs.existsSync(dir)) return false
+    const header = Buffer.alloc(MAGIC.length)
+    for (const entry of fs.readdirSync(dir)) {
+      if (!entry.endsWith('.json')) continue
+      const full = path.join(dir, entry)
+      let fd: number | null = null
+      try {
+        fd = fs.openSync(full, 'r')
+        const read = fs.readSync(fd, header, 0, MAGIC.length, 0)
+        if (read === MAGIC.length && header.equals(MAGIC)) return true
+      } catch { /* unreadable file — ignore */ }
+      finally { if (fd !== null) { try { fs.closeSync(fd) } catch { /* ignore */ } } }
+    }
+    return false
+  } catch { return false }
+}
+
+export type EncryptionInitResult = 'ok' | 'unavailable' | 'key-loss'
+
+/**
+ * Initialize at-rest encryption.
+ * - 'ok': master key loaded (or freshly minted for a data dir with no encrypted files).
+ * - 'unavailable': safeStorage cannot hold a key — data stays plaintext.
+ * - 'key-loss': the master key is missing/undecryptable but `dataDir` already
+ *   holds CTX1-encrypted files. Minting a new key would silently orphan ALL of
+ *   them, so we refuse — the caller must tell the user to restore
+ *   userData/cortex-keys.enc from backup and quit.
+ */
+export function initEncryption(dataDir: string): EncryptionInitResult {
   try {
     const existing = getKey(KEY_SERVICE)
     if (existing) {
       _masterKey = Buffer.from(existing, 'base64')
       if (_masterKey.length !== 32) {
-        console.error('[Cortex] Encryption key has wrong length, regenerating')
+        console.error('[Cortex] Encryption key has wrong length')
         _masterKey = null
       }
     }
 
     if (!_masterKey) {
+      // Key missing or undecryptable. If encrypted data already exists, a new
+      // key would orphan every file — refuse instead of silently minting.
+      if (hasEncryptedDataFiles(dataDir)) {
+        console.error('[Cortex] Master key missing/unreadable but encrypted (CTX1) data files exist — refusing to mint a new key')
+        return 'key-loss'
+      }
       const newKey = crypto.randomBytes(32)
       if (!saveKey(KEY_SERVICE, newKey.toString('base64'))) {
         console.warn('[Cortex] safeStorage unavailable — cannot store encryption key')
-        return false
+        return 'unavailable'
       }
       _masterKey = newKey
       console.log('[Cortex] Generated new data encryption key')
     }
 
     _encryptionAvailable = true
-    return true
+    return 'ok'
   } catch (e) {
     console.error('[Cortex] Encryption init failed:', e)
-    return false
+    return 'unavailable'
   }
 }
 
@@ -91,6 +132,35 @@ export function encryptAndWrite(filePath: string, jsonString: string): void {
 
 export function readAndDecrypt(filePath: string): string {
   const data = fs.readFileSync(filePath)
+  if (_encryptionAvailable && isEncryptedBuffer(data)) {
+    return decrypt(data)
+  }
+  return data.toString('utf-8')
+}
+
+/** Async variant of encryptAndWrite (atomic: tmp file + rename). */
+let tmpSeq = 0
+export async function encryptAndWriteAsync(filePath: string, jsonString: string): Promise<void> {
+  // Unique tmp name per write: with async IO, two concurrent writers of the
+  // SAME file (e.g. the founder refresher and an importAll restore) would
+  // otherwise interleave on a shared `<file>.tmp` and cross-publish payloads.
+  const tmpFile = `${filePath}.${process.pid}.${++tmpSeq}.tmp`
+  try {
+    if (_encryptionAvailable) {
+      await fs.promises.writeFile(tmpFile, encrypt(jsonString))
+    } else {
+      await fs.promises.writeFile(tmpFile, jsonString, 'utf-8')
+    }
+    await fs.promises.rename(tmpFile, filePath)
+  } catch (err) {
+    await fs.promises.unlink(tmpFile).catch(() => {})
+    throw err
+  }
+}
+
+/** Async variant of readAndDecrypt. */
+export async function readAndDecryptAsync(filePath: string): Promise<string> {
+  const data = await fs.promises.readFile(filePath)
   if (_encryptionAvailable && isEncryptedBuffer(data)) {
     return decrypt(data)
   }

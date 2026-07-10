@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { AreaChart, Area, Line, ComposedChart, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
-import { Activity, Cpu, MemoryStick, Loader2, AlertCircle } from 'lucide-react'
+import { Activity, Cpu, MemoryStick } from 'lucide-react'
+import { Chip } from '@/components/ui/chip'
+import { Skeleton } from '@/components/shared/Skeleton'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { ThemedTooltip, axisProps, chartColors, cssVar } from '@/lib/chart-theme'
 
-type HostKey = 'mac' | 'vm'
+type HostKey = 'mac'
 type WindowKey = '15m' | '1h' | '6h' | '24h' | '3d' | '7d'
 
 interface HistoryBucket {
@@ -60,26 +64,27 @@ function StatRow({ icon: Icon, label, stat, format = fmtPct, color }: {
   label: string
   stat: HistoryStat
   format?: (n: number) => string
+  /** Series color (token-derived via chartColors) linking this stat to its chart series */
   color: string
 }) {
   return (
-    <div className="rounded-lg border border-border bg-secondary/15 px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-1">
+    <div className="rounded-md border border-border/60 bg-secondary/20 px-3 py-2.5">
+      <div className="mb-1 flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
         <Icon className="h-3 w-3" style={{ color }} />
         {label}
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
-          <div className="text-lg font-semibold tabular-nums" style={{ color }}>{format(stat.avg)}</div>
-          <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50">avg</div>
+          <div className="font-mono text-lg font-medium tabular-nums text-foreground">{format(stat.avg)}</div>
+          <div className="font-mono text-3xs uppercase tracking-wider text-foreground-faint">avg</div>
         </div>
         <div>
-          <div className="text-sm font-medium tabular-nums text-muted-foreground">{format(stat.min)}</div>
-          <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50">min</div>
+          <div className="font-mono text-sm tabular-nums text-muted-foreground">{format(stat.min)}</div>
+          <div className="font-mono text-3xs uppercase tracking-wider text-foreground-faint">min</div>
         </div>
         <div>
-          <div className="text-sm font-medium tabular-nums text-foreground">{format(stat.max)}</div>
-          <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50">max</div>
+          <div className="font-mono text-sm tabular-nums text-foreground">{format(stat.max)}</div>
+          <div className="font-mono text-3xs uppercase tracking-wider text-foreground-faint">max</div>
         </div>
       </div>
     </div>
@@ -133,116 +138,120 @@ export function HostHistory({ host }: { host: HostKey }) {
     load1Max: Number(s.load1Max.toFixed(3)),
   }))
 
+  // Multi-series family from chart-theme: cpu = accent, mem = green, load = amber.
+  const [cCpu, cMem, cLoad] = chartColors()
+
   return (
-    <div className="flex flex-col gap-4 mt-4 pt-4 border-t border-border/40">
+    <div className="mt-4 flex flex-col gap-4 border-t border-border/60 pt-4">
       {/* Header + window selector */}
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70 flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
           <Activity className="h-3 w-3" />
           History
           {data && data.count > 0 && (
-            <span className="ml-1 text-muted-foreground/50 normal-case tracking-normal">
+            <span className="ml-1 normal-case tracking-normal text-foreground-faint">
               · {data.count} samples
             </span>
           )}
         </div>
-        <div className="inline-flex rounded-md border border-border bg-secondary/30 p-0.5">
+        <div className="flex flex-wrap items-center justify-end gap-1">
           {WINDOWS.map((w) => (
-            <button
+            <Chip
               key={w.key}
+              selectable
+              size="sm"
+              selected={windowKey === w.key}
               onClick={() => setWindowKey(w.key)}
-              className={`px-2 py-0.5 text-[11px] rounded-sm tabular-nums transition-colors ${
-                windowKey === w.key
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
             >
               {w.label}
-            </button>
+            </Chip>
           ))}
         </div>
       </div>
 
       {/* Loading / empty / error states */}
       {loading && !data && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground py-6 justify-center">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Loading history…
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+          <Skeleton className="h-44 w-full" />
         </div>
       )}
 
       {error && !data && (
-        <div className="flex items-start gap-2 text-xs text-red-300 py-3">
-          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-          <div>
-            <div>{error}</div>
-            <div className="text-[10px] text-muted-foreground/60 mt-0.5">
-              History is sampled every 5s by Cortex; samples accumulate while the app is running.
-            </div>
-          </div>
+        <div className="py-2">
+          <p className="text-xs text-destructive">{error}</p>
+          <p className="mt-0.5 text-2xs text-foreground-faint">
+            History is sampled every 5s by Cortex; samples accumulate while the app is running.
+          </p>
         </div>
       )}
 
       {data && data.count === 0 && (
-        <div className="text-xs text-muted-foreground py-4 text-center">
-          No samples yet for this window. History fills in as Cortex runs.
-        </div>
+        <EmptyState
+          className="py-4"
+          message="No samples yet for this window."
+          hint="History fills in as Cortex runs."
+        />
       )}
 
       {data && data.count > 0 && (
         <>
           {/* Stat rows */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <StatRow icon={Cpu} label="CPU" stat={data.stats.cpu} color="#10b981" />
-            <StatRow icon={MemoryStick} label="RAM" stat={data.stats.mem} color="#60a5fa" />
-            <StatRow icon={Activity} label={`Load 1m (${cores}c)`} stat={data.stats.load1} format={fmtLoad} color="#f59e0b" />
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <StatRow icon={Cpu} label="CPU" stat={data.stats.cpu} color={cCpu} />
+            <StatRow icon={MemoryStick} label="RAM" stat={data.stats.mem} color={cMem} />
+            <StatRow icon={Activity} label={`Load 1m (${cores}c)`} stat={data.stats.load1} format={fmtLoad} color={cLoad} />
           </div>
 
           {/* CPU + RAM chart */}
-          <div className="rounded-lg border border-border bg-secondary/10 p-3">
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60 mb-2">
+          <div className="rounded-md border border-border/60 p-3">
+            <div className="mb-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
               CPU & RAM over {WINDOWS.find((w) => w.key === windowKey)?.label}
             </div>
             <div className="h-44">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="label" stroke="#666" fontSize={10} tickLine={false} minTickGap={40} />
-                  <YAxis stroke="#666" fontSize={10} domain={[0, 100]} tickFormatter={(v) => `${v}%`} />
+                  <XAxis dataKey="label" {...axisProps()} minTickGap={40} />
+                  <YAxis width={36} domain={[0, 100]} tickFormatter={(v) => `${v}%`} {...axisProps()} />
                   <Tooltip
-                    contentStyle={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 11 }}
-                    formatter={(v, name) => [`${Number(v).toFixed(1)}%`, name === 'cpu' ? 'CPU avg' : name === 'cpuMax' ? 'CPU max' : name === 'mem' ? 'RAM avg' : 'RAM max']}
+                    content={<ThemedTooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />}
+                    cursor={{ stroke: cssVar('--border') }}
                   />
-                  <Area type="monotone" dataKey="cpuMax" stroke="none" fill="#10b981" fillOpacity={0.08} />
-                  <Area type="monotone" dataKey="cpu" stroke="#10b981" strokeWidth={1.5} fill="#10b981" fillOpacity={0.25} />
-                  <Area type="monotone" dataKey="memMax" stroke="none" fill="#60a5fa" fillOpacity={0.08} />
-                  <Area type="monotone" dataKey="mem" stroke="#60a5fa" strokeWidth={1.5} fill="#60a5fa" fillOpacity={0.18} />
+                  <Area type="monotone" dataKey="cpuMax" name="CPU max" stroke="none" fill={cCpu} fillOpacity={0.08} />
+                  <Area type="monotone" dataKey="cpu" name="CPU avg" stroke={cCpu} strokeWidth={1.5} fill={cCpu} fillOpacity={0.25} />
+                  <Area type="monotone" dataKey="memMax" name="RAM max" stroke="none" fill={cMem} fillOpacity={0.08} />
+                  <Area type="monotone" dataKey="mem" name="RAM avg" stroke={cMem} strokeWidth={1.5} fill={cMem} fillOpacity={0.18} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
 
           {/* Load chart */}
-          <div className="rounded-lg border border-border bg-secondary/10 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+          <div className="rounded-md border border-border/60 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">
                 Load (1m) — saturation line at {loadCeiling}
               </div>
-              <div className="text-[10px] text-muted-foreground/50 tabular-nums">
+              <div className="font-mono text-2xs tabular-nums text-foreground-faint">
                 avg {fmtLoad(data.stats.load1.avg)} · max {fmtLoad(data.stats.load1.max)}
               </div>
             </div>
             <div className="h-32">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartData} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="label" stroke="#666" fontSize={10} tickLine={false} minTickGap={40} />
-                  <YAxis stroke="#666" fontSize={10} domain={[0, (dmax: number) => Math.max(loadCeiling * 1.1, dmax * 1.05)]} />
+                  <XAxis dataKey="label" {...axisProps()} minTickGap={40} />
+                  <YAxis width={36} domain={[0, (dmax: number) => Math.max(loadCeiling * 1.1, dmax * 1.05)]} {...axisProps()} />
                   <Tooltip
-                    contentStyle={{ background: '#0f0f0f', border: '1px solid #2a2a2a', borderRadius: 6, fontSize: 11 }}
-                    formatter={(v) => [Number(v).toFixed(2), 'Load']}
+                    content={<ThemedTooltip formatter={(v) => Number(v).toFixed(2)} />}
+                    cursor={{ stroke: cssVar('--border') }}
                   />
-                  <ReferenceLine y={loadCeiling} stroke="#ef4444" strokeDasharray="3 3" strokeOpacity={0.6} />
-                  <Area type="monotone" dataKey="load1Max" stroke="none" fill="#f59e0b" fillOpacity={0.08} />
-                  <Line type="monotone" dataKey="load1" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
+                  <ReferenceLine y={loadCeiling} stroke={cssVar('--destructive')} strokeDasharray="3 3" strokeOpacity={0.6} />
+                  <Area type="monotone" dataKey="load1Max" name="Load max" stroke="none" fill={cLoad} fillOpacity={0.08} />
+                  <Line type="monotone" dataKey="load1" name="Load" stroke={cLoad} strokeWidth={1.5} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
