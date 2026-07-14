@@ -152,7 +152,7 @@ const server = new McpServer(
       "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
       "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
       "- Opportunities (fellowships, grants, accelerators, programs, residencies, hackathons, internships): get_opportunities to read the radar + active hunt orders (filter by category or deadline_type); add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders; include the deadline-intelligence fields); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it. The curated program catalog seeds via `node scripts/radar-seed-programs.mjs --write`.",
-      "- Study sessions: when he names a subject (\"I'm working on Cálculo 3\", \"/sgd homework\"), call get_study_context FIRST — it bundles course, schedule, grades, assignments, topics, materials, and past notes. When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material; file contents come back via read_class_material (downloads to a temp path for Reading).",
+      "- Study sessions: when he names a subject (\"I'm working on Cálculo 3\", \"/sgd homework\"), call get_study_context FIRST — it bundles course, schedule, grades, assignments, topics, materials, and past notes. When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material (disk path, or content_base64 for chat attachments); file contents come back via read_class_material (downloads to a temp path for Reading).",
       "",
       "Prefer domain-specific tools over the generic read_data / write_data. Confirm before overwriting existing data. Values are stored per calendar day/week under keys like cortex-nutrition-YYYY-MM-DD and cortex-market-<mondayDate>; today's date is the default when omitted.",
     ].join("\n"),
@@ -1867,10 +1867,11 @@ server.tool(
 
 server.tool(
   "add_class_material",
-  "File a class material under a course: a file from disk (file_path, ≤15 MB — bytes go to the media store), a link (url), or a text snippet (text). Exactly one of the three. Optionally place it in a Brightspace-style unit ('Unidad 1', 'Contenidos generales').",
+  "File a class material under a course: a file from disk (file_path, ≤15 MB — bytes go to the media store), raw file bytes (content_base64, for conversation attachments with no path on this machine), a link (url), or a text snippet (text). Exactly one of the four. Optionally place it in a Brightspace-style unit ('Unidad 1', 'Contenidos generales').",
   {
     subject: z.string().describe("Course to file it under (fuzzy name/acronym/id)"),
     file_path: z.string().optional().describe("Absolute path to a file on disk (≤15 MB)"),
+    content_base64: z.string().optional().describe("Raw base64 file bytes (data-URL prefix and line wraps tolerated, ≤15 MB decoded) — use for files that exist as chat attachments or in-memory rather than on disk. Requires name; its extension sets the mime."),
     url: z.string().optional().describe("Link URL, e.g. a Brightspace or YouTube page"),
     text: z.string().optional().describe("Text snippet content"),
     name: z.string().optional().describe("Display name (defaults: filename / url host+path / first words of text)"),
@@ -1878,14 +1879,15 @@ server.tool(
     description: z.string().optional().describe("Short description"),
     tags: z.array(z.string()).optional().describe("Freeform tags"),
   },
-  async ({ subject, file_path, url, text, name, unit, description, tags }) => run(async () => {
+  async ({ subject, file_path, content_base64, url, text, name, unit, description, tags }) => run(async () => {
     // Trim once up front so the exactly-one check and the branch dispatch
     // agree — a whitespace-only arg is absent for both.
     const fp = file_path?.trim() || undefined;
+    const b64 = content_base64?.trim() || undefined;
     const linkUrl = url?.trim() || undefined;
     const snippet = text?.trim() || undefined;
-    const provided = [fp, linkUrl, snippet].filter((v) => v !== undefined);
-    if (provided.length !== 1) throw new Error("Provide exactly one of file_path, url, or text.");
+    const provided = [fp, b64, linkUrl, snippet].filter((v) => v !== undefined);
+    if (provided.length !== 1) throw new Error("Provide exactly one of file_path, content_base64, url, or text.");
     const course = await resolveCourse(subject);
 
     const base: Pick<McpClassMaterial, "id" | "courseId" | "tags" | "addedAt" | "source"> &
@@ -1917,6 +1919,27 @@ server.tool(
         kind: "file",
         name: name?.trim() || basename,
         file: { mediaId, name: basename, mime: EXT_MIME[ext] || "application/octet-stream", size: stat.size },
+      };
+    } else if (b64) {
+      const fileName = name?.trim();
+      if (!fileName) throw new Error("name is required with content_base64 — its extension sets the mime, e.g. 'guia-parcial.pdf'.");
+      // Attachments often arrive as data URLs or line-wrapped base64; store the
+      // cleaned raw base64 (the media endpoint strips only image data-URL prefixes).
+      const comma = b64.indexOf("base64,");
+      const raw = (comma >= 0 ? b64.slice(comma + "base64,".length) : b64).replace(/\s+/g, "");
+      const buf = Buffer.from(raw, "base64");
+      if (buf.byteLength === 0) throw new Error("content_base64 decoded to zero bytes — is it valid base64?");
+      if (buf.byteLength > MEDIA_MAX_BYTES) {
+        throw new Error(`Decoded content is ${fmtMB(buf.byteLength)} — the HTTP media path caps uploads at ${fmtMB(MEDIA_MAX_BYTES)}.`);
+      }
+      const ext = (path.extname(fileName).slice(1).toLowerCase().replace(/[^a-z0-9]/g, "") || "bin");
+      const mediaId = `${uid("mat")}.${ext}`;
+      await cortexPost("/api/media", { id: mediaId, base64: raw });
+      material = {
+        ...base,
+        kind: "file",
+        name: fileName,
+        file: { mediaId, name: fileName, mime: EXT_MIME[ext] || "application/octet-stream", size: buf.byteLength },
       };
     } else if (linkUrl) {
       let parsed: URL;
