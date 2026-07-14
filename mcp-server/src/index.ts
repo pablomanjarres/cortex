@@ -2,6 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer, type IncomingMessage } from "http";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { z } from "zod";
 
 const BASE = process.env.CORTEX_API || "http://localhost:3456";
@@ -149,6 +152,7 @@ const server = new McpServer(
       "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
       "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
       "- Opportunities (fellowships, grants, accelerators, programs, residencies, hackathons, internships): get_opportunities to read the radar + active hunt orders (filter by category or deadline_type); add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders; include the deadline-intelligence fields); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it. The curated program catalog seeds via `node scripts/radar-seed-programs.mjs --write`.",
+      "- Study sessions: when he names a subject (\"I'm working on Cálculo 3\", \"/sgd homework\"), call get_study_context FIRST — it bundles course, schedule, grades, assignments, topics, materials, and past notes. When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material; file contents come back via read_class_material (downloads to a temp path for Reading).",
       "",
       "Prefer domain-specific tools over the generic read_data / write_data. Confirm before overwriting existing data. Values are stored per calendar day/week under keys like cortex-nutrition-YYYY-MM-DD and cortex-market-<mondayDate>; today's date is the default when omitted.",
     ].join("\n"),
@@ -1528,6 +1532,492 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GROUP 19: Study hub (class materials + study notes + subject context)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Store-key shapes are duplicated here (the MCP server shares no types with
+// the app); they must match src/features/student/* byte-for-byte.
+
+interface McpCourse {
+  id: string;
+  name: string;
+  difficulty: string;
+  iconKey: string;
+  semester: string;
+  status: string;
+  credits: number;
+  notes?: string;
+}
+interface McpAssignment {
+  id: string;
+  name: string;
+  courseId: string;
+  type: string;
+  weight: number;   // fraction of the final grade (0.20 = 20%)
+  grade?: number;   // 0–5 Colombian scale
+  deadline?: string; // "YYYY-MM-DD"
+  done: boolean;
+  priority: string;
+  notes?: string;
+}
+interface McpTopic {
+  id: string;
+  name: string;
+  courseId: string;
+  chapter: string;
+  types: string[];
+  mastery: number;
+  status: string;
+  priority: string;
+  week?: number;
+}
+interface McpMaterialFile { mediaId: string; name: string; mime: string; size: number }
+interface McpClassMaterial {
+  id: string;
+  courseId: string;
+  kind: "file" | "link" | "text";
+  name: string;
+  unit?: string;        // Brightspace-style: "Unidad 1", "Contenidos generales" …
+  description?: string;
+  tags: string[];
+  file?: McpMaterialFile; // kind === 'file' — bytes live in the media store
+  url?: string;           // kind === 'link'
+  text?: string;          // kind === 'text'
+  addedAt: string;        // ISO datetime
+  source: "app" | "mcp";
+}
+interface McpStudyNote {
+  id: string;
+  courseId?: string;   // undefined = general (not tied to one course)
+  courseName?: string; // denormalized snapshot (survives course rename/delete)
+  text: string;
+  tags: string[];
+  pinned: boolean;
+  source: "claude" | "manual";
+  context?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+const MATERIALS_KEY = "cortex-class-materials";
+const STUDY_NOTES_KEY = "cortex-study-notes";
+
+// Case- and diacritic-insensitive normalizer — course names are Spanish
+// ("Cálculo 3", "Debates Humanísticos"), so NFD-strip the marks.
+const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/\s+/g, " ").trim();
+const acronym = (name: string) => norm(name).split(" ").filter((w) => w.length >= 3).map((w) => w[0]).join("");
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+// Scoring ladder for fuzzy subject → course resolution.
+function courseScore(c: McpCourse, raw: string, q: string, activeSemester: string): number {
+  const n = norm(c.name);
+  let s = 0;
+  if (c.id === raw.trim() || norm(c.id) === q) s = 100;
+  else if (n === q) s = 95;
+  else if (acronym(c.name) === q) s = 85;
+  else if (n.startsWith(q)) s = 80;
+  else if (n.includes(q)) s = 70;
+  else {
+    const nTokens = new Set(n.split(" "));
+    if (q.split(" ").every((t) => nTokens.has(t))) s = 60;
+  }
+  if (s > 0 && c.semester === activeSemester) s += 5; // active-semester tie-break
+  return s;
+}
+
+async function resolveCourse(subject: string): Promise<McpCourse> {
+  const courses = (await readKey<McpCourse[]>("cortex-student-courses")) || null;
+  if (!courses || courses.length === 0) throw new Error("Cortex has no courses yet — open the Student page once to seed them.");
+  const q = norm(subject);
+  if (!q) throw new Error("subject is required.");
+  const activeSemester = ((await readKey<string>("cortex-student-active-semester")) || "") as string;
+  const scored = courses
+    .map((c) => ({ c, s: courseScore(c, subject, q, activeSemester) }))
+    .sort((a, b) => b.s - a.s);
+  const list = courses.map((c) => `${c.name} (${c.id}, ${c.semester})`).join(", ");
+  if (scored[0].s < 60) throw new Error(`No course matches "${subject}". Courses: ${list}. Use the exact name or id.`);
+  if (scored[1] && scored[0].s - scored[1].s < 5) {
+    const [a, b] = [scored[0].c, scored[1].c];
+    throw new Error(`"${subject}" is ambiguous between ${a.name} (${a.id}, ${a.semester}) and ${b.name} (${b.id}, ${b.semester}). Use the exact name or id.`);
+  }
+  return scored[0].c;
+}
+
+// Normalize legacy/partial records at read time (never persisted back).
+const normMaterial = (m: McpClassMaterial): McpClassMaterial => ({
+  ...m,
+  tags: m.tags ?? [],
+  kind: m.kind === "file" || m.kind === "link" || m.kind === "text" ? m.kind : m.file ? "file" : "text",
+});
+const normNote = (n: McpStudyNote): McpStudyNote => ({ ...n, tags: n.tags ?? [], pinned: n.pinned ?? false });
+
+const loadMaterials = async () => (((await readKey<McpClassMaterial[]>(MATERIALS_KEY)) || []) as McpClassMaterial[]).map(normMaterial);
+const loadStudyNotes = async () => (((await readKey<McpStudyNote[]>(STUDY_NOTES_KEY)) || []) as McpStudyNote[]).map(normNote);
+const loadCourses = async () => (((await readKey<McpCourse[]>("cortex-student-courses")) || []) as McpCourse[]);
+const loadAssignments = async () => (((await readKey<McpAssignment[]>("cortex-student-assignments")) || []) as McpAssignment[]);
+const loadStudentTopics = async () => (((await readKey<McpTopic[]>("cortex-student-topics")) || []) as McpTopic[]);
+const loadClasses = async () => (((await readKey<ClassDef[]>("cortex-classes")) || []) as ClassDef[]);
+
+// Pinned first, then newest.
+const noteOrder = (a: McpStudyNote, b: McpStudyNote) =>
+  (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.createdAt || "").localeCompare(a.createdAt || "");
+
+// Notes for a course: courseId match, plus courseName-snapshot match for
+// orphaned notes whose course was deleted and re-created under a new id.
+const noteMatchesCourse = (n: McpStudyNote, course: McpCourse) =>
+  n.courseId === course.id || (!!n.courseName && norm(n.courseName) === norm(course.name));
+
+// Material entry safe to inline in tool output — refs only, NEVER file bytes.
+function lightMaterial(m: McpClassMaterial) {
+  return {
+    id: m.id,
+    name: m.name,
+    kind: m.kind,
+    ...(m.unit ? { unit: m.unit } : {}),
+    ...(m.description ? { description: m.description } : {}),
+    tags: m.tags,
+    ...(m.kind === "link" && m.url ? { url: m.url } : {}),
+    ...(m.kind === "file" && m.file
+      ? { size: m.file.size, mime: m.file.mime, hint: "Call read_class_material to download this file for Reading." }
+      : {}),
+    addedAt: m.addedAt,
+  };
+}
+
+// Brightspace-style unit ordering (same as the Materials tab): "Contenidos
+// generales" first, "Unidad N" numeric, other units alphabetical, unfiled
+// ("General") last.
+function unitRank(unit: string): { tier: number; num: number } {
+  const n = norm(unit);
+  if (n === "general") return { tier: 3, num: 0 };
+  if (n === "contenidos generales") return { tier: 0, num: 0 };
+  const m = n.match(/^unidad (\d+)$/);
+  if (m) return { tier: 1, num: parseInt(m[1], 10) };
+  return { tier: 2, num: 0 };
+}
+
+function groupByUnit(materials: McpClassMaterial[]) {
+  // Key by norm(unit) so case/diacritic variants of the same unit file
+  // together (like the Materials tab); the first-seen raw label is displayed.
+  const byUnit = new Map<string, { label: string; mats: McpClassMaterial[] }>();
+  for (const m of materials) {
+    const label = m.unit?.trim() || "General";
+    const key = norm(label);
+    if (!byUnit.has(key)) byUnit.set(key, { label, mats: [] });
+    byUnit.get(key)!.mats.push(m);
+  }
+  return [...byUnit.values()]
+    .sort((a, b) => {
+      const ra = unitRank(a.label), rb = unitRank(b.label);
+      return ra.tier - rb.tier || ra.num - rb.num || norm(a.label).localeCompare(norm(b.label));
+    })
+    .map(({ label, mats }) => ({ unit: label, materials: mats.map(lightMaterial) }));
+}
+
+const EXT_MIME: Record<string, string> = {
+  pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+  txt: "text/plain", md: "text/markdown", csv: "text/csv", json: "application/json",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  zip: "application/zip",
+};
+
+// HTTP media path cap — the server's body limit is 25 MB including base64
+// overhead, so raw files above 15 MB can't make it through.
+const MEDIA_MAX_BYTES = 15 * 1024 * 1024;
+const fmtMB = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+server.tool(
+  "get_study_context",
+  "Bootstrap a study session for one course. Fuzzy-resolves the subject ('calculo 3', 'so', 'debates' — case/diacritic-insensitive name, acronym, or id), then bundles course meta, weekly schedule, grade state (current/best/worst on the 0–5 scale), upcoming assignments, topics, class materials grouped by unit (refs only — call read_class_material for file contents), and past study notes. Call this FIRST when Pablo names a subject.",
+  {
+    subject: z.string().describe("Course name, fragment, acronym, or id — e.g. 'calculo 3', 'so', 'debates'"),
+    max_notes: z.number().optional().describe("Max study notes to include (default 25)"),
+  },
+  async ({ subject, max_notes }) => run(async () => {
+    const course = await resolveCourse(subject);
+    const [assignments, topics, classes, materials, notes] = await Promise.all([
+      loadAssignments(), loadStudentTopics(), loadClasses(), loadMaterials(), loadStudyNotes(),
+    ]);
+
+    // Grade math mirrors the Student page Overview (0–5 Colombian scale).
+    const mine = assignments.filter((a) => a.courseId === course.id);
+    const totalWeight = mine.reduce((s, a) => s + a.weight, 0);
+    const graded = mine.filter((a) => a.grade !== undefined);
+    const gradedWeight = graded.reduce((s, a) => s + a.weight, 0);
+    const gradedSum = graded.reduce((s, a) => s + a.grade! * a.weight, 0);
+    const ungradedWeight = mine.filter((a) => a.grade === undefined).reduce((s, a) => s + a.weight, 0);
+    const current = gradedWeight > 0 ? round2(gradedSum / gradedWeight) : null;
+    const best = round2(totalWeight > 0 ? (gradedSum + 5.0 * ungradedWeight) / totalWeight : 5.0);
+    const worst = round2(totalWeight > 0 ? gradedSum / totalWeight : 0);
+    const gradedPct = Math.round(totalWeight > 0 ? (gradedWeight / totalWeight) * 100 : 0);
+
+    const t = today();
+    const daysUntil = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86_400_000);
+    const weightPct = (w: number) => Math.round(w * 100 * 10) / 10;
+    const undone = mine.filter((a) => !a.done);
+    const upcoming = undone
+      .filter((a) => a.deadline && a.deadline >= t)
+      .sort((a, b) => a.deadline!.localeCompare(b.deadline!))
+      .map((a) => ({
+        id: a.id, name: a.name, type: a.type, weight_pct: weightPct(a.weight),
+        deadline: a.deadline!, days_left: daysUntil(a.deadline!), priority: a.priority,
+        ...(a.notes ? { notes: a.notes } : {}),
+      }));
+    const openUndated = undone
+      .filter((a) => !a.deadline)
+      .map((a) => ({
+        id: a.id, name: a.name, type: a.type, weight_pct: weightPct(a.weight), priority: a.priority,
+        ...(a.notes ? { notes: a.notes } : {}),
+      }));
+
+    // Schedule linkage: courseId match, plus normalized courseName fallback
+    // for MCP-added classes whose slug differs from the Student-page id.
+    const schedule = classes
+      .filter((c) => c.courseId === course.id || norm(c.courseName) === norm(course.name))
+      .map((c) => ({
+        days: c.days.map((d) => DAY_NAMES[d]), startTime: c.startTime, endTime: c.endTime,
+        ...(c.room ? { room: c.room } : {}),
+      }));
+
+    const courseNotes = notes.filter((n) => noteMatchesCourse(n, course)).sort(noteOrder).slice(0, max_notes ?? 25);
+
+    return {
+      course: {
+        id: course.id, name: course.name, semester: course.semester, difficulty: course.difficulty,
+        status: course.status, credits: course.credits, ...(course.notes ? { notes: course.notes } : {}),
+      },
+      schedule,
+      grade_state: { scale: "0-5", current, best_possible: best, worst_possible: worst, graded_pct: gradedPct },
+      assignments: { upcoming, open_undated: openUndated, done_count: mine.filter((a) => a.done).length },
+      topics: topics
+        .filter((tp) => tp.courseId === course.id)
+        .map((tp) => ({
+          id: tp.id, name: tp.name, chapter: tp.chapter, types: tp.types, mastery: tp.mastery,
+          status: tp.status, priority: tp.priority, ...(tp.week !== undefined ? { week: tp.week } : {}),
+        })),
+      materials_by_unit: groupByUnit(materials.filter((m) => m.courseId === course.id)),
+      notes: courseNotes.map((n) => ({
+        id: n.id, text: n.text, tags: n.tags, pinned: n.pinned, source: n.source,
+        ...(n.context ? { context: n.context } : {}), createdAt: n.createdAt,
+      })),
+      next_steps: "read_class_material(id) downloads a file to disk for Reading; save_study_note captures durable facts Pablo states.",
+    };
+  })
+);
+
+server.tool(
+  "save_study_note",
+  "Save a durable study note that persists across Claude sessions — a fact, decision, prof constraint, or insight Pablo states. Attach it to a course via subject, or omit subject for a general note. It lands in the app's Student → Notes tab.",
+  {
+    text: z.string().describe("The note text"),
+    subject: z.string().optional().describe("Course to attach it to (fuzzy name/acronym/id); omit for a general note"),
+    tags: z.array(z.string()).optional().describe("Freeform tags, e.g. ['parcial-2', 'grafos']"),
+    pinned: z.boolean().optional().describe("Pin it to the top of the course's notes (default false)"),
+    context: z.string().optional().describe("What was being worked on when this was captured"),
+  },
+  async ({ text, subject, tags, pinned, context }) => run(async () => {
+    if (!text.trim()) throw new Error("text is required.");
+    const course = subject ? await resolveCourse(subject) : null;
+    const note: McpStudyNote = {
+      id: uid("note"),
+      ...(course ? { courseId: course.id, courseName: course.name } : {}),
+      text: text.trim(),
+      tags: tags ?? [],
+      pinned: pinned ?? false,
+      source: "claude",
+      ...(context && context.trim() ? { context: context.trim() } : {}),
+      createdAt: new Date().toISOString(),
+    };
+    await mutateKey<McpStudyNote[]>(STUDY_NOTES_KEY, (notes) => {
+      notes.push(note);
+      return notes;
+    }, []);
+    return { ok: true, note };
+  })
+);
+
+server.tool(
+  "get_study_notes",
+  "List saved study notes — pinned first, then newest. Filter by subject (fuzzy course match), free-text query (over text/tags/context), or pinned only.",
+  {
+    subject: z.string().optional().describe("Course filter (fuzzy name/acronym/id)"),
+    query: z.string().optional().describe("Free-text filter over note text, tags, and context (case/diacritic-insensitive)"),
+    pinned_only: z.boolean().optional().describe("Only pinned notes"),
+    limit: z.number().optional().describe("Max notes to return (default 50)"),
+  },
+  async ({ subject, query, pinned_only, limit }) => run(async () => {
+    let notes = await loadStudyNotes();
+    if (subject) {
+      const course = await resolveCourse(subject);
+      notes = notes.filter((n) => noteMatchesCourse(n, course));
+    }
+    if (query) {
+      const q = norm(query);
+      notes = notes.filter((n) =>
+        norm(n.text).includes(q) || n.tags.some((tg) => norm(tg).includes(q)) || (!!n.context && norm(n.context).includes(q)));
+    }
+    if (pinned_only) notes = notes.filter((n) => n.pinned);
+    notes.sort(noteOrder);
+    const shown = notes.slice(0, limit ?? 50);
+    return { total: notes.length, showing: shown.length, notes: shown };
+  })
+);
+
+server.tool(
+  "add_class_material",
+  "File a class material under a course: a file from disk (file_path, ≤15 MB — bytes go to the media store), a link (url), or a text snippet (text). Exactly one of the three. Optionally place it in a Brightspace-style unit ('Unidad 1', 'Contenidos generales').",
+  {
+    subject: z.string().describe("Course to file it under (fuzzy name/acronym/id)"),
+    file_path: z.string().optional().describe("Absolute path to a file on disk (≤15 MB)"),
+    url: z.string().optional().describe("Link URL, e.g. a Brightspace or YouTube page"),
+    text: z.string().optional().describe("Text snippet content"),
+    name: z.string().optional().describe("Display name (defaults: filename / url host+path / first words of text)"),
+    unit: z.string().optional().describe("Unit to file under, e.g. 'Unidad 1' or 'Contenidos generales'"),
+    description: z.string().optional().describe("Short description"),
+    tags: z.array(z.string()).optional().describe("Freeform tags"),
+  },
+  async ({ subject, file_path, url, text, name, unit, description, tags }) => run(async () => {
+    // Trim once up front so the exactly-one check and the branch dispatch
+    // agree — a whitespace-only arg is absent for both.
+    const fp = file_path?.trim() || undefined;
+    const linkUrl = url?.trim() || undefined;
+    const snippet = text?.trim() || undefined;
+    const provided = [fp, linkUrl, snippet].filter((v) => v !== undefined);
+    if (provided.length !== 1) throw new Error("Provide exactly one of file_path, url, or text.");
+    const course = await resolveCourse(subject);
+
+    const base: Pick<McpClassMaterial, "id" | "courseId" | "tags" | "addedAt" | "source"> &
+      Partial<Pick<McpClassMaterial, "unit" | "description">> = {
+      id: uid("mat"),
+      courseId: course.id,
+      ...(unit && unit.trim() ? { unit: unit.trim() } : {}),
+      ...(description && description.trim() ? { description: description.trim() } : {}),
+      tags: tags ?? [],
+      addedAt: new Date().toISOString(),
+      source: "mcp",
+    };
+
+    let material: McpClassMaterial;
+    if (fp) {
+      if (!path.isAbsolute(fp)) throw new Error("file_path must be an absolute path.");
+      const stat = await fs.stat(fp);
+      if (stat.size > MEDIA_MAX_BYTES) {
+        throw new Error(`File is ${fmtMB(stat.size)} — the HTTP media path caps uploads at ${fmtMB(MEDIA_MAX_BYTES)}.`);
+      }
+      const buf = await fs.readFile(fp);
+      const basename = path.basename(fp);
+      const ext = (path.extname(basename).slice(1).toLowerCase().replace(/[^a-z0-9]/g, "") || "bin");
+      const mediaId = `${uid("mat")}.${ext}`;
+      // Raw base64, no data-URL prefix — the server strips only image prefixes.
+      await cortexPost("/api/media", { id: mediaId, base64: buf.toString("base64") });
+      material = {
+        ...base,
+        kind: "file",
+        name: name?.trim() || basename,
+        file: { mediaId, name: basename, mime: EXT_MIME[ext] || "application/octet-stream", size: stat.size },
+      };
+    } else if (linkUrl) {
+      let parsed: URL;
+      try { parsed = new URL(linkUrl); } catch { throw new Error(`url is not a valid URL: "${linkUrl}".`); }
+      material = {
+        ...base,
+        kind: "link",
+        name: name?.trim() || `${parsed.hostname}${parsed.pathname === "/" ? "" : parsed.pathname}`,
+        url: linkUrl,
+      };
+    } else {
+      material = {
+        ...base,
+        kind: "text",
+        name: name?.trim() || snippet!.split(/\s+/).slice(0, 6).join(" "),
+        text: text!,
+      };
+    }
+
+    await mutateKey<McpClassMaterial[]>(MATERIALS_KEY, (materials) => {
+      materials.push(material);
+      return materials;
+    }, []);
+    return { ok: true, material };
+  })
+);
+
+server.tool(
+  "list_class_materials",
+  "Light index of filed class materials (refs only, no file bytes), grouped course → unit. Filter by subject, unit, kind, or free-text query over name/description/tags.",
+  {
+    subject: z.string().optional().describe("Course filter (fuzzy name/acronym/id)"),
+    unit: z.string().optional().describe("Unit filter, e.g. 'Unidad 1' ('General' = unfiled)"),
+    kind: z.enum(["file", "link", "text"]).optional().describe("Material kind filter"),
+    query: z.string().optional().describe("Free-text filter over name, description, and tags (case/diacritic-insensitive)"),
+  },
+  async ({ subject, unit, kind, query }) => run(async () => {
+    let materials = await loadMaterials();
+    if (subject) {
+      const course = await resolveCourse(subject);
+      materials = materials.filter((m) => m.courseId === course.id);
+    }
+    if (unit) materials = materials.filter((m) => norm(m.unit || "General") === norm(unit));
+    if (kind) materials = materials.filter((m) => m.kind === kind);
+    if (query) {
+      const q = norm(query);
+      materials = materials.filter((m) =>
+        norm(m.name).includes(q) || (!!m.description && norm(m.description).includes(q)) || m.tags.some((tg) => norm(tg).includes(q)));
+    }
+    const courses = await loadCourses();
+    const byCourse = new Map<string, McpClassMaterial[]>();
+    for (const m of materials) {
+      if (!byCourse.has(m.courseId)) byCourse.set(m.courseId, []);
+      byCourse.get(m.courseId)!.push(m);
+    }
+    return {
+      courses: [...byCourse.entries()].map(([courseId, mats]) => {
+        const c = courses.find((cr) => cr.id === courseId);
+        return {
+          course: c ? { id: c.id, name: c.name, semester: c.semester } : { id: courseId, name: courseId, semester: "" },
+          units: groupByUnit(mats),
+        };
+      }),
+      total: materials.length,
+    };
+  })
+);
+
+server.tool(
+  "read_class_material",
+  "Fetch one material's content by id: text returns inline, links return the URL to fetch, files are downloaded to a temp path for Reading (PDFs and images are Readable).",
+  { id: z.string().describe("Material ID (from list_class_materials or get_study_context)") },
+  async ({ id }) => run(async () => {
+    const materials = await loadMaterials();
+    const m = materials.find((mat) => mat.id === id);
+    if (!m) throw new Error(`No material found with id "${id}". Use list_class_materials to list ids.`);
+    if (m.kind === "text") return { kind: "text", name: m.name, text: m.text ?? "" };
+    if (m.kind === "link") return { kind: "link", name: m.name, url: m.url ?? "", hint: "Fetch this URL for the content." };
+    if (!m.file) throw new Error(`File bytes are missing for material "${id}" — it has no media reference.`);
+    const dataUrl = await cortexGet(`/api/media?id=${encodeURIComponent(m.file.mediaId)}`);
+    if (dataUrl === null) throw new Error(`File bytes are missing for material "${id}" — the media file may have been deleted.`);
+    // Response is a JSON data-URL string with a guessed mime — strip the
+    // prefix and trust the material record's mime instead.
+    const s = String(dataUrl);
+    const idx = s.indexOf("base64,");
+    const buf = Buffer.from(idx >= 0 ? s.slice(idx + 7) : s, "base64");
+    const dir = path.join(os.tmpdir(), "cortex-materials");
+    await fs.mkdir(dir, { recursive: true });
+    const safeName = `${m.file.mediaId}-${m.file.name.replace(/[^A-Za-z0-9._-]+/g, "-")}`;
+    const filePath = path.join(dir, safeName);
+    // Reuse an existing tmp copy if it already has the same byte length.
+    const existing = await fs.stat(filePath).catch(() => null);
+    if (!existing || existing.size !== buf.length) await fs.writeFile(filePath, buf);
+    return {
+      kind: "file", name: m.name, mime: m.file.mime, size: m.file.size, path: filePath,
+      hint: "Read this path (PDFs and images are Readable).",
+    };
+  })
+);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP: Food pipeline (Market ↔ Nutrition ↔ Finances)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Store-key shapes are duplicated here (the MCP server shares no types with the
@@ -2081,7 +2571,7 @@ if (httpMode) {
       await transport.handleRequest(req, res);
     } else if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, tools: 61 }));
+      res.end(JSON.stringify({ ok: true, tools: 78 })); // keep in sync with server.tool() count
     } else {
       res.writeHead(404); res.end("Not found");
     }

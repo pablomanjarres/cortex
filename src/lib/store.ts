@@ -459,6 +459,11 @@ export function writeStore<T>(key: string, data: T): void {
   enqueueUpdate(key, () => data, data)
 }
 
+/** Fire-and-forget functional update outside React, same rebase/flush pipeline as useStore. */
+export function updateStoreValue<T>(key: string, fallback: T, reducer: (prev: T) => T): void {
+  enqueueUpdate(key, (prev) => reducer((prev === null || prev === undefined ? fallback : prev) as T), fallback)
+}
+
 /** React hook for persistent state with automatic cross-writer sync. */
 export function useStore<T>(key: string, fallback: T): [T, (updater: T | ((prev: T) => T)) => void] {
   const [data, setData] = useState<T>(fallback)

@@ -4,28 +4,18 @@ import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { useStore } from '@/lib/store'
+import { useStore, readStore, updateStoreValue } from '@/lib/store'
+import { deleteFile } from '@/lib/media'
 import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 import { ClassSchedule } from './ClassSchedule'
+import { ICONS, ICON_CYCLE, ICON_OPTIONS } from './course-icons'
+import {
+  CLASS_MATERIALS_KEY, STUDY_NOTES_KEY, getToday, daysUntil, fmtDate,
+  type Assignment, type AssignmentType, type ClassMaterial, type Course, type CourseStatus,
+  type Difficulty, type Priority, type SortKey, type StudyNote, type Topic, type TopicStatus,
+} from './student-types'
 import {
   GraduationCap,
-  FlaskConical,
-  Code2,
-  Database,
-  BarChart3,
-  Palette,
-  FileCode,
-  Sigma,
-  Blocks,
-  Cpu,
-  Terminal,
-  MessagesSquare,
-  Network,
-  BookOpen,
-  Atom,
-  Globe,
-  PenTool,
-  Calculator,
   CalendarDays,
   AlertCircle,
   CheckCircle2,
@@ -36,71 +26,6 @@ import {
   X,
   Trash2,
 } from 'lucide-react'
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-type Difficulty = 'Hard' | 'Medium' | 'Easy'
-type AssignmentType = 'Exam' | 'Quiz' | 'Lab' | 'Project' | 'Presentation' | 'Attendance'
-type Priority = 'Low' | 'Medium' | 'High' | 'Urgent'
-type SortKey = 'deadline' | 'weight' | 'grade' | 'name'
-type CourseStatus = 'Normal' | 'At risk' | 'Under Control'
-
-type TopicStatus = 'Not seen' | 'Previewed' | 'Seen' | 'Practiced' | 'Mastered'
-
-// Courses are persisted as data (JSON), so the icon is stored as a string key
-// and resolved to a lucide component at render time.
-interface Course {
-  id: string
-  name: string
-  difficulty: Difficulty
-  iconKey: string
-  /** Legacy per-course identity hues — still present in old persisted data but
-   *  no longer written or rendered (categories are text, urgency is color). */
-  color?: string
-  bg?: string
-  semester: string
-  status: CourseStatus
-  credits: number
-  notes?: string
-}
-
-interface Topic {
-  id: string
-  name: string
-  courseId: string
-  chapter: string
-  types: string[]
-  mastery: number
-  status: TopicStatus
-  priority: Priority
-  week?: number
-}
-
-interface Assignment {
-  id: string
-  name: string
-  courseId: string
-  type: AssignmentType
-  weight: number
-  grade?: number
-  deadline?: string
-  done: boolean
-  priority: Priority
-  notes?: string
-}
-
-// ── Icons ────────────────────────────────────────────────────────────────────
-
-const ICONS: Record<string, typeof GraduationCap> = {
-  grad: GraduationCap, flask: FlaskConical, code: Code2, database: Database,
-  chart: BarChart3, palette: Palette, file: FileCode, sigma: Sigma, blocks: Blocks,
-  cpu: Cpu, terminal: Terminal, messages: MessagesSquare, network: Network,
-  book: BookOpen, atom: Atom, globe: Globe, pen: PenTool, calc: Calculator,
-}
-
-// Cycled when auto-styling newly added courses so each looks distinct.
-const ICON_CYCLE = ['book', 'atom', 'globe', 'pen', 'calc', 'grad', 'sigma', 'blocks', 'cpu', 'terminal', 'messages', 'network']
-const ICON_OPTIONS = Object.keys(ICONS)
 
 // ── Default seed data ─────────────────────────────────────────────────────────
 
@@ -182,9 +107,6 @@ const DEFAULT_ASSIGNMENTS: Assignment[] = [
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const getToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
-const daysUntil = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86_400_000)
-const fmtDate = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 const ALL_TYPES: AssignmentType[] = ['Exam', 'Quiz', 'Lab', 'Project', 'Presentation', 'Attendance']
 const ALL_DIFFICULTIES: Difficulty[] = ['Easy', 'Medium', 'Hard']
 const ALL_STATUSES: CourseStatus[] = ['Normal', 'At risk', 'Under Control']
@@ -666,6 +588,12 @@ export function StudentPage() {
     update((p) => p.filter((a) => a.courseId !== id))
     updateTopics((p) => p.filter((t) => t.courseId !== id))
     updateCourses((p) => p.filter((c) => c.id !== id))
+    // Cascade: purge the course's class materials (best-effort file bytes too) and study notes.
+    void readStore<ClassMaterial[]>(CLASS_MATERIALS_KEY, []).then((mats) => {
+      for (const m of mats) if (m.courseId === id && m.file?.mediaId) void deleteFile(m.file.mediaId)
+    })
+    updateStoreValue<ClassMaterial[]>(CLASS_MATERIALS_KEY, [], (prev) => prev.filter((m) => m.courseId !== id))
+    updateStoreValue<StudyNote[]>(STUDY_NOTES_KEY, [], (prev) => prev.filter((n) => n.courseId !== id))
     if (selectedCourse === id) setSelectedCourse(null)
   }
 
