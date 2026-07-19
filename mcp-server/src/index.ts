@@ -6,6 +6,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import {
+  buildMaterialsIndex,
+  indexMaterialIncremental,
+  searchMaterialsIndex,
+  type SearchMaterial,
+} from "./search.js";
 
 const BASE = process.env.CORTEX_API || "http://localhost:3456";
 
@@ -152,7 +158,7 @@ const server = new McpServer(
       "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
       "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
       "- Opportunities (fellowships, grants, accelerators, programs, residencies, hackathons, internships): get_opportunities to read the radar + active hunt orders (filter by category or deadline_type); add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders; include the deadline-intelligence fields); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it. The curated program catalog seeds via `node scripts/radar-seed-programs.mjs --write`.",
-      "- Study sessions: when he names a subject (\"I'm working on Cálculo 3\", \"/sgd homework\"), call get_study_context FIRST — it bundles course, schedule, grades, assignments, topics, materials, and past notes. When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material (disk path, or content_base64 for chat attachments); file contents come back via read_class_material (downloads to a temp path for Reading).",
+      "- Study sessions: when he names a subject (\"I'm working on Cálculo 3\", \"/sgd homework\"), call get_study_context FIRST — it bundles course, schedule, grades, assignments, topics, materials, and past notes. When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material (disk path, or content_base64 for chat attachments); file contents come back via read_class_material (downloads to a temp path for Reading). To FIND something across materials by meaning (\"cuando es el debate de migracion\") use search_class_materials; it needs an index built once via index_class_materials (kept fresh automatically as materials are added).",
       "",
       "Prefer domain-specific tools over the generic read_data / write_data. Confirm before overwriting existing data. Values are stored per calendar day/week under keys like cortex-nutrition-YYYY-MM-DD and cortex-market-<mondayDate>; today's date is the default when omitted.",
     ].join("\n"),
@@ -1970,6 +1976,12 @@ server.tool(
       materials.push(material);
       return materials;
     }, []);
+    // Best-effort incremental semantic index of the new material — appends to
+    // an existing index only, and can never fail the add (no creds / Voyage
+    // down / no index yet all land here silently).
+    try {
+      await indexMaterialIncremental(material as SearchMaterial, course.name);
+    } catch { /* the add already succeeded — indexing is a bonus */ }
     return { ok: true, material };
   })
 );
@@ -2044,6 +2056,43 @@ server.tool(
       kind: "file", name: m.name, mime: m.file.mime, size: m.file.size, path: filePath,
       hint: "Read this path (PDFs and images are Readable).",
     };
+  })
+);
+
+server.tool(
+  "index_class_materials",
+  "Build or refresh the semantic search index over class materials (Voyage contextualized embeddings, stored locally). Embeds text snippets and .md/.txt file contents; links and binary files (PDFs, docx) are indexed by name+description+tags only. Only new/changed materials are re-embedded unless force. Run this after filing materials, then query with search_class_materials.",
+  {
+    subject: z.string().optional().describe("Limit (re)indexing to one course (fuzzy name/acronym/id); other courses' entries are kept as-is"),
+    force: z.boolean().optional().describe("Re-embed everything in scope even if unchanged (default false)"),
+  },
+  async ({ subject, force }) => run(async () => {
+    const course = subject ? await resolveCourse(subject) : null;
+    const [materials, courses] = await Promise.all([loadMaterials(), loadCourses()]);
+    return buildMaterialsIndex(materials as SearchMaterial[], courses, {
+      force: force ?? false,
+      ...(course ? { scopeCourseId: course.id } : {}),
+    });
+  })
+);
+
+server.tool(
+  "search_class_materials",
+  "Semantic search over indexed class materials — meaning-aware, cross-language-friendly (query in Spanish or English). Returns the top-k matching chunks with material refs (id, name, course, unit, score) and the chunk text — never file bytes; use read_class_material(id) for the full file. Requires an index built by index_class_materials.",
+  {
+    query: z.string().describe("Natural-language query, e.g. 'cuando es el debate de migracion'"),
+    subject: z.string().optional().describe("Course filter (fuzzy name/acronym/id)"),
+    unit: z.string().optional().describe("Unit filter, e.g. 'Unidad 1' ('General' = unfiled)"),
+    k: z.number().optional().describe("Max hits to return (default 8, max 50)"),
+  },
+  async ({ query, subject, unit, k }) => run(async () => {
+    const course = subject ? await resolveCourse(subject) : null;
+    const courses = await loadCourses();
+    return searchMaterialsIndex(query, courses, {
+      ...(course ? { courseId: course.id } : {}),
+      ...(unit ? { unit } : {}),
+      ...(k !== undefined ? { k } : {}),
+    });
   })
 );
 
