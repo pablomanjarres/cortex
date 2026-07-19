@@ -44,6 +44,22 @@ export interface CalendarSyncState {
   lastPolled: string
 }
 
+// ── Sync health breadcrumbs ──────────────────────────────────────────────────
+// The renderer console is invisible in the installed app, so sync failures
+// used to vanish (the assignment leg was dead for 13 days with zero signal).
+// Every catch below records its last error here; probes can read the key.
+const HEALTH_KEY = 'cortex-calendar-sync-health'
+export function reportSyncHealth(context: string, error?: unknown): void {
+  const entry = {
+    context,
+    at: new Date().toISOString(),
+    ...(error !== undefined ? { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) } : {}),
+  }
+  readStore<Record<string, unknown>>(HEALTH_KEY, {}).then((prev) => {
+    writeStore(HEALTH_KEY, { ...prev, [error !== undefined ? 'lastError' : 'lastOk']: entry })
+  }).catch(() => { /* health reporting must never throw */ })
+}
+
 interface AssignmentLike {
   id: string
   name: string
@@ -106,7 +122,12 @@ function firstClassDate(termStart: string, days: number[]): string {
 // ─── Hash ─────────────────────────────────────────────────────────────────────
 
 function syncHash(fields: Record<string, string | undefined>): string {
-  return btoa(JSON.stringify(Object.entries(fields).sort(([a], [b]) => a.localeCompare(b))))
+  const json = JSON.stringify(Object.entries(fields).sort(([a], [b]) => a.localeCompare(b)))
+  // btoa alone throws InvalidCharacterError on non-Latin1 input (em-dashes and
+  // similar in assignment titles), which killed every sync for those items —
+  // encode to UTF-8 bytes first. Formula change invalidates stored hashes once,
+  // causing a single harmless re-update of already-mapped events.
+  return btoa(String.fromCharCode(...new TextEncoder().encode(json)))
 }
 
 // ─── State Management ─────────────────────────────────────────────────────────
@@ -249,6 +270,7 @@ export async function syncAssignmentToCalendar(
     }
   } catch (e) {
     console.error('[Cortex] Calendar sync error (assignment):', e)
+    reportSyncHealth('assignment-sync', e)
   } finally {
     _syncLock = false
   }
@@ -316,6 +338,7 @@ export async function syncBirthdayToCalendar(
     }
   } catch (e) {
     console.error('[Cortex] Calendar sync error (birthday):', e)
+    reportSyncHealth('birthday-sync', e)
   } finally {
     _syncLock = false
   }
@@ -394,6 +417,7 @@ export async function syncClassToCalendar(
     }
   } catch (e) {
     console.error('[Cortex] Calendar sync error (class):', e)
+    reportSyncHealth('class-sync', e)
   } finally {
     _syncLock = false
   }
@@ -486,6 +510,7 @@ export async function detectExternalChanges(): Promise<ExternalChange[]> {
     return changes
   } catch (e) {
     console.error('[Cortex] Calendar pull error:', e)
+    reportSyncHealth('external-pull', e)
     return []
   } finally {
     _syncLock = false

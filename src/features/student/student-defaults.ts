@@ -6,7 +6,7 @@
 // MCP server is a separate process entirely) saw an empty/missing key and the
 // study tools failed with "Cortex has no courses yet". seedStudentDefaults()
 // runs once at app launch and persists each key that has never been written.
-import { readStore, updateStoreValue } from '@/lib/store'
+import { readStoreWithRev, updateStoreValue } from '@/lib/store'
 import type { Assignment, Course, Topic } from './student-types'
 
 export const DEFAULT_SEMESTERS = ['4th Semester', '3rd Semester']
@@ -95,15 +95,20 @@ const SEEDS: ReadonlyArray<readonly [string, unknown]> = [
 
 /**
  * Persist the defaults for any student key that has never been written.
- * Only a missing key (null read) is seeded — an intentionally emptied list
- * stays empty. The write goes through the optimistic-concurrency queue with an
- * identity reducer, so a value that appears between read and write survives.
+ * Only a missing key (null data AND null rev) is seeded — an intentionally
+ * emptied list stays empty, and a key whose file exists but is unreadable
+ * (null data, non-null rev: corrupt/undecryptable) is left alone so real data
+ * is never masked by defaults. The write goes through the
+ * optimistic-concurrency queue with an identity reducer, so a value that
+ * appears between read and write survives.
  */
 export async function seedStudentDefaults(): Promise<void> {
   for (const [key, def] of SEEDS) {
-    const current = await readStore<unknown>(key, null)
-    if (current === null || current === undefined) {
+    const { data, rev } = await readStoreWithRev<unknown>(key)
+    if (data === null && rev === null) {
       updateStoreValue(key, def, (prev) => prev)
+    } else if (data === null && rev !== null) {
+      console.warn(`[Cortex] seedStudentDefaults: "${key}" exists but is unreadable — not seeding over it`)
     }
   }
 }

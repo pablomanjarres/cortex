@@ -184,7 +184,8 @@ async function voyageEmbed(documents: string[][], inputType: "document" | "query
     if (res.status === 429 || res.status >= 500) {
       if (attempt < MAX_ATTEMPTS) {
         const retryAfter = Number(res.headers.get("retry-after")) || 0;
-        await sleep(Math.max(retryAfter * 1000, 1000 * 2 ** (attempt - 1)));
+        // Cap Retry-After so one rate-limited call can't hang an MCP tool for minutes.
+        await sleep(Math.max(Math.min(retryAfter, 30) * 1000, 1000 * 2 ** (attempt - 1)));
         continue;
       }
       throw new Error(`Voyage API ${res.status} after ${MAX_ATTEMPTS} attempts — rate-limited or unavailable, try again later.`);
@@ -510,14 +511,16 @@ export async function buildMaterialsIndex(
 
   const inScope = opts.scopeCourseId ? materials.filter((m) => m.courseId === opts.scopeCourseId) : materials;
   const toEmbed: PreparedMaterial[] = [];
-  const keep: IndexChunk[] = [];
+  const keepInScope: IndexChunk[] = [];
+  const outOfScopeSnapshot: IndexChunk[] = [];
   let skipped = 0;
 
-  // Out-of-scope materials keep their existing chunks verbatim.
+  // Snapshot fallback for out-of-scope materials — only used if the index file
+  // is unreadable/model-mismatched under the lock; otherwise the live file wins.
   if (opts.scopeCourseId) {
     for (const m of materials) {
       if (m.courseId === opts.scopeCourseId) continue;
-      keep.push(...(existingByMaterial.get(m.id) ?? []));
+      outOfScopeSnapshot.push(...(existingByMaterial.get(m.id) ?? []));
     }
   }
 
@@ -526,7 +529,7 @@ export async function buildMaterialsIndex(
     prep.chunks = chunkBody(await materialBody(m));
     const prior = existingByMaterial.get(m.id);
     if (!opts.force && prior && unchanged(prior, prep)) {
-      keep.push(...prior);
+      keepInScope.push(...prior);
       skipped++;
     } else {
       toEmbed.push(prep);
@@ -535,20 +538,28 @@ export async function buildMaterialsIndex(
 
   const fresh = await embedPrepared(toEmbed); // network — outside the lock
   const snapshotIds = new Set(existingByMaterial.keys());
+  const inScopeIds = new Set(inScope.map((m) => m.id));
   return withIndexWriteLock(async () => {
-    // Merge under the lock: carry over chunks a concurrent incremental indexer
-    // wrote for materials added AFTER our snapshot (present in the current file,
-    // absent from both our snapshot and our `materials` list). Materials deleted
-    // from the store stay pruned — those WERE in the snapshot.
+    // Merge under the lock. This run is authoritative ONLY for in-scope
+    // materials (keepInScope + fresh). For everything else the file read under
+    // the lock is newest truth: a concurrent incremental indexer may have
+    // (re-)embedded an out-of-scope or just-added material while we were
+    // embedding — carrying our pre-embed snapshot for those would silently
+    // revert or drop its chunks. Materials deleted from the store (in the
+    // snapshot but no longer live) stay pruned.
     const current = await loadIndex();
-    const carryover = current && current.model === MODEL
-      ? current.chunks.filter((c) => !liveIds.has(c.materialId) && !snapshotIds.has(c.materialId))
+    const usable = !!current && current.model === MODEL;
+    const outOfScope = usable
+      ? current!.chunks.filter((c) => liveIds.has(c.materialId) && !inScopeIds.has(c.materialId))
+      : outOfScopeSnapshot;
+    const concurrentNew = usable
+      ? current!.chunks.filter((c) => !liveIds.has(c.materialId) && !snapshotIds.has(c.materialId))
       : [];
     const next: MaterialsIndex = {
       version: INDEX_VERSION,
       model: MODEL,
       builtAt: new Date().toISOString(),
-      chunks: [...keep, ...fresh, ...carryover],
+      chunks: [...keepInScope, ...fresh, ...outOfScope, ...concurrentNew],
     };
     await saveIndex(next);
     return {
