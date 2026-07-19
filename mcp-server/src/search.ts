@@ -322,7 +322,7 @@ async function saveIndex(index: MaterialsIndex): Promise<void> {
   const dir = indexDir();
   await fs.mkdir(dir, { recursive: true });
   const file = indexPath();
-  const tmp = `${file}.tmp-${process.pid}`;
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await fs.writeFile(tmp, JSON.stringify(index));
   await fs.rename(tmp, file); // atomic swap — a crashed write never corrupts the live index
   const stat = await fs.stat(file).catch(() => null);

@@ -1978,10 +1978,12 @@ server.tool(
     }, []);
     // Best-effort incremental semantic index of the new material — appends to
     // an existing index only, and can never fail the add (no creds / Voyage
-    // down / no index yet all land here silently).
-    try {
-      await indexMaterialIncremental(material as SearchMaterial, course.name);
-    } catch { /* the add already succeeded — indexing is a bonus */ }
+    // down / no index yet all land here silently). Latency-bounded: if Voyage
+    // is slow (429 backoff), the add returns after 15s and indexing finishes
+    // in the background.
+    const bgIndex = indexMaterialIncremental(material as SearchMaterial, course.name)
+      .catch(() => { /* the add already succeeded — indexing is a bonus */ });
+    await Promise.race([bgIndex, new Promise((r) => setTimeout(r, 15_000))]);
     return { ok: true, material };
   })
 );
