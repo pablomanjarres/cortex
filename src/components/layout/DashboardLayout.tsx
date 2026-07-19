@@ -1,13 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { Sidebar, MobileSidebar } from './Sidebar'
 import { Header } from './Header'
 import { useCalendarSync } from '@/lib/use-calendar-sync'
 import { SprintProvider } from '@/lib/sprint-context'
+import { seedStudentDefaults } from '@/features/student/student-defaults'
 
 export function DashboardLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   useCalendarSync()
+  // Seed never-written student store keys so out-of-renderer consumers (MCP
+  // server, Materials/Notes tabs) see the same courses the Student page shows.
+  useEffect(() => { void seedStudentDefaults() }, [])
 
   return (
     <SprintProvider>
