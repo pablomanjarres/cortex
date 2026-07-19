@@ -41,8 +41,10 @@ interface ClassData {
   termEnd: string
 }
 
-// Hardcoded course list matching StudentPage — needed for event titles
-const COURSES: CourseData[] = [
+// Legacy fallback for event titles — only used if the courses store is empty.
+// The live list comes from cortex-student-courses (seeded at launch), so new
+// semesters' courses get proper names without touching this file.
+const FALLBACK_COURSES: CourseData[] = [
   { id: 'formales', name: 'Formal Languages' },
   { id: 'physics', name: 'Physics II' },
   { id: 'algorithms', name: 'Algorithms' },
@@ -50,6 +52,11 @@ const COURSES: CourseData[] = [
   { id: 'stats', name: 'Prob & Stats' },
   { id: 'imagination', name: 'Creativity' },
 ]
+
+async function loadCourses(): Promise<CourseData[]> {
+  const stored = await readStore<CourseData[]>('cortex-student-courses', [])
+  return stored.length > 0 ? stored : FALLBACK_COURSES
+}
 
 export function useCalendarSync() {
   const ran = useRef(false)
@@ -69,7 +76,7 @@ export function useCalendarSync() {
 
         // Reconcile assignments with deadlines
         if (assignments.length > 0) {
-          await reconcileAssignments(assignments, COURSES)
+          await reconcileAssignments(assignments, await loadCourses())
         }
 
         // Reconcile birthdays
@@ -101,6 +108,15 @@ export function useCalendarSync() {
         // writes cortex-classes directly) reach the calendar without an app restart.
         const classes = await readStore<ClassData[]>('cortex-classes', [])
         await reconcileClasses(classes)
+
+        // Same for assignments: MCP-written deadlines (write_data on
+        // cortex-student-assignments) must reach the calendar without waiting
+        // for a relaunch. reconcileAssignments hash-compares against the sync
+        // state, so unchanged items are no-ops.
+        const polledAssignments = await readStore<AssignmentData[]>('cortex-student-assignments', [])
+        if (polledAssignments.length > 0) {
+          await reconcileAssignments(polledAssignments, await loadCourses())
+        }
 
         const changes = await detectExternalChanges()
         if (changes.length === 0) return

@@ -454,6 +454,17 @@ export async function readStore<T>(key: string, fallback: T): Promise<T> {
   return (data ?? fallback) as T
 }
 
+/**
+ * Read a key together with its backend rev. Lets callers tell a key that has
+ * never been written (data null, rev null) apart from one whose file exists
+ * but is currently unreadable (data null, rev non-null) — e.g. a corrupt or
+ * undecryptable data file that should NOT be treated as absent.
+ */
+export async function readStoreWithRev<T>(key: string): Promise<{ data: T | null; rev: string | null }> {
+  const { data, rev } = await backendRead(key)
+  return { data: (data ?? null) as T | null, rev }
+}
+
 /** Fire-and-forget write, routed through the same rebase/flush pipeline as useStore. */
 export function writeStore<T>(key: string, data: T): void {
   enqueueUpdate(key, () => data, data)

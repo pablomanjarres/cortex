@@ -1529,11 +1529,22 @@ server.tool(
   "Write to any Cortex data store by key (generic escape hatch — use domain-specific tools when possible)",
   {
     key: z.string().describe("Data key"),
-    data: z.unknown().describe("JSON data to write"),
+    data: z.unknown().describe("JSON value to write. Pass real JSON (object/array), NOT a stringified blob — a stringified array corrupts array keys and crashes their consumers."),
   },
   async ({ key, data }) => run(async () => {
-    await writeKey(key, data);
-    return { ok: true, key };
+    // Callers (LLM agents especially) sometimes pass arrays/objects as a
+    // JSON-encoded STRING; storing that string where an array lives crashes
+    // every consumer of the key (".filter is not a function"). Unwrap it.
+    let value = data;
+    let unwrapped = false;
+    if (typeof data === "string") {
+      const t = data.trim();
+      if (t.startsWith("[") || t.startsWith("{")) {
+        try { value = JSON.parse(t); unwrapped = true; } catch { /* genuine string, keep as-is */ }
+      }
+    }
+    await writeKey(key, value);
+    return { ok: true, key, ...(unwrapped ? { note: "data arrived as a JSON string and was parsed before writing" } : {}) };
   })
 );
 
@@ -1639,7 +1650,10 @@ function courseScore(c: McpCourse, raw: string, q: string, activeSemester: strin
 
 async function resolveCourse(subject: string): Promise<McpCourse> {
   const courses = (await readKey<McpCourse[]>("cortex-student-courses")) || null;
-  if (!courses || courses.length === 0) throw new Error("Cortex has no courses yet — relaunch the Cortex app (defaults seed on launch), or add a course in the Student page.");
+  // Distinguish never-written (relaunch seeds defaults) from deliberately
+  // emptied (seeding skips [], so only adding a course helps).
+  if (!courses) throw new Error("Cortex has no courses yet — relaunch the Cortex app (defaults seed on launch).");
+  if (courses.length === 0) throw new Error("The course list is empty — add a course in the Student page (relaunch won't re-seed an intentionally emptied list).");
   const q = norm(subject);
   if (!q) throw new Error("subject is required.");
   const activeSemester = ((await readKey<string>("cortex-student-active-semester")) || "") as string;
