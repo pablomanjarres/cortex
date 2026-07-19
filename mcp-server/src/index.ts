@@ -1617,8 +1617,15 @@ function courseScore(c: McpCourse, raw: string, q: string, activeSemester: strin
   else if (n.startsWith(q)) s = 80;
   else if (n.includes(q)) s = 70;
   else {
-    const nTokens = new Set(n.split(" "));
-    if (q.split(" ").every((t) => nTokens.has(t))) s = 60;
+    // Token subsets both ways: a short subject inside a long course name
+    // ("debates" → "Debates Humanísticos") and a long official subject around a
+    // short course name ("Debates Humanísticos Contemporáneos" → "Debates
+    // Humanísticos"). Token-level, so "ia" never matches inside "materia".
+    const nTokens = n.split(" ");
+    const qTokens = q.split(" ");
+    const nSet = new Set(nTokens);
+    const qSet = new Set(qTokens);
+    if (qTokens.every((t) => nSet.has(t)) || nTokens.every((t) => qSet.has(t))) s = 60;
   }
   if (s > 0 && c.semester === activeSemester) s += 5; // active-semester tie-break
   return s;
@@ -1626,7 +1633,7 @@ function courseScore(c: McpCourse, raw: string, q: string, activeSemester: strin
 
 async function resolveCourse(subject: string): Promise<McpCourse> {
   const courses = (await readKey<McpCourse[]>("cortex-student-courses")) || null;
-  if (!courses || courses.length === 0) throw new Error("Cortex has no courses yet — open the Student page once to seed them.");
+  if (!courses || courses.length === 0) throw new Error("Cortex has no courses yet — relaunch the Cortex app (defaults seed on launch), or add a course in the Student page.");
   const q = norm(subject);
   if (!q) throw new Error("subject is required.");
   const activeSemester = ((await readKey<string>("cortex-student-active-semester")) || "") as string;
