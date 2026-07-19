@@ -158,7 +158,8 @@ const server = new McpServer(
       "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
       "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
       "- Opportunities (fellowships, grants, accelerators, programs, residencies, hackathons, internships): get_opportunities to read the radar + active hunt orders (filter by category or deadline_type); add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders; include the deadline-intelligence fields); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it. The curated program catalog seeds via `node scripts/radar-seed-programs.mjs --write`.",
-      "- Study sessions: when he names a subject (\"I'm working on Cálculo 3\", \"/sgd homework\"), call get_study_context FIRST — it bundles course, schedule, grades, assignments, topics, materials, and past notes. When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material (disk path, or content_base64 for chat attachments); file contents come back via read_class_material (downloads to a temp path for Reading). To FIND something across materials by meaning (\"cuando es el debate de migracion\") use search_class_materials; it needs an index built once via index_class_materials (kept fresh automatically as materials are added).",
+      "- Study questions: pull the SMALLEST slice that answers — the full bundle is expensive. A date/deadline question → get_assignments {subject, undoneOnly, due_within_days}. A content question (\"cuando es el debate de migracion\", \"como se califica X\") → search_class_materials {query, subject?} (semantic; index kept fresh automatically). Browsing what's filed → list_class_materials {subject, unit?}; reading one → read_class_material. Past facts/decisions → get_study_notes {subject}. Reserve get_study_context for genuinely STARTING a work session on a course — and even then pass sections (e.g. [\"grades\",\"assignments\"]) to fetch only what the session needs.",
+      "- When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material (disk path, or content_base64 for chat attachments); file every document as TWO materials: the original + a faithful Markdown twin named \"<name> (AI).md\" tagged ai-md in the same unit.",
       "",
       "Prefer domain-specific tools over the generic read_data / write_data. Confirm before overwriting existing data. Values are stored per calendar day/week under keys like cortex-nutrition-YYYY-MM-DD and cortex-market-<mondayDate>; today's date is the default when omitted.",
     ].join("\n"),
@@ -1408,15 +1409,25 @@ server.tool(
 
 server.tool(
   "get_assignments",
-  "Get student assignments with optional course/status filter",
+  "Get student assignments — the cheap way to answer date/deadline/grade-item questions for a course. Filter by fuzzy subject, completion, and deadline window instead of pulling the full study bundle.",
   {
-    courseId: z.string().optional().describe("Filter by course ID"),
+    subject: z.string().optional().describe("Fuzzy course filter (name/acronym/id) — e.g. 'debates', 'org de computadores'"),
+    courseId: z.string().optional().describe("Exact course ID filter (legacy; prefer subject)"),
     undoneOnly: z.boolean().optional().describe("Only show incomplete assignments"),
+    due_within_days: z.number().optional().describe("Only assignments with a deadline within N days from today"),
   },
-  async ({ courseId, undoneOnly }) => run(async () => {
+  async ({ subject, courseId, undoneOnly, due_within_days }) => run(async () => {
     let assignments = ((await readKey("cortex-student-assignments")) || []) as Record<string, unknown>[];
-    if (courseId) assignments = assignments.filter(a => a.courseId === courseId);
+    if (subject) {
+      const course = await resolveCourse(subject);
+      assignments = assignments.filter(a => a.courseId === course.id);
+    } else if (courseId) assignments = assignments.filter(a => a.courseId === courseId);
     if (undoneOnly) assignments = assignments.filter(a => !a.done);
+    if (due_within_days !== undefined) {
+      const t = today();
+      const limit = new Date(Date.now() + due_within_days * 86_400_000).toISOString().slice(0, 10);
+      assignments = assignments.filter(a => typeof a.deadline === "string" && a.deadline >= t && a.deadline <= limit);
+    }
     return assignments;
   })
 );
@@ -1757,15 +1768,23 @@ const fmtMB = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
 server.tool(
   "get_study_context",
-  "Bootstrap a study session for one course. Fuzzy-resolves the subject ('calculo 3', 'so', 'debates' — case/diacritic-insensitive name, acronym, or id), then bundles course meta, weekly schedule, grade state (current/best/worst on the 0–5 scale), upcoming assignments, topics, class materials grouped by unit (refs only — call read_class_material for file contents), and past study notes. Call this FIRST when Pablo names a subject.",
+  "Bundle study context for one course (fuzzy subject: case/diacritic-insensitive name, acronym, or id). EXPENSIVE when unfiltered — prefer the targeted tools (get_assignments, search_class_materials, list_class_materials, get_study_notes) for single questions, or pass `sections` to fetch only the slices a work session needs. Sections: course, schedule, grades, assignments, topics, materials (refs only), notes.",
   {
     subject: z.string().describe("Course name, fragment, acronym, or id — e.g. 'calculo 3', 'so', 'debates'"),
+    sections: z.array(z.enum(["course", "schedule", "grades", "assignments", "topics", "materials", "notes"])).optional()
+      .describe("Slices to return — request the smallest set that serves the session (default: all)"),
     max_notes: z.number().optional().describe("Max study notes to include (default 25)"),
   },
-  async ({ subject, max_notes }) => run(async () => {
+  async ({ subject, sections, max_notes }) => run(async () => {
     const course = await resolveCourse(subject);
+    const want = new Set(sections && sections.length ? sections : ["course", "schedule", "grades", "assignments", "topics", "materials", "notes"]);
+    const needAssignments = want.has("grades") || want.has("assignments");
     const [assignments, topics, classes, materials, notes] = await Promise.all([
-      loadAssignments(), loadStudentTopics(), loadClasses(), loadMaterials(), loadStudyNotes(),
+      needAssignments ? loadAssignments() : Promise.resolve([] as McpAssignment[]),
+      want.has("topics") ? loadStudentTopics() : Promise.resolve([] as McpTopic[]),
+      want.has("schedule") ? loadClasses() : Promise.resolve([] as ClassDef[]),
+      want.has("materials") ? loadMaterials() : Promise.resolve([] as McpClassMaterial[]),
+      want.has("notes") ? loadStudyNotes() : Promise.resolve([] as McpStudyNote[]),
     ]);
 
     // Grade math mirrors the Student page Overview (0–5 Colombian scale).
@@ -1811,24 +1830,30 @@ server.tool(
     const courseNotes = notes.filter((n) => noteMatchesCourse(n, course)).sort(noteOrder).slice(0, max_notes ?? 25);
 
     return {
-      course: {
-        id: course.id, name: course.name, semester: course.semester, difficulty: course.difficulty,
-        status: course.status, credits: course.credits, ...(course.notes ? { notes: course.notes } : {}),
-      },
-      schedule,
-      grade_state: { scale: "0-5", current, best_possible: best, worst_possible: worst, graded_pct: gradedPct },
-      assignments: { upcoming, open_undated: openUndated, done_count: mine.filter((a) => a.done).length },
-      topics: topics
-        .filter((tp) => tp.courseId === course.id)
-        .map((tp) => ({
-          id: tp.id, name: tp.name, chapter: tp.chapter, types: tp.types, mastery: tp.mastery,
-          status: tp.status, priority: tp.priority, ...(tp.week !== undefined ? { week: tp.week } : {}),
+      ...(want.has("course") ? {
+        course: {
+          id: course.id, name: course.name, semester: course.semester, difficulty: course.difficulty,
+          status: course.status, credits: course.credits, ...(course.notes ? { notes: course.notes } : {}),
+        },
+      } : { course: { id: course.id, name: course.name } }),
+      ...(want.has("schedule") ? { schedule } : {}),
+      ...(want.has("grades") ? { grade_state: { scale: "0-5", current, best_possible: best, worst_possible: worst, graded_pct: gradedPct } } : {}),
+      ...(want.has("assignments") ? { assignments: { upcoming, open_undated: openUndated, done_count: mine.filter((a) => a.done).length } } : {}),
+      ...(want.has("topics") ? {
+        topics: topics
+          .filter((tp) => tp.courseId === course.id)
+          .map((tp) => ({
+            id: tp.id, name: tp.name, chapter: tp.chapter, types: tp.types, mastery: tp.mastery,
+            status: tp.status, priority: tp.priority, ...(tp.week !== undefined ? { week: tp.week } : {}),
+          })),
+      } : {}),
+      ...(want.has("materials") ? { materials_by_unit: groupByUnit(materials.filter((m) => m.courseId === course.id)) } : {}),
+      ...(want.has("notes") ? {
+        notes: courseNotes.map((n) => ({
+          id: n.id, text: n.text, tags: n.tags, pinned: n.pinned, source: n.source,
+          ...(n.context ? { context: n.context } : {}), createdAt: n.createdAt,
         })),
-      materials_by_unit: groupByUnit(materials.filter((m) => m.courseId === course.id)),
-      notes: courseNotes.map((n) => ({
-        id: n.id, text: n.text, tags: n.tags, pinned: n.pinned, source: n.source,
-        ...(n.context ? { context: n.context } : {}), createdAt: n.createdAt,
-      })),
+      } : {}),
       next_steps: "read_class_material(id) downloads a file to disk for Reading; save_study_note captures durable facts Pablo states.",
     };
   })
