@@ -8,7 +8,15 @@ import {
   reconcileBirthdays,
   reconcileClasses,
   detectExternalChanges,
+  reportSyncHealth,
 } from './calendar-sync'
+
+// A corrupted key (e.g. a JSON string where an array lives) must degrade to
+// "skip + breadcrumb", never throw above the per-item catches — a non-array
+// here once killed the whole reconcile silently on every poll.
+function asArray<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : []
+}
 
 interface AssignmentData {
   id: string
@@ -54,7 +62,7 @@ const FALLBACK_COURSES: CourseData[] = [
 ]
 
 async function loadCourses(): Promise<CourseData[]> {
-  const stored = await readStore<CourseData[]>('cortex-student-courses', [])
+  const stored = asArray<CourseData>(await readStore<CourseData[]>('cortex-student-courses', []))
   return stored.length > 0 ? stored : FALLBACK_COURSES
 }
 
@@ -68,11 +76,11 @@ export function useCalendarSync() {
     async function init() {
       try {
         // Load data from store
-        const [assignments, contacts, classes] = await Promise.all([
+        const [assignments, contacts, classes] = (await Promise.all([
           readStore<AssignmentData[]>('cortex-student-assignments', []),
           readStore<ContactData[]>('cortex-contacts', []),
           readStore<ClassData[]>('cortex-classes', []),
-        ])
+        ])).map((v) => asArray(v)) as [AssignmentData[], ContactData[], ClassData[]]
 
         // Reconcile assignments with deadlines
         if (assignments.length > 0) {
@@ -92,6 +100,7 @@ export function useCalendarSync() {
         console.log('[Cortex] Calendar sync: initial reconciliation complete')
       } catch (e) {
         console.error('[Cortex] Calendar sync init error:', e)
+        reportSyncHealth('init', e)
       }
     }
 
@@ -106,14 +115,14 @@ export function useCalendarSync() {
       try {
         // Reconcile the class schedule so classes added/removed via MCP (which
         // writes cortex-classes directly) reach the calendar without an app restart.
-        const classes = await readStore<ClassData[]>('cortex-classes', [])
+        const classes = asArray<ClassData>(await readStore<ClassData[]>('cortex-classes', []))
         await reconcileClasses(classes)
 
         // Same for assignments: MCP-written deadlines (write_data on
         // cortex-student-assignments) must reach the calendar without waiting
         // for a relaunch. reconcileAssignments hash-compares against the sync
         // state, so unchanged items are no-ops.
-        const polledAssignments = await readStore<AssignmentData[]>('cortex-student-assignments', [])
+        const polledAssignments = asArray<AssignmentData>(await readStore<AssignmentData[]>('cortex-student-assignments', []))
         if (polledAssignments.length > 0) {
           await reconcileAssignments(polledAssignments, await loadCourses())
         }
@@ -124,14 +133,14 @@ export function useCalendarSync() {
         // Apply external changes to the store directly
         for (const ch of changes) {
           if (ch.cortexType === 'assignment' && ch.field === 'deadline' && ch.newValue) {
-            const assignments = await readStore<AssignmentData[]>('cortex-student-assignments', [])
+            const assignments = asArray<AssignmentData>(await readStore<AssignmentData[]>('cortex-student-assignments', []))
             const updated = assignments.map((a) =>
               a.id === ch.cortexId ? { ...a, deadline: ch.newValue } : a
             )
             writeStore('cortex-student-assignments', updated)
           }
           if (ch.cortexType === 'birthday' && ch.field === 'birthday' && ch.newValue) {
-            const contacts = await readStore<ContactData[]>('cortex-contacts', [])
+            const contacts = asArray<ContactData>(await readStore<ContactData[]>('cortex-contacts', []))
             const updated = contacts.map((c) =>
               c.id === ch.cortexId ? { ...c, birthday: ch.newValue! } : c
             )
@@ -141,6 +150,7 @@ export function useCalendarSync() {
         console.log(`[Cortex] Calendar sync: ${changes.length} external changes applied`)
       } catch (e) {
         console.error('[Cortex] Calendar poll error:', e)
+        reportSyncHealth('poll', e)
       }
     }
 
