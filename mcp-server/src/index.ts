@@ -1425,7 +1425,10 @@ server.tool(
     if (undoneOnly) assignments = assignments.filter(a => !a.done);
     if (due_within_days !== undefined) {
       const t = today();
-      const limit = new Date(Date.now() + due_within_days * 86_400_000).toISOString().slice(0, 10);
+      // Local-date upper bound to match today() — toISOString() is UTC and
+      // over-included a day during Bogotá evenings.
+      const d = new Date(Date.now() + due_within_days * 86_400_000);
+      const limit = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       assignments = assignments.filter(a => typeof a.deadline === "string" && a.deadline >= t && a.deadline <= limit);
     }
     return assignments;
