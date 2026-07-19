@@ -14,8 +14,10 @@ import {
 // A corrupted key (e.g. a JSON string where an array lives) must degrade to
 // "skip + breadcrumb", never throw above the per-item catches — a non-array
 // here once killed the whole reconcile silently on every poll.
-function asArray<T>(v: unknown): T[] {
-  return Array.isArray(v) ? (v as T[]) : []
+function asArray<T>(v: unknown, context?: string): T[] {
+  if (Array.isArray(v)) return v as T[]
+  if (v !== null && v !== undefined && context) reportSyncHealth(context, `expected array, got ${typeof v}`)
+  return []
 }
 
 interface AssignmentData {
@@ -62,7 +64,7 @@ const FALLBACK_COURSES: CourseData[] = [
 ]
 
 async function loadCourses(): Promise<CourseData[]> {
-  const stored = asArray<CourseData>(await readStore<CourseData[]>('cortex-student-courses', []))
+  const stored = asArray<CourseData>(await readStore<CourseData[]>('cortex-student-courses', []), 'corrupt:cortex-student-courses')
   return stored.length > 0 ? stored : FALLBACK_COURSES
 }
 
@@ -76,11 +78,12 @@ export function useCalendarSync() {
     async function init() {
       try {
         // Load data from store
+        const keys = ['cortex-student-assignments', 'cortex-contacts', 'cortex-classes'] as const
         const [assignments, contacts, classes] = (await Promise.all([
-          readStore<AssignmentData[]>('cortex-student-assignments', []),
-          readStore<ContactData[]>('cortex-contacts', []),
-          readStore<ClassData[]>('cortex-classes', []),
-        ])).map((v) => asArray(v)) as [AssignmentData[], ContactData[], ClassData[]]
+          readStore<AssignmentData[]>(keys[0], []),
+          readStore<ContactData[]>(keys[1], []),
+          readStore<ClassData[]>(keys[2], []),
+        ])).map((v, i) => asArray(v, `corrupt:${keys[i]}`)) as [AssignmentData[], ContactData[], ClassData[]]
 
         // Reconcile assignments with deadlines
         if (assignments.length > 0) {
@@ -115,14 +118,14 @@ export function useCalendarSync() {
       try {
         // Reconcile the class schedule so classes added/removed via MCP (which
         // writes cortex-classes directly) reach the calendar without an app restart.
-        const classes = asArray<ClassData>(await readStore<ClassData[]>('cortex-classes', []))
+        const classes = asArray<ClassData>(await readStore<ClassData[]>('cortex-classes', []), 'corrupt:cortex-classes')
         await reconcileClasses(classes)
 
         // Same for assignments: MCP-written deadlines (write_data on
         // cortex-student-assignments) must reach the calendar without waiting
         // for a relaunch. reconcileAssignments hash-compares against the sync
         // state, so unchanged items are no-ops.
-        const polledAssignments = asArray<AssignmentData>(await readStore<AssignmentData[]>('cortex-student-assignments', []))
+        const polledAssignments = asArray<AssignmentData>(await readStore<AssignmentData[]>('cortex-student-assignments', []), 'corrupt:cortex-student-assignments')
         if (polledAssignments.length > 0) {
           await reconcileAssignments(polledAssignments, await loadCourses())
         }
@@ -133,18 +136,22 @@ export function useCalendarSync() {
         // Apply external changes to the store directly
         for (const ch of changes) {
           if (ch.cortexType === 'assignment' && ch.field === 'deadline' && ch.newValue) {
-            const assignments = asArray<AssignmentData>(await readStore<AssignmentData[]>('cortex-student-assignments', []))
-            const updated = assignments.map((a) =>
-              a.id === ch.cortexId ? { ...a, deadline: ch.newValue } : a
-            )
-            writeStore('cortex-student-assignments', updated)
+            // Skip (don't coerce) on a corrupt read: writing [] back would
+            // clobber the corrupt-but-recoverable stored value.
+            const assignments = await readStore<AssignmentData[]>('cortex-student-assignments', [])
+            if (Array.isArray(assignments)) {
+              writeStore('cortex-student-assignments', assignments.map((a) =>
+                a.id === ch.cortexId ? { ...a, deadline: ch.newValue } : a
+              ))
+            } else reportSyncHealth('writeback:cortex-student-assignments', 'expected array, skipping external-change writeback')
           }
           if (ch.cortexType === 'birthday' && ch.field === 'birthday' && ch.newValue) {
-            const contacts = asArray<ContactData>(await readStore<ContactData[]>('cortex-contacts', []))
-            const updated = contacts.map((c) =>
-              c.id === ch.cortexId ? { ...c, birthday: ch.newValue! } : c
-            )
-            writeStore('cortex-contacts', updated)
+            const contacts = await readStore<ContactData[]>('cortex-contacts', [])
+            if (Array.isArray(contacts)) {
+              writeStore('cortex-contacts', contacts.map((c) =>
+                c.id === ch.cortexId ? { ...c, birthday: ch.newValue! } : c
+              ))
+            } else reportSyncHealth('writeback:cortex-contacts', 'expected array, skipping external-change writeback')
           }
         }
         console.log(`[Cortex] Calendar sync: ${changes.length} external changes applied`)
