@@ -15,7 +15,9 @@
  * Index file: ~/Library/Application Support/cortex-mcp/materials-index.json
  * (dir overridable via CORTEX_MCP_INDEX_DIR). Loaded lazily, cosine similarity
  * in-process. A corrupt/unreadable index is treated as "no index" and is
- * rebuilt from scratch by index_class_materials.
+ * rebuilt from scratch by index_class_materials. Writes are read-merge-write
+ * under an in-process mutex + cross-process lock file (embedding happens
+ * outside the lock), so concurrent indexers never drop each other's chunks.
  */
 
 import fs from "node:fs/promises";
@@ -329,6 +331,81 @@ async function saveIndex(index: MaterialsIndex): Promise<void> {
   if (stat) cache = { mtimeMs: stat.mtimeMs, index };
 }
 
+// ─── Write serialization (in-process mutex + cross-process lock file) ───────
+//
+// All index writes are read-merge-write: writers embed OUTSIDE the lock (slow,
+// network), then under the lock re-read the CURRENT file and merge only their
+// own delta before saving. Without this, two concurrent indexers (a background
+// incremental from add_class_material racing another add, an
+// index_class_materials run, or a second MCP server process against the same
+// file) would each save from a stale snapshot and silently drop the other's
+// chunks (last-writer-wins on the whole file).
+
+const LOCK_RETRY_MS = 150;
+const LOCK_ACQUIRE_TIMEOUT_MS = 20_000;
+const LOCK_STALE_MS = 30_000; // the lock only covers merge+write, never embedding
+
+function lockPath(): string {
+  return path.join(indexDir(), "materials-index.lock");
+}
+
+/** Serializes writers within THIS process (each MCP server process has its own chain). */
+let writeChain: Promise<void> = Promise.resolve();
+
+/** Cross-process advisory lock via exclusive create. Stale locks (holder dead,
+ * or older than LOCK_STALE_MS — a crash before unlink) are stolen. */
+async function acquireFileLock(): Promise<void> {
+  await fs.mkdir(indexDir(), { recursive: true });
+  const file = lockPath();
+  const deadline = Date.now() + LOCK_ACQUIRE_TIMEOUT_MS;
+  for (;;) {
+    try {
+      await fs.writeFile(file, JSON.stringify({ pid: process.pid, at: Date.now() }), { flag: "wx" });
+      return;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+    }
+    let stale = false;
+    try {
+      const raw = JSON.parse(await fs.readFile(file, "utf8")) as { pid?: number; at?: number };
+      const age = Date.now() - (typeof raw.at === "number" ? raw.at : 0);
+      let holderDead = false;
+      if (typeof raw.pid === "number" && raw.pid !== process.pid) {
+        try { process.kill(raw.pid, 0); } catch { holderDead = true; }
+      }
+      stale = holderDead || age > LOCK_STALE_MS || age < 0;
+    } catch {
+      stale = true; // vanished or unreadable — retake the loop (create will settle races)
+    }
+    if (stale) {
+      await fs.unlink(file).catch(() => { /* another waiter beat us to it */ });
+      continue;
+    }
+    if (Date.now() > deadline) {
+      throw new Error("The materials index is locked by another indexing run — try again in a moment.");
+    }
+    await sleep(LOCK_RETRY_MS);
+  }
+}
+
+/** Run `fn` holding both the in-process mutex and the cross-process lock file. */
+async function withIndexWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = writeChain;
+  let release!: () => void;
+  writeChain = new Promise<void>((r) => { release = r; });
+  await prev;
+  try {
+    await acquireFileLock();
+    try {
+      return await fn();
+    } finally {
+      await fs.unlink(lockPath()).catch(() => { /* best-effort; stale-steal recovers */ });
+    }
+  } finally {
+    release();
+  }
+}
+
 // ─── Build / refresh ────────────────────────────────────────────────────────
 
 interface PreparedMaterial {
@@ -456,23 +533,34 @@ export async function buildMaterialsIndex(
     }
   }
 
-  const fresh = await embedPrepared(toEmbed);
-  const next: MaterialsIndex = {
-    version: INDEX_VERSION,
-    model: MODEL,
-    builtAt: new Date().toISOString(),
-    chunks: [...keep, ...fresh],
-  };
-  await saveIndex(next);
-  return {
-    indexed: toEmbed.length,
-    skipped,
-    removed,
-    chunks: fresh.length,
-    totalChunks: next.chunks.length,
-    model: MODEL,
-    indexPath: indexPath(),
-  };
+  const fresh = await embedPrepared(toEmbed); // network — outside the lock
+  const snapshotIds = new Set(existingByMaterial.keys());
+  return withIndexWriteLock(async () => {
+    // Merge under the lock: carry over chunks a concurrent incremental indexer
+    // wrote for materials added AFTER our snapshot (present in the current file,
+    // absent from both our snapshot and our `materials` list). Materials deleted
+    // from the store stay pruned — those WERE in the snapshot.
+    const current = await loadIndex();
+    const carryover = current && current.model === MODEL
+      ? current.chunks.filter((c) => !liveIds.has(c.materialId) && !snapshotIds.has(c.materialId))
+      : [];
+    const next: MaterialsIndex = {
+      version: INDEX_VERSION,
+      model: MODEL,
+      builtAt: new Date().toISOString(),
+      chunks: [...keep, ...fresh, ...carryover],
+    };
+    await saveIndex(next);
+    return {
+      indexed: toEmbed.length,
+      skipped,
+      removed,
+      chunks: fresh.length,
+      totalChunks: next.chunks.length,
+      model: MODEL,
+      indexPath: indexPath(),
+    };
+  });
 }
 
 /**
@@ -485,13 +573,20 @@ export async function indexMaterialIncremental(m: SearchMaterial, courseName: st
   const existing = await loadIndex();
   if (!existing || existing.model !== MODEL) return;
   const prep: PreparedMaterial = { m, courseName, chunks: chunkBody(await materialBody(m)) };
-  const fresh = await embedPrepared([prep]);
-  const next: MaterialsIndex = {
-    ...existing,
-    builtAt: new Date().toISOString(),
-    chunks: [...existing.chunks.filter((c) => c.materialId !== m.id), ...fresh],
-  };
-  await saveIndex(next);
+  const fresh = await embedPrepared([prep]); // network — outside the lock
+  await withIndexWriteLock(async () => {
+    // Re-read under the lock: another writer (a second add's incremental, or a
+    // full rebuild) may have replaced the file since the pre-embed load. Merge
+    // our one material into the CURRENT index — never save the stale snapshot.
+    const current = await loadIndex();
+    if (!current || current.model !== MODEL) return; // index vanished or model changed mid-flight — drop ours
+    const next: MaterialsIndex = {
+      ...current,
+      builtAt: new Date().toISOString(),
+      chunks: [...current.chunks.filter((c) => c.materialId !== m.id), ...fresh],
+    };
+    await saveIndex(next);
+  });
 }
 
 // ─── Search ─────────────────────────────────────────────────────────────────
