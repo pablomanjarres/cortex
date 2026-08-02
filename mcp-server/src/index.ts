@@ -1212,12 +1212,12 @@ server.tool(
   "Create a new calendar event in Apple Calendar",
   {
     title: z.string(),
-    startDate: z.string().describe("ISO datetime"),
-    endDate: z.string().optional().describe("ISO datetime"),
-    isAllDay: z.boolean().optional(),
+    startDate: z.string().describe("ISO datetime (2026-08-03T18:30:00-05:00) for a timed event, or YYYY-MM-DD for an all-day one"),
+    endDate: z.string().optional().describe("ISO datetime; defaults to +1h for timed events, +1 day for all-day"),
+    isAllDay: z.boolean().optional().describe("Defaults to whether startDate omits a time — pass false explicitly to be sure a timed block stays timed"),
     calendar: z.string().optional().describe("Calendar name"),
     notes: z.string().optional(),
-    recurrence: z.string().optional().describe("Recurrence rule"),
+    recurrence: z.string().optional().describe("Recurrence rule, e.g. FREQ=WEEKLY (also supports BYDAY=MO,WE and UNTIL=YYYYMMDD)"),
   },
   async (params) => run(() => cortexPost("/api/calendar/create", params))
 );

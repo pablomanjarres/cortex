@@ -203,7 +203,11 @@ case "create":
         exit(1)
     }
     let title = input["title"] as? String ?? "Untitled"
-    let isAllDay = input["isAllDay"] as? Bool ?? true
+    // Infer all-day from the start value when the caller stays silent: a bare
+    // "YYYY-MM-DD" is a day, a full ISO datetime is a timed block. Defaulting to
+    // true swallowed the clock on any MCP/HTTP caller that omitted the flag —
+    // "Night grind 18:30-01:00" silently became a two-day all-day banner.
+    let isAllDay = input["isAllDay"] as? Bool ?? !((input["startDate"] as? String ?? "").contains("T"))
     let notes = input["notes"] as? String ?? ""
     let recurrence = input["recurrence"] as? String
     let calTitle = input["calendar"] as? String
