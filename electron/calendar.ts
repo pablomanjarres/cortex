@@ -81,6 +81,12 @@ func parseDate(_ s: String) -> Date? {
     return isoFmt.date(from: s) ?? isoFmtFrac.date(from: s) ?? dayFmt.date(from: s)
 }
 
+/// 23:59:59 on the same calendar day — the inclusive end an all-day EKEvent wants.
+func endOfDay(_ d: Date) -> Date {
+    let next = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: d))!
+    return Calendar.current.date(byAdding: .second, value: -1, to: next)!
+}
+
 func jsonString(_ s: String) -> String {
     let escaped = s
         .replacingOccurrences(of: "\\\\", with: "\\\\\\\\")
@@ -222,7 +228,10 @@ case "create":
     if let endStr = input["endDate"] as? String, let d = parseDate(endStr) {
         endDate = d
     } else if isAllDay {
-        endDate = Calendar.current.date(byAdding: .day, value: 1, to: startDate)!
+        // EventKit reads an all-day endDate as the last day INCLUSIVE, so
+        // start + 1 day renders a two-day banner for a one-day deadline.
+        // End at 23:59:59 on the start day instead.
+        endDate = endOfDay(startDate)
     } else {
         endDate = Calendar.current.date(byAdding: .hour, value: 1, to: startDate)!
     }
@@ -311,7 +320,8 @@ case "update":
         event.endDate = d
     } else if let startStr = input["startDate"] as? String, let d = parseDate(startStr) {
         if event.isAllDay {
-            event.endDate = Calendar.current.date(byAdding: .day, value: 1, to: d)!
+            // Same inclusive-end rule as the create path — see endOfDay().
+            event.endDate = endOfDay(d)
         } else {
             event.endDate = Calendar.current.date(byAdding: .hour, value: 1, to: d)!
         }

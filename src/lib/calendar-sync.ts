@@ -107,6 +107,35 @@ const BIRTHDAYS_CALENDAR = 'Birthdays (Cortex)'
 const BIRTHDAYS_COLOR = '#FBBF24' // tailwind amber-400 (yellow)
 const BYDAY_TOKENS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] // index 0=Mon … 6=Sun
 
+/** Filler words that shouldn't earn an initial in a course code. */
+const CODE_STOPWORDS = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'e', 'a', 'of', 'the', 'and', 'in'])
+
+/**
+ * "Organización de Computadores" → "OC", "Cálculo 3" → "C3".
+ * The all-day row is narrow: a full course name in front eats the width before
+ * the assignment name is visible, which is what made these unreadable.
+ */
+export function courseCode(courseName: string): string {
+  const words = String(courseName || '').trim().split(/[\s_-]+/).filter(Boolean)
+  if (words.length === 0) return '?'
+  const significant = words.filter((w) => !CODE_STOPWORDS.has(w.toLowerCase()))
+  const source = significant.length > 0 ? significant : words
+  // Digits carry meaning ("Cálculo 3" → C3), so keep them whole.
+  const code = source.map((w) => (/^\d+$/.test(w) ? w : [...w][0].toUpperCase())).join('')
+  return code.slice(0, 4) || '?'
+}
+
+/** Deadline event title: short course code, then the assignment. */
+export function deadlineTitle(courseName: string, assignmentName: string): string {
+  return `${courseCode(courseName)} · ${assignmentName}`
+}
+
+/** Pulls the assignment id Cortex stamps into every deadline event's notes. */
+function markerId(notes: string | undefined): string | null {
+  const m = /cortex:assignment:(\S+)/.exec(notes || '')
+  return m ? m[1] : null
+}
+
 // First calendar date on/after termStart whose weekday is one of `days`.
 function firstClassDate(termStart: string, days: number[]): string {
   const start = new Date(termStart + 'T00:00:00')
@@ -234,7 +263,7 @@ export async function syncAssignmentToCalendar(
       return
     }
 
-    const title = `[${courseName}] ${assignment.name}`
+    const title = deadlineTitle(courseName, assignment.name)
     const hash = syncHash({ title, deadline: assignment.deadline })
     const existing = findMapping(state, assignment.id)
 
@@ -531,6 +560,80 @@ export async function reconcileAssignments(
       // Remove calendar events for graded/done assignments (keeps deadline in app data)
       await syncAssignmentToCalendar(a, courseMap[a.courseId] || a.courseId, 'delete')
     }
+  }
+  await pruneOrphanDeadlineEvents(assignments)
+}
+
+/** How far either side of today the orphan sweep looks. */
+const PRUNE_BACK_DAYS = 365
+const PRUNE_FORWARD_DAYS = 545
+/**
+ * EventKit's range predicate silently returns NOTHING once a span gets large
+ * (a 2.5-year query comes back empty while a 1-year one returns thousands), so
+ * the sweep is walked in slices rather than issued as one wide query — a single
+ * wide call would make this prune a silent no-op.
+ */
+const PRUNE_CHUNK_DAYS = 180
+
+function addDays(d: Date, n: number): Date {
+  const out = new Date(d)
+  out.setDate(out.getDate() + n)
+  return out
+}
+
+/**
+ * Deletes deadline events the mapping state can't account for.
+ *
+ * `reconcileClasses` prunes via the mapping table, which only catches entities
+ * Cortex still remembers. Assignment ids that were re-seeded under new names
+ * (deb2 → db2) leave events behind with no mapping at all, so one assignment
+ * shows up twice on the calendar. This sweeps the calendar itself instead:
+ * anything carrying a `cortex:assignment:` marker whose id is gone, or a second
+ * event for an id we already track, gets removed.
+ *
+ * Events without the marker are left alone — those are the user's own.
+ */
+export async function pruneOrphanDeadlineEvents(assignments: AssignmentLike[]): Promise<number> {
+  // An empty list is far more likely to be a failed read than a real empty
+  // term — never let that wipe the calendar.
+  if (assignments.length === 0) return 0
+  try {
+    const api = await calendarAPI()
+    const state = await getState()
+    const mapped = new Map(
+      state.mappings.filter((m) => m.cortexType === 'assignment').map((m) => [m.cortexId, m.calendarEventId])
+    )
+    const live = new Set(assignments.map((a) => a.id))
+
+    const windowStart = addDays(new Date(), -PRUNE_BACK_DAYS)
+    const windowEnd = addDays(new Date(), PRUNE_FORWARD_DAYS)
+
+    // Collect first, delete after — deleting mid-scan would shift the ranges.
+    const doomed = new Map<string, CalendarEventResult>()
+    for (let from = windowStart; from < windowEnd; from = addDays(from, PRUNE_CHUNK_DAYS)) {
+      const to = addDays(from, PRUNE_CHUNK_DAYS) > windowEnd ? windowEnd : addDays(from, PRUNE_CHUNK_DAYS)
+      const events: CalendarEventResult[] = (await api.getEventsInRange(localDate(from), localDate(to))) || []
+      for (const evt of events) {
+        if (evt.calendar !== EXAMS_CALENDAR) continue
+        const id = markerId(evt.notes)
+        if (!id) continue                                  // hand-made event — not ours to delete
+        const keep = mapped.get(id)
+        // Stale id, or a duplicate alongside the event we actually track.
+        if (live.has(id) && (!keep || keep === evt.id)) continue
+        doomed.set(evt.id, evt)                            // multi-day events span chunks — dedupe by id
+      }
+    }
+
+    let removed = 0
+    for (const id of doomed.keys()) {
+      await api.delete(id)
+      removed++
+    }
+    return removed
+  } catch (e) {
+    console.error('[Cortex] Calendar sync error (deadline prune):', e)
+    reportSyncHealth('deadline-prune', e)
+    return 0
   }
 }
 
