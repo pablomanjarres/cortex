@@ -11,6 +11,7 @@ import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { initEncryption, encrypt, encryptAndWrite, encryptAndWriteAsync, readAndDecrypt, readAndDecryptAsync, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
 import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.js'
 import type { FounderSource } from './founder-refresher.js'
+import { startDeadlineAlerts } from './deadline-alerts.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -1639,6 +1640,32 @@ ipcMain.handle('notify:pushover', async (_event, category: string, message: stri
   } catch { return false }
 })
 
+let stopDeadlineAlerts: (() => void) | null = null
+
+/**
+ * Pushover for a class deadline. Priority and sound are both passed explicitly
+ * because notify.sh only applies its category preset when BOTH are still at
+ * their defaults — leaving either one out would let `scheduled-alert` force
+ * every reminder to high priority, including the week-out heads-up.
+ */
+function pushDeadlineAlert({ title, message, priority }: { title: string; message: string; priority: 0 | 1 }): void {
+  try {
+    const { execFile: ef } = require('child_process')
+    const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
+    if (!fs.existsSync(notifyScript)) return
+    ef(notifyScript, [
+      '-c', 'scheduled-alert',
+      '-t', title,
+      '-m', message,
+      '-p', String(priority),
+      '-s', priority === 1 ? 'climb' : 'magic',
+      // Only advertise URLs the socket gate accepts (localhost + Tailscale).
+      '--url', `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}/student`,
+      '--url-title', 'Open Cortex',
+    ], { timeout: 10000 }, () => { /* fire and forget */ })
+  } catch { /* pushover optional */ }
+}
+
 ipcMain.handle('data:listKeys', async () => {
   try {
     return fs.readdirSync(dataDir)
@@ -1806,6 +1833,13 @@ app.on('ready', () => {
   // Auto-export on startup + every 30 minutes
   setTimeout(autoExport, 5000)
   autoExportInterval = setInterval(autoExport, 30 * 60 * 1000)
+
+  // Class deadlines: hourly lead-time pushes (7d / 3d / 1d / day-of by default).
+  stopDeadlineAlerts = startDeadlineAlerts({
+    readDataKeyParsed,
+    writeDataKey: (key, data, opts) => writeDataKey(key, data, opts),
+    push: pushDeadlineAlert,
+  })
 })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (mainWindow === null) createWindow() })
@@ -1820,6 +1854,7 @@ app.on('before-quit', (event) => {
   systemHistoryDirty = true
   persistSystemHistory()
   if (autoExportInterval) clearInterval(autoExportInterval)
+  if (stopDeadlineAlerts) { stopDeadlineAlerts(); stopDeadlineAlerts = null }
   // One final export on quit — autoExport is async now, so hold the quit
   // until it lands, then resume (guarded so the second pass falls through).
   if (!quitExportDone) {

@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { UpcomingDeadlines } from './UpcomingDeadlines'
 import { StatTile } from '@/components/shared/StatTile'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Skeleton } from '@/components/shared/Skeleton'
@@ -388,6 +389,9 @@ export function DailyPage() {
           </div>
         </WidgetCard>
       </div>
+
+      {/* ─── UPCOMING DEADLINES ─────────────────────────── */}
+      <UpcomingDeadlines />
 
       {/* ─── TODAY STATS ────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3">
