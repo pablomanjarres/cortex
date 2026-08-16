@@ -1224,7 +1224,7 @@ server.tool(
 
 server.tool(
   "update_event",
-  "Update an existing calendar event",
+  "Update an existing calendar event. For a recurring event pass span:'future' to move/retime the whole series — the default only detaches the one occurrence.",
   {
     eventId: z.string(),
     title: z.string().optional(),
@@ -1232,7 +1232,8 @@ server.tool(
     endDate: z.string().optional(),
     isAllDay: z.boolean().optional(),
     notes: z.string().optional(),
-    recurrence: z.string().optional(),
+    recurrence: z.string().optional().describe("Replaces the recurrence rule, e.g. FREQ=WEEKLY;BYDAY=MO or FREQ=WEEKLY;UNTIL=20261128; \"\" makes it a one-off. Needs span:'future'"),
+    span: z.enum(["this", "future"]).optional().describe("'future' = whole series (use when moving a recurring event to another day/time); default 'this' = this occurrence only"),
   },
   async ({ eventId, ...updates }) => run(() =>
     cortexPost(`/api/calendar/update/${encodeURIComponent(eventId)}`, updates)

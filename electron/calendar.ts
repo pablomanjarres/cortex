@@ -180,6 +180,34 @@ func fieldAfter(_ src: String, _ key: String) -> String? {
     return after.split(separator: ";").first.map(String.init) ?? String(after)
 }
 
+// Build an EKRecurrenceRule from an RFC5545-ish string ("FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261128").
+// Shared by create and update so both understand exactly the same syntax.
+func recurrenceRule(from recurrence: String) -> EKRecurrenceRule {
+    var freq: EKRecurrenceFrequency = .yearly
+    if recurrence.contains("DAILY") { freq = .daily }
+    else if recurrence.contains("WEEKLY") { freq = .weekly }
+    else if recurrence.contains("MONTHLY") { freq = .monthly }
+
+    // Optional BYDAY=MO,WE,FR — which weekdays a weekly event repeats on.
+    var days: [EKRecurrenceDayOfWeek]? = nil
+    if let byday = fieldAfter(recurrence, "BYDAY=") {
+        let parsed = byday.split(separator: ",").compactMap { weekdayFromToken(String($0)) }.map { EKRecurrenceDayOfWeek($0) }
+        if !parsed.isEmpty { days = parsed }
+    }
+
+    // Optional UNTIL=YYYYMMDD — bounds recurrence (e.g. term end).
+    var recEnd: EKRecurrenceEnd? = nil
+    if let until = fieldAfter(recurrence, "UNTIL=") {
+        let ymd = String(until.prefix(8))
+        let uf = DateFormatter()
+        uf.dateFormat = "yyyyMMdd"
+        uf.timeZone = TimeZone.current
+        if let untilDate = uf.date(from: ymd) { recEnd = EKRecurrenceEnd(end: untilDate) }
+    }
+
+    return EKRecurrenceRule(recurrenceWith: freq, interval: 1, daysOfTheWeek: days, daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: recEnd)
+}
+
 func readJsonFromStdin() -> [String: Any]? {
     let data = FileHandle.standardInput.readDataToEndOfFile()
     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -262,30 +290,7 @@ case "create":
     }
 
     if let recurrence = recurrence {
-        var freq: EKRecurrenceFrequency = .yearly
-        if recurrence.contains("DAILY") { freq = .daily }
-        else if recurrence.contains("WEEKLY") { freq = .weekly }
-        else if recurrence.contains("MONTHLY") { freq = .monthly }
-
-        // Optional BYDAY=MO,WE,FR — which weekdays a weekly event repeats on.
-        var days: [EKRecurrenceDayOfWeek]? = nil
-        if let byday = fieldAfter(recurrence, "BYDAY=") {
-            let parsed = byday.split(separator: ",").compactMap { weekdayFromToken(String($0)) }.map { EKRecurrenceDayOfWeek($0) }
-            if !parsed.isEmpty { days = parsed }
-        }
-
-        // Optional UNTIL=YYYYMMDD — bounds recurrence (e.g. term end).
-        var recEnd: EKRecurrenceEnd? = nil
-        if let until = fieldAfter(recurrence, "UNTIL=") {
-            let ymd = String(until.prefix(8))
-            let uf = DateFormatter()
-            uf.dateFormat = "yyyyMMdd"
-            uf.timeZone = TimeZone.current
-            if let untilDate = uf.date(from: ymd) { recEnd = EKRecurrenceEnd(end: untilDate) }
-        }
-
-        let rule = EKRecurrenceRule(recurrenceWith: freq, interval: 1, daysOfTheWeek: days, daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: recEnd)
-        event.addRecurrenceRule(rule)
+        event.addRecurrenceRule(recurrenceRule(from: recurrence))
     }
 
     do {
@@ -327,8 +332,19 @@ case "update":
         }
     }
 
+    // Recurrence: "" clears the rules (event becomes a one-off), a rule string replaces them.
+    // Only meaningful with span=future — EventKit rejects rule edits on a single occurrence.
+    if let recurrence = input["recurrence"] as? String {
+        for rule in event.recurrenceRules ?? [] { event.removeRecurrenceRule(rule) }
+        if !recurrence.isEmpty { event.addRecurrenceRule(recurrenceRule(from: recurrence)) }
+    }
+
+    // span=future edits the whole series from this occurrence on (what "move gym to Mondays"
+    // means); the default stays .thisEvent so editing one occurrence detaches only that one.
+    let span: EKSpan = (input["span"] as? String) == "future" ? .futureEvents : .thisEvent
+
     do {
-        try store.save(event, span: .thisEvent)
+        try store.save(event, span: span)
         print("{\\"success\\":true}")
     } catch {
         print("{\\"success\\":false,\\"error\\":\\(jsonString(error.localizedDescription))}")
@@ -465,7 +481,12 @@ export function createCalendarEvent(payload: CreateEventPayload): Promise<{ id: 
   })
 }
 
-export function updateCalendarEvent(eventId: string, payload: Partial<CreateEventPayload>): Promise<{ success: boolean }> {
+export interface UpdateEventPayload extends Partial<CreateEventPayload> {
+  /** 'future' edits the whole recurring series; default 'this' touches one occurrence. */
+  span?: 'this' | 'future'
+}
+
+export function updateCalendarEvent(eventId: string, payload: UpdateEventPayload): Promise<{ success: boolean }> {
   const input = JSON.stringify(payload)
   return runCalHelper(['update', eventId], input).then((stdout) => {
     const result = JSON.parse(stdout)
