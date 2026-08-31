@@ -38,6 +38,15 @@ export interface CreateEventPayload {
   createCalendarIfMissing?: boolean // create the target calendar (with calendarColor) if it doesn't exist
 }
 
+/**
+ * Which occurrences an update touches. Defaults to the whole series
+ * ("futureEvents"); pass "thisEvent" to deliberately detach a single
+ * occurrence. Only meaningful for recurring events.
+ */
+export type UpdateSpan = 'thisEvent' | 'futureEvents'
+
+export type UpdateEventPayload = Partial<CreateEventPayload> & { span?: UpdateSpan }
+
 export interface BirthdayEntry {
   name: string
   birthday: string // YYYY-MM-DD
@@ -327,8 +336,16 @@ case "update":
         }
     }
 
+    // An update means "move the series" unless the caller explicitly asks to
+    // detach one occurrence. EventKit reads .thisEvent as "change only this
+    // occurrence", which silently splits a copy off a recurring event and
+    // leaves the rest of the series behind — never what a sync wants, and it
+    // reports success either way. Harmless for one-off events, where the two
+    // spans are equivalent.
+    let span: EKSpan = (input["span"] as? String) == "thisEvent" ? .thisEvent : .futureEvents
+
     do {
-        try store.save(event, span: .thisEvent)
+        try store.save(event, span: span)
         print("{\\"success\\":true}")
     } catch {
         print("{\\"success\\":false,\\"error\\":\\(jsonString(error.localizedDescription))}")
@@ -465,7 +482,7 @@ export function createCalendarEvent(payload: CreateEventPayload): Promise<{ id: 
   })
 }
 
-export function updateCalendarEvent(eventId: string, payload: Partial<CreateEventPayload>): Promise<{ success: boolean }> {
+export function updateCalendarEvent(eventId: string, payload: UpdateEventPayload): Promise<{ success: boolean }> {
   const input = JSON.stringify(payload)
   return runCalHelper(['update', eventId], input).then((stdout) => {
     const result = JSON.parse(stdout)

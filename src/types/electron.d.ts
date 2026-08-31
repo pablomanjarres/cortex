@@ -48,13 +48,18 @@ interface CreateEventPayload {
   recurrence?: string
 }
 
+/** Which occurrences an update touches; defaults to the whole series. */
+type UpdateSpan = 'thisEvent' | 'futureEvents'
+
+type UpdateEventPayload = Partial<CreateEventPayload> & { span?: UpdateSpan }
+
 interface ElectronAPI {
   platform: string
   calendar: {
     getTodayEvents: () => Promise<CalendarEvent[]>
     syncBirthdays: (birthdays: { name: string; birthday: string }[]) => Promise<{ created: number; skipped: number }>
     createEvent: (payload: CreateEventPayload) => Promise<{ id: string; success: boolean }>
-    updateEvent: (eventId: string, payload: Partial<CreateEventPayload>) => Promise<{ success: boolean }>
+    updateEvent: (eventId: string, payload: UpdateEventPayload) => Promise<{ success: boolean }>
     deleteEvent: (eventId: string) => Promise<{ success: boolean }>
     getEventsInRange: (start: string, end: string) => Promise<CalendarEventFull[]>
     getEvent: (eventId: string) => Promise<CalendarEventFull | null>
