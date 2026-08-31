@@ -41,26 +41,32 @@ function extractSwiftSource() {
   const start = ts.indexOf(marker)
   assert.notEqual(start, -1, "SWIFT_SOURCE not found in electron/calendar.ts")
   let i = start + marker.length
-  for (;;) {
-    if (ts[i] === "\\") { i += 2; continue }
-    if (ts[i] === "`") break
-    i += 1
+  while (i < ts.length && ts[i] !== "`") {
+    i += ts[i] === "\\" ? 2 : 1
   }
+  assert.ok(i < ts.length, "SWIFT_SOURCE template literal is unterminated")
   const body = ts.slice(start + marker.length, i)
   assert.ok(!body.includes("${"), "SWIFT_SOURCE gained an interpolation; update this extractor")
   // Let JS itself do the unescaping, so the bytes match what ensureBinary writes.
   return new Function("return `" + body + "`")()
 }
 
-/** Local UTC offset as +HH:MM / -HH:MM, so ISO8601DateFormatter accepts our dates. */
-function localOffset() {
-  const mins = -new Date().getTimezoneOffset()
+/**
+ * Local UTC offset **on the given day**, as +HH:MM / -HH:MM, so
+ * ISO8601DateFormatter accepts our dates.
+ *
+ * It has to be the offset for that date, not today's: in a DST zone the two
+ * differ for half the year, which would stamp the wrong wall-clock time onto
+ * the 2099 anchor and fail the assertions before the code under test runs.
+ */
+function offsetOn(day) {
+  const mins = -new Date(`${day}T12:00:00Z`).getTimezoneOffset()
   const sign = mins < 0 ? "-" : "+"
   const a = Math.abs(mins)
   return `${sign}${String(Math.floor(a / 60)).padStart(2, "0")}:${String(a % 60).padStart(2, "0")}`
 }
 
-const at = (day, hhmm) => `${day}T${hhmm}:00${localOffset()}`
+const at = (day, hhmm) => `${day}T${hhmm}:00${offsetOn(day)}`
 
 function helper(args, stdin) {
   const out = execFileSync(bin, args, {
@@ -106,12 +112,21 @@ before(() => {
     return
   }
 
-  // Prove we can actually reach the store before asserting anything about it.
+  // Prove we can actually WRITE to the store before asserting anything about
+  // it. A read is no proof: with access denied EventKit hands back an empty
+  // match instead of failing, so read-range exits 0 and we would sail on and
+  // hard-fail at the first create.
   try {
-    helper(["read-range", ANCHOR, RANGE_END])
+    const probe = helper(["create"], JSON.stringify({
+      title: TITLE,
+      startDate: at(ANCHOR, OLD_TIME[0]),
+      endDate: at(ANCHOR, OLD_TIME[1]),
+    }))
+    if (!probe.success || !probe.id) throw new Error(JSON.stringify(probe))
+    helper(["delete", probe.id])
   } catch (e) {
     bin = null
-    skipReason = `no calendar access: ${e.message}`
+    skipReason = `no calendar write access: ${e.message}`
   }
 })
 
@@ -192,6 +207,31 @@ describe("calendar helper: recurring update span", () => {
       after.every((e) => e.recurrence),
       "the moved occurrences lost their recurrence rule (they were detached)",
     )
+  })
+
+  test("update restores a recurrence rule on an event that lost one", (t) => {
+    if (skipReason) return t.skip(skipReason)
+
+    // A one-off, standing in for an event the old .thisEvent bug detached.
+    const res = helper(["create"], JSON.stringify({
+      title: TITLE,
+      startDate: at(ANCHOR, OLD_TIME[0]),
+      endDate: at(ANCHOR, OLD_TIME[1]),
+    }))
+    assert.equal(res.success, true)
+    created.push(res.id)
+    assert.equal(occurrences().length, 1, "should start as a single one-off")
+
+    const upd = helper(["update", res.id], JSON.stringify({
+      startDate: at(ANCHOR, NEW_TIME[0]),
+      endDate: at(ANCHOR, NEW_TIME[1]),
+      recurrence: "FREQ=WEEKLY",
+    }))
+    assert.equal(upd.success, true)
+
+    const after = occurrences()
+    assert.equal(after.length, 3, "the event should now repeat weekly")
+    assert.deepEqual([...new Set(after.map((e) => hhmm(e.startDate)))], [NEW_TIME[0]])
   })
 
   test("span 'thisEvent' still detaches a single occurrence when asked for", (t) => {
