@@ -195,6 +195,36 @@ func readJsonFromStdin() -> [String: Any]? {
     return json
 }
 
+/// Build an EKRecurrenceRule from the RRULE subset Cortex emits:
+/// FREQ (DAILY/WEEKLY/MONTHLY, else yearly), optional BYDAY=MO,WE,FR and
+/// optional UNTIL=YYYYMMDD. Shared by create and update so a rule always
+/// round-trips the same way.
+func recurrenceRule(_ recurrence: String) -> EKRecurrenceRule {
+    var freq: EKRecurrenceFrequency = .yearly
+    if recurrence.contains("DAILY") { freq = .daily }
+    else if recurrence.contains("WEEKLY") { freq = .weekly }
+    else if recurrence.contains("MONTHLY") { freq = .monthly }
+
+    // Optional BYDAY=MO,WE,FR — which weekdays a weekly event repeats on.
+    var days: [EKRecurrenceDayOfWeek]? = nil
+    if let byday = fieldAfter(recurrence, "BYDAY=") {
+        let parsed = byday.split(separator: ",").compactMap { weekdayFromToken(String($0)) }.map { EKRecurrenceDayOfWeek($0) }
+        if !parsed.isEmpty { days = parsed }
+    }
+
+    // Optional UNTIL=YYYYMMDD — bounds recurrence (e.g. term end).
+    var recEnd: EKRecurrenceEnd? = nil
+    if let until = fieldAfter(recurrence, "UNTIL=") {
+        let ymd = String(until.prefix(8))
+        let uf = DateFormatter()
+        uf.dateFormat = "yyyyMMdd"
+        uf.timeZone = TimeZone.current
+        if let untilDate = uf.date(from: ymd) { recEnd = EKRecurrenceEnd(end: untilDate) }
+    }
+
+    return EKRecurrenceRule(recurrenceWith: freq, interval: 1, daysOfTheWeek: days, daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: recEnd)
+}
+
 // ─── Commands ─────────────────────────────────────────────────────
 
 let args = CommandLine.arguments
@@ -271,30 +301,7 @@ case "create":
     }
 
     if let recurrence = recurrence {
-        var freq: EKRecurrenceFrequency = .yearly
-        if recurrence.contains("DAILY") { freq = .daily }
-        else if recurrence.contains("WEEKLY") { freq = .weekly }
-        else if recurrence.contains("MONTHLY") { freq = .monthly }
-
-        // Optional BYDAY=MO,WE,FR — which weekdays a weekly event repeats on.
-        var days: [EKRecurrenceDayOfWeek]? = nil
-        if let byday = fieldAfter(recurrence, "BYDAY=") {
-            let parsed = byday.split(separator: ",").compactMap { weekdayFromToken(String($0)) }.map { EKRecurrenceDayOfWeek($0) }
-            if !parsed.isEmpty { days = parsed }
-        }
-
-        // Optional UNTIL=YYYYMMDD — bounds recurrence (e.g. term end).
-        var recEnd: EKRecurrenceEnd? = nil
-        if let until = fieldAfter(recurrence, "UNTIL=") {
-            let ymd = String(until.prefix(8))
-            let uf = DateFormatter()
-            uf.dateFormat = "yyyyMMdd"
-            uf.timeZone = TimeZone.current
-            if let untilDate = uf.date(from: ymd) { recEnd = EKRecurrenceEnd(end: untilDate) }
-        }
-
-        let rule = EKRecurrenceRule(recurrenceWith: freq, interval: 1, daysOfTheWeek: days, daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: recEnd)
-        event.addRecurrenceRule(rule)
+        event.addRecurrenceRule(recurrenceRule(recurrence))
     }
 
     do {
@@ -334,6 +341,16 @@ case "update":
         } else {
             event.endDate = Calendar.current.date(byAdding: .hour, value: 1, to: d)!
         }
+    }
+
+    // Replace the recurrence rule when one is supplied. Without this an event
+    // the old .thisEvent bug had already detached could never be made repeating
+    // again: its rule was gone, so the birthday sync would keep moving a
+    // one-off and reporting success. Passing no recurrence leaves the existing
+    // rule untouched.
+    if let recurrence = input["recurrence"] as? String {
+        for rule in event.recurrenceRules ?? [] { event.removeRecurrenceRule(rule) }
+        if !recurrence.isEmpty { event.addRecurrenceRule(recurrenceRule(recurrence)) }
     }
 
     // An update means "move the series" unless the caller explicitly asks to

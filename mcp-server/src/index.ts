@@ -1224,7 +1224,7 @@ server.tool(
 
 server.tool(
   "update_event",
-  "Update an existing calendar event. On a recurring event this moves the whole series by default; pass span='thisEvent' to change only one occurrence. Note: recurrence rules cannot be changed here — delete the event and recreate it instead.",
+  "Update an existing calendar event. On a recurring event this moves the whole series by default; pass span='thisEvent' to change only one occurrence.",
   {
     eventId: z.string(),
     title: z.string().optional(),
@@ -1232,6 +1232,12 @@ server.tool(
     endDate: z.string().optional(),
     isAllDay: z.boolean().optional(),
     notes: z.string().optional(),
+    recurrence: z
+      .string()
+      .optional()
+      .describe(
+        'Replace the recurrence rule, e.g. "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261128". Omit to leave it alone; pass "" to strip it and make the event one-off.',
+      ),
     span: z
       .enum(["thisEvent", "futureEvents"])
       .optional()
