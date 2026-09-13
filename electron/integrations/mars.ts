@@ -2,11 +2,29 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 
-// Canonical Mars vault lives in iCloud Drive; the old ~/Projects/Mars/Mars copy is retired.
+export function resolveMarsRoot(opts?: { envRoot?: string; registryPath?: string }): string {
+  const envRoot = opts?.envRoot ?? process.env.MARS_VAULT_ROOT
+  if (envRoot) return envRoot
+
+  const registry = opts?.registryPath || path.join(os.homedir(), 'Library', 'Application Support', 'obsidian', 'obsidian.json')
+  try {
+    const parsed = JSON.parse(fs.readFileSync(registry, 'utf8')) as { vaults?: Record<string, { path: string }> }
+    for (const vault of Object.values(parsed.vaults || {})) {
+      if (path.basename(vault.path) === 'Mars' && fs.existsSync(path.join(vault.path, 'content'))) return vault.path
+    }
+  } catch {
+    // Fall back to known locations below.
+  }
+
+  const candidates = [
+    path.join(os.homedir(), 'Projects', 'mars-vault', 'Mars'),
+    path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Mars', 'Mars'),
+  ]
+  return candidates.find((p) => fs.existsSync(path.join(p, 'content'))) || candidates[0]
+}
+
 // MARS_VAULT_ROOT overrides for tests or a moved vault.
-const MARS_ROOT =
-  process.env.MARS_VAULT_ROOT ||
-  path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'Mars', 'Mars')
+const MARS_ROOT = resolveMarsRoot()
 const JOURNAL_DIR = path.join(MARS_ROOT, 'content', 'journal')
 const VOICE_ANCHORS_DIR = path.join(MARS_ROOT, 'content', 'voice-anchors')
 
