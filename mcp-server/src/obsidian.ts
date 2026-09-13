@@ -96,6 +96,10 @@ function safePath(vault: VaultRecord, rel: string, forRead = false) {
   let real: string;
   try { real = fs.realpathSync(full); } catch { throw new Error(`No file found at "${rel}".`); }
   if (real !== rootReal && !real.startsWith(`${rootReal}${path.sep}`)) throw new Error("Path symlink escapes the vault.");
+  const realParts = path.relative(rootReal, real).split(path.sep).filter(Boolean);
+  if (realParts.some((p) => p.startsWith(".") || SKIP_DIRS.has(p))) {
+    throw new Error("Obsidian hidden or config paths are not readable.");
+  }
   if (!full.startsWith(`${path.resolve(vault.path)}${path.sep}`) && full !== path.resolve(vault.path)) {
     throw new Error("Path stays inside the vault.");
   }
@@ -174,7 +178,9 @@ export function searchVault(opts: Opts & { query: string; extensions?: string[];
   const q = opts.query.trim().toLowerCase();
   if (!q) return { vaultId: vault.id, query: opts.query, matches: [], nextCursor: null, total: 0 };
   const limit = limitOf(opts.limit), start = offsetOf(opts.cursor), all: unknown[] = [];
-  for (const file of listFiles({ registryPath: opts.registryPath, envVaults: opts.envVaults, vaultId: vault.id, extensions: opts.extensions, limit: Number.MAX_SAFE_INTEGER }).files) {
+  const exts = opts.extensions?.map((e) => e.startsWith(".") ? e.toLowerCase() : `.${e.toLowerCase()}`);
+  const files = walkFiles(vault).filter((f) => !exts?.length || exts.includes(path.extname(f.path).toLowerCase()));
+  for (const file of files) {
     if (file.path.toLowerCase().includes(q)) all.push({ vaultId: vault.id, path: file.path, kind: "filename", snippet: file.path });
     lineMatches(vault, file, q, Number.MAX_SAFE_INTEGER, all);
   }
@@ -190,8 +196,17 @@ export function readVaultFile(opts: Opts & { path: string; cursor?: string; offs
   if (kind === "canvas") {
     const parsed = canvas(fs.readFileSync(full, "utf8"));
     const nodes = parsed.nodes.slice(start, start + limit).map((n) => {
-      const { id, type, x, y, width, height, color, label, file, text } = n;
-      return { id, type, x, y, width, height, ...(color ? { color } : {}), ...(label ? { label } : {}), ...(file ? { file } : {}), ...(opts.includeText && text ? { text } : {}) };
+      const { id, type, x, y, width, height, color, label, file, subpath, url, background, text } = n;
+      return {
+        id, type, x, y, width, height,
+        ...(color !== undefined ? { color } : {}),
+        ...(label !== undefined ? { label } : {}),
+        ...(file !== undefined ? { file } : {}),
+        ...(subpath !== undefined ? { subpath } : {}),
+        ...(url !== undefined ? { url } : {}),
+        ...(background !== undefined ? { background } : {}),
+        ...(opts.includeText && text !== undefined ? { text } : {}),
+      };
     });
     const ids = new Set(nodes.map((n) => n.id));
     const edges = parsed.edges.filter((e) => ids.has(e.fromNode) || ids.has(e.toNode));
