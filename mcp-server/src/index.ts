@@ -12,6 +12,12 @@ import {
   searchMaterialsIndex,
   type SearchMaterial,
 } from "./search.js";
+import {
+  listFiles as listObsidianFiles,
+  listVaults as listObsidianVaults,
+  readVaultFile as readObsidianFile,
+  searchVault as searchObsidianVault,
+} from "./obsidian.js";
 
 const BASE = process.env.CORTEX_API || "http://localhost:3456";
 
@@ -1382,6 +1388,76 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GROUP 10c: Obsidian vaults (read-only local files)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+server.tool(
+  "obsidian_list_vaults",
+  "Read Obsidian's local vault registry and return vault ids, paths, open state, and file counts. Use this first when preparing from Pablo's notes or Canvas maps.",
+  {},
+  async () => run(async () => listObsidianVaults())
+);
+
+server.tool(
+  "obsidian_list_files",
+  "List files in an Obsidian vault without returning note bodies. Defaults to the open vault. Paths are vault-relative; hidden config folders are excluded. Attachments are metadata only.",
+  {
+    vault_id: z.string().optional().describe("Vault id or name from obsidian_list_vaults; defaults to the open vault"),
+    query: z.string().optional().describe("Case-insensitive filename filter"),
+    extensions: z.array(z.string()).optional().describe("Optional extensions such as ['md','canvas','pdf']"),
+    limit: z.number().optional().describe("Page size, default 50, max 200"),
+    cursor: z.string().optional().describe("Cursor from a previous page"),
+  },
+  async ({ vault_id, query, extensions, limit, cursor }) => run(async () => listObsidianFiles({
+    vaultId: vault_id,
+    query,
+    extensions,
+    limit,
+    cursor,
+  }))
+);
+
+server.tool(
+  "obsidian_search",
+  "Search Obsidian filenames, Markdown/text bodies, and Canvas text/group cards. Returns bounded snippets with relative paths and node or line refs for preparation work.",
+  {
+    query: z.string().describe("Search text"),
+    vault_id: z.string().optional().describe("Vault id or name from obsidian_list_vaults; defaults to the open vault"),
+    extensions: z.array(z.string()).optional().describe("Optional extensions to search, e.g. ['md','canvas']"),
+    limit: z.number().optional().describe("Page size, default 50, max 200"),
+    cursor: z.string().optional().describe("Cursor from a previous page"),
+  },
+  async ({ query, vault_id, extensions, limit, cursor }) => run(async () => searchObsidianVault({
+    query,
+    vaultId: vault_id,
+    extensions,
+    limit,
+    cursor,
+  }))
+);
+
+server.tool(
+  "obsidian_read",
+  "Read one Markdown/text/Canvas file from an Obsidian vault by relative path. Markdown/text are paged by lines; Canvas is parsed into nodes and connected edges with ids, geometry, file links, group labels, and arrows.",
+  {
+    path: z.string().describe("Vault-relative path from obsidian_list_files or obsidian_search"),
+    vault_id: z.string().optional().describe("Vault id or name from obsidian_list_vaults; defaults to the open vault"),
+    limit: z.number().optional().describe("Page size, default 50, max 200"),
+    cursor: z.string().optional().describe("Cursor from a previous page"),
+    offset: z.number().optional().describe("Line/node offset; cursor is preferred when continuing a page"),
+    include_text: z.boolean().optional().describe("For Canvas files, include text node bodies when true"),
+  },
+  async ({ path, vault_id, limit, cursor, offset, include_text }) => run(async () => readObsidianFile({
+    path,
+    vaultId: vault_id,
+    limit,
+    cursor,
+    offset,
+    includeText: include_text,
+  }))
+);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP 11: Projects
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -2694,7 +2770,7 @@ if (httpMode) {
       await transport.handleRequest(req, res);
     } else if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, tools: 78 })); // keep in sync with server.tool() count
+      res.end(JSON.stringify({ ok: true, tools: 82 })); // keep in sync with server.tool() count
     } else {
       res.writeHead(404); res.end("Not found");
     }
