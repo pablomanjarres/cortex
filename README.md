@@ -21,12 +21,12 @@
 
 <p align="center"><img src="https://pablomanjarres.com/portfolio/previews/cortex.png" alt="Cortex screenshot" width="720" /></p>
 
-Cortex is a macOS desktop app that pulls a founder's whole life into one private dashboard: habits, sprints, reading, CRM, calendar, coursework, finances, go-to-market state, and live founder metrics. The data stays on your machine, encrypted at rest. A local web server makes the same dashboard reachable from your phone over Tailscale, and an 82-tool MCP server lets Claude read and write Cortex data plus read local Obsidian notes and Canvas maps.
+Cortex is a macOS desktop app that pulls a founder's whole life into one private dashboard: habits, sprints, reading, CRM, calendar, coursework, finances, go-to-market state, and live founder metrics. The data stays on your machine, encrypted at rest. A local web server makes the same dashboard reachable from your phone over Tailscale, and an 84-tool MCP server lets Claude read and write Cortex data plus read local Obsidian notes and Canvas maps.
 
 ## Highlights
 
 - **Encrypted at rest.** Every data file is sealed with AES-256-GCM inside a small binary container: a `CTX1` magic header, a version byte, a fresh 12-byte IV per write, and the GCM auth tag. The 32-byte master key lives behind Electron `safeStorage`, backed by the macOS Keychain. Plaintext files migrate to ciphertext once, guarded by a sentinel so the migration never runs twice.
-- **An 82-tool MCP server.** One MCP server (20 tool groups) proxies the app's `localhost:3456` API and reads Obsidian vault files directly, so Claude can work with habits, journal, contacts, calendar, GTM state, founder metrics, notes, and Canvas preparation maps. It runs over stdio by default, with an optional `--http` transport for Tailscale access, socket-gated to localhost and the Tailscale CGNAT range just like the app server.
+- **An 84-tool MCP server.** One MCP server (20 tool groups) proxies the app's `localhost:3456` API and reads Obsidian vault files directly, so Claude can work with habits, journal, contacts, calendar, GTM state, founder metrics, notes, and Canvas preparation maps. It runs over stdio by default, with an optional `--http` transport for Tailscale access, socket-gated to localhost and the Tailscale CGNAT range just like the app server.
 - **Three-tier persistence, push-based.** A single `useStore` hook writes through Electron IPC first, then the HTTP web API, then `localStorage`. The main process broadcasts `data:changed` after every write (no renderer polling), and writes carry optimistic-concurrency revs — conflicting writers get a 409 and rebase instead of clobbering each other.
 - **Phone access over Tailscale.** A built-in web server serves the app as a PWA. The socket is gated to localhost and the Tailscale CGNAT range (`100.64.0.0/10`), so only your own devices on your tailnet can reach it.
 - **Opportunity Radar.** A weekly launchd pipeline (Monday 09:00) scrapes feeds natively on the host, then hands them to a tool-less `claude -p` call (`--allowedTools ""`) that classifies and scores each one against an editable profile — now with deadline intelligence (fixed / rolling / recurring / always-open), funding amounts, and age-eligibility flags. A curated catalog of 30 verified fellowships, grants, and programs (Emergent Ventures, Thiel, Z Fellows, Latitud, …) seeds the radar beyond hackathons. Recurring programs refresh across yearly cycles instead of being dropped as duplicates.
@@ -44,7 +44,7 @@ cortex/
 ├── src/
 │   ├── features/        # 20 feature modules (daily, habits, founder, crm, gym, …)
 │   └── lib/store.ts     # 3-tier persistence: IPC → HTTP → localStorage
-├── mcp-server/          # 82-tool MCP over the localhost API + read-only Obsidian files (stdio | --http)
+├── mcp-server/          # 84-tool MCP over the localhost API + read-only Obsidian files (stdio | --http)
 └── scripts/             # Opportunity Radar: launchd + watcher + tool-less LLM classify
 ```
 
@@ -59,7 +59,7 @@ Cortex is one Electron plus React app with a standalone MCP package and a set of
 | `src/` | React 19 renderer built with Vite 8: 20 feature modules under `src/features`, shared primitives in `src/components`, the persistence hook in `src/lib/store.ts` |
 | `electron/` | Main process: window, tray, the `:3456` web server, `crypto.ts` (AES-256-GCM), `calendar.ts` (Swift + EventKit), `keychain.ts`, and the context-isolated `preload.ts` |
 | `electron/integrations/` | One file per source: `github.ts`, `lemon.ts`, `vercel.ts`, `supabase.ts`, `mars.ts` (Obsidian vault) |
-| `mcp-server/` | Standalone npm package `cortex-mcp-server`: 82 tools in 20 groups over the localhost API plus read-only Obsidian files, stdio or `--http` |
+| `mcp-server/` | Standalone npm package `cortex-mcp-server`: 84 tools in 20 groups over the localhost API plus read-only Obsidian files, stdio or `--http` |
 | `scripts/` | Opportunity Radar (`radar-*.mjs`, `opportunity-radar-weekly.sh`, launchd `*.plist` files), the program catalog + seeder (`program-catalog.json`, `radar-seed-programs.mjs`), and `growth-fetch.mjs` for the fastest-growing-repos tab |
 | `public/` | PWA shell: `manifest.webmanifest`, `sw.js` service worker, and app icons |
 
