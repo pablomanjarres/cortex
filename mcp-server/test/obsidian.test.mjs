@@ -20,6 +20,7 @@ function makeFixture() {
   fs.mkdirSync(path.join(vaultA, ".obsidian"), { recursive: true });
   fs.mkdirSync(vaultB, { recursive: true });
   fs.writeFileSync(outside, "outside");
+  fs.writeFileSync(path.join(vaultA, ".obsidian", "Secret.md"), "hidden");
   fs.writeFileSync(path.join(vaultA, "Daily.md"), "# Daily\nCanvas prep question\nsecond line\n");
   fs.writeFileSync(path.join(vaultA, "Database", "Prep.txt"), "prepare canvas cards\n");
   fs.writeFileSync(path.join(vaultA, "Database", "Attachment.pdf"), "pdf bytes");
@@ -28,7 +29,8 @@ function makeFixture() {
     nodes: [
       { id: "g1", type: "group", x: 0, y: 0, width: 400, height: 240, label: "Prep" },
       { id: "t1", type: "text", x: 20, y: 20, width: 200, height: 80, text: "Canvas strategy card" },
-      { id: "f1", type: "file", x: 250, y: 20, width: 120, height: 80, file: "Daily.md" },
+      { id: "f1", type: "file", x: 250, y: 20, width: 120, height: 80, file: "Daily.md", subpath: "#Daily" },
+      { id: "u1", type: "link", x: 390, y: 20, width: 120, height: 80, url: "https://example.com", background: "transparent" },
     ],
     edges: [
       { id: "e1", fromNode: "t1", fromSide: "right", fromEnd: "arrow", toNode: "f1", toSide: "left", toEnd: "arrow", label: "uses" },
@@ -36,6 +38,7 @@ function makeFixture() {
   }));
   fs.writeFileSync(path.join(vaultB, "Mars.md"), "red planet\n");
   fs.symlinkSync(outside, path.join(vaultA, "Escape.md"));
+  fs.symlinkSync(path.join(vaultA, ".obsidian", "Secret.md"), path.join(vaultA, "Alias.md"));
   const registry = path.join(dir, "obsidian.json");
   fs.writeFileSync(registry, JSON.stringify({
     vaults: {
@@ -91,6 +94,15 @@ test("searchVault searches markdown, txt, filenames, and canvas cards", () => {
   ]);
 });
 
+test("searchVault scans matches beyond the first 200 listed files", () => {
+  const fx = makeFixture();
+  for (let i = 0; i < 230; i++) {
+    fs.writeFileSync(path.join(fx.vaultA, `z-${String(i).padStart(3, "0")}.md`), i === 229 ? "deep needle\n" : "plain\n");
+  }
+  const result = searchVault({ registryPath: fx.registry, query: "deep needle", limit: 10 });
+  assert.deepEqual(result.matches.map((m) => m.path), ["z-229.md"]);
+});
+
 test("readVaultFile parses markdown pages and canvas geometry without silent truncation", () => {
   const fx = makeFixture();
   const md = readVaultFile({ registryPath: fx.registry, path: "Daily.md", limit: 2 });
@@ -108,7 +120,10 @@ test("readVaultFile parses markdown pages and canvas geometry without silent tru
   assert.equal(canvas.nodes.length, 2);
   assert.deepEqual(canvas.nodes[0], { id: "g1", type: "group", x: 0, y: 0, width: 400, height: 240, label: "Prep" });
   assert.equal(canvas.nodes[1].text, "Canvas strategy card");
-  assert.deepEqual(canvasPage2.nodes.map((n) => n.id), ["f1"]);
+  assert.deepEqual(canvasPage2.nodes.map((n) => n.id), ["f1", "u1"]);
+  assert.equal(canvasPage2.nodes[0].subpath, "#Daily");
+  assert.equal(canvasPage2.nodes[1].url, "https://example.com");
+  assert.equal(canvasPage2.nodes[1].background, "transparent");
   assert.equal(canvasPage2.edges[0].fromEnd, "arrow");
 });
 
@@ -116,6 +131,7 @@ test("readVaultFile blocks traversal, hidden config paths, unsupported content, 
   const fx = makeFixture();
   assert.throws(() => readVaultFile({ registryPath: fx.registry, path: "../outside.md" }), /stays inside the vault/);
   assert.throws(() => readVaultFile({ registryPath: fx.registry, path: ".obsidian/workspace.json" }), /hidden or config paths/);
+  assert.throws(() => readVaultFile({ registryPath: fx.registry, path: "Alias.md" }), /hidden or config paths/);
   assert.throws(() => readVaultFile({ registryPath: fx.registry, path: "Database/Attachment.pdf" }), /Only Markdown, text, and Canvas/);
   assert.throws(() => readVaultFile({ registryPath: fx.registry, path: "Escape.md" }), /symlink escapes/);
 });
