@@ -134,6 +134,8 @@ function err(msg: string): ToolResult {
   return { content: [{ type: "text", text: msg }], isError: true };
 }
 
+const readOnlyTool = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+
 async function run<T>(fn: () => Promise<T>): Promise<ToolResult> {
   try {
     return ok(await fn());
@@ -1395,6 +1397,7 @@ server.tool(
   "obsidian_list_vaults",
   "Read Obsidian's local vault registry and return vault ids, paths, open state, and file counts. Use this first when preparing from Pablo's notes or Canvas maps.",
   {},
+  readOnlyTool,
   async () => run(async () => listObsidianVaults())
 );
 
@@ -1408,6 +1411,7 @@ server.tool(
     limit: z.number().optional().describe("Page size, default 50, max 200"),
     cursor: z.string().optional().describe("Cursor from a previous page"),
   },
+  readOnlyTool,
   async ({ vault_id, query, extensions, limit, cursor }) => run(async () => listObsidianFiles({
     vaultId: vault_id,
     query,
@@ -1427,6 +1431,7 @@ server.tool(
     limit: z.number().optional().describe("Page size, default 50, max 200"),
     cursor: z.string().optional().describe("Cursor from a previous page"),
   },
+  readOnlyTool,
   async ({ query, vault_id, extensions, limit, cursor }) => run(async () => searchObsidianVault({
     query,
     vaultId: vault_id,
@@ -1445,8 +1450,9 @@ server.tool(
     limit: z.number().optional().describe("Page size, default 50, max 200"),
     cursor: z.string().optional().describe("Cursor from a previous page"),
     offset: z.number().optional().describe("Line/node offset; cursor is preferred when continuing a page"),
-    include_text: z.boolean().optional().describe("For Canvas files, include text node bodies when true"),
+    include_text: z.boolean().optional().describe("For Canvas files, include text node bodies when true. Defaults to false; set true for Canvas preparation."),
   },
+  readOnlyTool,
   async ({ path, vault_id, limit, cursor, offset, include_text }) => run(async () => readObsidianFile({
     path,
     vaultId: vault_id,
