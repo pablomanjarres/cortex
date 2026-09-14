@@ -247,6 +247,10 @@ server.tool(
     done: z.boolean().optional().describe("true to complete, false to uncomplete (default true)"),
   },
   async ({ habitId, date, done }) => run(async () => {
+    const habits = (await readKey<HabitDef[]>("cortex-habits")) || [];
+    if (habits.find(habit => habit.id === habitId)?.onHold) {
+      throw new Error("Habit is on hold. Activate it with update_habit before tracking completions.");
+    }
     const d = date || today();
     const value = done ?? true;
     await mutateKey<Record<string, Record<string, boolean>>>("cortex-habits-history", (history) => {
