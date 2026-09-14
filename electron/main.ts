@@ -5,6 +5,7 @@ import os from 'os'
 import fs from 'fs'
 import zlib from 'zlib'
 import { fileURLToPath } from 'url'
+import { errorMessage } from './errors.js'
 import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
 import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
@@ -890,7 +891,7 @@ function startWebServer() {
       try {
         const events = await getTodayEvents()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(events))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -902,7 +903,7 @@ function startWebServer() {
         const calEmail = getKey('calendar-email') || undefined
         const result = await syncBirthdays(birthdays, calEmail)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -913,7 +914,7 @@ function startWebServer() {
         const payload = JSON.parse(body)
         const result = await createCalendarEvent(payload)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -925,7 +926,7 @@ function startWebServer() {
         const payload = JSON.parse(body)
         const result = await updateCalendarEvent(eventId, payload)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -934,7 +935,7 @@ function startWebServer() {
       try {
         const result = await deleteCalendarEvent(eventId)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -944,7 +945,7 @@ function startWebServer() {
         const end = url.searchParams.get('end') || localDate(new Date(Date.now() + 120 * 86400000))
         const events = await getEventsInRange(start, end)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(events))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -967,7 +968,7 @@ function startWebServer() {
         } else {
           res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: result.error }))
         }
-      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: (e as Error).message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -977,7 +978,7 @@ function startWebServer() {
         const date = url.searchParams.get('date') || undefined
         const doc = date ? readJournalDay(date) : readJournalToday()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(doc))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -989,7 +990,7 @@ function startWebServer() {
         if (!text) { res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'Missing text' })); return }
         const result = writeJournalLine(text, { date, tag })
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -999,7 +1000,7 @@ function startWebServer() {
         const limit = parseInt(url.searchParams.get('limit') || '20')
         const matches = searchVault(q, limit)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify({ query: q, matches }))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1007,7 +1008,7 @@ function startWebServer() {
       try {
         const anchors = readVoiceAnchors()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify({ anchors }))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1015,7 +1016,7 @@ function startWebServer() {
       try {
         const stats = vaultStats()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1026,7 +1027,7 @@ function startWebServer() {
         const r = await fetch('http://127.0.0.1:61208/api/4/all', { signal: AbortSignal.timeout(4000) })
         if (!r.ok) throw new Error(`glances ${r.status}`)
         res.writeHead(200, corsHeaders); res.end(await r.text())
-      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1047,8 +1048,8 @@ function startWebServer() {
                           1 * 3600 * 1000
         const payload = buildHistoryResponse(hostParam, windowMs)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(payload))
-      } catch (e: any) {
-        res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e?.message ?? 'history failed' }))
+      } catch (e) {
+        res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e, 'history failed') }))
       }
       return
     }
@@ -1070,7 +1071,7 @@ function startWebServer() {
         }
         projects.sort((a, b) => a.name.localeCompare(b.name))
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(projects))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
