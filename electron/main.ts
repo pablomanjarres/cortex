@@ -6,6 +6,8 @@ import fs from 'fs'
 import zlib from 'zlib'
 import { fileURLToPath } from 'url'
 import { errorMessage } from './errors.js'
+import { execFile } from 'node:child_process'
+import { readLatestCommit } from './project-git.js'
 import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
 import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
@@ -14,6 +16,12 @@ import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.
 import type { FounderSource } from './founder-refresher.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
+
+interface StoredAutomationRun {
+  id: string
+  status: string
+  approved?: boolean
+}
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -818,7 +826,7 @@ function startWebServer() {
       try {
         const { taskName, status, summary, fullOutput } = JSON.parse(body)
         if (!taskName) { res.writeHead(400); res.end('Missing taskName'); return }
-        const data = await readDataKeyParsed<{ runs: any[] }>('cortex-automations', { runs: [] })
+        const data = await readDataKeyParsed<{ runs: StoredAutomationRun[] }>('cortex-automations', { runs: [] })
         if (!Array.isArray(data.runs)) data.runs = []
         const run = {
           id: `run-${Date.now()}`,
@@ -834,13 +842,12 @@ function startWebServer() {
 
         // Send Pushover notification for all runs
         try {
-          const { execFile: ef } = require('child_process')
           const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
           if (fs.existsSync(notifyScript)) {
             const category = status === 'pending-approval' ? 'local-approval'
               : status === 'error' ? 'scheduled-alert'
               : 'scheduled-task'
-            ef(notifyScript, [
+            execFile(notifyScript, [
               '-c', category,
               '-m', `${taskName}: ${summary || (status === 'pending-approval' ? 'Needs your approval' : 'Completed')}`,
               // Only advertise URLs the socket gate accepts (localhost + Tailscale).
@@ -869,8 +876,8 @@ function startWebServer() {
       const runId = parts[3]
       const action = parts[4] as 'approve' | 'reject'
       try {
-        const data = await readDataKeyParsed<{ runs: any[] } | null>('cortex-automations', null)
-        const run = data?.runs?.find((r: any) => r.id === runId)
+        const data = await readDataKeyParsed<{ runs: StoredAutomationRun[] } | null>('cortex-automations', null)
+        const run = data?.runs?.find((r) => r.id === runId)
         if (data && run) {
           run.status = action === 'approve' ? 'success' : 'error'
           run.approved = action === 'approve'
@@ -1261,7 +1268,13 @@ function scanProject(dir: string, name: string): ProjectInfo {
 
   // package.json
   const pkgPath = path.join(dir, 'package.json')
-  let pkg: any = null
+  let pkg: {
+    description?: string
+    scripts?: Record<string, string>
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+    workspaces?: unknown
+  } | null = null
   if (fs.existsSync(pkgPath)) {
     info.hasPackageJson = true
     try { pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) } catch { /* skip */ }
@@ -1335,14 +1348,7 @@ function scanProject(dir: string, name: string): ProjectInfo {
   }
 
   // Latest commit (sync, with timeout protection)
-  try {
-    const { execSync } = require('child_process')
-    const log = execSync(`git -C "${dir}" log --oneline --format="%s|||%ci" -1`, { timeout: 3000, encoding: 'utf-8' }).trim()
-    if (log) {
-      const [message, date] = log.split('|||')
-      info.latestCommit = { message: message || '', date: date?.slice(0, 10) || '' }
-    }
-  } catch { /* not a git repo or no commits */ }
+  info.latestCommit = readLatestCommit(dir)
 
   // GitHub Actions workflows
   const workflowsDir = path.join(dir, '.github', 'workflows')
@@ -1631,10 +1637,9 @@ ipcMain.handle('media:delete', async (_event, id: string) => {
 
 ipcMain.handle('notify:pushover', async (_event, category: string, message: string) => {
   try {
-    const { execFile: ef } = require('child_process')
     const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
     if (fs.existsSync(notifyScript)) {
-      ef(notifyScript, ['-c', category, '-m', message], { timeout: 10000 }, () => {})
+      execFile(notifyScript, ['-c', category, '-m', message], { timeout: 10000 }, () => {})
       return true
     }
     return false
@@ -1651,10 +1656,9 @@ let stopDeadlineAlerts: (() => void) | null = null
  */
 function pushDeadlineAlert({ title, message, priority }: { title: string; message: string; priority: 0 | 1 }): void {
   try {
-    const { execFile: ef } = require('child_process')
     const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
     if (!fs.existsSync(notifyScript)) return
-    ef(notifyScript, [
+    execFile(notifyScript, [
       '-c', 'scheduled-alert',
       '-t', title,
       '-m', message,
