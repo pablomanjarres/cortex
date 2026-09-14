@@ -32,7 +32,7 @@ function KeyRow({ field }: { field: KeyField }) {
   const isElectron = !!window.electronAPI?.keychain
 
   useEffect(() => {
-    if (!isElectron) { setLoading(false); return }
+    if (!isElectron) return
     window.electronAPI!.keychain.has(field.service).then((has) => {
       setSaved(has)
       setLoading(false)
@@ -61,7 +61,7 @@ function KeyRow({ field }: { field: KeyField }) {
     if (key) { setValue(key); setShowValue(true) }
   }
 
-  if (loading) {
+  if (isElectron && loading) {
     return (
       <div className="rounded-md bg-secondary/30 px-4 py-3">
         <Skeleton className="h-4 w-36" />
