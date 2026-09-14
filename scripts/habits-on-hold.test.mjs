@@ -63,6 +63,10 @@ test('on-hold habits survive creation, edits, activation, and rereads', async (t
   assert.deepEqual(activated, { ...held, onHold: false })
 
   await call('update_habit', { habitId: 'existing', onHold: true })
+  const heldToggle = await client.callTool({
+    name: 'toggle_habit', arguments: { habitId: 'existing', date: '2026-09-14' },
+  })
+  assert.equal(heldToggle.isError, true, 'activate a held habit before tracking it')
   assert.deepEqual(records.get('cortex-habits-history'), { '2026-09-13': { existing: true } })
   await call('update_habit', { habitId: 'existing', onHold: false })
   assert.equal(records.get('cortex-habits').find(h => h.id === 'existing').weeklyGoal, 3)
