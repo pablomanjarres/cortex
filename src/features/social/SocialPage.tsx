@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
+import { SortIcon } from '@/components/shared/SortIcon'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -11,9 +12,6 @@ import {
   Search,
   Plus,
   Trash2,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
   Cake,
   Clock,
   RotateCcw,
@@ -134,7 +132,6 @@ export function SocialPage() {
   }
 
   const toggleSort = (k: SortKey) => { if (sortKey === k) setSortAsc((p) => !p); else { setSortKey(k); setSortAsc(true) } }
-  const SortIcon = ({ k }: { k: SortKey }) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const filtered = useMemo(() =>
     contacts
@@ -327,13 +324,13 @@ export function SocialPage() {
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
                   {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
-                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon k="name" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title <SortIcon k="title" /></button></th>
+                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon active={sortKey === 'name'} ascending={sortAsc} /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title <SortIcon active={sortKey === 'title'} ascending={sortAsc} /></button></th>
                   <th className={thCls}>Category</th>
                   <th className={thCls}>Field</th>
-                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age <SortIcon k="birthday" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age <SortIcon active={sortKey === 'birthday'} ascending={sortAsc} /></button></th>
                   <th className={thCls}>Phone</th>
-                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last <SortIcon k="lastContact" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last <SortIcon active={sortKey === 'lastContact'} ascending={sortAsc} /></button></th>
                   <th className="w-6 py-2"></th>
                 </tr>
               </thead>
