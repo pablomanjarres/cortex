@@ -33,7 +33,7 @@ test('on-hold habits survive creation, edits, activation, and rereads', async (t
   const client = new Client({ name: 'habits-test', version: '1.0.0' })
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [fileURLToPath(new URL('../mcp-server/dist/index.js', import.meta.url))],
+    args: [process.env.CORTEX_MCP_ENTRY || fileURLToPath(new URL('../mcp-server/dist/index.js', import.meta.url))],
     env: { ...process.env, CORTEX_API: `http://127.0.0.1:${api.address().port}` },
     stderr: 'pipe',
   })
