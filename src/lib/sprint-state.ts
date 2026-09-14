@@ -45,4 +45,3 @@ export function useSprintTimer() {
   if (!ctx) throw new Error('useSprintTimer must be used within SprintProvider')
   return ctx
 }
-
