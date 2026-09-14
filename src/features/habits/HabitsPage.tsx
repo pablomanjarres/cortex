@@ -9,6 +9,7 @@ import { StatTile } from '@/components/shared/StatTile'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
+import { HabitEditFields } from './HabitForms'
 import { HabitNoteButton, HabitNoteEditor } from './HabitNotes'
 import { Flame, Trophy, Plus, X, Pencil, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -308,20 +309,24 @@ export function HabitsPage() {
     return (d + 6) % 7 // 0=Mon, 6=Sun
   })()
 
+  const editFieldProps = {
+    name: editName,
+    emoji: editEmoji,
+    goal: editGoal,
+    cadence: editCadence,
+    onNameChange: setEditName,
+    onEmojiChange: setEditEmoji,
+    onGoalChange: setEditGoal,
+    onCadenceChange: setEditCadence,
+    onSave: saveEdit,
+  }
+
   const renderHabitRow = (habit: Habit) => (
     <Fragment key={habit.id}>
     <tr className="group border-t border-border/60">
       <td className="py-2.5 pr-4 text-sm text-foreground">
         {editingId === habit.id ? (
-          <div className="flex items-center gap-1.5">
-            <Input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="h-7 w-10 px-1 text-center text-sm" />
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-7 text-sm" autoFocus />
-            <select value={editCadence} onChange={(e) => setEditCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-7 px-1 text-xs')}>
-              <option value="weekly">/wk</option>
-              <option value="monthly">/mo</option>
-            </select>
-            <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-7 w-12 px-1 text-center text-sm" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
-          </div>
+          <HabitEditFields {...editFieldProps} compact />
         ) : (
           <span className="inline-flex items-center">
             <span className="mr-2">{habit.emoji}</span>{habit.name}
@@ -437,15 +442,7 @@ export function HabitsPage() {
             <div key={habit.id} className="surface rounded-xl p-4">
               {editingId === habit.id ? (
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <Input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="h-9 w-12 px-1 text-center" />
-                    <Input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-9 flex-1" autoFocus />
-                    <select value={editCadence} onChange={(e) => setEditCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-9 px-1 text-xs')}>
-                      <option value="weekly">/wk</option>
-                      <option value="monthly">/mo</option>
-                    </select>
-                    <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-9 w-14 px-1 text-center" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
-                  </div>
+                  <HabitEditFields {...editFieldProps} />
                   <div className="flex gap-2">
                     <Button size="lg" className="flex-1" onClick={saveEdit}>Save</Button>
                     <Button variant="ghost" size="lg" onClick={() => setEditingId(null)}>Cancel</Button>
