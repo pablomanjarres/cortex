@@ -34,6 +34,7 @@ interface HabitDef {
   id: string
   name: string
   emoji: string
+  cadence?: 'weekly' | 'monthly'
 }
 
 const defaultHabits: HabitDef[] = [
@@ -173,7 +174,7 @@ export function DailyPage() {
 
         // Habit stats — weekly cadence only (monthly habits are scored over the month)
         const weeklyHabitIds = new Set(
-          storedHabits.filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly').map(h => h.id)
+          storedHabits.filter(h => (h.cadence ?? 'weekly') !== 'monthly').map(h => h.id)
         )
         const weekHabits = weekDates.map(wd => habitHistory[wd] || {})
         const totalHabitChecks = weekHabits.reduce(

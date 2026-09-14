@@ -11,7 +11,6 @@ import { ThemedTooltip, axisProps, chartColors, cssVar } from '@/lib/chart-theme
 import { cn } from '@/lib/utils'
 import { useStore, readStore } from '@/lib/store'
 import { localDate, getISOWeek, getWeekLabel, formatMinutes } from '@/lib/date-utils'
-import { useToday } from '@/lib/use-today'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import {
   ChevronLeft,
@@ -61,6 +60,8 @@ interface HabitDef {
   id: string
   name: string
   emoji: string
+  cadence?: 'weekly' | 'monthly'
+  weeklyGoal?: number
 }
 
 interface HistoryEntry {
@@ -144,7 +145,7 @@ function firstWorkout(raw: unknown): WorkoutSession | null {
 
 export function StatsPage() {
   const [view, setView] = useState<'day' | 'week'>('day')
-  const [selectedDate, setSelectedDate] = useState(localDate())
+  const [selectedDate, setSelectedDate] = useState(() => localDate())
 
   // Chart palette from the live tokens (never inline hex) — workout types map
   // onto the standard 5-color chart family.
@@ -156,10 +157,6 @@ export function StatsPage() {
     SWIM: chartPalette[3],
   }
 
-  // Reactive "today" — rolls over at midnight so all the today-keyed stores
-  // below re-key to the new day while the app stays open.
-  const todayStr = useToday()
-
   // Shared stores
   const [habits] = useStore<HabitDef[]>('cortex-habits', [])
   const [founderHistory] = useStore<HistoryEntry[]>('cortex-founder-history', [])
@@ -167,45 +164,13 @@ export function StatsPage() {
   // Habits — single source of truth via shared hook (reactive, stays in sync)
   const { completedCount: habitsCompletedToday, isCompleted: isHabitDone, habitHistory } = useDailyHabits(selectedDate)
 
-  // --- GTM Data -------------------------------------------
-  const [dayGtm, setDayGtm] = useState<GtmDailyLog | null>(null)
-  const [todayGtm] = useStore<GtmDailyLog | null>(`cortex-gtm-log-${todayStr}`, null)
-
-  // --- Gym Data -------------------------------------------
-  const [dayWorkout, setDayWorkout] = useState<WorkoutSession | null>(null)
-  const [dayNutrition, setDayNutrition] = useState<DailyNutrition | null>(null)
-  const [todayWorkoutRaw] = useStore<unknown>(`cortex-gym-session-${todayStr}`, null)
-  const todayWorkout = useMemo(() => firstWorkout(todayWorkoutRaw), [todayWorkoutRaw])
-  const [todayNutrition] = useStore<DailyNutrition | null>(`cortex-nutrition-${todayStr}`, null)
-
-  // --- Day View Data --------------------------------------
-  const [daySessions, setDaySessions] = useState<SprintSession[]>([])
-
-  // Use useStore for today's data (reactive), readStore for past dates
-  const isToday = selectedDate === todayStr
-  const [todaySessions] = useStore<SprintSession[]>(`cortex-daily-sessions-${todayStr}`, [])
-
-  useEffect(() => {
-    if (view !== 'day') return
-    if (isToday) {
-      setDaySessions(todaySessions)
-      setDayGtm(todayGtm)
-      setDayWorkout(todayWorkout)
-      setDayNutrition(todayNutrition)
-      return
-    }
-    Promise.all([
-      readStore<SprintSession[]>(`cortex-daily-sessions-${selectedDate}`, []),
-      readStore<GtmDailyLog | null>(`cortex-gtm-log-${selectedDate}`, null),
-      readStore<WorkoutSession | null>(`cortex-gym-session-${selectedDate}`, null),
-      readStore<DailyNutrition | null>(`cortex-nutrition-${selectedDate}`, null),
-    ]).then(([sessions, gtm, workout, nutrition]) => {
-      setDaySessions(sessions)
-      setDayGtm(gtm)
-      setDayWorkout(firstWorkout(workout))
-      setDayNutrition(nutrition)
-    })
-  }, [selectedDate, view, isToday, todaySessions, todayGtm, todayWorkout, todayNutrition])
+  // Subscribe to the selected date directly so today's edits stay reactive and
+  // navigation cannot be overwritten by a late read from the previous date.
+  const [dayGtm] = useStore<GtmDailyLog | null>(`cortex-gtm-log-${selectedDate}`, null)
+  const [dayWorkoutRaw] = useStore<unknown>(`cortex-gym-session-${selectedDate}`, null)
+  const dayWorkout = useMemo(() => firstWorkout(dayWorkoutRaw), [dayWorkoutRaw])
+  const [dayNutrition] = useStore<DailyNutrition | null>(`cortex-nutrition-${selectedDate}`, null)
+  const [daySessions] = useStore<SprintSession[]>(`cortex-daily-sessions-${selectedDate}`, [])
 
   const mergedHabitsCount = habitsCompletedToday
 
@@ -254,9 +219,9 @@ export function StatsPage() {
   // over the month, so they're excluded from this weekly view.
   const weekHabitData = useMemo(() => {
     return habits
-      .filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly')
+      .filter(h => (h.cadence ?? 'weekly') !== 'monthly')
       .map(h => {
-        const goal = (h as any).weeklyGoal ?? 7
+        const goal = h.weeklyGoal ?? 7
         const completed = weekDates.filter(d => habitHistory[d]?.[h.id]).length
         return { name: h.emoji + ' ' + h.name, completed, goal }
       })

@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
+import { SortIcon } from '@/components/shared/SortIcon'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -11,9 +12,6 @@ import {
   Search,
   Plus,
   Trash2,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
   CheckCircle2,
   Clock,
   BookMarked,
@@ -126,7 +124,6 @@ export function BooksPage() {
   }
 
   const toggleSort = (k: SortKey) => { if (sortKey === k) setSortAsc((p) => !p); else { setSortKey(k); setSortAsc(true) } }
-  const SortIcon = ({ k }: { k: SortKey }) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const filtered = useMemo(() =>
     books
@@ -247,10 +244,10 @@ export function BooksPage() {
                 <tr className="border-b border-border/60 text-muted-foreground">
                   <th className="w-6 px-4 py-2"></th>
                   {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
-                  <th className={thCls}><button onClick={() => toggleSort('title')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Title <SortIcon k="title" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('author')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Author <SortIcon k="author" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('genre')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Genre <SortIcon k="genre" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('score')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Rating <SortIcon k="score" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('title')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Title <SortIcon active={sortKey === 'title'} ascending={sortAsc} /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('author')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Author <SortIcon active={sortKey === 'author'} ascending={sortAsc} /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('genre')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Genre <SortIcon active={sortKey === 'genre'} ascending={sortAsc} /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('score')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Rating <SortIcon active={sortKey === 'score'} ascending={sortAsc} /></button></th>
                   <th className="w-6 py-2"></th>
                 </tr>
               </thead>

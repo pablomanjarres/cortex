@@ -109,9 +109,9 @@ export function HostHistory({ host }: { host: HostKey }) {
         if (cancelled) return
         setData(json)
         setError(null)
-      } catch (e: any) {
+      } catch (e) {
         if (cancelled) return
-        setError(e?.message ?? 'fetch failed')
+        setError(e instanceof Error ? e.message : 'fetch failed')
       } finally {
         if (!cancelled) {
           setLoading(false)

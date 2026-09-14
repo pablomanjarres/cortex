@@ -11,16 +11,17 @@ interface ExerciseImageProps {
 }
 
 /** Cycles the DB's start/end frames for a pseudo-GIF; falls back to a placeholder on miss/error. */
-export function ExerciseImage({ name, className = '', showBadge = true }: ExerciseImageProps) {
+export function ExerciseImage(props: ExerciseImageProps) {
+  return <ExerciseImageForName key={props.name} {...props} />
+}
+
+function ExerciseImageForName({ name, className = '', showBadge = true }: ExerciseImageProps) {
   const [media, setMedia] = useState<ExerciseMedia | null | undefined>(undefined) // undefined = loading
   const [frame, setFrame] = useState(0)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let alive = true
-    setMedia(undefined)
-    setFailed(false)
-    setFrame(0)
     findExerciseMedia(name).then((m) => {
       if (alive) setMedia(m)
     })

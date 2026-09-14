@@ -16,6 +16,6 @@ createRoot(document.getElementById('root')!).render(
 )
 
 // Register service worker for PWA (browser/mobile only, not Electron)
-if ('serviceWorker' in navigator && !(window as any).electronAPI) {
+if ('serviceWorker' in navigator && !window.electronAPI) {
   navigator.serviceWorker.register('./sw.js')
 }

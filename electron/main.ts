@@ -5,6 +5,9 @@ import os from 'os'
 import fs from 'fs'
 import zlib from 'zlib'
 import { fileURLToPath } from 'url'
+import { errorMessage } from './errors.js'
+import { execFile } from 'node:child_process'
+import { readLatestCommit } from './project-git.js'
 import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
 import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
@@ -13,6 +16,12 @@ import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.
 import type { FounderSource } from './founder-refresher.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
+
+interface StoredAutomationRun {
+  id: string
+  status: string
+  approved?: boolean
+}
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -817,7 +826,7 @@ function startWebServer() {
       try {
         const { taskName, status, summary, fullOutput } = JSON.parse(body)
         if (!taskName) { res.writeHead(400); res.end('Missing taskName'); return }
-        const data = await readDataKeyParsed<{ runs: any[] }>('cortex-automations', { runs: [] })
+        const data = await readDataKeyParsed<{ runs: StoredAutomationRun[] }>('cortex-automations', { runs: [] })
         if (!Array.isArray(data.runs)) data.runs = []
         const run = {
           id: `run-${Date.now()}`,
@@ -833,13 +842,12 @@ function startWebServer() {
 
         // Send Pushover notification for all runs
         try {
-          const { execFile: ef } = require('child_process')
           const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
           if (fs.existsSync(notifyScript)) {
             const category = status === 'pending-approval' ? 'local-approval'
               : status === 'error' ? 'scheduled-alert'
               : 'scheduled-task'
-            ef(notifyScript, [
+            execFile(notifyScript, [
               '-c', category,
               '-m', `${taskName}: ${summary || (status === 'pending-approval' ? 'Needs your approval' : 'Completed')}`,
               // Only advertise URLs the socket gate accepts (localhost + Tailscale).
@@ -868,8 +876,8 @@ function startWebServer() {
       const runId = parts[3]
       const action = parts[4] as 'approve' | 'reject'
       try {
-        const data = await readDataKeyParsed<{ runs: any[] } | null>('cortex-automations', null)
-        const run = data?.runs?.find((r: any) => r.id === runId)
+        const data = await readDataKeyParsed<{ runs: StoredAutomationRun[] } | null>('cortex-automations', null)
+        const run = data?.runs?.find((r) => r.id === runId)
         if (data && run) {
           run.status = action === 'approve' ? 'success' : 'error'
           run.approved = action === 'approve'
@@ -890,7 +898,7 @@ function startWebServer() {
       try {
         const events = await getTodayEvents()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(events))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -902,7 +910,7 @@ function startWebServer() {
         const calEmail = getKey('calendar-email') || undefined
         const result = await syncBirthdays(birthdays, calEmail)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -913,7 +921,7 @@ function startWebServer() {
         const payload = JSON.parse(body)
         const result = await createCalendarEvent(payload)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -925,7 +933,7 @@ function startWebServer() {
         const payload = JSON.parse(body)
         const result = await updateCalendarEvent(eventId, payload)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -934,7 +942,7 @@ function startWebServer() {
       try {
         const result = await deleteCalendarEvent(eventId)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -944,7 +952,7 @@ function startWebServer() {
         const end = url.searchParams.get('end') || localDate(new Date(Date.now() + 120 * 86400000))
         const events = await getEventsInRange(start, end)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(events))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -967,7 +975,7 @@ function startWebServer() {
         } else {
           res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: result.error }))
         }
-      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: (e as Error).message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -977,7 +985,7 @@ function startWebServer() {
         const date = url.searchParams.get('date') || undefined
         const doc = date ? readJournalDay(date) : readJournalToday()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(doc))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -989,7 +997,7 @@ function startWebServer() {
         if (!text) { res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'Missing text' })); return }
         const result = writeJournalLine(text, { date, tag })
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -999,7 +1007,7 @@ function startWebServer() {
         const limit = parseInt(url.searchParams.get('limit') || '20')
         const matches = searchVault(q, limit)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify({ query: q, matches }))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1007,7 +1015,7 @@ function startWebServer() {
       try {
         const anchors = readVoiceAnchors()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify({ anchors }))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1015,7 +1023,7 @@ function startWebServer() {
       try {
         const stats = vaultStats()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1026,7 +1034,7 @@ function startWebServer() {
         const r = await fetch('http://127.0.0.1:61208/api/4/all', { signal: AbortSignal.timeout(4000) })
         if (!r.ok) throw new Error(`glances ${r.status}`)
         res.writeHead(200, corsHeaders); res.end(await r.text())
-      } catch (e: any) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(502, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1047,8 +1055,8 @@ function startWebServer() {
                           1 * 3600 * 1000
         const payload = buildHistoryResponse(hostParam, windowMs)
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(payload))
-      } catch (e: any) {
-        res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e?.message ?? 'history failed' }))
+      } catch (e) {
+        res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e, 'history failed') }))
       }
       return
     }
@@ -1070,7 +1078,7 @@ function startWebServer() {
         }
         projects.sort((a, b) => a.name.localeCompare(b.name))
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(projects))
-      } catch (e: any) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: e.message })) }
+      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1260,7 +1268,13 @@ function scanProject(dir: string, name: string): ProjectInfo {
 
   // package.json
   const pkgPath = path.join(dir, 'package.json')
-  let pkg: any = null
+  let pkg: {
+    description?: string
+    scripts?: Record<string, string>
+    dependencies?: Record<string, string>
+    devDependencies?: Record<string, string>
+    workspaces?: unknown
+  } | null = null
   if (fs.existsSync(pkgPath)) {
     info.hasPackageJson = true
     try { pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) } catch { /* skip */ }
@@ -1334,14 +1348,7 @@ function scanProject(dir: string, name: string): ProjectInfo {
   }
 
   // Latest commit (sync, with timeout protection)
-  try {
-    const { execSync } = require('child_process')
-    const log = execSync(`git -C "${dir}" log --oneline --format="%s|||%ci" -1`, { timeout: 3000, encoding: 'utf-8' }).trim()
-    if (log) {
-      const [message, date] = log.split('|||')
-      info.latestCommit = { message: message || '', date: date?.slice(0, 10) || '' }
-    }
-  } catch { /* not a git repo or no commits */ }
+  info.latestCommit = readLatestCommit(dir)
 
   // GitHub Actions workflows
   const workflowsDir = path.join(dir, '.github', 'workflows')
@@ -1630,10 +1637,9 @@ ipcMain.handle('media:delete', async (_event, id: string) => {
 
 ipcMain.handle('notify:pushover', async (_event, category: string, message: string) => {
   try {
-    const { execFile: ef } = require('child_process')
     const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
     if (fs.existsSync(notifyScript)) {
-      ef(notifyScript, ['-c', category, '-m', message], { timeout: 10000 }, () => {})
+      execFile(notifyScript, ['-c', category, '-m', message], { timeout: 10000 }, () => {})
       return true
     }
     return false
@@ -1650,10 +1656,9 @@ let stopDeadlineAlerts: (() => void) | null = null
  */
 function pushDeadlineAlert({ title, message, priority }: { title: string; message: string; priority: 0 | 1 }): void {
   try {
-    const { execFile: ef } = require('child_process')
     const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
     if (!fs.existsSync(notifyScript)) return
-    ef(notifyScript, [
+    execFile(notifyScript, [
       '-c', 'scheduled-alert',
       '-t', title,
       '-m', message,

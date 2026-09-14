@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
+import { SortIcon } from '@/components/shared/SortIcon'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -11,9 +12,6 @@ import {
   Search,
   Plus,
   Trash2,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
   Cake,
   Clock,
   RotateCcw,
@@ -53,18 +51,18 @@ const ALL_CATEGORIES = ['Relative 👨‍👩‍👦', 'High Potential 🚀', 'A
 
 const ALL_FIELDS = ['Tech', 'Business', 'Education', 'Health', 'Design', 'Law', 'Gastronomy', 'Music', 'Industry', 'Media', 'Construction', 'Fin']
 
-function daysUntilBirthday(bday: string): number | null {
+function daysUntilBirthday(bday: string, now: number): number | null {
   if (!bday) return null
-  const today = new Date()
+  const today = new Date(now)
   const birth = new Date(bday)
   const next = new Date(today.getFullYear(), birth.getMonth(), birth.getDate())
   if (next < today) next.setFullYear(next.getFullYear() + 1)
   return Math.ceil((next.getTime() - today.getTime()) / 86_400_000)
 }
 
-function calcAge(bday: string): number | null {
+function calcAge(bday: string, now: number): number | null {
   if (!bday) return null
-  const today = new Date()
+  const today = new Date(now)
   const birth = new Date(bday)
   let age = today.getFullYear() - birth.getFullYear()
   if (today < new Date(today.getFullYear(), birth.getMonth(), birth.getDate())) age--
@@ -83,9 +81,22 @@ const labelCls = 'text-2xs text-muted-foreground'
 const thCls = 'py-2 text-left font-mono text-2xs font-normal uppercase tracking-wider'
 const thBtnCls = 'flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground'
 
+// Contact reminders depend on wall time, refreshed outside render.
+function useContactClock(): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const refresh = () => setNow(Date.now())
+    const timer = setInterval(refresh, 60_000)
+    window.addEventListener('focus', refresh)
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh) }
+  }, [])
+  return now
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function SocialPage() {
+  const now = useContactClock()
   const [contacts, updateContacts] = useStore<Contact[]>('cortex-contacts', DEFAULT_CONTACTS)
   const [search, setSearch] = useState('')
   const [filterCat, setFilterCat] = useState<string | null>(null)
@@ -134,7 +145,6 @@ export function SocialPage() {
   }
 
   const toggleSort = (k: SortKey) => { if (sortKey === k) setSortAsc((p) => !p); else { setSortKey(k); setSortAsc(true) } }
-  const SortIcon = ({ k }: { k: SortKey }) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const filtered = useMemo(() =>
     contacts
@@ -155,23 +165,23 @@ export function SocialPage() {
 
   const upcomingBdays = useMemo(() =>
     contacts
-      .filter((c) => c.birthday && daysUntilBirthday(c.birthday)! <= 30)
-      .sort((a, b) => daysUntilBirthday(a.birthday)! - daysUntilBirthday(b.birthday)!),
-    [contacts],
+      .filter((c) => c.birthday && daysUntilBirthday(c.birthday, now)! <= 30)
+      .sort((a, b) => daysUntilBirthday(a.birthday, now)! - daysUntilBirthday(b.birthday, now)!),
+    [contacts, now],
   )
 
   const needsReachOut = useMemo(() =>
     contacts.filter((c) => {
       if (!c.lastContact || !c.interval) return false
       const last = new Date(c.lastContact)
-      const daysSince = Math.ceil((Date.now() - last.getTime()) / 86_400_000)
+      const daysSince = Math.ceil((now - last.getTime()) / 86_400_000)
       return daysSince > c.interval
     }).sort((a, b) => {
-      const da = Math.ceil((Date.now() - new Date(a.lastContact).getTime()) / 86_400_000) - a.interval
-      const db = Math.ceil((Date.now() - new Date(b.lastContact).getTime()) / 86_400_000) - b.interval
+      const da = Math.ceil((now - new Date(a.lastContact).getTime()) / 86_400_000) - a.interval
+      const db = Math.ceil((now - new Date(b.lastContact).getTime()) / 86_400_000) - b.interval
       return db - da
     }),
-    [contacts],
+    [contacts, now],
   )
 
   return (
@@ -184,8 +194,8 @@ export function SocialPage() {
           ) : (
             <div className="flex flex-col gap-1">
               {upcomingBdays.map((c) => {
-                const days = daysUntilBirthday(c.birthday)!
-                const age = calcAge(c.birthday)
+                const days = daysUntilBirthday(c.birthday, now)!
+                const age = calcAge(c.birthday, now)
                 const imminent = days <= 3
                 return (
                   <button key={c.id} onClick={() => setExpanded(expanded === c.id ? null : c.id)} className={`flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left transition-colors duration-150 ${imminent ? 'bg-warning/5 hover:bg-warning/10' : 'hover:bg-secondary/50'} ${expanded === c.id ? 'ring-1 ring-accent/40' : ''}`}>
@@ -211,7 +221,7 @@ export function SocialPage() {
           ) : (
             <div className="flex max-h-[200px] flex-col gap-1 overflow-y-auto">
               {needsReachOut.map((c) => {
-                const daysSince = Math.ceil((Date.now() - new Date(c.lastContact).getTime()) / 86_400_000)
+                const daysSince = Math.ceil((now - new Date(c.lastContact).getTime()) / 86_400_000)
                 const overdue = daysSince - c.interval
                 return (
                   <div key={c.id} className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors duration-150 hover:bg-secondary/50 ${expanded === c.id ? 'ring-1 ring-accent/40' : ''}`}>
@@ -277,7 +287,7 @@ export function SocialPage() {
             </div>
             <div className="mt-2 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
               {c.phone && <span>{c.phone}</span>}
-              {calcAge(c.birthday) != null && <span className="tabular-nums">Age {calcAge(c.birthday)}</span>}
+              {calcAge(c.birthday, now) != null && <span className="tabular-nums">Age {calcAge(c.birthday, now)}</span>}
               {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
             </div>
             {expanded === c.id && (
@@ -327,13 +337,13 @@ export function SocialPage() {
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
                   {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
-                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon k="name" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title <SortIcon k="title" /></button></th>
+                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon active={sortKey === 'name'} ascending={sortAsc} /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title <SortIcon active={sortKey === 'title'} ascending={sortAsc} /></button></th>
                   <th className={thCls}>Category</th>
                   <th className={thCls}>Field</th>
-                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age <SortIcon k="birthday" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age <SortIcon active={sortKey === 'birthday'} ascending={sortAsc} /></button></th>
                   <th className={thCls}>Phone</th>
-                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last <SortIcon k="lastContact" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last <SortIcon active={sortKey === 'lastContact'} ascending={sortAsc} /></button></th>
                   <th className="w-6 py-2"></th>
                 </tr>
               </thead>
@@ -346,7 +356,7 @@ export function SocialPage() {
                       <td className="py-2.5 text-muted-foreground">{c.title}</td>
                       <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.categories.slice(0, 2).map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}{c.categories.length > 2 && <span className="font-mono text-3xs text-foreground-faint">+{c.categories.length - 2}</span>}</div></td>
                       <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}</div></td>
-                      <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{calcAge(c.birthday) ?? '—'}</td>
+                      <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{calcAge(c.birthday, now) ?? '—'}</td>
                       <td className="py-2.5 font-mono text-muted-foreground">{c.phone || '—'}</td>
                       <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
                       <td className="py-2.5 pr-4"><Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}><Trash2 /></Button></td>

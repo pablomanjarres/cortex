@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
-import Markdown from 'react-markdown'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import Markdown, { type Components } from 'react-markdown'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -135,24 +135,24 @@ function fmtDate(ts: string): string {
 
 // ── Markdown prose styling ───────────────────────────────────────────────────
 
-const mdComponents = {
-  h1: (props: any) => <h1 className="mt-4 mb-2 text-lg font-bold" {...props} />,
-  h2: (props: any) => <h2 className="mt-4 mb-2 text-base font-semibold text-foreground" {...props} />,
-  h3: (props: any) => <h3 className="mt-3 mb-1.5 text-sm font-semibold text-foreground" {...props} />,
-  p: (props: any) => <p className="mb-2 text-sm leading-relaxed text-muted-foreground" {...props} />,
-  ul: (props: any) => <ul className="mb-3 ml-4 list-disc space-y-1 text-sm text-muted-foreground" {...props} />,
-  ol: (props: any) => <ol className="mb-3 ml-4 list-decimal space-y-1 text-sm text-muted-foreground" {...props} />,
-  li: (props: any) => <li className="leading-relaxed" {...props} />,
-  strong: (props: any) => <strong className="font-semibold text-foreground" {...props} />,
-  em: (props: any) => <em className="text-muted-foreground" {...props} />,
-  code: (props: any) => <code className="rounded-md bg-secondary/80 px-1.5 py-0.5 font-mono text-2xs text-foreground" {...props} />,
-  pre: (props: any) => <pre className="my-2 overflow-x-auto rounded-md bg-secondary/50 p-3 font-mono text-2xs" {...props} />,
+const mdComponents: Components = {
+  h1: (props) => <h1 className="mt-4 mb-2 text-lg font-bold" {...props} />,
+  h2: (props) => <h2 className="mt-4 mb-2 text-base font-semibold text-foreground" {...props} />,
+  h3: (props) => <h3 className="mt-3 mb-1.5 text-sm font-semibold text-foreground" {...props} />,
+  p: (props) => <p className="mb-2 text-sm leading-relaxed text-muted-foreground" {...props} />,
+  ul: (props) => <ul className="mb-3 ml-4 list-disc space-y-1 text-sm text-muted-foreground" {...props} />,
+  ol: (props) => <ol className="mb-3 ml-4 list-decimal space-y-1 text-sm text-muted-foreground" {...props} />,
+  li: (props) => <li className="leading-relaxed" {...props} />,
+  strong: (props) => <strong className="font-semibold text-foreground" {...props} />,
+  em: (props) => <em className="text-muted-foreground" {...props} />,
+  code: (props) => <code className="rounded-md bg-secondary/80 px-1.5 py-0.5 font-mono text-2xs text-foreground" {...props} />,
+  pre: (props) => <pre className="my-2 overflow-x-auto rounded-md bg-secondary/50 p-3 font-mono text-2xs" {...props} />,
   hr: () => <hr className="my-4 border-border/60" />,
-  a: (props: any) => <a className="text-accent underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...props} />,
-  blockquote: (props: any) => <blockquote className="my-2 border-l-2 border-border pl-3 text-sm italic text-muted-foreground" {...props} />,
-  table: (props: any) => <div className="my-2 overflow-x-auto"><table className="w-full text-xs" {...props} /></div>,
-  th: (props: any) => <th className="border-b border-border/60 px-2 py-1.5 text-left font-medium text-muted-foreground" {...props} />,
-  td: (props: any) => <td className="border-b border-border/40 px-2 py-1.5 text-muted-foreground" {...props} />,
+  a: (props) => <a className="text-accent underline underline-offset-2" target="_blank" rel="noopener noreferrer" {...props} />,
+  blockquote: (props) => <blockquote className="my-2 border-l-2 border-border pl-3 text-sm italic text-muted-foreground" {...props} />,
+  table: (props) => <div className="my-2 overflow-x-auto"><table className="w-full text-xs" {...props} /></div>,
+  th: (props) => <th className="border-b border-border/60 px-2 py-1.5 text-left font-medium text-muted-foreground" {...props} />,
+  td: (props) => <td className="border-b border-border/40 px-2 py-1.5 text-muted-foreground" {...props} />,
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ export function AutomationsPage() {
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
   const [scheduledTasks, setScheduledTasks] = useState<{ name: string; description: string }[]>([])
 
-  const fetchRuns = async () => {
+  const fetchRuns = useCallback(async () => {
     setLoading(true)
     try {
       let data: { runs: AutomationRun[] } | null = null
@@ -175,15 +175,15 @@ export function AutomationsPage() {
         if (res.ok) data = await res.json()
       } catch { /* try IPC */ }
       if (!data && window.electronAPI?.data) {
-        data = await window.electronAPI.data.read('cortex-automations') as any
+        data = await window.electronAPI.data.read('cortex-automations') as { runs: AutomationRun[] } | null
       }
       setRuns(data?.runs || [])
     } catch { /* empty */ }
     finally { setLoading(false) }
-  }
+  }, [])
 
   // Live-discover Claude scheduled-tasks from ~/.claude/scheduled-tasks/.
-  const fetchScheduledTasks = async () => {
+  const fetchScheduledTasks = useCallback(async () => {
     try {
       let list: { name: string; description: string }[] | null = null
       try {
@@ -195,11 +195,11 @@ export function AutomationsPage() {
       }
       setScheduledTasks(list || [])
     } catch { /* empty */ }
-  }
+  }, [])
 
-  const refreshAll = () => { fetchRuns(); fetchScheduledTasks() }
+  const refreshAll = useCallback(() => { void fetchRuns(); void fetchScheduledTasks() }, [fetchRuns, fetchScheduledTasks])
 
-  useEffect(() => { refreshAll() }, [])
+  useEffect(() => { refreshAll() }, [refreshAll])
 
   // Claude tasks come live from disk; non-Claude tasks stay curated. Merge
   // both into the single list the dashboard renders from.

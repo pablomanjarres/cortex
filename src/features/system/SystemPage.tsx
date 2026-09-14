@@ -143,9 +143,9 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         setStale(false)
         cpuHistory.current = [...cpuHistory.current, json.cpu?.total ?? 0].slice(-30)
         memHistory.current = [...memHistory.current, json.mem?.percent ?? 0].slice(-30)
-      } catch (e: any) {
+      } catch (e) {
         if (cancelled) return
-        setError(e?.message ?? 'fetch failed')
+        setError(e instanceof Error ? e.message : 'fetch failed')
         setStale(true)
       } finally {
         if (!cancelled) timer = setTimeout(tick, 2000)
