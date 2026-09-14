@@ -211,7 +211,7 @@ server.tool(
 
 server.tool(
   "get_habits",
-  "List all habit definitions (name, emoji, category, weekly goal)",
+  "List all habit definitions, including onHold habits saved for later",
   {},
   async () => run(() => readKey("cortex-habits"))
 );
@@ -292,6 +292,7 @@ interface HabitDef {
   weeklyGoal?: number; // days per week for 100% (weekly cadence), clamped 0–7 (0 = no target)
   monthlyGoal?: number; // days per month for 100% (monthly cadence), clamped 0–31 (0 = no target)
   context?: string; // free-form note: what the habit means + what counts as done
+  onHold?: boolean; // saved for later, excluded from active tracking
 }
 
 // Clamp a goal to the valid range for its cadence, mirroring the Habits UI.
@@ -313,8 +314,9 @@ server.tool(
     cadence: z.enum(["weekly", "monthly"]).optional().describe("Cadence, defaults to weekly"),
     goal: z.number().optional().describe("Target completions per window (per week for weekly, per month for monthly). Weekly defaults to 7, monthly to 1. 0 = no target this window (paused/optional, still trackable)."),
     context: z.string().optional().describe("Free-form note explaining what the habit really means and exactly what counts as done."),
+    onHold: z.boolean().optional().describe("Save for later without active tracking. Defaults to false."),
   },
-  async ({ name, emoji, category, cadence, goal, context }) => run(async () => {
+  async ({ name, emoji, category, cadence, goal, context, onHold }) => run(async () => {
     if (!name.trim()) throw new Error("Habit name is required.");
     const cad = cadence ?? "weekly";
     const habit: HabitDef = {
@@ -327,6 +329,7 @@ server.tool(
         ? { monthlyGoal: clampHabitGoal("monthly", goal) }
         : { weeklyGoal: clampHabitGoal("weekly", goal) }),
       ...(context && context.trim() ? { context: context.trim() } : {}),
+      ...(onHold !== undefined ? { onHold } : {}),
     };
     await mutateKey<HabitDef[]>("cortex-habits", (habits) => {
       habits.push(habit);
@@ -347,8 +350,9 @@ server.tool(
     cadence: z.enum(["weekly", "monthly"]).optional().describe("Switch cadence (weekly/monthly)"),
     goal: z.number().optional().describe("New target completions per window. 0 = no target this window (paused/optional, still trackable)."),
     context: z.string().optional().describe("Free-form note explaining what the habit means and what counts as done; empty string clears it."),
+    onHold: z.boolean().optional().describe("True to put on hold; false to activate. Keeps category, goals, notes, and history."),
   },
-  async ({ habitId, name, emoji, category, cadence, goal, context }) => run(async () => {
+  async ({ habitId, name, emoji, category, cadence, goal, context, onHold }) => run(async () => {
     let updated: HabitDef | undefined;
     await mutateKey<HabitDef[]>("cortex-habits", (habits) => {
       const idx = habits.findIndex((h) => h.id === habitId);
@@ -367,6 +371,7 @@ server.tool(
         if (context.trim()) habit.context = context.trim();
         else delete habit.context;
       }
+      if (onHold !== undefined) habit.onHold = onHold;
       // Re-normalize goal fields only when cadence or goal is provided (matches the UI's edit save).
       if (cadence !== undefined || goal !== undefined) {
         const cad = cadence ?? habit.cadence ?? "weekly";
