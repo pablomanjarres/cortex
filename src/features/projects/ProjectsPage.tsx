@@ -106,7 +106,7 @@ function daysAgo(dateStr: string): string {
 }
 
 export function ProjectsPage() {
-  const [projects, setProjects] = useState<ProjectInfo[]>([])
+  const [scannedProjects, setProjects] = useState<ProjectInfo[]>([])
   const [meta] = useStore<Record<string, ProjectMeta>>('cortex-project-meta', {})
   const [cachedProjects] = useStore<{ data: ProjectInfo[]; lastUpdated: string } | null>('cortex-cache-projects', null)
   const [loading, setLoading] = useState(false)
@@ -134,10 +134,7 @@ export function ProjectsPage() {
 
   useEffect(() => { fetchProjects() }, [])
 
-  useEffect(() => {
-    if (isElectron || !cachedProjects?.data) return
-    setProjects(cachedProjects.data)
-  }, [cachedProjects])
+  const projects = !isElectron && cachedProjects?.data ? cachedProjects.data : scannedProjects
 
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {
