@@ -586,9 +586,9 @@ export function OpportunitiesPage() {
 
   // Keep a selected region clearable even if its last opportunity expires.
   const availableRegions = useMemo(() => {
-    const present = new Set(live.map(regionOf))
+    const present = new Set((showArchived ? items : live).map(regionOf))
     return REGION_ORDER.filter((r) => present.has(r) || r === regionFilter)
-  }, [live, regionFilter])
+  }, [items, live, showArchived, regionFilter])
   const showRegionFilters = availableRegions.length > 1 || regionFilter !== null
 
   // ── KPIs (over active opportunities) ────────────────────────────────────────
