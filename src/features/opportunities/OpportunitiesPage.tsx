@@ -7,9 +7,10 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Progress } from '@/components/ui/progress'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useStore } from '@/lib/store'
-import { GrowthProjectsPanel } from './GrowthProjectsPanel'
+import { useToday } from '@/lib/use-today'
+import { daysUntilDeadline, isOpportunityActive } from './expiry'
 import {
   Search,
   Plus,
@@ -323,12 +324,7 @@ const kindGroupFor = (c: OpportunityCategory): KindGroup => {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDate(d: string | null) {
-  return d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
-}
-function daysUntil(d: string | null): number | null {
-  if (!d) return null
-  const ms = new Date(d).getTime() - Date.now()
-  return Math.ceil(ms / 86_400_000)
+  return d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
 }
 /** Was this item discovered within the last 7 days? (drives the "New this week" KPI) */
 function isNewThisWeek(o: Opportunity): boolean {
@@ -375,11 +371,11 @@ const SECTION_META: Record<SectionKey, { title: string; tone: string; dim?: bool
 }
 const SECTION_ORDER: SectionKey[] = ['week', 'month', 'later', 'rolling', 'upcoming', 'nodate', 'closed']
 
-function sectionOf(o: Opportunity): SectionKey {
+function sectionOf(o: Opportunity, today: string): SectionKey {
   const dt = deadlineTypeOf(o)
   if (dt === 'rolling' || dt === 'always-open') return 'rolling'
   if (o.deadline) {
-    const d = daysUntil(o.deadline)
+    const d = daysUntilDeadline(o.deadline, today)
     if (d !== null) {
       if (d < 0) {
         // A recurring program whose cycle closed >7d ago isn't "closed" —
@@ -414,12 +410,12 @@ function sectionSort(key: SectionKey, a: Opportunity, b: Opportunity): number {
 }
 
 /** Countdown chip content for a row (mono, semantic tone by urgency). */
-function countdownOf(o: Opportunity): { text: string; variant: ChipVariant; outline?: boolean; title?: string } {
+function countdownOf(o: Opportunity, today: string): { text: string; variant: ChipVariant; outline?: boolean; title?: string } {
   const dt = deadlineTypeOf(o)
   if (dt === 'rolling') return { text: 'rolling', variant: 'accent', outline: true }
   if (dt === 'always-open') return { text: 'always open', variant: 'accent', outline: true }
   if (o.deadline) {
-    const d = daysUntil(o.deadline)
+    const d = daysUntilDeadline(o.deadline, today)
     if (d !== null) {
       if (d < 0) return { text: `closed ${fmtDate(o.deadline)}`, variant: 'neutral' }
       if (d <= 7) return { text: `D-${d}`, variant: 'danger', title: fmtDate(o.deadline) }
@@ -477,7 +473,9 @@ const selectCls =
 
 export function OpportunitiesPage() {
   const [data, updateData] = useStore<OppData>('cortex-opportunities', DEFAULT_DATA)
+  const today = useToday()
   const items = useMemo(() => data.items || [], [data.items])
+  const live = useMemo(() => items.filter((o) => isOpportunityActive(o, today)), [items, today])
 
   const [search, setSearch] = useState('')
   const [kindGroup, setKindGroup] = useState<KindGroup>('all')
@@ -561,8 +559,7 @@ export function OpportunitiesPage() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
     const groupCats = kindGroup === 'all' ? null : KIND_GROUPS[kindGroup].categories
-    return items.filter((o) =>
-      (showArchived || o.status !== 'archived') &&
+    return (showArchived ? items : live).filter((o) =>
       (!groupCats || groupCats.includes(o.category) || (kindGroup === 'other' && !categoryConfig[o.category])) &&
       (!catFilter || o.category === catFilter) &&
       (!modalityFilter || modalityOf(o) === modalityFilter) &&
@@ -573,36 +570,36 @@ export function OpportunitiesPage() {
         o.notes.toLowerCase().includes(q) || o.location.toLowerCase().includes(q) ||
         (o.tags || []).some((t) => t.toLowerCase().includes(q)))
     )
-  }, [items, search, kindGroup, catFilter, modalityFilter, statusFilter, regionFilter, thisRunOnly, showArchived, data.lastRunId])
+  }, [items, live, search, kindGroup, catFilter, modalityFilter, statusFilter, regionFilter, thisRunOnly, showArchived, data.lastRunId])
 
   const sections = useMemo(() => {
     const buckets = new Map<SectionKey, Opportunity[]>()
     for (const o of filtered) {
-      const k = sectionOf(o)
+      const k = sectionOf(o, today)
       if (!buckets.has(k)) buckets.set(k, [])
       buckets.get(k)!.push(o)
     }
     return SECTION_ORDER
       .filter((k) => buckets.has(k))
       .map((k) => ({ key: k, ...SECTION_META[k], items: buckets.get(k)!.sort((a, b) => sectionSort(k, a, b)) }))
-  }, [filtered])
+  }, [filtered, today])
 
-  // Regions actually present in the data — drives the geography chip row (no empty chips).
+  // Keep a selected region clearable even if its last opportunity expires.
   const availableRegions = useMemo(() => {
-    const present = new Set(items.map(regionOf))
-    return REGION_ORDER.filter((r) => present.has(r))
-  }, [items])
+    const present = new Set(live.map(regionOf))
+    return REGION_ORDER.filter((r) => present.has(r) || r === regionFilter)
+  }, [live, regionFilter])
+  const showRegionFilters = availableRegions.length > 1 || regionFilter !== null
 
-  // ── KPIs (over non-archived) ────────────────────────────────────────────────
-  const live = items.filter((o) => o.status !== 'archived')
+  // ── KPIs (over active opportunities) ────────────────────────────────────────
   const openCount = live.filter((o) => o.status === 'new' || o.status === 'pursuing').length
-  const closingWeek = live.filter((o) => sectionOf(o) === 'week').length
+  const closingWeek = live.filter((o) => sectionOf(o, today) === 'week').length
   const rollingCount = live.filter((o) => {
     const dt = deadlineTypeOf(o)
     return dt === 'rolling' || dt === 'always-open'
   }).length
   const newThisWeek = live.filter(isNewThisWeek).length
-  const thisRunCount = data.lastRunId ? items.filter((o) => o.runId === data.lastRunId).length : 0
+  const thisRunCount = data.lastRunId ? live.filter((o) => o.runId === data.lastRunId).length : 0
 
   // TOP PICKS — deadline-aware leverage ranking:
   //   score = priorityWeight × leverageScore × urgencyBoost
@@ -612,29 +609,21 @@ export function OpportunitiesPage() {
   //   Overdue items are excluded entirely; ties break toward the sooner deadline.
   const topPicks = useMemo(() => {
     const weight = { high: 3, medium: 2, low: 1 } as const
-    const scored = items
+    const scored = live
       .filter((o) => o.status === 'new' || o.status === 'pursuing')
       .map((o) => {
-        const d = o.deadline ? daysUntil(o.deadline) : null
-        if (d !== null && d < 0 && !o.rolling) return null // overdue — never a pick
+        const dt = deadlineTypeOf(o)
+        const d = dt === 'rolling' || dt === 'always-open' ? null : daysUntilDeadline(o.deadline, today)
         const boost = d !== null && d >= 0 ? (d <= 7 ? 2 : d <= 14 ? 1.5 : 1) : 1
         const score = (weight[o.priority] ?? 2) * o.leverageScore * boost
         return { o, score, d }
       })
-      .filter((x): x is { o: Opportunity; score: number; d: number | null } => x !== null)
     scored.sort((a, b) => (b.score - a.score) || ((a.d ?? Infinity) - (b.d ?? Infinity)))
     return scored.slice(0, 5).map((x) => x.o)
-  }, [items])
+  }, [live, today])
 
   return (
     <PageShell>
-      <Tabs defaultValue="radar">
-        <TabsList>
-          <TabsTrigger value="radar">Radar</TabsTrigger>
-          <TabsTrigger value="growth">Fastest growing</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="radar">
           <div className="flex flex-col gap-6">
             {/* KPI row */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -662,7 +651,7 @@ export function OpportunitiesPage() {
                       <p className="mb-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Top picks</p>
                       <div className="flex flex-col gap-1">
                         {topPicks.map((o, i) => {
-                          const cd = countdownOf(o)
+                          const cd = countdownOf(o, today)
                           return (
                             <div
                               key={o.id}
@@ -697,7 +686,7 @@ export function OpportunitiesPage() {
                 {objectives.length > 0 && (
                   <div className="flex flex-col gap-2.5">
                     {objectives.map((obj) => {
-                      const found = obj.parsed ? items.filter((o) => objectiveMatches(o, obj.parsed)).length : 0
+                      const found = obj.parsed ? live.filter((o) => objectiveMatches(o, obj.parsed)).length : 0
                       const target = obj.parsed?.targetCount ?? null
                       const pct = target ? Math.min(100, Math.round((found / target) * 100)) : 0
                       const chips: string[] = []
@@ -789,7 +778,7 @@ export function OpportunitiesPage() {
                 {data.lastRunId && (
                   <Chip selectable selected={thisRunOnly} onClick={() => setThisRunOnly((v) => !v)}>This run</Chip>
                 )}
-                <Chip selectable selected={showArchived} onClick={() => setShowArchived((v) => !v)}>Show archived</Chip>
+                <Chip selectable selected={showArchived} onClick={() => setShowArchived((v) => !v)}>Show archived / expired</Chip>
                 <div className="ml-auto flex items-center gap-2">
                   <Button
                     variant="secondary"
@@ -841,8 +830,8 @@ export function OpportunitiesPage() {
                     {modalityConfig[m].label}
                   </Chip>
                 ))}
-                {availableRegions.length > 1 && <span aria-hidden className="mx-1 h-3.5 w-px bg-border" />}
-                {availableRegions.length > 1 && availableRegions.map((r) => (
+                {showRegionFilters && <span aria-hidden className="mx-1 h-3.5 w-px bg-border" />}
+                {showRegionFilters && availableRegions.map((r) => (
                   <Chip key={r} selectable selected={regionFilter === r} onClick={() => setRegionFilter(regionFilter === r ? null : r)}>
                     {regionConfig[r].label}
                   </Chip>
@@ -853,8 +842,8 @@ export function OpportunitiesPage() {
             {/* Urgency-grouped list — the core deadline-intelligence view */}
             {filtered.length === 0 ? (
               <EmptyState
-                message={items.length === 0 ? 'The radar hasn’t surfaced anything yet.' : 'Nothing matches these filters.'}
-                hint={items.length === 0 ? 'It fills weekly — or add one yourself.' : 'Loosen a chip or two.'}
+                message={items.length === 0 ? 'The radar hasn’t surfaced anything yet.' : !showArchived && live.length === 0 ? 'No active opportunities.' : 'Nothing matches these filters.'}
+                hint={items.length === 0 ? 'It fills weekly — or add one yourself.' : !showArchived && live.length === 0 ? 'Use “Show archived / expired” to view past opportunities.' : 'Loosen a chip or two.'}
                 action={items.length === 0 ? <Button variant="secondary" size="sm" onClick={addOpp}><Plus /> Add opportunity</Button> : undefined}
               />
             ) : (
@@ -871,6 +860,7 @@ export function OpportunitiesPage() {
                           <OppRow
                             key={o.id}
                             o={o}
+                            today={today}
                             expanded={expanded === o.id}
                             onToggle={() => setExpanded(expanded === o.id ? null : o.id)}
                             setField={setField}
@@ -885,27 +875,22 @@ export function OpportunitiesPage() {
               </div>
             )}
           </div>
-        </TabsContent>
-
-        <TabsContent value="growth">
-          <GrowthProjectsPanel />
-        </TabsContent>
-      </Tabs>
     </PageShell>
   )
 }
 
 // ── Row (desktop) / stacked card (mobile) ────────────────────────────────────
 
-function OppRow({ o, expanded, onToggle, setField, toggleGoal, onDelete }: {
+function OppRow({ o, today, expanded, onToggle, setField, toggleGoal, onDelete }: {
   o: Opportunity
+  today: string
   expanded: boolean
   onToggle: () => void
   setField: (id: string, f: Partial<Opportunity>) => void
   toggleGoal: (id: string, g: Goal) => void
   onDelete: () => void
 }) {
-  const cd = countdownOf(o)
+  const cd = countdownOf(o, today)
   return (
     <div>
       <div
