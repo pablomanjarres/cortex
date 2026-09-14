@@ -48,7 +48,8 @@ const DAILY_FILE_RETENTION_DAYS = 90 // StatsPage reads 90 days back
 
 // ─── Tray live data (events, sprint, habits) ─────────────
 let cachedEvents: { title: string; startTime: string; endTime: string; isAllDay: boolean }[] = []
-let cachedHabits: { id: string; name: string; emoji: string }[] = []
+type TrayHabit = { id: string; name: string; emoji: string; onHold?: boolean }
+let cachedHabits: TrayHabit[] = []
 let cachedHabitHistory: Record<string, boolean> = {}
 let traySprintEndMs: number | null = null
 let traySprintTask: string | null = null
@@ -132,7 +133,8 @@ function showAndNavigate(route: string) {
 async function refreshTrayData() {
   try { cachedEvents = await getTodayEvents() } catch { cachedEvents = [] }
   try {
-    cachedHabits = await readDataKeyParsed<{ id: string; name: string; emoji: string }[]>('cortex-habits', [])
+    const habits = await readDataKeyParsed<TrayHabit[]>('cortex-habits', [])
+    cachedHabits = habits.filter((habit) => habit.onHold !== true)
   } catch { cachedHabits = [] }
   try {
     const today = localDate()
