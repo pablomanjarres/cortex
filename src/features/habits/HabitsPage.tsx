@@ -8,7 +8,8 @@ import { StatTile } from '@/components/shared/StatTile'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
-import { Flame, Trophy, Plus, X, Pencil, Check, ChevronLeft, ChevronRight, StickyNote } from 'lucide-react'
+import { HabitNoteButton, HabitNoteEditor } from './HabitNotes'
+import { Flame, Trophy, Plus, X, Pencil, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 
 type Cadence = 'weekly' | 'monthly'
 
@@ -247,46 +248,6 @@ export function HabitsPage() {
   const setHabitContext = (id: string, value: string) =>
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, context: value.trim() ? value : undefined } : h)))
 
-  // Small sticky-note toggle shown next to a habit name. Lit when the habit has
-  // context, faint-on-hover when empty.
-  const renderNoteButton = (habit: Habit, opts?: { mobile?: boolean }) => (
-    <Button
-      variant="ghost"
-      size={opts?.mobile ? 'icon-sm' : 'icon-xs'}
-      onClick={() => toggleNote(habit.id)}
-      title={habit.context ? 'Context — click to edit' : 'Add context'}
-      aria-label={habit.context ? 'Edit habit context' : 'Add habit context'}
-      className={cn(
-        expandedNoteId === habit.id
-          ? 'text-foreground'
-          : habit.context
-            ? 'text-warning/80 hover:text-warning'
-            : opts?.mobile
-              ? 'text-foreground-faint'
-              : 'text-foreground-faint opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
-      )}
-    >
-      <StickyNote />
-    </Button>
-  )
-
-  // The inline panel to write "what this habit means / what has to be done".
-  const renderNoteEditor = (habit: Habit) => (
-    <div className="rounded-md border border-border/60 bg-secondary/30 p-3">
-      <div className="mb-1.5 flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
-        <StickyNote className="h-3 w-3" />
-        What this means · what counts as done
-      </div>
-      <textarea
-        value={habit.context ?? ''}
-        onChange={(e) => setHabitContext(habit.id, e.target.value)}
-        autoFocus
-        placeholder="Write the full meaning of this habit and exactly what has to be done to check it off…"
-        className="min-h-[72px] w-full resize-y rounded-md border border-input bg-input/20 px-2.5 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors duration-150 placeholder:text-foreground-faint focus-visible:border-ring/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-      />
-    </div>
-  )
-
   const getStreak = (habitId: string) => {
     let streak = 0
     const today = new Date()
@@ -374,7 +335,7 @@ export function HabitsPage() {
         ) : (
           <span className="inline-flex items-center">
             <span className="mr-2">{habit.emoji}</span>{habit.name}
-            {renderNoteButton(habit)}
+            <HabitNoteButton habit={habit} expanded={expandedNoteId === habit.id} onToggle={() => toggleNote(habit.id)} />
           </span>
         )}
       </td>
@@ -433,7 +394,7 @@ export function HabitsPage() {
     {expandedNoteId === habit.id && (
       <tr>
         <td colSpan={weekDays.length + 3} className="px-0 pb-3 pt-0">
-          {renderNoteEditor(habit)}
+          <HabitNoteEditor habit={habit} onChange={(value) => setHabitContext(habit.id, value)} />
         </td>
       </tr>
     )}
@@ -522,7 +483,7 @@ export function HabitsPage() {
                         {Math.min(done, goal)}/{goal}
                         {cadence === 'monthly' && <span className="ml-0.5 text-3xs font-normal text-foreground-faint">/mo</span>}
                       </span>
-                      {renderNoteButton(habit, { mobile: true })}
+                      <HabitNoteButton habit={habit} expanded={expandedNoteId === habit.id} onToggle={() => toggleNote(habit.id)} mobile />
                       <Button variant="ghost" size="icon-sm" onClick={() => startEdit(habit)} aria-label="Edit habit">
                         <Pencil />
                       </Button>
@@ -561,7 +522,7 @@ export function HabitsPage() {
                     })}
                   </div>
                   {expandedNoteId === habit.id && (
-                    <div className="mt-3">{renderNoteEditor(habit)}</div>
+                    <div className="mt-3"><HabitNoteEditor habit={habit} onChange={(value) => setHabitContext(habit.id, value)} /></div>
                   )}
                 </>
               )}
