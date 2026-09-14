@@ -51,30 +51,39 @@ function GymPageDay({ today }: { today: string }) {
 
   // Load this week's sessions (flat list across all days)
   const [weekSessions, setWeekSessions] = useState<WorkoutSession[]>([])
-  const weekDates = getWeekDates(today)
+  const weekDates = useMemo(() => getWeekDates(today), [today])
 
   useEffect(() => {
+    let cancelled = false
     Promise.all(
       weekDates.map(d => readStore<unknown>(`cortex-gym-session-${d}`, null))
     ).then(results => {
+      if (cancelled) return
       const all: WorkoutSession[] = []
       for (const r of results) all.push(...normalizeSessions(r))
       setWeekSessions(all)
     })
-  }, [todaySessions])
+    return () => { cancelled = true }
+  }, [todaySessions, weekDates])
 
   // Load previous session for the same workout day (for reference weights)
-  const [previousSession, setPreviousSession] = useState<WorkoutSession | null>(null)
+  const [loadedPreviousSession, setPreviousSession] = useState<WorkoutSession | null>(null)
+  const activeWorkoutDayId = activeWorkout?.workoutDayId
+  const previousSession = loadedPreviousSession?.workoutDayId === activeWorkoutDayId
+    ? loadedPreviousSession
+    : null
 
   useEffect(() => {
-    if (!activeWorkout) { setPreviousSession(null); return }
+    if (!activeWorkoutDayId) return
+    let cancelled = false
     const loadPrevious = async () => {
-      const d = new Date()
+      const d = new Date(`${today}T00:00:00`)
       for (let i = 1; i <= 60; i++) {
         d.setDate(d.getDate() - 1)
         const dateStr = localDate(d)
         const raw = await readStore<unknown>(`cortex-gym-session-${dateStr}`, null)
-        const match = normalizeSessions(raw).find(s => s.workoutDayId === activeWorkout.workoutDayId)
+        if (cancelled) return
+        const match = normalizeSessions(raw).find(s => s.workoutDayId === activeWorkoutDayId)
         if (match) {
           setPreviousSession(match)
           return
@@ -82,8 +91,9 @@ function GymPageDay({ today }: { today: string }) {
       }
       setPreviousSession(null)
     }
-    loadPrevious()
-  }, [activeWorkout?.workoutDayId])
+    void loadPrevious()
+    return () => { cancelled = true }
+  }, [activeWorkoutDayId, today])
 
   const startWorkout = (dayId: string) => {
     const plan = plans.find(p => p.id === dayId)
