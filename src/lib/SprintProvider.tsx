@@ -1,53 +1,8 @@
-import { createContext, useContext, useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { useStore, readStore, writeStore } from './store'
 import { localDate } from './date-utils'
 import { useToday } from './use-today'
-
-// ─── Types ───────────────────────────────────────────────
-
-export interface SprintSession {
-  id: string
-  task: string
-  duration: number       // minutes
-  startedAt: string      // ISO
-  completedAt: string    // ISO
-}
-
-interface PersistedSprint {
-  task: string
-  startedAt: string      // ISO — when the sprint was first started
-  endTimeMs: number       // absolute timestamp when timer reaches 0
-  duration: number        // original duration in minutes
-  isPaused: boolean
-  pausedTimeLeft: number  // seconds remaining when paused
-}
-
-interface SprintContextValue {
-  isRunning: boolean
-  isPaused: boolean
-  timeLeft: number        // seconds
-  task: string
-  duration: number        // minutes
-  sessions: SprintSession[]
-  sessionCount: number
-  totalDeepWorkMin: number
-  setTask: (task: string) => void
-  setDuration: (minutes: number) => void
-  start: () => void
-  pause: () => void
-  resume: () => void
-  reset: () => void
-}
-
-// ─── Context ─────────────────────────────────────────────
-
-const SprintContext = createContext<SprintContextValue | null>(null)
-
-export function useSprintTimer() {
-  const ctx = useContext(SprintContext)
-  if (!ctx) throw new Error('useSprintTimer must be used within SprintProvider')
-  return ctx
-}
+import { SprintContext, type PersistedSprint, type SprintSession } from './sprint-state'
 
 // ─── Tray sync helper ────────────────────────────────────
 
@@ -86,7 +41,7 @@ export function SprintProvider({ children }: { children: ReactNode }) {
 
   const [sprint, setSprintState] = useState<PersistedSprint | null>(null)
   const [timeLeft, setTimeLeft] = useState(25 * 60)
-  const [task, setTask] = useState('')
+  const [task, setTaskState] = useState('')
   const [duration, setDurationVal] = useState(25)
 
   const sprintRef = useRef<PersistedSprint | null>(null)
@@ -96,10 +51,11 @@ export function SprintProvider({ children }: { children: ReactNode }) {
   const initRef = useRef(false)
   const lastWriteRef = useRef(0) // timestamp of last local write (skip remote polls during cooldown)
 
-  // Keep refs in sync
-  sprintRef.current = sprint
-  durationRef.current = duration
-  taskRef.current = task
+  // Update imperative actions synchronously without mutating refs during render.
+  const setTask = useCallback((value: string) => {
+    taskRef.current = value
+    setTaskState(value)
+  }, [])
 
   // Central commit: updates ref + state + store + tray
   const commitSprint = useCallback((s: PersistedSprint | null) => {
@@ -147,7 +103,7 @@ export function SprintProvider({ children }: { children: ReactNode }) {
         }
       }
     })
-  }, [])
+  }, [logSession, setTask])
 
   // ─── Cross-device sync (poll for remote changes) ───────
   useEffect(() => {
@@ -186,7 +142,7 @@ export function SprintProvider({ children }: { children: ReactNode }) {
     const onVis = () => { if (document.visibilityState === 'visible') poll() }
     document.addEventListener('visibilitychange', onVis)
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVis) }
-  }, [])
+  }, [setTask])
 
   // ─── Timer tick ────────────────────────────────────────
   useEffect(() => {
@@ -219,7 +175,7 @@ export function SprintProvider({ children }: { children: ReactNode }) {
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [sprint?.endTimeMs, sprint?.isPaused])
+  }, [sprint, commitSprint, logSession])
 
   // ─── Listen for tray actions (start/stop from menu bar) ─
   useEffect(() => {
@@ -230,7 +186,6 @@ export function SprintProvider({ children }: { children: ReactNode }) {
         setDurationVal(dur)
         durationRef.current = dur
         setTask('Sprint Session')
-        taskRef.current = 'Sprint Session'
         const now = new Date()
         const state: PersistedSprint = {
           task: 'Sprint Session',
@@ -268,7 +223,7 @@ export function SprintProvider({ children }: { children: ReactNode }) {
         syncTray(null)
       }
     })
-  }, [])
+  }, [logSession, setTask])
 
   // ─── Actions ───────────────────────────────────────────
 
