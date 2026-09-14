@@ -60,7 +60,7 @@ Cortex is one Electron plus React app with a standalone MCP package and a set of
 | `electron/` | Main process: window, tray, the `:3456` web server, `crypto.ts` (AES-256-GCM), `calendar.ts` (Swift + EventKit), `keychain.ts`, and the context-isolated `preload.ts` |
 | `electron/integrations/` | One file per source: `github.ts`, `lemon.ts`, `vercel.ts`, `supabase.ts`, `mars.ts` (Obsidian vault) |
 | `mcp-server/` | Standalone npm package `cortex-mcp-server`: 78 tools in 19 groups over the localhost API, stdio or `--http` |
-| `scripts/` | Opportunity Radar (`radar-*.mjs`, `opportunity-radar-weekly.sh`, launchd `*.plist` files), the program catalog + seeder (`program-catalog.json`, `radar-seed-programs.mjs`), and `growth-fetch.mjs` for the fastest-growing-repos tab |
+| `scripts/` | Opportunity Radar (`radar-*.mjs`, `opportunity-radar-weekly.sh`, launchd `*.plist` files), and the program catalog + seeder (`program-catalog.json`, `radar-seed-programs.mjs`) |
 | `public/` | PWA shell: `manifest.webmanifest`, `sw.js` service worker, and app icons |
 
 The 20 feature modules under `src/features`, grouped:

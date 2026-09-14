@@ -118,54 +118,8 @@ async function objTick() {
   finally { objBusy = false }
 }
 
-// Fastest-growing-projects run: the UI "Run" button (and the weekly launchd timer) drive a
-// deterministic GitHub scan via growth-fetch.mjs. Same requested→running→done/error contract
-// as the radar run, on its own store key + guard.
-const GROWTH_KEY = "cortex-growth-projects"
-const GROWTH_SCRIPT = "/Users/pablo/projects/cortex/scripts/growth-fetch.mjs"
-
-async function getGrowth() {
-  return (await getStoreWithRev(GROWTH_KEY)).data
-}
-async function patchGrowth(fields) {
-  await postPatch(GROWTH_KEY, { repos: [], lastRefresh: null }, fields)
-}
-function runGrowth() {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, [GROWTH_SCRIPT, "--limit", "120"], { stdio: "ignore" })
-    const timer = setTimeout(() => { try { child.kill("SIGKILL") } catch {} }, RUN_TIMEOUT_MS)
-    child.on("exit", (code) => { clearTimeout(timer); resolve(code ?? 1) })
-    child.on("error", () => { clearTimeout(timer); resolve(1) })
-  })
-}
-let growthBusy = false
-async function growthTick() {
-  if (growthBusy) return
-  const store = await getGrowth()
-  if (!store) return
-  if (store.runStatus === "running" && store.runStartedAt &&
-      Date.now() - new Date(store.runStartedAt).getTime() > STALE_MS) {
-    await patchGrowth({ runStatus: "error", runError: "run interrupted (watcher restarted)", runFinishedAt: new Date().toISOString() })
-    return
-  }
-  if (store.runStatus !== "requested") return
-  growthBusy = true
-  try {
-    await patchGrowth({ runStatus: "running", runStartedAt: new Date().toISOString(), runError: undefined })
-    const code = await runGrowth()
-    if (code === 0) await patchGrowth({ runStatus: "done", runFinishedAt: new Date().toISOString() })
-    else await patchGrowth({ runStatus: "error", runError: `growth-fetch exit ${code}`, runFinishedAt: new Date().toISOString() })
-  } catch (e) {
-    await patchGrowth({ runStatus: "error", runError: String(e?.message ?? e), runFinishedAt: new Date().toISOString() })
-  } finally {
-    growthBusy = false
-  }
-}
-
 console.error(`[radar-control] watching ${API} every ${POLL_MS}ms`)
 setInterval(() => { tick().catch(() => {}) }, POLL_MS)
 setInterval(() => { objTick().catch(() => {}) }, POLL_MS)
-setInterval(() => { growthTick().catch(() => {}) }, POLL_MS)
 tick().catch(() => {})
 objTick().catch(() => {})
-growthTick().catch(() => {})
