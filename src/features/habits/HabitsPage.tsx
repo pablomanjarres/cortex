@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { useStore } from '@/lib/store'
+import { isActiveHabit, type Habit, type Cadence } from '@/lib/habits'
 import { localDate, getWeekLabel } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
 import { PageShell } from '@/components/shared/PageShell'
@@ -10,19 +11,6 @@ import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
 import { HabitNoteButton, HabitNoteEditor } from './HabitNotes'
 import { Flame, Trophy, Plus, X, Pencil, Check, ChevronLeft, ChevronRight } from 'lucide-react'
-
-type Cadence = 'weekly' | 'monthly'
-
-interface Habit {
-  id: string
-  name: string
-  emoji: string
-  weeklyGoal?: number // days per week needed for 100% (0–7), defaults to 7; 0 = no target this week
-  monthlyGoal?: number // days per month needed for 100% (0–31), defaults to 1; 0 = no target this month
-  cadence?: Cadence // defaults to 'weekly'
-  category?: string
-  context?: string // free-form note: what this habit really means + what counts as done
-}
 
 const OLD_DEFAULT_IDS = ['1', '2', '3', '4', '5', '6', '7']
 
@@ -161,9 +149,11 @@ export function HabitsPage() {
     }
   }, [habits])
 
+  const activeHabits = habits.filter(isActiveHabit)
+
   // Group habits by category for rendering
-  const categories = [...new Set(habits.map(h => h.category).filter(Boolean))] as string[]
-  const uncategorized = habits.filter(h => !h.category)
+  const categories = [...new Set(activeHabits.map(h => h.category).filter(Boolean))] as string[]
+  const uncategorized = activeHabits.filter(h => !h.category)
 
   const toggle = (habitId: string, dayIndex: number) => {
     const date = weekDates[dayIndex]
@@ -300,7 +290,7 @@ export function HabitsPage() {
   // Monthly habits are tracked over the month, so they're excluded from the weekly rollup.
   // Habits with a 0 goal are "not required this week" — excluded so they neither
   // inflate the score (as a free 100%) nor divide by zero.
-  const weeklyHabits = habits.filter(h => (h.cadence ?? 'weekly') === 'weekly')
+  const weeklyHabits = activeHabits.filter(h => (h.cadence ?? 'weekly') === 'weekly')
   const scoredWeeklyHabits = weeklyHabits.filter(h => (h.weeklyGoal ?? 7) > 0)
   const habitWeekProgress = scoredWeeklyHabits.map((h) => {
     const goal = h.weeklyGoal ?? 7
@@ -431,7 +421,7 @@ export function HabitsPage() {
       {/* ── Mobile: card layout ───────────────────────────────────── */}
       <div className="flex flex-col gap-3 md:hidden">
         {[...categories, null].map((cat) => {
-          const catHabits = cat ? habits.filter(h => h.category === cat) : uncategorized
+          const catHabits = cat ? activeHabits.filter(h => h.category === cat) : uncategorized
           if (catHabits.length === 0) return null
           return (
             <div key={cat || 'none'} className="space-y-3">
@@ -576,7 +566,7 @@ export function HabitsPage() {
             </thead>
             <tbody>
               {categories.map((cat) => {
-                const catHabits = habits.filter(h => h.category === cat)
+                const catHabits = activeHabits.filter(h => h.category === cat)
                 if (catHabits.length === 0) return null
                 return [
                   <tr key={`cat-${cat}`}>
@@ -625,7 +615,7 @@ export function HabitsPage() {
 
           <WidgetCard title="Streaks" delay={0.2}>
             <div className="flex flex-col gap-2">
-              {habits.map((habit) => {
+              {activeHabits.map((habit) => {
                 const { cadence, goal } = getProgress(habit)
                 const unit = cadence === 'monthly' ? 'mo' : 'd'
                 const label = cadence === 'monthly' ? `${goal}x/mo` : (goal < 7 ? `${goal}x/wk` : null)
