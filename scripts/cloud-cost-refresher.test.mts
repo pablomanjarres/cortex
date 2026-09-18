@@ -100,6 +100,25 @@ test('automaticRefreshDelayMs is due immediately when a configured source change
   assert.equal(automaticRefreshDelayMs(previous, settings, now), 0)
 })
 
+test('automaticRefreshDelayMs waits six hours after a failed paid API attempt', () => {
+  const failed = {
+    ...previous,
+    sources: {
+      ...previous.sources,
+      aws: {
+        ...previous.sources.aws,
+        ok: false,
+        fetchedAt: '2026-09-01T10:00:00.000Z',
+        attemptedAt: '2026-09-01T17:00:00.000Z',
+        error: 'Access denied. Grant read-only billing permissions.',
+      },
+    },
+  } as const
+  const settings = { awsProfile: 'default', gcpBillingTable: '', gcpQueryProject: '', monthlyBudgetUsd: 0 }
+  const now = Date.parse('2026-09-01T17:30:00.000Z')
+  assert.equal(automaticRefreshDelayMs(failed, settings, now), 5.5 * 60 * 60 * 1000)
+})
+
 test('safeCloudCostError never returns credential material', () => {
   const error = Object.assign(new Error('AKIA1234567890ABCDEF secret=very-private AccessDenied'), { name: 'AccessDeniedException' })
   const safe = safeCloudCostError(error)
