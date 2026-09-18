@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Progress } from '@/components/ui/progress'
 import { useStore } from '@/lib/store'
-import { useToday } from '@/lib/use-today'
+import { useUtcToday } from '@/lib/use-today'
 import {
   cloudCostSummary,
   dailyCumulativeSeries,
@@ -35,18 +35,20 @@ const PROVIDERS: Array<{ value: CloudProviderFilter; label: string }> = [
   { value: 'gcp', label: 'GCP' },
 ]
 
-function SourceChip({ provider, configured, status }: {
+function SourceChip({ provider, sourceId, status }: {
   provider: CloudProvider
-  configured: boolean
+  sourceId: string
   status: CloudCostSourceStatus
 }) {
-  const variant = status.ok ? 'success' : configured ? 'warning' : 'neutral'
-  const label = status.ok ? 'Live' : configured ? 'Needs refresh' : 'Off'
+  const configured = sourceId.trim().length > 0
+  const live = status.ok && status.sourceId === sourceId.trim()
+  const variant = live ? 'success' : configured ? 'warning' : 'neutral'
+  const label = live ? 'Live' : configured ? 'Needs refresh' : 'Off'
   return <Chip variant={variant} size="sm">{provider.toUpperCase()} · {label}</Chip>
 }
 
 export function CloudCostsPage() {
-  const today = useToday()
+  const today = useUtcToday()
   const now = useMemo(() => new Date(`${today}T12:00:00Z`), [today])
   const [cache] = useStore('cortex-cloud-costs', EMPTY_CLOUD_COST_CACHE)
   const [settings, updateSettings] = useStore('cortex-cloud-cost-settings', DEFAULT_CLOUD_COST_SETTINGS)
@@ -72,7 +74,7 @@ export function CloudCostsPage() {
   const refresh = async () => {
     if (!window.electronAPI?.cloudCosts || refreshing) return
     setRefreshing(true)
-    try { await window.electronAPI.cloudCosts.refresh() } finally { setRefreshing(false) }
+    try { await window.electronAPI.cloudCosts.refresh(settings) } finally { setRefreshing(false) }
   }
 
   const errors = (['aws', 'gcp'] as CloudProvider[])
@@ -100,8 +102,8 @@ export function CloudCostsPage() {
           </Chip>
         ))}
         <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-        <SourceChip provider="aws" configured={Boolean(settings.awsProfile.trim())} status={cache.sources.aws} />
-        <SourceChip provider="gcp" configured={Boolean(settings.gcpBillingTable.trim())} status={cache.sources.gcp} />
+        <SourceChip provider="aws" sourceId={settings.awsProfile} status={cache.sources.aws} />
+        <SourceChip provider="gcp" sourceId={settings.gcpBillingTable} status={cache.sources.gcp} />
         {cache.fetchedAt ? (
           <span className="ml-auto font-mono text-2xs text-foreground-faint">
             Updated {new Date(cache.fetchedAt).toLocaleString()}

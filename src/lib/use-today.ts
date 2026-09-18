@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { localDate } from './date-utils'
+import { localDate, utcDate } from './date-utils'
 
 /**
  * Reactive "today" — returns the local YYYY-MM-DD string and keeps it fresh
@@ -47,6 +47,46 @@ export function useToday(): string {
     window.addEventListener('focus', onWake)
     document.addEventListener('visibilitychange', onVisibility)
 
+    return () => {
+      if (timer) clearTimeout(timer)
+      window.removeEventListener('focus', onWake)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
+  return today
+}
+
+/** Reactive UTC day for provider data whose date boundary is UTC. */
+export function useUtcToday(): string {
+  const [today, setToday] = useState(() => utcDate())
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const refresh = () => setToday((previous) => {
+      const next = utcDate()
+      return previous === next ? previous : next
+    })
+    const arm = () => {
+      if (timer) clearTimeout(timer)
+      const now = new Date()
+      const nextMidnightUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+      timer = setTimeout(() => {
+        refresh()
+        arm()
+      }, nextMidnightUtc - now.getTime() + 1000)
+    }
+    const onWake = () => {
+      refresh()
+      arm()
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') onWake()
+    }
+
+    arm()
+    window.addEventListener('focus', onWake)
+    document.addEventListener('visibilitychange', onVisibility)
     return () => {
       if (timer) clearTimeout(timer)
       window.removeEventListener('focus', onWake)

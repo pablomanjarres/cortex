@@ -36,7 +36,7 @@ export function topServices(
   const total = sorted.reduce((sum, [, amount]) => sum + amount, 0)
   const visible = sorted.slice(0, 5)
   const remaining = sorted.slice(5).reduce((sum, [, amount]) => sum + amount, 0)
-  if (remaining > 0) visible.push(['Other', remaining])
+  if (sorted.length > 5) visible.push(['Other', remaining])
   return visible.map(([name, amount]) => ({
     name,
     amount: roundMoney(amount),

@@ -9,6 +9,7 @@ import type {
   CloudProvider,
 } from './cloud-cost-types.js'
 import {
+  automaticRefreshDelayMs,
   billingWindow,
   isProviderConfigured,
   mergeProviderResults,
@@ -21,9 +22,7 @@ import { fetchGcpCosts } from './integrations/gcp-costs.js'
 
 const CACHE_KEY = 'cortex-cloud-costs'
 const SETTINGS_KEY = 'cortex-cloud-cost-settings'
-const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000
 const JITTER_MS = 10 * 60 * 1000
-const RESUME_MIN_AGE_MS = 30 * 60 * 1000
 const PROVIDERS: CloudProvider[] = ['aws', 'gcp']
 
 const DEFAULT_SETTINGS: CloudCostSettings = {
@@ -83,9 +82,14 @@ async function writeCache(next: CloudCostCache): Promise<void> {
   deps.broadcastDataChanged(CACHE_KEY, 'main', rev)
 }
 
-async function runCycle(): Promise<CloudCostCache | null> {
+async function readSettings(): Promise<CloudCostSettings> {
+  if (!deps) return DEFAULT_SETTINGS
+  return normalizeSettings(await deps.readDataKeyParsed(SETTINGS_KEY, DEFAULT_SETTINGS))
+}
+
+async function runCycle(settingsOverride?: CloudCostSettings): Promise<CloudCostCache | null> {
   if (!deps) return null
-  const settings = normalizeSettings(await deps.readDataKeyParsed(SETTINGS_KEY, DEFAULT_SETTINGS))
+  const settings = settingsOverride ? normalizeSettings(settingsOverride) : await readSettings()
   const window = billingWindow()
   const results: ProviderResults = {}
 
@@ -104,25 +108,30 @@ async function runCycle(): Promise<CloudCostCache | null> {
   }
 }
 
-export function refreshCloudCosts(): Promise<CloudCostCache | null> {
+export function refreshCloudCosts(settingsOverride?: CloudCostSettings): Promise<CloudCostCache | null> {
   if (cycleInflight) return cycleInflight
-  cycleInflight = runCycle().finally(() => { cycleInflight = null })
+  cycleInflight = runCycle(settingsOverride).finally(() => { cycleInflight = null })
   return cycleInflight
 }
 
 export function cloudCostStatus(): Record<CloudProvider, CloudCostSourceStatus> {
   return cache?.sources ?? {
-    aws: { configured: false, ok: false, fetchedAt: null, error: null },
-    gcp: { configured: false, ok: false, fetchedAt: null, error: null },
+    aws: { configured: false, ok: false, sourceId: null, fetchedAt: null, attemptedAt: null, error: null },
+    gcp: { configured: false, ok: false, sourceId: null, fetchedAt: null, attemptedAt: null, error: null },
   }
 }
 
-function scheduleNextCycle(): void {
+function scheduleNextCycle(delayMs: number): void {
   if (cycleTimer) clearTimeout(cycleTimer)
-  const jitter = (Math.random() * 2 - 1) * JITTER_MS
+  const jitter = Math.random() * JITTER_MS
   cycleTimer = setTimeout(() => {
-    void refreshCloudCosts().finally(scheduleNextCycle)
-  }, REFRESH_INTERVAL_MS + jitter)
+    void refreshCloudCosts().finally(() => { void scheduleFromCache() })
+  }, Math.max(0, delayMs) + jitter)
+}
+
+async function scheduleFromCache(settingsOverride?: CloudCostSettings): Promise<void> {
+  const settings = settingsOverride ? normalizeSettings(settingsOverride) : await readSettings()
+  scheduleNextCycle(automaticRefreshDelayMs(cache, settings))
 }
 
 async function seedFromDisk(): Promise<void> {
@@ -132,18 +141,25 @@ async function seedFromDisk(): Promise<void> {
 
 export function startCloudCostRefresher(dependencies: CloudCostRefresherDeps): void {
   deps = dependencies
-  ipcMain.handle('cloud-costs:refresh', () => refreshCloudCosts())
+  ipcMain.handle('cloud-costs:refresh', async (_event, settings?: CloudCostSettings) => {
+    const result = await refreshCloudCosts(settings)
+    await scheduleFromCache(settings)
+    return result
+  })
   ipcMain.handle('cloud-costs:status', () => cloudCostStatus())
 
   powerMonitor.on('resume', () => {
-    const age = cache?.fetchedAt ? Date.now() - new Date(cache.fetchedAt).getTime() : Infinity
-    if (age >= RESUME_MIN_AGE_MS) void refreshCloudCosts()
+    void (async () => {
+      const settings = await readSettings()
+      if (automaticRefreshDelayMs(cache, settings) === 0) await refreshCloudCosts(settings)
+      await scheduleFromCache()
+    })()
   })
 
   void (async () => {
     await seedFromDisk()
-    const age = cache?.fetchedAt ? Date.now() - new Date(cache.fetchedAt).getTime() : Infinity
-    if (age >= REFRESH_INTERVAL_MS) await refreshCloudCosts()
-    scheduleNextCycle()
+    const settings = await readSettings()
+    if (automaticRefreshDelayMs(cache, settings) === 0) await refreshCloudCosts(settings)
+    await scheduleFromCache()
   })()
 }

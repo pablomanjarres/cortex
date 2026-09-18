@@ -14,7 +14,7 @@ export const EMPTY_CLOUD_COST_CACHE: CloudCostCache = {
   fetchedAt: '',
   items: [],
   sources: {
-    aws: { configured: false, ok: false, fetchedAt: null, error: null },
-    gcp: { configured: false, ok: false, fetchedAt: null, error: null },
+    aws: { configured: false, ok: false, sourceId: null, fetchedAt: null, attemptedAt: null, error: null },
+    gcp: { configured: false, ok: false, sourceId: null, fetchedAt: null, attemptedAt: null, error: null },
   },
 }

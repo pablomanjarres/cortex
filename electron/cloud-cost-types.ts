@@ -13,7 +13,9 @@ export interface CloudCostLineItem {
 export interface CloudCostSourceStatus {
   configured: boolean
   ok: boolean
+  sourceId: string | null
   fetchedAt: string | null
+  attemptedAt: string | null
   error: string | null
 }
 
