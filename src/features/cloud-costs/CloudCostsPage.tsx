@@ -87,7 +87,7 @@ export function CloudCostsPage() {
         subtitle="Actual AWS and GCP usage, normalized to USD and kept private on this Mac."
         actions={(
           <Button variant="secondary" size="sm" onClick={refresh} disabled={!canRefresh || refreshing}>
-            <RefreshCw className={refreshing ? 'motion-safe:animate-spin' : undefined} />
+            <RefreshCw />
             {refreshing ? 'Refreshing' : 'Refresh'}
           </Button>
         )}
