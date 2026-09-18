@@ -5,6 +5,8 @@ import {
   normalizeGcpRows,
   validateBillingTable,
 } from '../electron/cloud-cost-normalizers.ts'
+import { collectAwsCosts } from '../electron/integrations/aws-costs.ts'
+import { buildGcpBillingQuery } from '../electron/integrations/gcp-costs.ts'
 
 test('normalizeAwsPage maps service/account groups and preserves pagination', () => {
   const normalized = normalizeAwsPage({
@@ -72,4 +74,35 @@ test('validateBillingTable accepts one fully qualified table and rejects SQL fra
   )
   assert.throws(() => validateBillingTable('billing.dataset.table` WHERE TRUE; --'), /project\.dataset\.table/)
   assert.throws(() => validateBillingTable('dataset.table'), /project\.dataset\.table/)
+})
+
+test('collectAwsCosts follows Cost Explorer pagination without losing rows', async () => {
+  const seenTokens: Array<string | undefined> = []
+  const pages = [
+    {
+      NextPageToken: 'next',
+      ResultsByTime: [{ TimePeriod: { Start: '2026-09-01' }, Groups: [{ Keys: ['EC2', '111'], Metrics: { NetUnblendedCost: { Amount: '3', Unit: 'USD' } } }] }],
+    },
+    {
+      ResultsByTime: [{ TimePeriod: { Start: '2026-09-02' }, Groups: [{ Keys: ['S3', '111'], Metrics: { NetUnblendedCost: { Amount: '2', Unit: 'USD' } } }] }],
+    },
+  ]
+  const client = {
+    async send(command: { input: { NextPageToken?: string } }) {
+      seenTokens.push(command.input.NextPageToken)
+      return pages.shift() ?? {}
+    },
+  }
+
+  const result = await collectAwsCosts(client, '2026-09-01', '2026-09-03')
+  assert.deepEqual(seenTokens, [undefined, 'next'])
+  assert.deepEqual(result.map((item) => item.amountUsd), [3, 2])
+})
+
+test('buildGcpBillingQuery uses a validated table, date parameters, credits, and conversion rate', () => {
+  const query = buildGcpBillingQuery('billing-prod.cost_export.gcp_billing_export_v1_ACCOUNT')
+  assert.match(query, /`billing-prod\.cost_export\.gcp_billing_export_v1_ACCOUNT`/)
+  assert.match(query, /DATE\(usage_start_time\) >= DATE\(@startDate\)/)
+  assert.match(query, /UNNEST\(credits\)/)
+  assert.match(query, /currency_conversion_rate/)
 })
