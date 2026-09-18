@@ -49,5 +49,11 @@ export async function fetchGcpCosts(
   end: string,
 ): Promise<CloudCostLineItem[]> {
   const client = new BigQuery({ projectId: settings.gcpQueryProject.trim() || undefined })
-  return collectGcpCosts(client, settings.gcpBillingTable, start, end)
+  const queryClient: BigQueryLike = {
+    query: async (options) => {
+      const [rows] = await client.query(options)
+      return [rows]
+    },
+  }
+  return collectGcpCosts(queryClient, settings.gcpBillingTable, start, end)
 }
