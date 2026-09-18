@@ -31,7 +31,8 @@ Cortex is a macOS desktop app that pulls a founder's whole life into one private
 - **Phone access over Tailscale.** A built-in web server serves the app as a PWA. The socket is gated to localhost and the Tailscale CGNAT range (`100.64.0.0/10`), so only your own devices on your tailnet can reach it.
 - **Opportunity Radar.** A weekly launchd pipeline (Monday 09:00) scrapes feeds natively on the host, then hands them to a tool-less `claude -p` call (`--allowedTools ""`) that classifies and scores each one against an editable profile — now with deadline intelligence (fixed / rolling / recurring / always-open), funding amounts, and age-eligibility flags. A curated catalog of 30 verified fellowships, grants, and programs (Emergent Ventures, Thiel, Z Fellows, Latitud, …) seeds the radar beyond hackathons. Recurring programs refresh across yearly cycles instead of being dropped as duplicates.
 - **Founder metrics, background-refreshed.** An in-process refresher polls GitHub (1-2 GraphQL calls, commit-exact), Lemon Squeezy (MRR), Vercel, and Supabase every 30 minutes, persists daily rollups into a 365-day history, and pushes updates to the page live — metrics are consistent over time and render instantly even on first navigation.
-- **One design system.** A warm-graphite instrument-panel theme: OKLCH tokens, a single ice-cyan signal accent, Instrument Serif display voice, IBM Plex Mono telemetry, and shared primitives (StatTile, Chip, EmptyState, Modal) across all 20 feature modules — zero raw palette classes in the codebase.
+- **Cloud spend.** A read-only background refresher pulls AWS Cost Explorer and GCP BigQuery billing exports into one encrypted, local 13-month ledger with monthly totals, daily burn, budgets, services, projects, and stale-source health.
+- **One design system.** A warm-graphite instrument-panel theme: OKLCH tokens, a single ice-cyan signal accent, Instrument Serif display voice, IBM Plex Mono telemetry, and shared primitives (StatTile, Chip, EmptyState, Modal) across all 21 feature modules; zero raw palette classes in the codebase.
 
 ## How it works
 
@@ -63,11 +64,11 @@ Cortex is one Electron plus React app with a standalone MCP package and a set of
 | `scripts/` | Opportunity Radar (`radar-*.mjs`, `opportunity-radar-weekly.sh`, launchd `*.plist` files), and the program catalog + seeder (`program-catalog.json`, `radar-seed-programs.mjs`) |
 | `public/` | PWA shell: `manifest.webmanifest`, `sw.js` service worker, and app icons |
 
-The 20 feature modules under `src/features`, grouped:
+The 21 feature modules under `src/features`, grouped:
 
 - **Days and routine:** `daily`, `habits`, `goals`, `gym`, `thoughts`, `captures`
 - **People:** `crm`, `social`
-- **Founder and growth:** `founder`, `opportunities`, `automations`, `stats`
+- **Founder and growth:** `founder`, `cloud-costs`, `opportunities`, `automations`, `stats`
 - **Money:** `finance`
 - **Learning:** `student`, `courses`, `books`, `library`, `projects`
 - **App:** `system`, `settings`
@@ -106,6 +107,10 @@ cd mcp-server && npm install && npm run build
 # register with Claude (user scope, local stdio)
 claude mcp add cortex --scope user -- node "$PWD/dist/index.js"
 ```
+
+### Connect AWS and GCP billing
+
+Use read-only local cloud credentials, then configure the **Cloud Spend** page. The exact IAM policy, BigQuery roles, and export setup are in [docs/cloud-cost-setup.md](docs/cloud-cost-setup.md).
 
 ## License
 
