@@ -6,6 +6,7 @@ import {
   monthlySeries,
 } from '../src/features/cloud-costs/analytics.ts'
 import { projectRanking, spendDrivers, topServices } from '../src/features/cloud-costs/breakdowns.ts'
+import { utcDate } from '../src/lib/date-utils.ts'
 
 const items = [
   { date: '2026-07-05', provider: 'aws', account: '111', project: '111', service: 'EC2', amountUsd: 200 },
@@ -64,6 +65,25 @@ test('topServices keeps five services and folds the rest into Other', () => {
     { name: 'E', amount: 30, share: 10.71 },
     { name: 'Other', amount: 30, share: 10.71 },
   ])
+})
+
+test('topServices keeps a negative credit tail in Other', () => {
+  const amounts = [100, 90, 80, 70, 60, -50]
+  const services = amounts.map((amountUsd, index) => ({
+    date: '2026-09-01', provider: 'aws' as const, account: '111', project: '111', service: String.fromCharCode(65 + index), amountUsd,
+  }))
+  assert.deepEqual(topServices(services, 'all', '2026-09'), [
+    { name: 'A', amount: 100, share: 28.57 },
+    { name: 'B', amount: 90, share: 25.71 },
+    { name: 'C', amount: 80, share: 22.86 },
+    { name: 'D', amount: 70, share: 20 },
+    { name: 'E', amount: 60, share: 17.14 },
+    { name: 'Other', amount: -50, share: -14.29 },
+  ])
+})
+
+test('utcDate follows the provider billing day instead of the local calendar day', () => {
+  assert.equal(utcDate(new Date('2026-10-01T00:30:00.000Z')), '2026-10-01')
 })
 
 test('projectRanking sorts equal totals by project name', () => {

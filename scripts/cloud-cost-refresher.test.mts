@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  automaticRefreshDelayMs,
   billingWindow,
   mergeProviderResults,
   safeCloudCostError,
@@ -16,8 +17,8 @@ const previous = {
     { date: '2026-08-01', provider: 'gcp', account: 'billing', project: 'alpha', service: 'Run', amountUsd: 20 },
   ],
   sources: {
-    aws: { configured: true, ok: true, fetchedAt: '2026-09-01T12:00:00.000Z', error: null },
-    gcp: { configured: true, ok: true, fetchedAt: '2026-09-01T12:00:00.000Z', error: null },
+    aws: { configured: true, ok: true, sourceId: 'default', fetchedAt: '2026-09-01T12:00:00.000Z', attemptedAt: '2026-09-01T12:00:00.000Z', error: null },
+    gcp: { configured: true, ok: true, sourceId: 'billing.data.table', fetchedAt: '2026-09-01T12:00:00.000Z', attemptedAt: '2026-09-01T12:00:00.000Z', error: null },
   },
 } as const
 
@@ -45,10 +46,10 @@ test('mergeProviderResults replaces a successful slice and retains a failed slic
     { date: '2026-09-01', provider: 'aws', account: '111', project: '111', service: 'S3', amountUsd: 4 },
   ])
   assert.deepEqual(merged.sources.aws, {
-    configured: true, ok: true, fetchedAt: '2026-09-18T12:00:00.000Z', error: null,
+    configured: true, ok: true, sourceId: 'default', fetchedAt: '2026-09-18T12:00:00.000Z', attemptedAt: '2026-09-18T12:00:00.000Z', error: null,
   })
   assert.deepEqual(merged.sources.gcp, {
-    configured: true, ok: false, fetchedAt: '2026-09-01T12:00:00.000Z', error: 'Access denied. Grant read-only billing permissions.',
+    configured: true, ok: false, sourceId: 'billing.data.table', fetchedAt: '2026-09-01T12:00:00.000Z', attemptedAt: '2026-09-18T12:00:00.000Z', error: 'Access denied. Grant read-only billing permissions.',
   })
 })
 
@@ -61,7 +62,42 @@ test('mergeProviderResults removes rows for a provider that is no longer configu
     '2026-09-18T12:00:00.000Z',
   )
   assert.equal(merged.items.some((item) => item.provider === 'aws'), false)
-  assert.deepEqual(merged.sources.aws, { configured: false, ok: false, fetchedAt: null, error: null })
+  assert.deepEqual(merged.sources.aws, { configured: false, ok: false, sourceId: null, fetchedAt: null, attemptedAt: null, error: null })
+})
+
+test('mergeProviderResults drops stale rows when a configured source changes and its first refresh fails', () => {
+  const merged = mergeProviderResults(
+    previous,
+    { awsProfile: 'new-profile', gcpBillingTable: 'billing.data.table', gcpQueryProject: '', monthlyBudgetUsd: 0 },
+    {
+      aws: { ok: false, error: 'Credentials unavailable. Check the local cloud profile.' },
+      gcp: { ok: true, items: [] },
+    },
+    { start: '2025-09-01', end: '2026-09-19' },
+    '2026-09-18T12:00:00.000Z',
+  )
+
+  assert.equal(merged.items.some((item) => item.provider === 'aws'), false)
+  assert.deepEqual(merged.sources.aws, {
+    configured: true,
+    ok: false,
+    sourceId: 'new-profile',
+    fetchedAt: null,
+    attemptedAt: '2026-09-18T12:00:00.000Z',
+    error: 'Credentials unavailable. Check the local cloud profile.',
+  })
+})
+
+test('automaticRefreshDelayMs uses the earliest provider attempt and the remaining six-hour interval', () => {
+  const settings = { awsProfile: 'default', gcpBillingTable: 'billing.data.table', gcpQueryProject: '', monthlyBudgetUsd: 0 }
+  const now = Date.parse('2026-09-01T17:30:00.000Z')
+  assert.equal(automaticRefreshDelayMs(previous, settings, now), 30 * 60 * 1000)
+})
+
+test('automaticRefreshDelayMs is due immediately when a configured source changed', () => {
+  const settings = { awsProfile: 'other-profile', gcpBillingTable: 'billing.data.table', gcpQueryProject: '', monthlyBudgetUsd: 0 }
+  const now = Date.parse('2026-09-01T13:00:00.000Z')
+  assert.equal(automaticRefreshDelayMs(previous, settings, now), 0)
 })
 
 test('safeCloudCostError never returns credential material', () => {
