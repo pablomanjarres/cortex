@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     status: () => ipcRenderer.invoke('founder:status'),
   },
 
+  cloudCosts: {
+    refresh: () => ipcRenderer.invoke('cloud-costs:refresh'),
+    status: () => ipcRenderer.invoke('cloud-costs:status'),
+  },
+
   projects: {
     scan: () => ipcRenderer.invoke('projects:scan'),
   },

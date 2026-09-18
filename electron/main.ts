@@ -11,6 +11,7 @@ import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { initEncryption, encrypt, encryptAndWrite, encryptAndWriteAsync, readAndDecrypt, readAndDecryptAsync, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
 import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.js'
 import type { FounderSource } from './founder-refresher.js'
+import { startCloudCostRefresher } from './cloud-cost-refresher.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 
@@ -1818,6 +1819,14 @@ app.on('ready', () => {
     dataDir,
     readDataKeyParsed,
     writeDataKey: (key, data, opts) => writeDataKey(key, data, opts),
+    broadcastDataChanged,
+  })
+
+  // Cloud billing: read-only AWS/GCP refresh every six hours. The cache uses
+  // the same encrypted direct-write path as other rebuildable integration data.
+  startCloudCostRefresher({
+    dataDir,
+    readDataKeyParsed,
     broadcastDataChanged,
   })
 
