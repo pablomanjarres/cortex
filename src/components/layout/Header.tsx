@@ -36,6 +36,16 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
           </h1>
         </span>
       </div>
+      <div className="ml-auto flex items-center gap-2 md:hidden">
+        <RouteSearch compact />
+        <button
+          onClick={() => navigate('/library?kind=captures')}
+          aria-label="Capture"
+          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_14px_32px_rgba(98,74,181,0.28)] transition-colors hover:bg-primary/90 [-webkit-app-region:no-drag]"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
       <div className="hidden min-w-0 flex-1 items-center justify-between gap-2 md:flex lg:gap-4">
         <RouteSearch />
         <div className="flex shrink-0 items-center gap-2 lg:gap-3">
@@ -44,7 +54,7 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
             aria-label="Open system status"
             className="flex h-11 items-center gap-2 rounded-full bg-card px-3 text-sm font-semibold text-foreground shadow-card transition-colors hover:bg-secondary lg:px-4 [-webkit-app-region:no-drag]"
           >
-            <span className="h-2.5 w-2.5 rounded-full bg-success" />
+            <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/40" />
             <span className="hidden xl:inline">System</span>
           </button>
           <button

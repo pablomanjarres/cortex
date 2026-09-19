@@ -4,7 +4,7 @@ import { Search } from 'lucide-react'
 import { searchNavigation } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 
-export function RouteSearch() {
+export function RouteSearch({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -38,26 +38,33 @@ export function RouteSearch() {
   }
 
   return (
-    <div className="relative min-w-[10rem] flex-1 lg:max-w-[420px] [-webkit-app-region:no-drag]">
+    <div className={cn(compact ? 'relative flex-none' : 'relative min-w-[10rem] flex-1 lg:max-w-[420px]', '[-webkit-app-region:no-drag]')}>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex h-12 w-full items-center gap-3 rounded-2xl border border-border bg-card px-4 text-left text-sm text-muted-foreground shadow-card transition-colors hover:border-accent/30 hover:text-foreground"
+        aria-label={compact ? 'Search pages and actions' : undefined}
+        className={cn(
+          'flex h-12 items-center gap-3 rounded-2xl border border-border bg-card text-left text-sm text-muted-foreground shadow-card transition-colors hover:border-accent/30 hover:text-foreground',
+          compact ? 'h-11 w-11 justify-center px-0' : 'w-full px-4'
+        )}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <Search className="h-5 w-5 text-sidebar-primary" />
-        <span className="min-w-0 flex-1 truncate">Search anything...</span>
-        <kbd className="hidden rounded-lg bg-secondary px-2 py-1 font-mono text-2xs text-muted-foreground sm:inline">
+        {!compact && <span className="min-w-0 flex-1 truncate">Search pages and actions</span>}
+        {!compact && <kbd className="hidden rounded-lg bg-secondary px-2 py-1 font-mono text-2xs text-muted-foreground sm:inline">
           ⌘ K
-        </kbd>
+        </kbd>}
       </button>
 
       {open && (
         <div
           role="dialog"
           aria-label="Route search"
-          className="absolute left-0 top-14 z-50 w-full overflow-hidden rounded-2xl border border-border bg-card shadow-lift"
+          className={cn(
+            'z-50 overflow-hidden rounded-2xl border border-border bg-card shadow-lift',
+            compact ? 'fixed left-4 right-4 top-[calc(4.5rem+env(safe-area-inset-top))]' : 'absolute left-0 top-14 w-full'
+          )}
         >
           <div className="flex items-center gap-3 border-b border-border px-4 py-3">
             <Search className="h-4 w-4 text-sidebar-primary" />
@@ -69,7 +76,7 @@ export function RouteSearch() {
                 if (event.key === 'Escape') close()
                 if (event.key === 'Enter' && selected) openItem(selected.href)
               }}
-              placeholder="Find a route or action"
+              placeholder="Find a page or action"
               className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>
