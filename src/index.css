@@ -43,8 +43,8 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --progress-surface: #E2F2C7;
 
   --destructive: #C73E3A; --destructive-foreground: #FFFFFF;
-  --success: #2F9E55; --success-foreground: #FFFFFF;
-  --warning: #B86E16; --warning-foreground: #FFFFFF;
+  --success: #227746; --success-foreground: #FFFFFF;
+  --warning: #8A4D0F; --warning-foreground: #FFFFFF;
   --border: #DDE2EB; --input: #D6DCE8; --ring: #624AB5;
 
   --radius: 1rem;
@@ -62,7 +62,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --sidebar-primary-foreground: #FFFFFF;
   --sidebar-ring: #624AB5;
 
-  --chart-1: #624AB5; --chart-2: #B7A4F4; --chart-3: #2F9E55; --chart-4: #5AA7F2; --chart-5: #F2994A;
+  --chart-1: #624AB5; --chart-2: #B7A4F4; --chart-3: #227746; --chart-4: #5AA7F2; --chart-5: #F2994A;
 }
 
 .dark {

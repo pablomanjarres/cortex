@@ -32,8 +32,8 @@ Semantic tokens remain meaning-driven:
 
 | Role | CSS var | Light value | Use |
 |---|---|---:|---|
-| Success | `--success` | `#2F9E55` | Done, available, on track, gains. |
-| Warning | `--warning` | `#B86E16` | Pending, stale, at risk. |
+| Success | `--success` | `#227746` | Done, available, on track, gains. |
+| Warning | `--warning` | `#8A4D0F` | Pending, stale, at risk. |
 | Danger | `--destructive` | `#C73E3A` | Errors, overdue, destructive actions, losses. |
 
 Never rely on color alone. Pair semantic color with a word, icon, status dot, or
