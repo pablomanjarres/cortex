@@ -42,7 +42,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --focus-surface: #DDD2FF;
   --progress-surface: #E2F2C7;
 
-  --destructive: #C73E3A; --destructive-foreground: #FFFFFF;
+  --destructive: #B92F2C; --destructive-foreground: #FFFFFF;
   --success: #227746; --success-foreground: #FFFFFF;
   --warning: #8A4D0F; --warning-foreground: #FFFFFF;
   --border: #DDE2EB; --input: #D6DCE8; --ring: #624AB5;

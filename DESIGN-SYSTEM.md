@@ -34,7 +34,7 @@ Semantic tokens remain meaning-driven:
 |---|---|---:|---|
 | Success | `--success` | `#227746` | Done, available, on track, gains. |
 | Warning | `--warning` | `#8A4D0F` | Pending, stale, at risk. |
-| Danger | `--destructive` | `#C73E3A` | Errors, overdue, destructive actions, losses. |
+| Danger | `--destructive` | `#B92F2C` | Errors, overdue, destructive actions, losses. |
 
 Never rely on color alone. Pair semantic color with a word, icon, status dot, or
 direction glyph. Avoid raw Tailwind palette colors in feature code; prefer these
