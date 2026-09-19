@@ -4,8 +4,10 @@ import {
   cloudCostSummary,
   dailyCumulativeSeries,
   monthlySeries,
+  monthlyProjectSeries,
+  accountEstimate,
 } from '../src/features/cloud-costs/analytics.ts'
-import { projectRanking, spendDrivers, topServices } from '../src/features/cloud-costs/breakdowns.ts'
+import { projectRanking, resourceRanking, spendDrivers, topServices } from '../src/features/cloud-costs/breakdowns.ts'
 import { utcDate } from '../src/lib/date-utils.ts'
 
 const items = [
@@ -67,19 +69,49 @@ test('topServices keeps five services and folds the rest into Other', () => {
   ])
 })
 
-test('topServices keeps a negative credit tail in Other', () => {
+test('topServices never sends a signed credit or zero slice to the pie chart', () => {
   const amounts = [100, 90, 80, 70, 60, -50]
   const services = amounts.map((amountUsd, index) => ({
     date: '2026-09-01', provider: 'aws' as const, account: '111', project: '111', service: String.fromCharCode(65 + index), amountUsd,
   }))
   assert.deepEqual(topServices(services, 'all', '2026-09'), [
-    { name: 'A', amount: 100, share: 28.57 },
-    { name: 'B', amount: 90, share: 25.71 },
-    { name: 'C', amount: 80, share: 22.86 },
-    { name: 'D', amount: 70, share: 20 },
-    { name: 'E', amount: 60, share: 17.14 },
-    { name: 'Other', amount: -50, share: -14.29 },
+    { name: 'A', amount: 100, share: 25 },
+    { name: 'B', amount: 90, share: 22.5 },
+    { name: 'C', amount: 80, share: 20 },
+    { name: 'D', amount: 70, share: 17.5 },
+    { name: 'E', amount: 60, share: 15 },
   ])
+})
+
+test('fully credited AWS usage remains visible and net is account-scoped', () => {
+  const usage = [{ date: '2026-09-01', provider: 'aws' as const, account: '111', project: '111', service: 'EC2', resource: null, amountUsd: 300 }]
+  const credits = [{ date: '2026-09-01', provider: 'aws' as const, account: '111', kind: 'credit' as const, amountUsd: -300 }]
+  assert.equal(cloudCostSummary(usage, 'aws', new Date('2026-09-18T12:00:00Z'), 0).currentMonth, 300)
+  assert.equal(monthlySeries(usage, 'aws', new Date('2026-09-18T12:00:00Z')).at(-1)?.total, 300)
+  assert.equal(dailyCumulativeSeries(usage, 'aws', '2026-09').at(-1)?.total, 300)
+  assert.deepEqual(accountEstimate(usage, credits, 'aws', '2026-09'), { usage: 300, credits: -300, other: 0, estimatedNet: 0 })
+})
+
+test('ConstruCredit monthly and resource costs use usage even when credits belong to billing account', () => {
+  const usage = [
+    { date: '2026-08-05', provider: 'gcp' as const, account: 'billing', project: 'construcredit', service: 'Cloud Run', resource: 'worker', amountUsd: 67 },
+    { date: '2026-09-02', provider: 'gcp' as const, account: 'billing', project: 'construcredit', service: 'Cloud Run', resource: 'worker', amountUsd: 35 },
+    { date: '2026-09-03', provider: 'gcp' as const, account: 'billing', project: 'construcredit', service: 'Networking', resource: null, amountUsd: 22 },
+    { date: '2026-09-03', provider: 'gcp' as const, account: 'billing', project: 'nella-sync', service: 'Cloud Run', resource: 'sync', amountUsd: 43 },
+  ]
+  const series = monthlyProjectSeries(usage, 'construcredit', new Date('2026-09-18T12:00:00Z'))
+  assert.equal(series.length, 13)
+  assert.deepEqual(series.at(-2), { month: '2026-08', total: 67 })
+  assert.deepEqual(series.at(-1), { month: '2026-09', total: 57 })
+  assert.deepEqual(resourceRanking(usage, 'construcredit', '2026-09'), [
+    { name: 'worker', amount: 35, share: 61.4 },
+    { name: 'Unallocated resource', amount: 22, share: 38.6 },
+  ])
+  assert.deepEqual(topServices(usage, 'gcp', '2026-09', 'construcredit'), [
+    { name: 'Cloud Run', amount: 35, share: 61.4 },
+    { name: 'Networking', amount: 22, share: 38.6 },
+  ])
+  assert.deepEqual(projectRanking(usage, 'gcp', '2026-09').map((entry) => entry.share), [57, 43])
 })
 
 test('utcDate follows the provider billing day instead of the local calendar day', () => {
