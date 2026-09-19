@@ -283,9 +283,7 @@ export function FounderPage() {
     <PageShell>
       {/* Meta row — freshness + source health + refresh */}
       <div className="flex flex-wrap items-center gap-2">
-        <p className="font-mono text-xs tabular-nums text-muted-foreground">
-          {updatedAgo ? `updated ${updatedAgo}` : 'no data fetched yet'}
-        </p>
+        {updatedAgo && <p className="font-mono text-xs tabular-nums text-muted-foreground">Updated {updatedAgo}</p>}
         {erroring.map((s) => (
           <Chip key={s} variant="warning" size="sm">
             {SOURCE_LABELS[s]} · last good {status?.[s].fetchedAt ? timeAgo(status[s].fetchedAt as string) : 'never'}
@@ -298,6 +296,39 @@ export function FounderPage() {
           </Button>
         )}
       </div>
+
+      {!hasAnyData && (
+        <section className="surface grid gap-6 rounded-xl p-5 sm:p-7 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" aria-labelledby="founder-empty-title">
+          <div className="flex flex-col justify-center gap-4">
+            <span className="flex size-12 items-center justify-center rounded-xl bg-focus-surface text-accent" aria-hidden>
+              <Rocket className="size-6" />
+            </span>
+            <div className="space-y-2">
+              <h2 id="founder-empty-title" className="text-xl font-semibold text-foreground sm:text-2xl">
+                {!api ? 'Founder sources live in the desktop app' : erroring.length > 0 ? 'Sources need attention' : unconfigured.length > 0 ? 'Connect your founder sources' : 'Waiting for the first snapshot'}
+              </h2>
+              <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+                {!api ? 'This browser view cannot check integration settings. Open Cortex on your Mac to connect or refresh sources.' : erroring.length > 0 ? 'A configured source has not returned data. Check its connection in Settings, then refresh.' : unconfigured.length > 0 ? 'Add credentials in Settings, then refresh to bring real revenue, product, and development signals here.' : 'Connected sources have not returned data yet. Refresh to check for the first snapshot.'}
+              </p>
+            </div>
+          </div>
+          <div className="rounded-xl bg-secondary/40 p-4">
+            <h3 className="mb-3 text-sm font-semibold text-foreground">Source status</h3>
+            <div className="divide-y divide-border/60">
+              {FOUNDER_SOURCES.map((source) => {
+                const sourceStatus = status?.[source]
+                const label = !api ? 'Desktop only' : !sourceStatus ? 'Checking' : !sourceStatus.configured ? 'Not connected' : sourceStatus.ok ? 'Live' : sourceStatus.consecutiveFailures > 0 ? 'Refresh failed' : 'Waiting for refresh'
+                return (
+                  <div key={source} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                    <span className="text-foreground">{SOURCE_LABELS[source]}</span>
+                    <span className="shrink-0 text-muted-foreground">{label}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       {hasAnyData && (
         <>
@@ -445,7 +476,7 @@ export function FounderPage() {
       )}
 
       {/* Connect — ONLY genuinely unconfigured sources */}
-      {unconfigured.length > 0 && (
+      {hasAnyData && unconfigured.length > 0 && (
         <WidgetCard title="Connect" description="Sources without credentials" delay={0.35}>
           <div className="flex flex-col gap-2">
             {unconfigured.map((s) => (
@@ -460,12 +491,6 @@ export function FounderPage() {
         </WidgetCard>
       )}
 
-      {!hasAnyData && unconfigured.length === 0 && (
-        <EmptyState
-          message="Nothing measured yet."
-          hint={api ? 'The first background refresh is on its way.' : 'Open the desktop app to run the first refresh.'}
-        />
-      )}
     </PageShell>
   )
 }

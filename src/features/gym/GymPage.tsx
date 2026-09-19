@@ -51,7 +51,7 @@ function GymPageDay({ today }: { today: string }) {
 
   // Load this week's sessions (flat list across all days)
   const [weekSessions, setWeekSessions] = useState<WorkoutSession[]>([])
-  const weekDates = getWeekDates(today)
+  const weekDates = useMemo(() => getWeekDates(today), [today])
 
   useEffect(() => {
     Promise.all(
@@ -61,20 +61,23 @@ function GymPageDay({ today }: { today: string }) {
       for (const r of results) all.push(...normalizeSessions(r))
       setWeekSessions(all)
     })
-  }, [todaySessions])
+  }, [todaySessions, weekDates])
 
   // Load previous session for the same workout day (for reference weights)
   const [previousSession, setPreviousSession] = useState<WorkoutSession | null>(null)
 
+  const activeWorkoutDayId = activeWorkout?.workoutDayId
   useEffect(() => {
-    if (!activeWorkout) { setPreviousSession(null); return }
+    if (!activeWorkoutDayId) return
+    let active = true
     const loadPrevious = async () => {
       const d = new Date()
       for (let i = 1; i <= 60; i++) {
         d.setDate(d.getDate() - 1)
         const dateStr = localDate(d)
         const raw = await readStore<unknown>(`cortex-gym-session-${dateStr}`, null)
-        const match = normalizeSessions(raw).find(s => s.workoutDayId === activeWorkout.workoutDayId)
+        if (!active) return
+        const match = normalizeSessions(raw).find(s => s.workoutDayId === activeWorkoutDayId)
         if (match) {
           setPreviousSession(match)
           return
@@ -83,11 +86,13 @@ function GymPageDay({ today }: { today: string }) {
       setPreviousSession(null)
     }
     loadPrevious()
-  }, [activeWorkout?.workoutDayId])
+    return () => { active = false }
+  }, [activeWorkoutDayId])
 
   const startWorkout = (dayId: string) => {
     const plan = plans.find(p => p.id === dayId)
     if (!plan) return
+    setPreviousSession(null)
     const state: ActiveWorkoutState = {
       workoutDayId: dayId,
       startedAt: new Date().toISOString(),
@@ -107,11 +112,13 @@ function GymPageDay({ today }: { today: string }) {
 
   const finishWorkout = (session: WorkoutSession) => {
     setTodaySessions(() => [session])
+    setPreviousSession(null)
     setActiveWorkout(() => null)
   }
 
   // Abandon an in-progress workout without recording a session.
   const cancelWorkout = () => {
+    setPreviousSession(null)
     setActiveWorkout(() => null)
   }
 
@@ -135,21 +142,23 @@ function GymPageDay({ today }: { today: string }) {
   return (
     <PageShell>
       <Tabs defaultValue="training">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="training">Training</TabsTrigger>
-          <TabsTrigger value="nutrition">Nutrition</TabsTrigger>
-          <TabsTrigger value="market">Market</TabsTrigger>
-          <TabsTrigger value="discipline">Discipline</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        <TabsList aria-label="Training sections" className="w-full max-w-full justify-start overflow-x-auto overscroll-x-contain sm:w-auto">
+          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="training">Training</TabsTrigger>
+          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="nutrition">Nutrition</TabsTrigger>
+          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="market">Market</TabsTrigger>
+          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="discipline">Discipline</TabsTrigger>
+          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="analytics">Analytics</TabsTrigger>
         </TabsList>
 
         <TabsContent value="training">
-          <WeeklyStats
-            plans={plans}
-            weekSessions={weekSessions}
-            weekDates={weekDates}
-            bodyStats={bodyStats}
-          />
+          <div className="[--card:var(--progress-surface)]">
+            <WeeklyStats
+              plans={plans}
+              weekSessions={weekSessions}
+              weekDates={weekDates}
+              bodyStats={bodyStats}
+            />
+          </div>
 
           {activeWorkout ? (
             <TrainingMode

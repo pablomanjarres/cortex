@@ -1,20 +1,29 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useStore, readStore, writeStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import { useToday } from '@/lib/use-today'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import { useSprintTimer, type SprintSession } from '@/lib/sprint-context'
 import { useNavigate } from 'react-router-dom'
-import { cn } from '@/lib/utils'
 import { PageShell } from '@/components/shared/PageShell'
-import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { UpcomingDeadlines } from './UpcomingDeadlines'
-import { StatTile } from '@/components/shared/StatTile'
-import { EmptyState } from '@/components/shared/EmptyState'
-import { Skeleton } from '@/components/shared/Skeleton'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Play, Pause, RotateCcw, RefreshCw } from 'lucide-react'
+import { FocusHero } from './components/FocusHero'
+import { FactGrid } from './components/HomeFacts'
+import { WeeklyRhythm } from './components/WeeklyRhythm'
+import { UpNext } from './components/UpNext'
+import { WeekMap } from './components/WeekMap'
+import { DailyShortcuts, NeedsAttention } from './components/HomeExtras'
+import { buildFacts, buildShortcutHabits, homeCalendarState } from './components/homePanelUtils'
+import {
+  activeHabitSummary,
+  independentCalendarEvents,
+  overdueAssignments,
+  upNextItems,
+  withLiveDaySessions,
+  weekDates,
+  weeklyFocusMinutes,
+  type HomeCalendarEvent,
+} from './home-model'
+import type { Assignment, Course } from '@/features/student/student-types'
 
 // ─── FOUNDER HISTORY ──────────────────────────────────────
 
@@ -34,6 +43,8 @@ interface HabitDef {
   id: string
   name: string
   emoji: string
+  onHold?: boolean
+  cadence?: 'weekly' | 'monthly'
 }
 
 const defaultHabits: HabitDef[] = [
@@ -61,44 +72,105 @@ export function DailyPage() {
     sessions: sprintSessions, sessionCount, totalDeepWorkMin,
     setTask: setTimerTask, setDuration, start, pause, resume, reset: resetTimer,
   } = useSprintTimer()
-  const timerPresets = [15, 25, 45, 60, 90]
-  const [showCustomTime, setShowCustomTime] = useState(false)
-  const [customTimeInput, setCustomTimeInput] = useState('')
 
   // Habits (from shared store — same as HabitsPage)
   const [habits] = useStore<HabitDef[]>('cortex-habits', defaultHabits)
 
   // Habits — single source of truth via shared hook
   const { completedCount: habitsCompleted, isCompleted: isHabitDone, toggle: toggleHabit } = useDailyHabits(today)
+  const completedHabits = useMemo(
+    () => Object.fromEntries(habits.map((habit) => [habit.id, isHabitDone(habit.id)])),
+    [habits, isHabitDone],
+  )
+  const habitSummary = useMemo(
+    () => activeHabitSummary(habits, completedHabits),
+    [habits, completedHabits],
+  )
 
-  // Calendar — auto-refresh every 5 min + on window focus
-  const [calendarEvents, setCalendarEvents] = useState<{ title: string; startTime: string; endTime: string; calendar: string; isAllDay: boolean }[]>([])
-  const [calendarLoading, setCalendarLoading] = useState(false)
-  const isElectron = !!window.electronAPI
+  const [assignments] = useStore<Assignment[]>('cortex-student-assignments', [])
+  const [courses] = useStore<Course[]>('cortex-student-courses', [])
+  const courseNames = useMemo(
+    () => new Map((courses || []).filter((course) => course?.id).map((course) => [course.id, course.name || course.id])),
+    [courses],
+  )
 
-  const fetchCalendar = async () => {
+  const week = useMemo(() => weekDates(new Date(`${today}T12:00:00`)), [today])
+  const [selectedDay, setSelectedDay] = useState(today)
+  const [sessionsByDay, setSessionsByDay] = useState<Record<string, SprintSession[]>>({})
+
+  // Calendar — read a seven-day range; Vite preview has no /api proxy, so
+  // failed JSON reads are surfaced as source states instead of counted as zero.
+  const [calendarEvents, setCalendarEvents] = useState<HomeCalendarEvent[]>([])
+  const [calendarLoading, setCalendarLoading] = useState(true)
+  const [calendarError, setCalendarError] = useState<string | null>(null)
+
+  const fetchCalendar = useCallback(async () => {
+    const startDay = week[0]
+    const afterEnd = new Date(`${week[6]}T12:00:00`)
+    afterEnd.setDate(afterEnd.getDate() + 1)
+    const endDay = localDate(afterEnd)
     setCalendarLoading(true)
+    setCalendarError(null)
     try {
       if (window.electronAPI?.calendar) {
-        setCalendarEvents(await window.electronAPI.calendar.getTodayEvents())
+        setCalendarEvents(await window.electronAPI.calendar.getEventsInRange(startDay, endDay))
       } else {
-        const res = await fetch('/api/calendar/today')
-        if (res.ok) setCalendarEvents(await res.json())
+        const res = await fetch(`/api/calendar/events?start=${startDay}&end=${endDay}`)
+        if (!res.ok) throw new Error(`Calendar returned ${res.status}`)
+        const body = await res.json()
+        if (!Array.isArray(body)) throw new Error('Calendar returned a non-event response')
+        setCalendarEvents(body)
       }
-    } catch { /* silent */ }
-    finally { setCalendarLoading(false) }
-  }
+    } catch {
+      setCalendarEvents([])
+      setCalendarError('Calendar could not be loaded.')
+    } finally {
+      setCalendarLoading(false)
+    }
+  }, [week])
 
   useEffect(() => {
-    fetchCalendar()
+    const initial = window.setTimeout(() => { void fetchCalendar() }, 0)
     const interval = setInterval(fetchCalendar, 5 * 60 * 1000) // every 5 min
     const onFocus = () => fetchCalendar()
     window.addEventListener('focus', onFocus)
-    return () => { clearInterval(interval); window.removeEventListener('focus', onFocus) }
-  }, [])
+    return () => { clearTimeout(initial); clearInterval(interval); window.removeEventListener('focus', onFocus) }
+  }, [fetchCalendar])
 
-  const mins = Math.floor(timeLeft / 60)
-  const secs = timeLeft % 60
+  useEffect(() => {
+    Promise.all(week.map((date) => readStore<SprintSession[]>(`cortex-daily-sessions-${date}`, [])))
+      .then((results) => {
+        setSessionsByDay(Object.fromEntries(week.map((date, index) => [date, results[index] || []])))
+      })
+  }, [week])
+
+  const liveSessionsByDay = useMemo(() => withLiveDaySessions(sessionsByDay, today, sprintSessions), [sessionsByDay, today, sprintSessions])
+  const focusMinutes = useMemo(() => weeklyFocusMinutes(week, liveSessionsByDay), [week, liveSessionsByDay])
+  const effectiveSelectedDay = week.includes(selectedDay) ? selectedDay : today
+  const overdue = useMemo(() => overdueAssignments(assignments || [], new Date(`${today}T12:00:00`)), [assignments, today])
+  const independentEvents = useMemo(() => independentCalendarEvents(calendarEvents, assignments || []), [calendarEvents, assignments])
+  const calendarState = homeCalendarState(calendarLoading, calendarError, calendarEvents)
+  const facts = buildFacts({
+    focusMinutes: totalDeepWorkMin,
+    focusWeekMinutes: focusMinutes,
+    weekDays: week,
+    today,
+    habitsDone: habitSummary.done,
+    habitsTotal: habitSummary.total,
+    assignments: assignments || [],
+    calendarState,
+    calendarEvents,
+  })
+  const nextItems = useMemo(
+    () => upNextItems({ events: independentEvents, assignments: assignments || [], courseNames, now: new Date() }),
+    [independentEvents, assignments, courseNames],
+  )
+  const hour = new Date().getHours()
+  const greeting = (() => {
+    if (hour < 12) return 'Good morning, Pablo'
+    if (hour < 18) return 'Good afternoon, Pablo'
+    return 'Good evening, Pablo'
+  })()
 
   // ─── Tray navigation ────────────────────────────────────
   useEffect(() => {
@@ -173,7 +245,7 @@ export function DailyPage() {
 
         // Habit stats — weekly cadence only (monthly habits are scored over the month)
         const weeklyHabitIds = new Set(
-          storedHabits.filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly').map(h => h.id)
+          storedHabits.filter(h => (h.cadence ?? 'weekly') !== 'monthly').map(h => h.id)
         )
         const weekHabits = weekDates.map(wd => habitHistory[wd] || {})
         const totalHabitChecks = weekHabits.reduce(
@@ -207,201 +279,81 @@ export function DailyPage() {
 
   return (
     <PageShell>
-      {/* ─── DATE KICKER ────────────────────────────────── */}
-      <p className="font-mono text-2xs uppercase tracking-widest text-muted-foreground">
-        {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-      </p>
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">{greeting}</h1>
+        <p className="text-sm font-medium text-muted-foreground">
+          {new Date(`${today}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+        </p>
+      </div>
 
-      {/* ─── SPRINT TIMER ───────────────────────────────── */}
-      <WidgetCard title="Sprint" description={`${sessionCount} sessions · ${Math.floor(totalDeepWorkMin / 60)}h ${totalDeepWorkMin % 60}m deep work`} delay={0.05}>
-        <div className="flex flex-col gap-4">
-          <Input
-            value={timerTask}
-            onChange={(e) => setTimerTask(e.target.value)}
-            placeholder="What are you working on?"
-            className="h-9"
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+        <div className="min-w-0 xl:order-1 xl:col-span-6 2xl:col-span-5">
+          <FocusHero
+            isRunning={isRunning}
+            isPaused={isPaused}
+            timeLeft={timeLeft}
+            task={timerTask}
+            duration={timerDuration}
+            sessions={sprintSessions}
+            sessionCount={sessionCount}
+            totalMinutes={totalDeepWorkMin}
+            onTaskChange={setTimerTask}
+            onDurationChange={setDuration}
+            onStart={start}
+            onPause={pause}
+            onResume={resume}
+            onReset={resetTimer}
           />
-          <div className="flex items-center justify-between">
-            <span className={cn(
-              'font-mono text-4xl font-medium tabular-nums tracking-tight md:text-5xl',
-              isRunning ? 'text-foreground' : 'text-muted-foreground'
-            )}>
-              {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                size="icon-lg"
-                aria-label={isRunning ? 'Pause sprint' : 'Start sprint'}
-                onClick={() => {
-                  if (isRunning) {
-                    pause()
-                  } else if (isPaused) {
-                    resume()
-                  } else {
-                    start()
-                  }
-                }}
-              >
-                {isRunning ? <Pause /> : <Play className="ml-0.5" />}
-              </Button>
-              <Button variant="secondary" size="icon-lg" aria-label="Reset sprint" onClick={resetTimer}>
-                <RotateCcw />
-              </Button>
-            </div>
-          </div>
-          {/* Duration presets */}
-          <div className="flex gap-1.5">
-            {timerPresets.map((m) => (
-              <Button
-                key={m}
-                size="xs"
-                variant={timerDuration === m && !showCustomTime ? 'default' : 'secondary'}
-                disabled={isRunning || isPaused}
-                className="flex-1 font-mono"
-                onClick={() => { setDuration(m); setShowCustomTime(false) }}
-              >
-                {m}m
-              </Button>
-            ))}
-            <Button
-              size="xs"
-              variant={showCustomTime || !timerPresets.includes(timerDuration) ? 'default' : 'secondary'}
-              disabled={isRunning || isPaused}
-              className="flex-1 font-mono"
-              onClick={() => setShowCustomTime(!showCustomTime)}
-            >
-              {!timerPresets.includes(timerDuration) ? `${timerDuration}m` : '...'}
-            </Button>
-          </div>
-          {showCustomTime && (
-            <div className="flex items-center gap-1.5">
-              <Input
-                type="number"
-                min={1}
-                max={240}
-                value={customTimeInput}
-                onChange={(e) => setCustomTimeInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const val = parseInt(customTimeInput)
-                    if (val > 0 && val <= 240) { setDuration(val); setShowCustomTime(false) }
-                  }
-                }}
-                placeholder="minutes"
-                className="h-7 flex-1 text-xs"
-                autoFocus
-              />
-              <Button
-                size="sm"
-                onClick={() => {
-                  const val = parseInt(customTimeInput)
-                  if (val > 0 && val <= 240) { setDuration(val); setShowCustomTime(false) }
-                }}
-              >
-                Set
-              </Button>
-            </div>
-          )}
-          {/* Session history */}
-          {sprintSessions.length > 0 && (
-            <div className="mt-1 border-t border-border/60 pt-3">
-              <p className="mb-1.5 font-mono text-2xs text-foreground-faint">{sprintSessions.length} session{sprintSessions.length !== 1 ? 's' : ''} today</p>
-              <div className="flex max-h-24 flex-col gap-1 overflow-y-auto">
-                {[...sprintSessions].reverse().map((s) => (
-                  <div key={s.id} className="flex items-center gap-2 text-xs">
-                    <span className="shrink-0 font-mono text-2xs tabular-nums text-foreground-faint">
-                      {new Date(s.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span className="truncate text-muted-foreground">{s.task}</span>
-                    <span className="ml-auto shrink-0 font-mono text-2xs tabular-nums text-foreground-faint">{s.duration}m</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
-      </WidgetCard>
 
-      {/* ─── SCHEDULE + HABITS ──────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {/* Schedule */}
-        <WidgetCard
-          title="Schedule"
-          description={isElectron ? `${calendarEvents.length} events` : '—'}
-          delay={0.15}
-          compact
-        >
-          {isElectron && calendarLoading && calendarEvents.length === 0 ? (
-            <div className="flex flex-col gap-2 py-1">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-            </div>
-          ) : isElectron && calendarEvents.length > 0 ? (
-            <div className="flex max-h-36 flex-col gap-0.5 overflow-y-auto">
-              {calendarEvents.map((evt, i) => {
-                const isClass = evt.calendar === 'Classes (Cortex)' || evt.title.startsWith('Class:')
-                return (
-                  <div key={`${evt.title}-${i}`} className="flex items-center gap-2 py-1">
-                    <span className="w-10 shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
-                      {evt.isAllDay ? 'ALL' : evt.startTime}
-                    </span>
-                    <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', isClass ? 'bg-accent' : 'bg-muted-foreground/25')} />
-                    <span className="truncate text-xs">{isClass ? evt.title.replace(/^Class:\s*/, '') : evt.title}</span>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <EmptyState
-              className="py-3"
-              message={isElectron ? 'Clear calendar today.' : 'Calendar lives in the desktop app.'}
-              action={isElectron ? (
-                <Button variant="ghost" size="sm" onClick={fetchCalendar} disabled={calendarLoading}>
-                  <RefreshCw />
-                  Refresh
-                </Button>
-              ) : undefined}
-            />
-          )}
-        </WidgetCard>
+        <div className="min-w-0 xl:order-5 xl:col-span-4">
+          <UpNext
+            items={nextItems}
+            calendarState={calendarState}
+            calendarError={calendarError}
+            onOpenCalendar={() => navigate('/calendar')}
+            onOpenStudent={() => navigate('/student')}
+            onRetryCalendar={fetchCalendar}
+          />
+        </div>
 
-        {/* Compact Habits */}
-        <WidgetCard title="Habits" description={`${habitsCompleted}/${habits.length}`} delay={0.2} compact>
-          <div className="flex items-center justify-between">
-            {habits.map((h) => (
-              <Button
-                key={h.id}
-                variant="ghost"
-                size="icon-lg"
-                onClick={() => toggleHabit(h.id)}
-                aria-pressed={isHabitDone(h.id)}
-                aria-label={h.name}
-                className={cn(
-                  'size-10 rounded-full text-base',
-                  isHabitDone(h.id)
-                    ? 'border-success/25 bg-success/10'
-                    : 'bg-secondary/80 opacity-40 hover:opacity-70'
-                )}
-              >
-                {h.emoji}
-              </Button>
-            ))}
-          </div>
-        </WidgetCard>
+        <div className="min-w-0 xl:order-2 xl:col-span-6 2xl:col-span-3">
+          <FactGrid facts={facts} />
+        </div>
+
+        <div className="min-w-0 xl:order-3 xl:col-span-12 2xl:col-span-4">
+          <WeeklyRhythm days={week} minutes={focusMinutes} />
+        </div>
+
+        <div className="min-w-0 xl:order-4 xl:col-span-8">
+          <WeekMap
+            days={week}
+            today={today}
+            selectedDay={effectiveSelectedDay}
+            onSelectedDay={setSelectedDay}
+            sessionsByDay={liveSessionsByDay}
+            events={independentEvents}
+            assignments={assignments || []}
+            courseNames={courseNames}
+            calendarState={calendarState}
+            onOpenCalendar={() => navigate('/calendar')}
+            onOpenStudent={() => navigate('/student')}
+          />
+        </div>
       </div>
 
-      {/* ─── UPCOMING DEADLINES ─────────────────────────── */}
-      <UpcomingDeadlines />
+      <NeedsAttention
+        overdue={overdue}
+        calendarError={calendarError}
+        onOpenStudent={() => navigate('/student')}
+        onRetryCalendar={fetchCalendar}
+      />
 
-      {/* ─── TODAY STATS ────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatTile label="Sessions" value={sessionCount} />
-        <StatTile
-          label="Deep work"
-          value={totalDeepWorkMin >= 60 ? `${Math.floor(totalDeepWorkMin / 60)}h${totalDeepWorkMin % 60 > 0 ? `${totalDeepWorkMin % 60}m` : ''}` : `${totalDeepWorkMin}m`}
-        />
-        <StatTile label="Habits" value={`${habitsCompleted}/${habits.length}`} />
-      </div>
+      <DailyShortcuts
+        habits={buildShortcutHabits(habits, isHabitDone, toggleHabit)}
+        onOpenStudent={() => navigate('/student')}
+        onOpenCalendar={() => navigate('/calendar')}
+      />
     </PageShell>
   )
 }

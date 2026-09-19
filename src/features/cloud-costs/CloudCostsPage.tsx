@@ -9,7 +9,6 @@ import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { StatTile } from '@/components/shared/StatTile'
 import { TrendBadge } from '@/components/shared/TrendBadge'
-import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Progress } from '@/components/ui/progress'
@@ -28,7 +27,7 @@ import { projectRanking, resourceRanking, spendDrivers, topServices } from './br
 import { CloudCostSettings } from './CloudCostSettings'
 import { DailyBurnChart, MonthlyProjectChart, MonthlySpendChart, ServiceMixChart } from './CloudCostCharts'
 import { AccountEstimateCard, ProjectRankingCard, ResourceRankingCard, SpendDriversCard } from './CloudCostBreakdowns'
-import { cloudUsageEmptyMessage, DEFAULT_CLOUD_COST_SETTINGS, EMPTY_CLOUD_COST_CACHE } from './cloud-cost-store'
+import { cloudCostViewState, cloudUsageEmptyMessage, DEFAULT_CLOUD_COST_SETTINGS, EMPTY_CLOUD_COST_CACHE } from './cloud-cost-store'
 import { fmtUsd } from './format'
 
 const PROVIDERS: Array<{ value: CloudProviderFilter; label: string }> = [
@@ -95,6 +94,11 @@ export function CloudCostsPage() {
     .map((source) => cache.sources[source].error)
     .filter((error): error is string => Boolean(error))
   const hasLiveSource = Object.values(cache.sources).some((source) => source.ok)
+  const selectedSourceId = provider === 'aws' ? settings.awsProfile.trim() : provider === 'gcp' ? settings.gcpBillingTable.trim() : ''
+  const selectedConfigured = provider === 'all' ? hasConfiguredSource : Boolean(selectedSourceId)
+  const selectedView = cloudCostViewState(cache, provider, currentMonth)
+  const selectedLive = provider === 'all' ? hasLiveSource : cache.sources[provider].ok && cache.sources[provider].sourceId === selectedSourceId
+  const selectedFailed = provider === 'all' ? errors.length > 0 : Boolean(cache.sources[provider].error)
 
   return (
     <PageShell>
@@ -110,21 +114,23 @@ export function CloudCostsPage() {
         )}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        {PROVIDERS.map((option) => (
-          <Chip key={option.value} selectable selected={provider === option.value} onClick={() => setProvider(option.value)}>
-            {option.label}
-          </Chip>
-        ))}
-        <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-        <SourceChip provider="aws" sourceId={settings.awsProfile} status={cache.sources.aws} />
-        <SourceChip provider="gcp" sourceId={settings.gcpBillingTable} status={cache.sources.gcp} />
-        {cache.fetchedAt ? (
-          <span className="ml-auto font-mono text-2xs text-foreground-faint">
-            Updated {new Date(cache.fetchedAt).toLocaleString()}
-          </span>
-        ) : null}
-      </div>
+      {hasConfiguredSource && (
+        <div className="flex flex-wrap items-center gap-2">
+          {PROVIDERS.map((option) => (
+            <Chip key={option.value} selectable selected={provider === option.value} onClick={() => setProvider(option.value)}>
+              {option.label}
+            </Chip>
+          ))}
+          <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+          <SourceChip provider="aws" sourceId={settings.awsProfile} status={cache.sources.aws} />
+          <SourceChip provider="gcp" sourceId={settings.gcpBillingTable} status={cache.sources.gcp} />
+          {cache.fetchedAt ? (
+            <span className="ml-auto font-mono text-2xs text-foreground-faint">
+              Updated {new Date(cache.fetchedAt).toLocaleString()}
+            </span>
+          ) : null}
+        </div>
+      )}
 
       {errors.length > 0 ? (
         <div className="flex items-start gap-2 rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
@@ -133,11 +139,35 @@ export function CloudCostsPage() {
         </div>
       ) : null}
 
-      {!hasConfiguredSource ? (
-        <EmptyState
-          message="Connect a cloud account to begin the ledger."
-          hint="Use the read-only connection fields below, then run the first refresh."
-        />
+      {!selectedConfigured || !selectedView.showUsageAnalytics ? (
+        <>
+        <section className="surface grid gap-6 rounded-xl p-5 sm:p-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" aria-labelledby="cloud-empty-title">
+          <div className="flex flex-col justify-center gap-4">
+            <span className="flex size-12 items-center justify-center rounded-xl bg-focus-surface text-accent" aria-hidden>
+              <WalletCards className="size-6" />
+            </span>
+            <div className="space-y-2">
+              <h2 id="cloud-empty-title" className="text-xl font-semibold text-foreground sm:text-2xl">
+                {selectedConfigured ? selectedView.showAccountEstimate ? 'Account adjustment available' : cloudUsageEmptyMessage(selectedLive, selectedFailed) : provider === 'all' ? 'Connect your cloud costs' : `Connect ${provider.toUpperCase()} to see its costs`}
+              </h2>
+              <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
+                {selectedConfigured ? selectedView.showAccountEstimate ? 'No usage rows were returned. The current-month account adjustment is shown below; usage charts need usage data.' : 'Check the source status, then refresh after billing data is available. Usage charts appear when a snapshot contains usage.' : 'Set up the source in Connections below. Cortex reads local credentials and keeps the ledger on this Mac.'}
+              </p>
+            </div>
+          </div>
+          <div className="rounded-xl bg-secondary/40 p-4">
+            <h3 className="mb-3 text-sm font-semibold text-foreground">Billing sources</h3>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm text-foreground">AWS Cost Explorer</span><SourceChip provider="aws" sourceId={settings.awsProfile} status={cache.sources.aws} /></div>
+              <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm text-foreground">GCP Billing Export</span><SourceChip provider="gcp" sourceId={settings.gcpBillingTable} status={cache.sources.gcp} /></div>
+            </div>
+            {cache.fetchedAt && <p className="mt-4 border-t border-border/60 pt-3 font-mono text-xs text-muted-foreground">Last snapshot {new Date(cache.fetchedAt).toLocaleString()}</p>}
+          </div>
+        </section>
+        {selectedConfigured && selectedView.showAccountEstimate ? (
+          <AccountEstimateCard estimate={estimate} scope={provider === 'all' ? 'AWS + GCP accounts' : `${provider.toUpperCase()} accounts`} />
+        ) : null}
+        </>
       ) : (
         <>
           <div className={`grid gap-3 sm:grid-cols-2 ${summary.budgetPct === null ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
@@ -157,37 +187,31 @@ export function CloudCostsPage() {
 
           <AccountEstimateCard estimate={estimate} scope={provider === 'all' ? 'AWS + GCP accounts' : `${provider.toUpperCase()} accounts`} />
 
-          {cache.usageItems.length === 0 ? (
-            <EmptyState message={cloudUsageEmptyMessage(hasLiveSource, errors.length > 0)} hint="Refresh to load usage before credits from the configured sources." />
-          ) : (
-            <>
-              <div className="grid gap-4 lg:grid-cols-4">
-                <MonthlySpendChart data={monthly} provider={provider} />
-                <ServiceMixChart data={services} />
-                <ProjectRankingCard projects={projects} />
+          <div className="grid gap-4 lg:grid-cols-4">
+            <MonthlySpendChart data={monthly} provider={provider} />
+            <ServiceMixChart data={services} />
+            <ProjectRankingCard projects={projects} />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <DailyBurnChart data={daily} provider={provider} />
+            <SpendDriversCard drivers={drivers} />
+          </div>
+          {provider !== 'aws' && projectNames.length > 0 ? (
+            <section className="space-y-3" aria-label="GCP project costs">
+              <div className="flex flex-wrap items-center gap-3">
+                <label htmlFor="cloud-project" className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">GCP project</label>
+                <select id="cloud-project" value={selectedProject} onChange={(event) => setProjectSelection(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground">
+                  {projectNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+                <span className="font-mono text-xs tabular-nums text-foreground">Current month {fmtUsd(projectMonthly.at(-1)?.total ?? 0)} before credits</span>
               </div>
               <div className="grid gap-4 lg:grid-cols-3">
-                <DailyBurnChart data={daily} provider={provider} />
-                <SpendDriversCard drivers={drivers} />
+                <MonthlyProjectChart data={projectMonthly} project={selectedProject} />
+                <ServiceMixChart data={projectServices} title={`${selectedProject} services`} />
               </div>
-              {provider !== 'aws' && projectNames.length > 0 ? (
-                <section className="space-y-3" aria-label="GCP project costs">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label htmlFor="cloud-project" className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">GCP project</label>
-                    <select id="cloud-project" value={selectedProject} onChange={(event) => setProjectSelection(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground">
-                      {projectNames.map((name) => <option key={name} value={name}>{name}</option>)}
-                    </select>
-                    <span className="font-mono text-xs tabular-nums text-foreground">Current month {fmtUsd(projectMonthly.at(-1)?.total ?? 0)} before credits</span>
-                  </div>
-                  <div className="grid gap-4 lg:grid-cols-3">
-                    <MonthlyProjectChart data={projectMonthly} project={selectedProject} />
-                    <ServiceMixChart data={projectServices} title={`${selectedProject} services`} />
-                  </div>
-                  <ResourceRankingCard project={selectedProject} resources={projectResources} />
-                </section>
-              ) : null}
-            </>
-          )}
+              <ResourceRankingCard project={selectedProject} resources={projectResources} />
+            </section>
+          ) : null}
         </>
       )}
 

@@ -8,10 +8,10 @@ import { NotesTab } from './NotesTab'
 export function StudentSection() {
   return (
     <Tabs defaultValue="overview">
-      <TabsList>
-        <TabsTrigger value="overview">Overview</TabsTrigger>
-        <TabsTrigger value="materials">Materials</TabsTrigger>
-        <TabsTrigger value="notes">Notes</TabsTrigger>
+      <TabsList className="max-w-full rounded-xl">
+        <TabsTrigger value="overview" className="min-h-11 rounded-lg">Overview</TabsTrigger>
+        <TabsTrigger value="materials" className="min-h-11 rounded-lg">Materials</TabsTrigger>
+        <TabsTrigger value="notes" className="min-h-11 rounded-lg">Notes</TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
         <StudentPage />

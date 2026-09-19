@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
  * Chip — the ONE tag/category/filter primitive. Replaces every per-page
  * rainbow chip config.
  *
- * neutral (DEFAULT)          = hairline outline + mono label — categories, tags,
+ * neutral (DEFAULT)          = hairline outline — categories, tags,
  *                              domains, subjects. NEVER invent per-item hues.
  * accent                     = the ONE signal — selected/active filters only.
  * success | warning | danger = status semantics only (ok / at-risk / failing).
@@ -16,19 +16,19 @@ import { cn } from "@/lib/utils"
  * promotes any variant to the accent look.
  */
 const chipVariants = cva(
-  "inline-flex w-fit shrink-0 items-center gap-1 rounded-full border font-mono whitespace-nowrap transition-colors duration-150 [&>svg]:pointer-events-none [&>svg]:size-3",
+  "inline-flex w-fit shrink-0 items-center gap-1 rounded-full border font-medium whitespace-nowrap transition-colors duration-150 [&>svg]:pointer-events-none [&>svg]:size-3",
   {
     variants: {
       variant: {
-        neutral: "border-border bg-transparent text-muted-foreground",
-        accent: "border-accent/40 bg-accent/10 text-accent",
+        neutral: "border-border bg-card text-muted-foreground",
+        accent: "border-accent/30 bg-accent/10 text-accent",
         success: "border-success/25 bg-success/10 text-success",
         warning: "border-warning/25 bg-warning/10 text-warning",
         danger: "border-destructive/25 bg-destructive/10 text-destructive",
       },
       size: {
-        sm: "px-1.5 py-px text-3xs",
-        md: "px-2 py-0.5 text-2xs",
+        sm: "px-2 py-0.5 text-xs",
+        md: "px-2.5 py-1 text-xs",
       },
       selectable: {
         true: "cursor-pointer select-none active:scale-[0.98]",

@@ -3,8 +3,6 @@
 @import "@fontsource/inter/500.css";
 @import "@fontsource/inter/600.css";
 @import "@fontsource/inter/700.css";
-@import "@fontsource/instrument-serif/400.css";
-@import "@fontsource/instrument-serif/400-italic.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "tw-animate-css";
@@ -17,76 +15,77 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   cursor: pointer;
 }
 
-/*
- * ── Cortex tokens — "Editorial Instrument Panel" ─────────────────────────────
- * Ground: near-black warm graphite (hue 75, chroma ≤ 0.006). Lifted panels.
- * Ink: near-white, three text roles (foreground / muted-foreground / faint).
- * Signal: ONE accent — ice-cyan. Semantic trio matched in L/C so all four read
- * as a single family of indicator lights. Hairlines, not borders.
- */
+/* Cortex workspace tokens. Dark is default; :root remains the light option. */
 :root {
-  --background: oklch(0.11 0.004 75);
-  --foreground: oklch(0.985 0.002 75);
+  --background: #F1F2F7;
+  --foreground: #22232B;
 
-  --card: oklch(0.22 0.005 75);
-  --card-foreground: oklch(0.985 0.002 75);
+  --card: #FFFFFF;
+  --card-foreground: #22232B;
 
-  --popover: oklch(0.22 0.005 75);
-  --popover-foreground: oklch(0.985 0.002 75);
+  --popover: #FFFFFF;
+  --popover-foreground: #22232B;
 
-  --primary: oklch(0.985 0.002 75);
-  --primary-foreground: oklch(0.11 0.004 75);
+  --primary: #624AB5;
+  --primary-foreground: #FFFFFF;
 
-  --secondary: oklch(0.27 0.005 75);
-  --secondary-foreground: oklch(0.985 0.002 75);
+  --secondary: #E8EBF3;
+  --secondary-foreground: #22232B;
 
-  --muted: oklch(0.27 0.005 75);
-  --muted-foreground: oklch(0.74 0.006 75);
+  --muted: #E8EBF3;
+  --muted-foreground: #66707B;
 
-  /* Third (faint) text role — de-emphasized micro-copy only, never body text */
-  --foreground-faint: oklch(0.62 0.006 75);
+  --foreground-faint: #596474;
 
-  /* THE signal — ice-cyan. Focus rings, active nav, links, running sprint,
-     selected chips, primary chart series, rare key hairlines. ≤5% of any screen. */
-  --accent: oklch(0.8 0.12 218);
-  --accent-foreground: oklch(0.13 0.03 218);
+  --accent: #624AB5;
+  --accent-foreground: #FFFFFF;
+  --focus-surface: #DDD2FF;
+  --progress-surface: #E2F2C7;
 
-  --destructive: oklch(0.74 0.13 25);
-  --destructive-foreground: oklch(0.13 0.03 25);
+  --destructive: #B92F2C; --destructive-foreground: #FFFFFF;
+  --success: #227746; --success-foreground: #FFFFFF;
+  --warning: #8A4D0F; --warning-foreground: #FFFFFF;
+  --info: #256E9D;
+  --border: #DDE2EB; --input: #D6DCE8; --ring: #624AB5;
 
-  --success: oklch(0.78 0.115 155);
-  --success-foreground: oklch(0.13 0.03 155);
+  --radius: 1rem;
 
-  --warning: oklch(0.8 0.115 80);
-  --warning-foreground: oklch(0.13 0.03 80);
+  --shadow-card: 0 1px 2px rgba(26, 31, 44, 0.04), 0 18px 44px rgba(46, 55, 79, 0.08);
+  --shadow-lift: 0 8px 18px rgba(46, 55, 79, 0.10), 0 28px 70px rgba(46, 55, 79, 0.14);
 
-  /* Hairline system — quiet by default (was 0.46: far too bright) */
-  --border: oklch(0.26 0.005 75);
-  --input: oklch(0.32 0.005 75);
-  --ring: oklch(0.8 0.12 218);
+  --sidebar: #F6F7FB;
+  --sidebar-foreground: #22232B;
+  --sidebar-border: #DDE2EB;
+  --sidebar-accent: #DDD2FF;
+  --sidebar-accent-foreground: #432E91;
+  --sidebar-muted: #66707B;
+  --sidebar-primary: #624AB5;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-ring: #624AB5;
 
-  --radius: 0.75rem;
+  --chart-1: #624AB5; --chart-2: #B7A4F4; --chart-3: #227746; --chart-4: #5AA7F2; --chart-5: #F2994A;
+}
 
-  /* Shadow tokens — one ambient, one lift. Panels never invent their own. */
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 24px rgba(0, 0, 0, 0.35);
-  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.45), 0 18px 44px rgba(0, 0, 0, 0.5);
-
-  --sidebar: oklch(0.09 0.004 75);
-  --sidebar-foreground: oklch(0.985 0.002 75);
-  --sidebar-border: oklch(0.22 0.005 75);
-  --sidebar-accent: oklch(0.24 0.005 75);
-  --sidebar-accent-foreground: oklch(0.985 0.002 75);
-  --sidebar-muted: oklch(0.72 0.006 75);
-  --sidebar-primary: oklch(0.985 0.002 75);
-  --sidebar-primary-foreground: oklch(0.11 0.004 75);
-  --sidebar-ring: oklch(0.8 0.12 218);
-
-  /* Chart family — chart-1 is the accent; the rest sit at matched L/C */
-  --chart-1: oklch(0.8 0.12 218);
-  --chart-2: oklch(0.78 0.115 155);
-  --chart-3: oklch(0.8 0.115 80);
-  --chart-4: oklch(0.74 0.115 290);
-  --chart-5: oklch(0.76 0.115 350);
+.dark {
+  --background: #141720; --foreground: #F6F7FB;
+  --card: #202536; --card-foreground: #F6F7FB;
+  --popover: #202536; --popover-foreground: #F6F7FB;
+  --primary: #B7A6FF; --primary-foreground: #171226;
+  --secondary: #2B3144; --secondary-foreground: #F6F7FB;
+  --muted: #2B3144; --muted-foreground: #C1C8D6; --foreground-faint: #96A0B2;
+  --accent: #B7A6FF; --accent-foreground: #171226;
+  --focus-surface: #413574; --progress-surface: #29472D;
+  --destructive: #F27A72; --destructive-foreground: #2A0E0C;
+  --success: #62D489; --success-foreground: #0B2414;
+  --warning: #F2B35D; --warning-foreground: #2A1907;
+  --info: #82C7FF;
+  --border: #3A4257; --input: #4A536A; --ring: #B7A6FF;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 18px 44px rgba(0, 0, 0, 0.34);
+  --shadow-lift: 0 8px 18px rgba(0, 0, 0, 0.32), 0 28px 70px rgba(0, 0, 0, 0.40);
+  --sidebar: #181C28; --sidebar-foreground: #F6F7FB; --sidebar-border: #3A4257;
+  --sidebar-accent: #413574; --sidebar-accent-foreground: #F7F4FF; --sidebar-muted: #C1C8D6;
+  --sidebar-primary: #B7A6FF; --sidebar-primary-foreground: #171226; --sidebar-ring: #B7A6FF;
+  --chart-1: #B7A6FF; --chart-2: #D4CAFF; --chart-3: #7AE19B; --chart-4: #82C7FF; --chart-5: #F2B35D;
 }
 
 @theme inline {
@@ -105,12 +104,15 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --color-foreground-faint: var(--foreground-faint);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-focus-surface: var(--focus-surface);
+  --color-progress-surface: var(--progress-surface);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -128,13 +130,13 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 1.75rem;
+  --radius-4xl: 2rem;
 
   /* Micro-type sub-scale — replaces every text-[10px]/text-[9px] bracket.
      Nothing in the app renders below 9px. */
@@ -148,85 +150,62 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --shadow-lift: var(--shadow-lift);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
     Consolas, monospace;
   --font-mono--font-feature-settings: "tnum";
+  --font-serif: var(--font-sans);
   --font-heading: var(--font-sans);
 }
 
-/* Liquid Glass — RESERVED for exactly two roles:
-   the Header date pill and the StatTile `glass` variant. */
 .liquid-glass {
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.09),
-    var(--shadow-lift);
+  background: color-mix(in oklab, var(--card) 82%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
+  box-shadow: var(--shadow-card);
   position: relative;
   overflow: hidden;
 }
 
-.liquid-glass::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(180deg,
-    rgba(255, 255, 255, 0.32) 0%,
-    rgba(255, 255, 255, 0.08) 35%,
-    rgba(255, 255, 255, 0.02) 60%,
-    rgba(255, 255, 255, 0.06) 80%,
-    rgba(255, 255, 255, 0.22) 100%);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
-
-/* Surface — every primary panel/card. Warm graphite tint, hairline border,
-   token shadow, inset top highlight (signature — keep). */
 .surface {
   background-color: var(--card);
-  background-image: linear-gradient(180deg,
-    rgba(255, 255, 255, 0.07) 0%,
-    rgba(255, 255, 255, 0.02) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    var(--shadow-card);
+  border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+  box-shadow: var(--shadow-card);
+}
+
+.dark .surface {
+  background:
+    linear-gradient(145deg,
+      color-mix(in oklab, var(--card) 92%, var(--focus-surface) 8%),
+      var(--card));
+  border-color: color-mix(in oklab, var(--border) 86%, var(--focus-surface) 14%);
 }
 
 .surface-strong {
-  background-color: oklch(0.26 0.005 75);
-  background-image: linear-gradient(180deg,
-    rgba(255, 255, 255, 0.1) 0%,
-    rgba(255, 255, 255, 0.03) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.11),
-    var(--shadow-lift);
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lift);
 }
 
-/* Semantic glow — WidgetCard urgent/success variants (semantic hairline + soft
-   glow). Declared after .surface so the border/shadow overrides win. */
+.dark .surface-strong {
+  background:
+    linear-gradient(145deg,
+      color-mix(in oklab, var(--card) 88%, var(--focus-surface) 12%),
+      color-mix(in oklab, var(--card) 96%, var(--progress-surface) 4%));
+}
+
 .glow-danger {
   border-color: color-mix(in oklab, var(--destructive) 40%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
     var(--shadow-card),
-    0 0 28px -6px color-mix(in oklab, var(--destructive) 45%, transparent);
+    0 0 0 3px color-mix(in oklab, var(--destructive) 9%, transparent);
 }
 
 .glow-success {
   border-color: color-mix(in oklab, var(--success) 40%, transparent);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
     var(--shadow-card),
-    0 0 28px -6px color-mix(in oklab, var(--success) 45%, transparent);
+    0 0 0 3px color-mix(in oklab, var(--success) 10%, transparent);
 }
 
 /* Skeleton — the standard loading affordance (skeleton over spinner) */
@@ -244,7 +223,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
     translate: -100% 0;
     background: linear-gradient(90deg,
       transparent,
-      rgba(255, 255, 255, 0.05),
+      color-mix(in oklab, var(--card) 72%, transparent),
       transparent);
     animation: skeleton-sweep 1.6s ease-in-out infinite;
   }
@@ -277,12 +256,12 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.32 0.005 75);
+  background: color-mix(in oklab, var(--muted-foreground) 36%, transparent);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.42 0.005 75);
+  background: color-mix(in oklab, var(--muted-foreground) 54%, transparent);
 }
 
 @layer base {

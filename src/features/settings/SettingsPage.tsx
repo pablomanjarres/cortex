@@ -6,6 +6,12 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
+import {
+  applyThemePreference,
+  readStoredThemePreference,
+  writeStoredThemePreference,
+  type ThemePreference,
+} from '@/lib/theme'
 import { Check, Trash2, Eye, EyeOff, Download, Upload, FolderOpen, HardDrive } from 'lucide-react'
 
 interface KeyField {
@@ -28,15 +34,18 @@ function KeyRow({ field }: { field: KeyField }) {
   const [value, setValue] = useState('')
   const [saved, setSaved] = useState(false)
   const [showValue, setShowValue] = useState(false)
-  const [loading, setLoading] = useState(true)
   const isElectron = !!window.electronAPI?.keychain
+  const [loading, setLoading] = useState(isElectron)
 
   useEffect(() => {
-    if (!isElectron) { setLoading(false); return }
+    if (!isElectron) return
+    let cancelled = false
     window.electronAPI!.keychain.has(field.service).then((has) => {
+      if (cancelled) return
       setSaved(has)
       setLoading(false)
     })
+    return () => { cancelled = true }
   }, [field.service, isElectron])
 
   const save = async () => {
@@ -123,11 +132,21 @@ function fmtSize(bytes: number): string {
 export function SettingsPage() {
   const isElectron = !!window.electronAPI?.keychain
   const hasData = !!window.electronAPI?.data
+  const [theme, setTheme] = useState<ThemePreference>(() => readStoredThemePreference())
   const [dataPath, setDataPath] = useState('')
   const [dataKeys, setDataKeys] = useState<string[]>([])
   const [dataStats, setDataStats] = useState<{ key: string; size: number }[]>([])
   const [exportStatus, setExportStatus] = useState('')
   const [importStatus, setImportStatus] = useState('')
+
+  useEffect(() => {
+    applyThemePreference(theme)
+  }, [theme])
+
+  const chooseTheme = (nextTheme: ThemePreference) => {
+    setTheme(nextTheme)
+    writeStoredThemePreference(nextTheme)
+  }
 
   useEffect(() => {
     if (hasData) {
@@ -177,6 +196,30 @@ export function SettingsPage() {
 
   return (
     <PageShell>
+      <WidgetCard title="Appearance" description="Local display preference only" delay={0}>
+        <div className="flex flex-col gap-3 rounded-md bg-secondary/30 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-medium">Theme</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Dark is the default Cortex look; light stays available.</p>
+          </div>
+          <div className="inline-flex rounded-md border border-border bg-card p-1" aria-label="Appearance theme">
+            {(['dark', 'light'] as const).map((option) => (
+              <Button
+                key={option}
+                type="button"
+                variant={theme === option ? 'default' : 'ghost'}
+                size="sm"
+                aria-pressed={theme === option}
+                onClick={() => chooseTheme(option)}
+                className="min-w-20 capitalize"
+              >
+                {option}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </WidgetCard>
+
       <WidgetCard title="API keys" description="Stored securely in macOS Keychain" delay={0}>
         {isElectron ? (
           <div className="flex flex-col gap-2">

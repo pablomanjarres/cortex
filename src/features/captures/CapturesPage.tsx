@@ -38,13 +38,15 @@ interface Capture {
   createdAt: string
 }
 
+type LegacyCapture = Omit<Capture, 'imageIds'> & { imageId: string }
+
 /** Migrate legacy captures that had a single `imageId` string */
-function migrateCapture(raw: any): Capture {
+function migrateCapture(raw: Capture | LegacyCapture): Capture {
   if ('imageId' in raw && !('imageIds' in raw)) {
     const { imageId, ...rest } = raw
     return { ...rest, imageIds: imageId ? [imageId] : [] }
   }
-  return raw
+  return raw as Capture
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -126,7 +128,7 @@ export function CapturesPage() {
 
   // One-time migration: persist migrated data if any capture had old `imageId`
   useEffect(() => {
-    const needsMigration = rawCaptures.some((c: any) => 'imageId' in c && !('imageIds' in c))
+    const needsMigration = rawCaptures.some((c) => 'imageId' in c && !('imageIds' in c))
     if (needsMigration) {
       updateCaptures(() => rawCaptures.map(migrateCapture))
     }
@@ -398,7 +400,7 @@ export function CapturesPage() {
       >
         <ClipboardPaste className="h-4 w-4 text-foreground-faint" />
         <p className="text-xs text-foreground-faint">
-          <span className="font-mono text-2xs text-muted-foreground">Ctrl+V</span> to paste screenshot or{' '}
+          <span className="font-mono text-2xs text-muted-foreground">⌘V</span> to paste screenshot or{' '}
           <span className="font-medium text-muted-foreground">drop image</span> here
         </p>
       </div>

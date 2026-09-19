@@ -207,7 +207,8 @@ export function HabitsPage() {
       const next = { ...prev }
       for (const date of Object.keys(next)) {
         if (next[date][id] !== undefined) {
-          const { [id]: _, ...rest } = next[date]
+          const rest = { ...next[date] }
+          delete rest[id]
           next[date] = rest
         }
       }
@@ -252,7 +253,7 @@ export function HabitsPage() {
   const renderNoteButton = (habit: Habit, opts?: { mobile?: boolean }) => (
     <Button
       variant="ghost"
-      size={opts?.mobile ? 'icon-sm' : 'icon-xs'}
+      size={opts?.mobile ? 'icon-lg' : 'icon-xs'}
       onClick={() => toggleNote(habit.id)}
       title={habit.context ? 'Context — click to edit' : 'Add context'}
       aria-label={habit.context ? 'Edit habit context' : 'Add habit context'}
@@ -503,12 +504,12 @@ export function HabitsPage() {
               ) : (
                 <>
                   {/* Header row: emoji + name + streak + actions */}
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex min-w-0 items-center gap-2">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-1 sm:flex-nowrap">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="text-lg">{habit.emoji}</span>
                       <span className="truncate text-sm font-medium">{habit.name}</span>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="flex w-full shrink-0 items-center justify-end gap-1 sm:w-auto sm:gap-2">
                       {streak > 0 && (
                         <Chip size="sm" variant="success" className="tabular-nums">
                           <Flame />
@@ -523,10 +524,10 @@ export function HabitsPage() {
                         {cadence === 'monthly' && <span className="ml-0.5 text-3xs font-normal text-foreground-faint">/mo</span>}
                       </span>
                       {renderNoteButton(habit, { mobile: true })}
-                      <Button variant="ghost" size="icon-sm" onClick={() => startEdit(habit)} aria-label="Edit habit">
+                      <Button variant="ghost" size="icon-lg" onClick={() => startEdit(habit)} aria-label="Edit habit">
                         <Pencil />
                       </Button>
-                      <Button variant="ghost" size="icon-sm" onClick={() => removeHabit(habit.id)} aria-label="Delete habit" className="active:text-destructive">
+                      <Button variant="ghost" size="icon-lg" onClick={() => removeHabit(habit.id)} aria-label="Delete habit" className="active:text-destructive">
                         <X />
                       </Button>
                     </div>

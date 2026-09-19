@@ -139,7 +139,8 @@ export const normalizeNotes = (raw: Partial<StudyNote>[]): StudyNote[] =>
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
 export const getToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
-export const daysUntil = (d: string) => Math.ceil((new Date(d).getTime() - Date.now()) / 86_400_000)
+export const daysUntil = (d: string, today = getToday()) =>
+  Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000)
 export const fmtDate = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 /** Case- and diacritic-insensitive text key (course names are Spanish). */
