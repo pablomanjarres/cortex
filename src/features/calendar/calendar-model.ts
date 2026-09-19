@@ -41,16 +41,32 @@ export function parseDateOnly(value: string): Date | null {
   return formatLocalDate(date) === value ? date : null
 }
 
+const isDateOnly = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value)
+
+const localDayFromCalendarValue = (value: string | undefined): string | null => {
+  if (!value) return null
+  if (isDateOnly(value)) return parseDateOnly(value) ? value : null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : formatLocalDate(date)
+}
+
 export function parseEventStart(event: CalendarEventLike): Date | null {
-  if (event.isAllDay) return parseDateOnly(event.startDate.slice(0, 10))
+  if (event.isAllDay) {
+    const startDay = localDayFromCalendarValue(event.startDate)
+    return startDay ? parseDateOnly(startDay) : null
+  }
   const start = new Date(event.startDate)
   return Number.isNaN(start.getTime()) ? null : start
 }
 
 export function parseEventEnd(event: CalendarEventLike): Date | null {
   if (event.isAllDay) {
-    const end = parseDateOnly((event.endDate || addDays(event.startDate.slice(0, 10), 1)).slice(0, 10))
-    return end
+    const startDay = localDayFromCalendarValue(event.startDate)
+    if (!startDay) return null
+    if (!event.endDate) return parseDateOnly(addDays(startDay, 1))
+    if (isDateOnly(event.endDate)) return parseDateOnly(event.endDate)
+    const inclusiveEndDay = localDayFromCalendarValue(event.endDate)
+    return inclusiveEndDay ? parseDateOnly(addDays(inclusiveEndDay, 1)) : null
   }
   const end = event.endDate ? new Date(event.endDate) : null
   if (end && !Number.isNaN(end.getTime())) return end
