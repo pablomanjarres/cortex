@@ -67,6 +67,8 @@ Create a dedicated service account for Cortex, with only:
 
 Create a JSON key for that account, open **Cloud Spend → Connections** in the installed Mac app, and choose **Import GCP key**. Cortex validates the key, keeps only the signing identity and private key, encrypts them with macOS secure storage, and immediately refreshes GCP. Remove the temporary JSON file after the import succeeds. Rotate or revoke the key in Google Cloud IAM if the Mac or key is compromised.
 
+For a non-UI setup while Cortex is closed, run `/Applications/Cortex.app/Contents/MacOS/Cortex --import-gcp-billing-key=/absolute/path/to/key.json`, then reopen Cortex and press **Refresh**. The command imports the key into the same encrypted local store without starting the dashboard.
+
 If no dedicated key is imported, Cortex uses the local Application Default Credentials file ahead of any process-wide `GOOGLE_APPLICATION_CREDENTIALS` setting. This avoids picking up an unrelated agent's credential, but user ADC may still require reauthentication when a Google Workspace session expires. For this fallback, run:
 
 ```bash
