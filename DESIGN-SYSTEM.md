@@ -40,126 +40,55 @@ Never rely on color alone. Pair semantic color with a word, icon, status dot, or
 direction glyph. Avoid raw Tailwind palette colors in feature code; prefer these
 tokens and the shared primitives.
 
-No fourth role. No `text-foreground/50` improvisations.
+## Typography
 
-### The ONE signal
+Inter is the UI and heading face. IBM Plex Mono is reserved for times, currency,
+code, paths, counters, and tabular measurements. The old display-serif treatment
+is intentionally retired; `font-serif` aliases to the sans stack so legacy page
+classes do not keep a second brand voice alive.
 
-| CSS var | Value | Tailwind utility | Use |
-|---|---|---|---|
-| `--accent` | `oklch(0.8 0.12 218)` ice-cyan | `text-accent` `bg-accent/10` `border-accent/40` | ONLY: focus rings, active nav indicator, links, running-sprint state, selected filters/chips, primary chart series, rare key hairlines. **≤ 5% of any screen.** |
-| `--ring` | same as accent | (global focus style) | Focus rings — already global, do not restyle. |
+Write interface labels in sentence case. Do not add tracked all-caps labels unless
+the content is genuinely tabular or code-like. Keep line lengths short and use
+plain nouns that match what the user sees.
 
-White (`bg-primary text-primary-foreground`, i.e. `bg-foreground text-background`)
-remains the primary-button color — that sharpness is part of the identity. Accent is
-never a button fill.
+## Radius, Spacing, And Shadow
 
-### Semantic trio (indicator lights, matched to the accent)
+| Shape | Utility | Token size | Use |
+|---|---|---:|---|
+| Cards and panels | `rounded-xl` | `20px` | `.surface`, `WidgetCard`, `StatTile`, dialogs. |
+| Controls | `rounded-md` | `12px` | Buttons, inputs, tab lists, menus, compact controls. |
+| Pills | `rounded-full` | full | Chips, status dots, progress tracks, date pills. |
 
-| CSS var | Value | Utilities | Use |
-|---|---|---|---|
-| `--success` | `oklch(0.78 0.115 155)` phosphor green | `text-success` `bg-success/10` `border-success/25` | Done, on-track, gains. |
-| `--warning` | `oklch(0.8 0.115 80)` instrument amber | `text-warning` `bg-warning/10` `border-warning/25` | Paused, at-risk, pending. |
-| `--destructive` | `oklch(0.74 0.13 25)` signal red | `text-destructive` `bg-destructive/10` `border-destructive/25` | Errors, overdue, losses. |
+Use the existing 8px rhythm: `gap-4` for normal grids, `gap-3` for dense groups,
+`p-5` for primary cards, and `p-4` for compact cards. Cards get their shadow from
+`.surface`; overlays and stronger panels get `--shadow-lift` through
+`.surface-strong`.
 
-Status color grammar: **soft tint fill (`/10`) + hairline (`/25`) + full-strength text.**
-Never solid semantic fills, never raw `red-500`/`green-500`/`yellow-500`.
+## Surfaces
 
-### Charts
+`.surface` is the normal card/panel surface: white fill, quiet hairline, and the
+shared ambient shadow. `.surface-strong` is for dialogs, popovers, and elevated
+moments. `.liquid-glass` is a restrained translucent surface for compact chrome
+and KPI moments; it must not bring back graphite inset shine.
 
-| CSS var | Value | Role |
-|---|---|---|
-| `--chart-1` | `oklch(0.8 0.12 218)` | Primary series = THE accent cyan. |
-| `--chart-2` | `oklch(0.78 0.115 155)` | Green. |
-| `--chart-3` | `oklch(0.8 0.115 80)` | Amber. |
-| `--chart-4` | `oklch(0.74 0.115 290)` | Violet. |
-| `--chart-5` | `oklch(0.76 0.115 350)` | Rose. |
+Use `glow-danger` and `glow-success` only as semantic accents on an owning card.
+They add a readable status outline, not a colored card fill.
 
-Consumed ONLY through `src/lib/chart-theme.tsx` (see catalog). Never inline hex.
+## Controls
 
-### Shadows
+### Button
 
-| CSS var | Utility | Use |
-|---|---|---|
-| `--shadow-card` | `shadow-card` | The one ambient card shadow (already inside `.surface`). |
-| `--shadow-lift` | `shadow-lift` | Hover lift, overlays, popovers, tooltips. |
+Use `@/components/ui/button` for every app button.
 
-Panels never invent their own shadows.
+Variants:
 
-### Micro-type scale
-
-| Theme token | Utility | Size | Use |
-|---|---|---|---|
-| `--text-2xs` | `text-2xs` | 10px / 14px | Card titles (mono-upper), chips, kickers, tick labels. |
-| `--text-3xs` | `text-3xs` | 9px / 12px | Smallest chip size, dense table meta. Absolute floor — nothing below 9px. |
-
-**`text-[10px]` / `text-[9px]` / any `text-[Npx]` bracket is banned.** Use the scale.
-
----
-
-## (b) Type system
-
-| Role | Font | Utility | Rules |
-|---|---|---|---|
-| Display | Instrument Serif | `font-serif` | Page titles (Header — automatic), PageHeader titles, Dialog/Modal titles, EmptyState whisper, rare editorial flourishes. **Always `italic`** — the italic is the brand inflection. Never for body, labels, or data. |
-| Body | Inter | `font-sans` (default) | Everything conversational: sentences, list content, form labels. |
-| Data | IBM Plex Mono | `font-mono` | ALL numerals, timestamps, timers, metrics, card titles, code, paths, chips, kickers. `tabular-nums` is baked into `--font-mono` (tnum) — add the `tabular-nums` utility on animated counters anyway to reserve width. |
-
-### Casing rules
-
-- **Card/section titles**: mono UPPERCASE `text-2xs` `tracking-wider` `text-muted-foreground`.
-  `WidgetCard` enforces this via CSS `uppercase` — caller casing never matters. Hand-built
-  section headings must use the same stack: `font-mono text-2xs uppercase tracking-wider text-muted-foreground`.
-- **Kickers / group labels**: `font-mono text-2xs uppercase tracking-widest` (sidebar groups, PageHeader kicker).
-- **Serif is never uppercased.** Body sans is never letter-spaced.
-
-### Title ownership
-
-The topbar (Header) renders the route title from `src/lib/routes.ts` — serif italic,
-with a conveyor mask reveal on route change. **Routed pages must NOT repeat their route
-title.** In-page section headers use `<PageHeader>` (different words than the route title)
-or the WidgetCard title.
-
----
-
-## (c) Radius, spacing, shadow rules
-
-### Radius — exactly three
-
-| Shape | Utility | Applies to |
-|---|---|---|
-| Cards / panels / modals | `rounded-xl` | `.surface`, WidgetCard, StatTile, DialogContent. |
-| Controls | `rounded-md` | Buttons, inputs, tabs list, tooltips, nav items, menu items. |
-| Pills / chips | `rounded-full` | Chip, Badge, sprint pill, date chip, progress tracks, dots. |
-
-Bare `rounded` is **banned**. Other radii (`rounded-lg`, `rounded-sm`) only appear
-inside primitives (e.g. segmented-tab inner radius) — never in feature code.
-
-### Spacing rhythm
-
-- Grid gutters: `gap-4` standard, `gap-3` compact grids.
-- Card padding: `p-4` standard, `p-3` compact (WidgetCard handles this via `compact`).
-- Page: `PageShell` provides `gap-6` between page sections. Don't add extra outer margins.
-
-### Shadow
-
-- Cards get shadow from `.surface` (never add `shadow-*` to a surface).
-- Hover/overlay states: `shadow-lift`.
-- The inset top-highlight on `.surface`/`.surface-strong` is a signature — never remove it.
-
-### Motion
-
-- Page entrance: `PageShell` fade-up (12px / 0.4s). Widgets: `WidgetCard` stagger via
-  `delay` (total capped at 0.45s — the cap is enforced inside WidgetCard).
-- Interactive transitions: 150–250ms. Pressed states: `active:scale-[0.98]`.
-- EVERY animation respects `prefers-reduced-motion`: framer-motion via `useReducedMotion`,
-  CSS via `motion-safe:` variants (a global reduce rule also collapses CSS animation as a
-  safety net). One signature flourish exists (Header title conveyor); do not add more.
-
----
-
-## (d) Component catalog
-
-### Button (`@/components/ui/button`)
+- `default`: iris primary action.
+- `secondary`: white quiet action.
+- `outline`: white/transparent low-emphasis action.
+- `ghost`: chrome, row tools, icon-only controls.
+- `destructive`: soft danger action.
+- `accent-outline`: selected or engagement state.
+- `link`: inline text action.
 
 Variants: `default` (white-on-black — THE primary), `secondary` (surface-toned),
 `ghost`, `outline`, `destructive` (soft danger tint), `accent-outline` (rare
