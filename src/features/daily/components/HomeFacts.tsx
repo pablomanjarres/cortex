@@ -23,7 +23,7 @@ function WeekBars({ visual }: { visual: Extract<FactVisual, { kind: 'bars' }> })
           )
         })}
       </div>
-      <div className="mt-1 grid grid-cols-7 gap-1 text-center text-[0.58rem] font-medium text-muted-foreground" aria-hidden="true">
+      <div className="mt-1 grid grid-cols-7 gap-1 text-center text-[0.65rem] font-medium text-muted-foreground" aria-hidden="true">
         {visual.days.map((day) => <span key={day}>{dayName(day).slice(0, 1)}</span>)}
       </div>
     </div>
@@ -72,7 +72,7 @@ function WorkComposition({ visual }: { visual: Extract<FactVisual, { kind: 'work
           <span key={segment.label} className={segment.color} style={{ width: `${segment.value / total * 100}%` }} />
         ))}
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-x-1 gap-y-1 text-[0.58rem] leading-none text-muted-foreground" aria-hidden="true">
+      <div className="mt-2 grid grid-cols-2 gap-x-1 gap-y-1 text-[0.65rem] leading-none text-muted-foreground" aria-hidden="true">
         {segments.map((segment) => (
           <span key={segment.label} className="flex min-w-0 items-center gap-1 whitespace-nowrap">
             <span className={cn('size-1.5 shrink-0 rounded-full', segment.color)} />
