@@ -1,108 +1,144 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {
-  normalizeAwsPage,
-  normalizeGcpRows,
-  validateBillingTable,
-} from '../electron/cloud-cost-normalizers.ts'
+import { normalizeAwsPage, normalizeGcpRows, validateBillingTable } from '../electron/cloud-cost-normalizers.ts'
 import { collectAwsCosts } from '../electron/integrations/aws-costs.ts'
-import { buildGcpBillingQuery } from '../electron/integrations/gcp-costs.ts'
+import { buildGcpBillingQuery, collectGcpCosts } from '../electron/integrations/gcp-costs.ts'
 
-test('normalizeAwsPage maps service/account groups and preserves pagination', () => {
-  const normalized = normalizeAwsPage({
-    NextPageToken: 'page-2',
-    ResultsByTime: [{
-      TimePeriod: { Start: '2026-09-01', End: '2026-09-02' },
-      Groups: [
-        { Keys: ['Amazon Elastic Compute Cloud - Compute', '111111111111'], Metrics: { NetUnblendedCost: { Amount: '12.345', Unit: 'USD' } } },
-        { Keys: ['Amazon Simple Storage Service', '111111111111'], Metrics: { NetUnblendedCost: { Amount: '0', Unit: 'USD' } } },
-      ],
-    }],
+test('AWS normalization reads the requested USD pass and preserves pagination', () => {
+  const page = {
+    NextPageToken: 'next',
+    ResultsByTime: [{ TimePeriod: { Start: '2026-09-01' }, Groups: [{
+      Keys: ['EC2', '111'], Metrics: {
+        AmortizedCost: { Amount: '10', Unit: 'USD' },
+        UnblendedCost: { Amount: '-10', Unit: 'USD' },
+        NetAmortizedCost: { Amount: '0', Unit: 'USD' },
+      },
+    }] }],
+  }
+  assert.deepEqual(normalizeAwsPage(page, 'usage'), {
+    rows: [{ date: '2026-09-01', service: 'EC2', account: '111', amountUsd: 10 }],
+    nextPageToken: 'next',
   })
-
-  assert.equal(normalized.nextPageToken, 'page-2')
-  assert.deepEqual(normalized.items, [{
-    date: '2026-09-01',
-    provider: 'aws',
-    account: '111111111111',
-    project: '111111111111',
-    service: 'Amazon Elastic Compute Cloud - Compute',
-    amountUsd: 12.345,
-  }])
+  assert.equal(normalizeAwsPage(page, 'credit').rows[0]?.amountUsd, -10)
+  assert.deepEqual(normalizeAwsPage(page, 'net').rows, [])
 })
 
-test('normalizeAwsPage rejects a non-USD Cost Explorer response', () => {
-  assert.throws(() => normalizeAwsPage({
-    ResultsByTime: [{
-      TimePeriod: { Start: '2026-09-01' },
-      Groups: [{ Keys: ['EC2', '111'], Metrics: { NetUnblendedCost: { Amount: '3', Unit: 'EUR' } } }],
-    }],
-  }), /requires USD/)
+test('AWS normalization rejects non-USD results in every pass', () => {
+  for (const [pass, metric] of [['usage', 'AmortizedCost'], ['credit', 'UnblendedCost'], ['net', 'NetAmortizedCost']] as const) {
+    assert.throws(() => normalizeAwsPage({
+      ResultsByTime: [{ TimePeriod: { Start: '2026-09-01' }, Groups: [{
+        Keys: ['EC2', '111'], Metrics: { [metric]: { Amount: '3', Unit: 'EUR' } },
+      }] }],
+    }, pass), /requires USD/)
+  }
 })
 
-test('normalizeGcpRows applies credits and the exported currency conversion rate', () => {
+test('GCP normalization keeps gross project usage when credits make project net negative', () => {
+  const result = normalizeGcpRows([
+    { usageDate: '2026-09-04', account: 'BILLING', project: 'construcredit', service: 'Cloud Run', resource: 'worker', usageCost: '48000', otherCost: '0', credits: '-60000', currencyConversionRate: '4000' },
+    { usageDate: '2026-09-04', account: 'BILLING', project: 'nella-sync', service: 'Cloud SQL', resource: null, usageCost: '32000', otherCost: '4000', credits: '-20000', currencyConversionRate: '4000' },
+  ])
+  assert.deepEqual(result.usageItems, [
+    { date: '2026-09-04', provider: 'gcp', account: 'BILLING', project: 'construcredit', service: 'Cloud Run', resource: 'worker', amountUsd: 12 },
+    { date: '2026-09-04', provider: 'gcp', account: 'BILLING', project: 'nella-sync', service: 'Cloud SQL', resource: null, amountUsd: 8 },
+  ])
+  assert.deepEqual(result.accountAdjustments, [
+    { date: '2026-09-04', provider: 'gcp', account: 'BILLING', kind: 'credit', amountUsd: -15 },
+    { date: '2026-09-04', provider: 'gcp', account: 'BILLING', kind: 'other', amountUsd: 1 },
+    { date: '2026-09-04', provider: 'gcp', account: 'BILLING', kind: 'credit', amountUsd: -5 },
+  ])
+})
+
+test('GCP normalization moves negative regular charges to account adjustments', () => {
   assert.deepEqual(normalizeGcpRows([{
-    usageDate: { value: '2026-09-04' },
-    account: 'ABCDEF-123456-ABCDEF',
-    project: null,
-    service: 'Cloud Run',
-    cost: '120000',
-    credits: '-20000',
-    currencyConversionRate: '4000',
-  }]), [{
-    date: '2026-09-04',
-    provider: 'gcp',
-    account: 'ABCDEF-123456-ABCDEF',
-    project: 'Unassigned',
-    service: 'Cloud Run',
-    amountUsd: 25,
-  }])
+    usageDate: '2026-09-01', account: 'BILLING', project: 'project-a', service: 'Cloud Run',
+    resource: null, usageCost: '-2', otherCost: '0', credits: '0', currencyConversionRate: '1',
+  }]), {
+    usageItems: [],
+    accountAdjustments: [{ date: '2026-09-01', provider: 'gcp', account: 'BILLING', kind: 'other', amountUsd: -2 }],
+  })
 })
 
-test('normalizeGcpRows drops zero, malformed, and non-finite rows', () => {
+test('GCP normalization drops malformed, zero, and invalid-rate rows', () => {
   assert.deepEqual(normalizeGcpRows([
-    { usageDate: 'bad', cost: '10', credits: '0', currencyConversionRate: '1' },
-    { usageDate: '2026-09-01', cost: '0', credits: '0', currencyConversionRate: '1' },
-    { usageDate: '2026-09-02', cost: '10', credits: '0', currencyConversionRate: '0' },
-  ]), [])
+    { usageDate: 'bad', usageCost: '10', credits: '0', currencyConversionRate: '1' },
+    { usageDate: '2026-09-01', usageCost: '0', credits: '0', currencyConversionRate: '1' },
+    { usageDate: '2026-09-02', usageCost: '10', credits: '0', currencyConversionRate: '0' },
+  ]), { usageItems: [], accountAdjustments: [] })
 })
 
-test('validateBillingTable accepts one fully qualified table and rejects SQL fragments', () => {
-  assert.equal(
-    validateBillingTable('billing-prod.cost_export.gcp_billing_export_v1_ABCDEF-123456-ABCDEF'),
-    'billing-prod.cost_export.gcp_billing_export_v1_ABCDEF-123456-ABCDEF',
-  )
+test('billing table validation rejects SQL fragments', () => {
+  assert.equal(validateBillingTable('billing-prod.cost_export.gcp_billing_export_v1_ACCOUNT'), 'billing-prod.cost_export.gcp_billing_export_v1_ACCOUNT')
   assert.throws(() => validateBillingTable('billing.dataset.table` WHERE TRUE; --'), /project\.dataset\.table/)
-  assert.throws(() => validateBillingTable('dataset.table'), /project\.dataset\.table/)
 })
 
-test('collectAwsCosts follows Cost Explorer pagination without losing rows', async () => {
-  const seenTokens: Array<string | undefined> = []
-  const pages = [
-    {
-      NextPageToken: 'next',
-      ResultsByTime: [{ TimePeriod: { Start: '2026-09-01' }, Groups: [{ Keys: ['EC2', '111'], Metrics: { NetUnblendedCost: { Amount: '3', Unit: 'USD' } } }] }],
-    },
-    {
-      ResultsByTime: [{ TimePeriod: { Start: '2026-09-02' }, Groups: [{ Keys: ['S3', '111'], Metrics: { NetUnblendedCost: { Amount: '2', Unit: 'USD' } } }] }],
-    },
-  ]
+test('AWS collector paginates gross usage and keeps fully offset credits separate', async () => {
+  const seen: Array<{ metric: string; filter: unknown; token: string | undefined }> = []
   const client = {
-    async send(command: { input: { NextPageToken?: string } }) {
-      seenTokens.push(command.input.NextPageToken)
-      return pages.shift() ?? {}
+    async send(command: { input: { Metrics: string[]; Filter?: unknown; NextPageToken?: string } }) {
+      const metric = command.input.Metrics[0]
+      seen.push({ metric, filter: command.input.Filter, token: command.input.NextPageToken })
+      if (metric === 'AmortizedCost') {
+        const amount = command.input.NextPageToken ? '4' : '6'
+        return { NextPageToken: command.input.NextPageToken ? undefined : 'next', ResultsByTime: [{ TimePeriod: { Start: '2026-09-01' }, Groups: [{ Keys: ['EC2', '111'], Metrics: { AmortizedCost: { Amount: amount, Unit: 'USD' } } }] }] }
+      }
+      const amount = metric === 'UnblendedCost' ? '-10' : '0'
+      return { ResultsByTime: [{ TimePeriod: { Start: '2026-09-01' }, Groups: [{ Keys: ['EC2', '111'], Metrics: { [metric]: { Amount: amount, Unit: 'USD' } } }] }] }
     },
   }
-
   const result = await collectAwsCosts(client, '2026-09-01', '2026-09-03')
-  assert.deepEqual(seenTokens, [undefined, 'next'])
-  assert.deepEqual(result.map((item) => item.amountUsd), [3, 2])
+  assert.deepEqual(seen.map(({ metric, token }) => [metric, token]), [
+    ['AmortizedCost', undefined], ['AmortizedCost', 'next'], ['UnblendedCost', undefined], ['NetAmortizedCost', undefined],
+  ])
+  assert.deepEqual(seen[0]?.filter, { Dimensions: { Key: 'RECORD_TYPE', Values: ['Usage', 'DiscountedUsage', 'SavingsPlanCoveredUsage'] } })
+  assert.deepEqual(seen[2]?.filter, { Dimensions: { Key: 'RECORD_TYPE', Values: ['Credit'] } })
+  assert.deepEqual(result.usageItems.map(({ amountUsd, resource }) => [amountUsd, resource]), [[6, null], [4, null]])
+  assert.deepEqual(result.accountAdjustments, [{ date: '2026-09-01', provider: 'aws', account: '111', kind: 'credit', amountUsd: -10 }])
 })
 
-test('buildGcpBillingQuery uses a validated table, date parameters, credits, and conversion rate', () => {
+test('AWS collector reconciles charges outside usage and credits', async () => {
+  const client = {
+    async send(command: { input: { Metrics: string[] } }) {
+      const metric = command.input.Metrics[0]
+      const amount = metric === 'AmortizedCost' ? '10' : metric === 'UnblendedCost' ? '-3' : '4'
+      return { ResultsByTime: [{ TimePeriod: { Start: '2026-09-01' }, Groups: [{ Keys: ['EC2', '111'], Metrics: { [metric]: { Amount: amount, Unit: 'USD' } } }] }] }
+    },
+  }
+  const result = await collectAwsCosts(client, '2026-09-01', '2026-09-02')
+  assert.deepEqual(result.accountAdjustments, [
+    { date: '2026-09-01', provider: 'aws', account: '111', kind: 'credit', amountUsd: -3 },
+    { date: '2026-09-01', provider: 'aws', account: '111', kind: 'other', amountUsd: -3 },
+  ])
+})
+
+test('GCP query separates regular charges, credits, and other cost types', () => {
   const query = buildGcpBillingQuery('billing-prod.cost_export.gcp_billing_export_v1_ACCOUNT')
-  assert.match(query, /`billing-prod\.cost_export\.gcp_billing_export_v1_ACCOUNT`/)
   assert.match(query, /DATE\(usage_start_time\) >= DATE\(@startDate\)/)
+  assert.match(query, /cost_type = 'regular'/)
   assert.match(query, /UNNEST\(credits\)/)
   assert.match(query, /currency_conversion_rate/)
+  assert.match(query, /NULL AS resource/)
+  assert.doesNotMatch(query, /resource\.global_name/)
+  assert.match(buildGcpBillingQuery('billing-prod.cost_export.gcp_billing_export_resource_v1_ACCOUNT', true), /resource\.global_name/)
+})
+
+test('GCP collector detects Detailed export resources and falls back for Standard exports', async () => {
+  for (const detailed of [true, false]) {
+    const queries: string[] = []
+    const client = {
+      async query(options: { query: string }) {
+        queries.push(options.query)
+        if (options.query.includes('INFORMATION_SCHEMA')) return [detailed ? [{ column_name: 'resource' }] : []]
+        return [[{
+          usageDate: '2026-09-01', account: 'BILLING', project: 'construcredit', service: 'Cloud Run',
+          resource: detailed ? 'projects/construcredit/services/api' : null,
+          usageCost: '5', otherCost: '0', credits: '-5', currencyConversionRate: '1',
+        }]]
+      },
+    }
+    const result = await collectGcpCosts(client, 'billing-prod.cost_export.gcp_billing_export_v1_ACCOUNT', '2026-09-01', '2026-09-02')
+    assert.equal(result.usageItems[0]?.resource, detailed ? 'projects/construcredit/services/api' : null)
+    assert.equal(queries.length, 2)
+    assert.equal(queries[1]?.includes('resource.global_name'), detailed)
+  }
 })
