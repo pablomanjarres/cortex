@@ -161,8 +161,10 @@ export function CalendarPage() {
       <div className={cn('grid min-w-0 gap-5', view === 'week' ? 'xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]' : 'xl:grid-cols-[minmax(0,1fr)_220px]')}>
         <section className={cn('surface min-w-0 overflow-hidden rounded-3xl p-4', view === 'day' && 'order-2 xl:order-2')}>
           <div className={cn(
-            'grid grid-flow-col auto-cols-[4rem] gap-3 overflow-x-auto pb-1',
-            view === 'week' ? 'md:grid-flow-row md:auto-cols-auto md:grid-cols-7 md:overflow-visible xl:grid-cols-1' : 'xl:grid-flow-row xl:auto-cols-auto xl:grid-cols-1 xl:overflow-visible',
+            'grid gap-3 pb-1',
+            view === 'week'
+              ? 'grid-flow-col auto-cols-[4rem] overflow-x-auto md:grid-flow-row md:auto-cols-auto md:grid-cols-7 md:overflow-visible xl:grid-cols-1'
+              : 'grid-cols-4 xl:grid-cols-1',
           )}>
             {groups.map((group) => <WeekDayButton key={group.date} group={group} selected={group.date === selectedGroup.date} today={group.date === formatLocalDate(new Date())} state={state} compact={view === 'day'} onSelect={() => setSelectedDay(group.date)} />)}
           </div>
