@@ -274,118 +274,31 @@ export function DailyPage() {
 
   return (
     <PageShell>
-      {/* ─── DATE KICKER ────────────────────────────────── */}
-      <p className="font-mono text-2xs uppercase tracking-widest text-muted-foreground">
-        {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-      </p>
+      <div className="flex flex-col gap-1">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">{greeting}</h1>
+        <p className="text-sm font-medium text-muted-foreground">
+          {new Date(`${today}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+        </p>
+      </div>
 
-      {/* ─── SPRINT TIMER ───────────────────────────────── */}
-      <WidgetCard title="Sprint" description={`${sessionCount} sessions · ${Math.floor(totalDeepWorkMin / 60)}h ${totalDeepWorkMin % 60}m deep work`} delay={0.05}>
-        <div className="flex flex-col gap-4">
-          <Input
-            value={timerTask}
-            onChange={(e) => setTimerTask(e.target.value)}
-            placeholder="What are you working on?"
-            className="h-9"
+      <div className="grid gap-5 xl:grid-cols-12">
+        <div className="xl:order-1 xl:col-span-5">
+          <FocusHero
+            isRunning={isRunning}
+            isPaused={isPaused}
+            timeLeft={timeLeft}
+            task={timerTask}
+            duration={timerDuration}
+            sessions={sprintSessions}
+            sessionCount={sessionCount}
+            totalMinutes={totalDeepWorkMin}
+            onTaskChange={setTimerTask}
+            onDurationChange={setDuration}
+            onStart={start}
+            onPause={pause}
+            onResume={resume}
+            onReset={resetTimer}
           />
-          <div className="flex items-center justify-between">
-            <span className={cn(
-              'font-mono text-4xl font-medium tabular-nums tracking-tight md:text-5xl',
-              isRunning ? 'text-foreground' : 'text-muted-foreground'
-            )}>
-              {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
-            </span>
-            <div className="flex gap-2">
-              <Button
-                size="icon-lg"
-                aria-label={isRunning ? 'Pause sprint' : 'Start sprint'}
-                onClick={() => {
-                  if (isRunning) {
-                    pause()
-                  } else if (isPaused) {
-                    resume()
-                  } else {
-                    start()
-                  }
-                }}
-              >
-                {isRunning ? <Pause /> : <Play className="ml-0.5" />}
-              </Button>
-              <Button variant="secondary" size="icon-lg" aria-label="Reset sprint" onClick={resetTimer}>
-                <RotateCcw />
-              </Button>
-            </div>
-          </div>
-          {/* Duration presets */}
-          <div className="flex gap-1.5">
-            {timerPresets.map((m) => (
-              <Button
-                key={m}
-                size="xs"
-                variant={timerDuration === m && !showCustomTime ? 'default' : 'secondary'}
-                disabled={isRunning || isPaused}
-                className="flex-1 font-mono"
-                onClick={() => { setDuration(m); setShowCustomTime(false) }}
-              >
-                {m}m
-              </Button>
-            ))}
-            <Button
-              size="xs"
-              variant={showCustomTime || !timerPresets.includes(timerDuration) ? 'default' : 'secondary'}
-              disabled={isRunning || isPaused}
-              className="flex-1 font-mono"
-              onClick={() => setShowCustomTime(!showCustomTime)}
-            >
-              {!timerPresets.includes(timerDuration) ? `${timerDuration}m` : '...'}
-            </Button>
-          </div>
-          {showCustomTime && (
-            <div className="flex items-center gap-1.5">
-              <Input
-                type="number"
-                min={1}
-                max={240}
-                value={customTimeInput}
-                onChange={(e) => setCustomTimeInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const val = parseInt(customTimeInput)
-                    if (val > 0 && val <= 240) { setDuration(val); setShowCustomTime(false) }
-                  }
-                }}
-                placeholder="minutes"
-                className="h-7 flex-1 text-xs"
-                autoFocus
-              />
-              <Button
-                size="sm"
-                onClick={() => {
-                  const val = parseInt(customTimeInput)
-                  if (val > 0 && val <= 240) { setDuration(val); setShowCustomTime(false) }
-                }}
-              >
-                Set
-              </Button>
-            </div>
-          )}
-          {/* Session history */}
-          {sprintSessions.length > 0 && (
-            <div className="mt-1 border-t border-border/60 pt-3">
-              <p className="mb-1.5 font-mono text-2xs text-foreground-faint">{sprintSessions.length} session{sprintSessions.length !== 1 ? 's' : ''} today</p>
-              <div className="flex max-h-24 flex-col gap-1 overflow-y-auto">
-                {[...sprintSessions].reverse().map((s) => (
-                  <div key={s.id} className="flex items-center gap-2 text-xs">
-                    <span className="shrink-0 font-mono text-2xs tabular-nums text-foreground-faint">
-                      {new Date(s.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    <span className="truncate text-muted-foreground">{s.task}</span>
-                    <span className="ml-auto shrink-0 font-mono text-2xs tabular-nums text-foreground-faint">{s.duration}m</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </WidgetCard>
 
@@ -457,17 +370,39 @@ export function DailyPage() {
         </WidgetCard>
       </div>
 
-      {/* ─── UPCOMING DEADLINES ─────────────────────────── */}
-      <UpcomingDeadlines />
+        <div className="xl:order-5 xl:col-span-4">
+          <UpNext
+            items={nextItems}
+            calendarState={calendarState}
+            calendarError={calendarError}
+            onOpenCalendar={() => navigate('/calendar')}
+            onOpenStudent={() => navigate('/student')}
+            onRetryCalendar={fetchCalendar}
+          />
+        </div>
 
-      {/* ─── TODAY STATS ────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatTile label="Sessions" value={sessionCount} />
-        <StatTile
-          label="Deep work"
-          value={totalDeepWorkMin >= 60 ? `${Math.floor(totalDeepWorkMin / 60)}h${totalDeepWorkMin % 60 > 0 ? `${totalDeepWorkMin % 60}m` : ''}` : `${totalDeepWorkMin}m`}
-        />
-        <StatTile label="Habits" value={`${habitsCompleted}/${habits.length}`} />
+        <div className="xl:order-2 xl:col-span-3">
+          <FactGrid facts={facts} />
+        </div>
+
+        <div className="xl:order-3 xl:col-span-4">
+          <WeeklyRhythm days={week} minutes={focusMinutes} />
+        </div>
+
+        <div className="xl:order-4 xl:col-span-8">
+          <WeekMap
+            days={week}
+            selectedDay={effectiveSelectedDay}
+            onSelectedDay={setSelectedDay}
+            sessionsByDay={sessionsByDay}
+            events={calendarEvents}
+            assignments={assignments || []}
+            courseNames={courseNames}
+            calendarState={calendarState}
+            onOpenCalendar={() => navigate('/calendar')}
+            onOpenStudent={() => navigate('/student')}
+          />
+        </div>
       </div>
     </PageShell>
   )
