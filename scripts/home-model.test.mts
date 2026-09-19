@@ -83,3 +83,91 @@ test('upcomingAssignments keeps open valid deadlines from today onward without m
   assert.deepEqual(result.map((item) => item.id), ['today', 'same-a', 'same-b', 'later'])
   assert.deepEqual(assignments.map((item) => item.id), originalOrder)
 })
+
+test('overdueAssignments returns only open past-deadline assignments in age order', async () => {
+  const { overdueAssignments } = await loadModel()
+  const result = overdueAssignments([
+    assignment({ id: 'future', deadline: '2026-09-20' }),
+    assignment({ id: 'oldest', deadline: '2026-09-10' }),
+    assignment({ id: 'done-past', deadline: '2026-09-18', done: true }),
+    assignment({ id: 'recent', deadline: '2026-09-18' }),
+    assignment({ id: 'bad', deadline: 'September 18' }),
+  ], new Date('2026-09-19T08:00:00-05:00'))
+
+  assert.deepEqual(result.map((item) => item.id), ['oldest', 'recent'])
+})
+
+test('upNextItems merges future calendar events and open deadlines by actual time', async () => {
+  const { upNextItems } = await loadModel()
+  const result = upNextItems({
+    events: [
+      {
+        id: 'late-call',
+        title: 'Late call',
+        startDate: '2026-09-19T20:00:00-05:00',
+        endDate: '2026-09-19T21:00:00-05:00',
+        calendar: 'Work',
+        isAllDay: false,
+      },
+      {
+        id: 'past-event',
+        title: 'Already happened',
+        startDate: '2026-09-19T07:00:00-05:00',
+        endDate: '2026-09-19T08:00:00-05:00',
+        calendar: 'Work',
+        isAllDay: false,
+      },
+    ],
+    assignments: [
+      assignment({ id: 'tomorrow', name: 'Tomorrow assignment', courseId: 'cs', deadline: '2026-09-20' }),
+      assignment({ id: 'today', name: 'Today assignment', courseId: 'math', deadline: '2026-09-19' }),
+      assignment({ id: 'done', deadline: '2026-09-19', done: true }),
+    ],
+    courseNames: new Map([['cs', 'Computer Science'], ['math', 'Math']]),
+    now: new Date('2026-09-19T08:00:00-05:00'),
+  })
+
+  assert.deepEqual(result.map((item) => `${item.kind}:${item.id}`), [
+    'event:late-call',
+    'deadline:today',
+    'deadline:tomorrow',
+  ])
+  assert.deepEqual(result.map((item) => item.source), ['Work', 'Math', 'Computer Science'])
+})
+
+test('upNextItems keeps ongoing timed events and current all-day events visible', async () => {
+  const { upNextItems } = await loadModel()
+  const result = upNextItems({
+    events: [
+      {
+        id: 'all-day',
+        title: 'Conference',
+        startDate: '2026-09-19',
+        endDate: '2026-09-20',
+        calendar: 'Personal',
+        isAllDay: true,
+      },
+      {
+        id: 'ongoing',
+        title: 'Studio block',
+        startDate: '2026-09-19T07:00:00-05:00',
+        endDate: '2026-09-19T09:00:00-05:00',
+        calendar: 'Work',
+        isAllDay: false,
+      },
+      {
+        id: 'ended',
+        title: 'Earlier',
+        startDate: '2026-09-19T06:00:00-05:00',
+        endDate: '2026-09-19T07:00:00-05:00',
+        calendar: 'Work',
+        isAllDay: false,
+      },
+    ],
+    assignments: [],
+    courseNames: new Map(),
+    now: new Date('2026-09-19T08:00:00-05:00'),
+  })
+
+  assert.deepEqual(result.map((item) => item.id), ['all-day', 'ongoing'])
+})
