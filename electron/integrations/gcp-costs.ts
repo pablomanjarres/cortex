@@ -31,7 +31,7 @@ export function resolveGcpAuthOptions(serviceAccountJson: string | null, localAd
   { credentials?: GcpServiceAccount; keyFilename?: string } {
   if (serviceAccountJson !== null) return { credentials: parseGcpServiceAccount(serviceAccountJson) }
   if (localAdcPath) return { keyFilename: localAdcPath }
-  return {}
+  throw new Error('GCP credentials unavailable: import a billing key or configure local ADC')
 }
 
 interface BigQueryLike {
