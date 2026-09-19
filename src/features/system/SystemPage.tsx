@@ -99,9 +99,9 @@ function Bar({ pct, label, right }: { pct: number; label: string; right?: string
 }
 
 function Sparkline({ values, max = 100 }: { values: number[]; max?: number }) {
-  if (values.length === 0) return <div className="h-8" />
+  if (values.length === 0) return <div className="h-24" />
   const w = 200
-  const h = 32
+  const h = 96
   const stepX = values.length > 1 ? w / (values.length - 1) : 0
   const points = values.map((v, i) => {
     const y = h - (Math.max(0, Math.min(max, v)) / max) * h
@@ -110,10 +110,26 @@ function Sparkline({ values, max = 100 }: { values: number[]; max?: number }) {
   const path = `M ${points.join(' L ')}`
   const area = `${path} L ${w},${h} L 0,${h} Z`
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-8 w-full">
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-24 w-full">
       <path d={area} fill="currentColor" opacity="0.15" />
       <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
+  )
+}
+
+function TrendPanel({ label, value, values }: { label: string; value: number; values: number[] }) {
+  return (
+    <div className={sparkTone(value)}>
+      <div className="mb-4 flex items-baseline justify-between gap-2">
+        <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{label}</span>
+        <span className="font-mono text-xl tabular-nums">{value.toFixed(1)}%</span>
+      </div>
+      <Sparkline values={values} />
+      <div className="mt-2 flex justify-between font-mono text-3xs text-foreground-faint">
+        <span>60s ago</span>
+        <span>Now</span>
+      </div>
+    </div>
   )
 }
 
@@ -273,26 +289,25 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         />
       </div>
 
-      <WidgetCard title="Live activity" description="CPU and memory · last 60 seconds" delay={delay}>
-        {/* CPU + RAM sparklines */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className={sparkTone(cpuPct)}>
-            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">CPU history (60s)</div>
-            <Sparkline values={cpuHistory.current} max={100} />
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+        <WidgetCard title="Live activity" description="CPU and memory · last 60 seconds" delay={delay} className="min-w-0">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TrendPanel label="CPU" value={cpuPct} values={cpuHistory.current} />
+            <TrendPanel label="RAM" value={memPct} values={memHistory.current} />
           </div>
-          <div className={sparkTone(memPct)}>
-            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">RAM history (60s)</div>
-            <Sparkline values={memHistory.current} max={100} />
-          </div>
-        </div>
+        </WidgetCard>
 
-        {/* Memory + swap bars */}
-        <div className="flex flex-col gap-2.5">
-          <Bar pct={memPct} label="Memory" right={`${fmtBytes(memUsed, 1)} used`} />
-          {swap && swap.total > 0 && (
-            <Bar pct={swap.percent} label="Swap" right={`${fmtBytes(swap.used, 1)} / ${fmtBytes(swap.total, 1)}`} />
-          )}
-        </div>
+        <WidgetCard title="Memory & swap" description="Physical and virtual memory" delay={delay + 0.05}>
+          <div className="flex flex-col gap-5">
+            <Bar pct={memPct} label="Memory" right={`${fmtBytes(memUsed, 1)} / ${fmtBytes(memTotal, 1)}`} />
+            {swap && swap.total > 0 && (
+              <Bar pct={swap.percent} label="Swap" right={`${fmtBytes(swap.used, 1)} / ${fmtBytes(swap.total, 1)}`} />
+            )}
+          </div>
+        </WidgetCard>
+      </div>
+
+      <WidgetCard title="System details" delay={delay + 0.1}>
 
         {/* Disk */}
         {fsList.length > 0 && (
