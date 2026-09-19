@@ -1,10 +1,11 @@
 import { ArrowRight, BookOpen, CalendarDays, ListTodo, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { daysUntil, fmtDate, type Assignment, type Course } from './student-types'
+import { fmtDate, type Assignment, type Course } from './student-types'
 import type { StudentOverview } from './student-overview'
 
-export function StudentOverviewCards({ semester, overview, priorityCourse, onOpenPriority, onAddCourse, onAddAssignment }: {
+export function StudentOverviewCards({ semester, today, overview, priorityCourse, onOpenPriority, onAddCourse, onAddAssignment }: {
   semester: string
+  today: string
   overview: StudentOverview
   priorityCourse?: Course
   onOpenPriority: (assignment: Assignment) => void
@@ -12,7 +13,7 @@ export function StudentOverviewCards({ semester, overview, priorityCourse, onOpe
   onAddAssignment: () => void
 }) {
   const next = overview.priorityAssignment
-  const overdue = Boolean(next?.deadline && daysUntil(next.deadline) < 0)
+  const overdue = Boolean(next?.deadline && next.deadline < today)
   const action = next
     ? { label: 'Review assignment', onClick: () => onOpenPriority(next) }
     : overview.courseCount > 0
