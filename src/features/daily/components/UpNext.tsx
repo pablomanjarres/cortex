@@ -26,7 +26,7 @@ export function UpNext({
     || (calendarState === 'error'
       ? 'Calendar could not be loaded.'
       : calendarState === 'ambiguous'
-        ? 'Calendar returned no events from the desktop bridge. Retry before treating the week as clear.'
+        ? 'Calendar returned no events. Retry before treating the week as clear.'
         : 'No events or deadlines ahead this week.')
 
   return (

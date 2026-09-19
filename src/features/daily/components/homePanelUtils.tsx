@@ -3,7 +3,6 @@ import { CalendarDays, CheckCircle2, ClipboardList, TimerReset } from 'lucide-re
 import type { Assignment } from '@/features/student/student-types'
 import type { HomeCalendarEvent } from '../home-model'
 
-export type CalendarSource = 'electron' | 'http'
 export type CalendarState = 'loading' | 'ready' | 'error' | 'empty' | 'ambiguous'
 
 export interface FactItem {
@@ -132,11 +131,9 @@ export const homeCalendarState = (
   loading: boolean,
   error: string | null,
   events: HomeCalendarEvent[],
-  source: CalendarSource = 'http',
 ): CalendarState => {
   if (loading) return 'loading'
   if (error) return 'error'
-  if (events.length === 0 && source === 'electron') return 'ambiguous'
-  if (events.length === 0) return 'empty'
+  if (events.length === 0) return 'ambiguous'
   return 'ready'
 }
