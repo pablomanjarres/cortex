@@ -127,15 +127,9 @@ translucent treatment.
 
 ### PageHeader
 
-```tsx
-<TrendBadge value={8.2} />
-<TrendBadge value={-3} invert />  {/* spend went down = green */}
-```
-
-### PageHeader (`@/components/shared/PageHeader`)
-
-Optional in-page header for tab sections: mono-upper kicker, serif italic title,
-subtitle, actions slot. Never repeats the topbar route title.
+`PageHeader` is for in-page sections and tab panels. It must not repeat the route
+title rendered by the shell. Kicker text is optional context, not an all-caps
+decoration.
 
 ```tsx
 <PageHeader kicker="This semester" title="Compilers" subtitle="4 assignments open"
