@@ -36,8 +36,10 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
           </h1>
         </span>
       </div>
-      <div className="ml-auto flex items-center gap-2 md:hidden">
-        <RouteSearch compact />
+      <div className="ml-auto md:ml-0 md:min-w-0 md:flex-1">
+        <RouteSearch />
+      </div>
+      <div className="flex items-center gap-2 md:hidden">
         <button
           onClick={() => navigate('/library?kind=captures')}
           aria-label="Capture"
@@ -46,8 +48,7 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
           <Plus className="h-4 w-4" />
         </button>
       </div>
-      <div className="hidden min-w-0 flex-1 items-center justify-between gap-2 md:flex lg:gap-4">
-        <RouteSearch />
+      <div className="hidden shrink-0 items-center gap-2 md:flex lg:gap-4">
         <div className="flex shrink-0 items-center gap-2 lg:gap-3">
           <button
             onClick={() => navigate('/system')}

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { searchNavigation } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 
-export function RouteSearch({ compact = false }: { compact?: boolean }) {
+export function RouteSearch() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -22,6 +22,10 @@ export function RouteSearch({ compact = false }: { compact?: boolean }) {
         event.preventDefault()
         setOpen(true)
       }
+      if (event.key === 'Escape') {
+        setOpen(false)
+        setQuery('')
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -38,33 +42,27 @@ export function RouteSearch({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div className={cn(compact ? 'relative flex-none' : 'relative min-w-[10rem] flex-1 lg:max-w-[420px]', '[-webkit-app-region:no-drag]')}>
+    <div className="relative flex-none [-webkit-app-region:no-drag] md:min-w-[10rem] md:flex-1 lg:max-w-[420px]">
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label={compact ? 'Search pages and actions' : undefined}
-        className={cn(
-          'flex h-12 items-center gap-3 rounded-2xl border border-border bg-card text-left text-sm text-muted-foreground shadow-card transition-colors hover:border-accent/30 hover:text-foreground',
-          compact ? 'h-11 w-11 justify-center px-0' : 'w-full px-4'
-        )}
+        aria-label="Search pages and actions"
+        className="flex h-11 w-11 items-center justify-center gap-3 rounded-2xl border border-border bg-card text-left text-sm text-muted-foreground shadow-card transition-colors hover:border-accent/30 hover:text-foreground md:h-12 md:w-full md:justify-start md:px-4"
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <Search className="h-5 w-5 text-sidebar-primary" />
-        {!compact && <span className="min-w-0 flex-1 truncate">Search pages and actions</span>}
-        {!compact && <kbd className="hidden rounded-lg bg-secondary px-2 py-1 font-mono text-2xs text-muted-foreground sm:inline">
+        <span className="hidden min-w-0 flex-1 truncate md:inline">Search pages and actions</span>
+        <kbd className="hidden rounded-lg bg-secondary px-2 py-1 font-mono text-2xs text-muted-foreground md:inline">
           ⌘ K
-        </kbd>}
+        </kbd>
       </button>
 
       {open && (
         <div
           role="dialog"
           aria-label="Route search"
-          className={cn(
-            'z-50 overflow-hidden rounded-2xl border border-border bg-card shadow-lift',
-            compact ? 'fixed left-4 right-4 top-[calc(4.5rem+env(safe-area-inset-top))]' : 'absolute left-0 top-14 w-full'
-          )}
+          className="fixed left-4 right-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-50 overflow-hidden rounded-2xl border border-border bg-card shadow-lift md:absolute md:left-0 md:right-auto md:top-14 md:w-full"
         >
           <div className="flex items-center gap-3 border-b border-border px-4 py-3">
             <Search className="h-4 w-4 text-sidebar-primary" />
@@ -72,13 +70,11 @@ export function RouteSearch({ compact = false }: { compact?: boolean }) {
               ref={inputRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') close()
-                if (event.key === 'Enter' && selected) openItem(selected.href)
-              }}
+              onKeyDown={(event) => { if (event.key === 'Enter' && selected) openItem(selected.href) }}
               placeholder="Find a page or action"
               className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             />
+            <button type="button" onClick={close} aria-label="Close search" className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><X className="size-4" /></button>
           </div>
           <div className="max-h-72 overflow-y-auto p-2">
             {items.length > 0 ? (
