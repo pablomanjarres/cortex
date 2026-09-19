@@ -120,7 +120,7 @@ test('Home facts render four real-data microcharts rather than empty card space'
   assert.match(markup, /role="img" aria-label="Events this week: Mon 0, Tue 0, Wed 0, Thu 0, Fri 0, Sat 1, Sun 1"/)
 })
 
-test('Habits progress ring has a readable 56 px diameter and percentage on Home', async () => {
+test('Habits progress ring fits phones and grows on desktop cards', async () => {
   const { FactGrid } = await import('../src/features/daily/components/HomeFacts.tsx')
   const markup = renderToStaticMarkup(createElement(FactGrid, {
     facts: [{
@@ -133,8 +133,8 @@ test('Habits progress ring has a readable 56 px diameter and percentage on Home'
     }],
   }))
 
-  assert.match(markup, /class="relative grid size-14 shrink-0 place-items-center rounded-full"/)
-  assert.match(markup, /class="grid size-11 place-items-center rounded-full bg-card font-mono text-xs font-semibold text-success"/)
+  assert.match(markup, /class="relative grid size-14 shrink-0 place-items-center rounded-full xl:size-16"/)
+  assert.match(markup, /class="grid size-11 place-items-center rounded-full bg-card font-mono text-xs font-semibold text-success xl:size-13 xl:text-sm"/)
 })
 
 test('Schedule shows no event chart when its Calendar read failed', async () => {
