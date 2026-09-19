@@ -82,8 +82,8 @@ interface ElectronAPI {
     refresh: (settings?: CloudCostSettings) => Promise<CloudCostCache | null>
     status: () => Promise<Record<CloudProvider, CloudCostSourceStatus>>
     gcpCredentialStatus: () => Promise<{ configured: boolean; email: string | null }>
-    importGcpCredential: (json: string) => Promise<{ ok: boolean; email?: string; error?: string; source?: CloudCostSourceStatus | null }>
-    removeGcpCredential: () => Promise<boolean>
+    importGcpCredential: (json: string, settings: CloudCostSettings) => Promise<{ ok: boolean; email?: string; error?: string; source?: CloudCostSourceStatus | null }>
+    removeGcpCredential: (settings: CloudCostSettings) => Promise<boolean>
   }
   media: {
     save: (id: string, base64: string) => Promise<boolean>

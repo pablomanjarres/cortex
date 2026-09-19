@@ -51,8 +51,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('cloud-costs:refresh', settings),
     status: () => ipcRenderer.invoke('cloud-costs:status'),
     gcpCredentialStatus: () => ipcRenderer.invoke('cloud-costs:gcp-credential-status'),
-    importGcpCredential: (json: string) => ipcRenderer.invoke('cloud-costs:gcp-credential-import', json),
-    removeGcpCredential: () => ipcRenderer.invoke('cloud-costs:gcp-credential-remove'),
+    importGcpCredential: (json: string, settings: { awsProfile: string; gcpBillingTable: string; gcpQueryProject: string; monthlyBudgetUsd: number }) =>
+      ipcRenderer.invoke('cloud-costs:gcp-credential-import', json, settings),
+    removeGcpCredential: (settings: { awsProfile: string; gcpBillingTable: string; gcpQueryProject: string; monthlyBudgetUsd: number }) =>
+      ipcRenderer.invoke('cloud-costs:gcp-credential-remove', settings),
   },
 
   projects: {

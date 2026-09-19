@@ -171,15 +171,15 @@ async function seedFromDisk(): Promise<void> {
 export function startCloudCostRefresher(dependencies: CloudCostRefresherDeps): void {
   deps = dependencies
   ipcMain.handle('cloud-costs:gcp-credential-status', () => gcpCredentialStatus())
-  ipcMain.handle('cloud-costs:gcp-credential-import', async (_event, raw: unknown) => {
+  ipcMain.handle('cloud-costs:gcp-credential-import', async (_event, raw: unknown, settings?: CloudCostSettings) => {
     if (typeof raw !== 'string') {
       return { ok: false, error: 'Choose a valid GCP service account key file.' }
     }
     try {
       const email = storeGcpCredential(raw)
       if (cycleInflight) await cycleInflight.catch(() => null)
-      const result = await refreshCloudCosts()
-      await scheduleFromCache()
+      const result = await refreshCloudCosts(settings)
+      await scheduleFromCache(settings)
       return { ok: true, email, source: result?.sources.gcp ?? null }
     } catch (error) {
       const message = error instanceof Error ? error.message : ''
@@ -187,12 +187,12 @@ export function startCloudCostRefresher(dependencies: CloudCostRefresherDeps): v
         ? message : 'Choose a valid GCP service account key file.' }
     }
   })
-  ipcMain.handle('cloud-costs:gcp-credential-remove', async () => {
+  ipcMain.handle('cloud-costs:gcp-credential-remove', async (_event, settings?: CloudCostSettings) => {
     const removed = deleteKey(GCP_BILLING_KEY_SERVICE)
     if (removed) {
       if (cycleInflight) await cycleInflight.catch(() => null)
-      await refreshCloudCosts()
-      await scheduleFromCache()
+      await refreshCloudCosts(settings)
+      await scheduleFromCache(settings)
     }
     return removed
   })

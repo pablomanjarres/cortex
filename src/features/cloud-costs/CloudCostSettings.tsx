@@ -36,7 +36,7 @@ function SettingField({ id, label, hint, value, placeholder, onChange }: FieldPr
   )
 }
 
-function GcpBillingCredential() {
+function GcpBillingCredential({ settings }: { settings: Settings }) {
   const api = window.electronAPI?.cloudCosts
   const fileInput = useRef<HTMLInputElement>(null)
   const [identity, setIdentity] = useState<{ configured: boolean; email: string | null } | null>(null)
@@ -63,7 +63,7 @@ function GcpBillingCredential() {
     setBusy(true)
     setMessage('')
     try {
-      const result = await api.importGcpCredential(await file.text())
+      const result = await api.importGcpCredential(await file.text(), settings)
       if (result.ok) {
         setIdentity({ configured: true, email: result.email ?? null })
         setMessage(result.source?.ok ? 'Key saved. GCP costs are up to date.' : 'Key saved. Check the GCP source status above.')
@@ -81,7 +81,7 @@ function GcpBillingCredential() {
     if (!api) return
     setBusy(true)
     try {
-      if (await api.removeGcpCredential()) {
+      if (await api.removeGcpCredential(settings)) {
         setIdentity({ configured: false, email: null })
         setMessage('Dedicated key removed. Cortex will use local Google ADC if available.')
       } else {
@@ -179,7 +179,7 @@ export function CloudCostSettings({ settings, onChange }: CloudCostSettingsProps
             placeholder="billing-project"
             onChange={(value) => set('gcpQueryProject', value)}
           />
-          <GcpBillingCredential />
+          <GcpBillingCredential settings={settings} />
         </div>
       </div>
 
