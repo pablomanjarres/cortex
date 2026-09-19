@@ -44,11 +44,11 @@ test('eventOverlapsDay respects all-day exclusive end dates', async () => {
   assert.equal(eventOverlapsDay(allDay, '2026-09-21'), false)
 })
 
-test('homeCalendarState treats empty Electron reads as ambiguous but preserves browser empty semantics', async () => {
+test('homeCalendarState treats empty range reads as ambiguous until the backend reports explicit success', async () => {
   const { homeCalendarState } = await loadUtils()
 
   assert.equal(homeCalendarState(false, null, [], 'electron'), 'ambiguous')
-  assert.equal(homeCalendarState(false, null, [], 'http'), 'empty')
+  assert.equal(homeCalendarState(false, null, [], 'http'), 'ambiguous')
 })
 
 test('buildShortcutHabits excludes held habits from toggle shortcuts', async () => {
