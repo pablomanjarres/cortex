@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Button } from '@/components/ui/button'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock, ChevronDown, ChevronUp } from 'lucide-react'
 import { HostHistory } from './HostHistory'
+import { selectPrimaryDisk } from './mac-stats'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
 
@@ -215,10 +216,7 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   const cores = data.load?.cpucore ?? data.core?.log ?? 1
   const loadPct = Math.min(100, (load1 / Math.max(1, cores)) * 100)
 
-  const fsList = (data.fs || [])
-    .filter((f) => f.size > 1024 * 1024 * 1024) // >1GB
-    .sort((a, b) => b.size - a.size)
-    .slice(0, 4)
+  const disk = selectPrimaryDisk(data.fs || [])
 
   const nets = (data.network || [])
     .filter((n) =>
@@ -307,25 +305,25 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         </WidgetCard>
       </div>
 
-      <WidgetCard title="System details" delay={delay + 0.1}>
-
-        {/* Disk */}
-        {fsList.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
-              <HardDrive className="h-3 w-3" />
-              Disk
+      <div className="grid gap-4 xl:grid-cols-3">
+        <WidgetCard title="Storage" description="Macintosh HD · Data volume" delay={delay + 0.1}>
+          {disk ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-baseline gap-2">
+                <HardDrive className="size-4 shrink-0 text-foreground-faint" />
+                <span className="font-mono text-2xl tabular-nums text-foreground">{fmtBytes(disk.used)}</span>
+                <span className="text-xs text-muted-foreground">used</span>
+              </div>
+              <Bar pct={disk.percent} label="Storage used" right={`${disk.percent.toFixed(1)}%`} />
+              <div className="flex justify-between font-mono text-2xs text-foreground-faint">
+                <span>{fmtBytes(disk.free)} available</span>
+                <span>{fmtBytes(disk.size)} total</span>
+              </div>
             </div>
-            {fsList.map((fs) => (
-              <Bar
-                key={fs.mnt_point}
-                pct={fs.percent}
-                label={`${fs.mnt_point} (${fs.fs_type})`}
-                right={`${fmtBytes(fs.used, 1)} / ${fmtBytes(fs.size, 1)}`}
-              />
-            ))}
-          </div>
-        )}
+          ) : <p className="text-xs text-foreground-faint">Storage data unavailable.</p>}
+        </WidgetCard>
+
+        <WidgetCard title="System details" delay={delay + 0.15} className="xl:col-span-2">
 
         {/* Network */}
         {nets.length > 0 && (
@@ -370,7 +368,8 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
           {showHistory ? 'Hide history' : 'Show history & averages'}
         </Button>
         {showHistory && <HostHistory host={host.key} />}
-      </WidgetCard>
+        </WidgetCard>
+      </div>
     </div>
   )
 }
