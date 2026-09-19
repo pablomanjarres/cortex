@@ -5,6 +5,14 @@ type CalendarModel = typeof import('../src/features/calendar/calendar-model.ts')
 
 const loadModel = async (): Promise<CalendarModel> => import('../src/features/calendar/calendar-model.ts')
 
+const eventKitAllDay = (date: string) => {
+  const [year, month, day] = date.split('-').map(Number)
+  return {
+    startDate: new Date(year, month - 1, day, 0, 0, 0, 0).toISOString(),
+    endDate: new Date(year, month - 1, day, 23, 59, 59, 999).toISOString(),
+  }
+}
+
 const fixtureEvents = [
   {
     id: 'all-day',
@@ -57,4 +65,29 @@ test('groupCalendarDays separates all-day and timed events across local days wit
     { date: '2026-09-23', allDay: [], timed: [] },
   ])
   assert.deepEqual(events, fixtureEvents)
+})
+
+test('groupCalendarDays maps EventKit all-day ISO inclusive ends onto the local calendar day', async () => {
+  const { groupCalendarDays } = await loadModel()
+  const event = {
+    id: 'eventkit-all-day',
+    title: 'EventKit all-day',
+    ...eventKitAllDay('2026-09-21'),
+    calendar: 'Calendar',
+    isAllDay: true,
+    notes: '',
+    lastModified: '2026-09-19T10:00:00Z',
+    recurrence: '',
+  }
+
+  const groups = groupCalendarDays([event], ['2026-09-20', '2026-09-21', '2026-09-22'])
+
+  assert.deepEqual(groups.map((day) => ({
+    date: day.date,
+    allDay: day.allDay.map((item) => item.id),
+  })), [
+    { date: '2026-09-20', allDay: [] },
+    { date: '2026-09-21', allDay: ['eventkit-all-day'] },
+    { date: '2026-09-22', allDay: [] },
+  ])
 })
