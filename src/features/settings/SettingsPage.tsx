@@ -34,15 +34,18 @@ function KeyRow({ field }: { field: KeyField }) {
   const [value, setValue] = useState('')
   const [saved, setSaved] = useState(false)
   const [showValue, setShowValue] = useState(false)
-  const [loading, setLoading] = useState(true)
   const isElectron = !!window.electronAPI?.keychain
+  const [loading, setLoading] = useState(isElectron)
 
   useEffect(() => {
-    if (!isElectron) { setLoading(false); return }
+    if (!isElectron) return
+    let cancelled = false
     window.electronAPI!.keychain.has(field.service).then((has) => {
+      if (cancelled) return
       setSaved(has)
       setLoading(false)
     })
+    return () => { cancelled = true }
   }, [field.service, isElectron])
 
   const save = async () => {
