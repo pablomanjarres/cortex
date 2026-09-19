@@ -9,7 +9,7 @@ import { deleteFile } from '@/lib/media'
 import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 import { ClassSchedule } from './ClassSchedule'
 import { StudentOverviewCards } from './StudentOverviewCards'
-import { studentOverview } from './student-overview'
+import { includeAssignmentType, studentOverview } from './student-overview'
 import { DEFAULT_ASSIGNMENTS, DEFAULT_COURSES, DEFAULT_SEMESTERS, DEFAULT_TOPICS } from './student-defaults'
 import { ICONS, ICON_CYCLE, ICON_OPTIONS } from './course-icons'
 import {
@@ -662,11 +662,17 @@ export function StudentPage() {
 
       <StudentOverviewCards
         semester={activeSemester}
+        today={today}
         overview={overview}
         priorityCourse={overview.priorityAssignment ? courseMap[overview.priorityAssignment.courseId] : undefined}
         onOpenPriority={(assignment) => {
           setSelectedCourse(assignment.courseId)
-          requestAnimationFrame(() => document.getElementById('student-assignments')?.scrollIntoView({ block: 'start' }))
+          setSelectedTypes((current) => includeAssignmentType(current, assignment.type))
+          requestAnimationFrame(() => {
+            const row = document.getElementById(`student-assignment-${assignment.id}`)
+            row?.scrollIntoView({ block: 'center' })
+            row?.focus({ preventScroll: true })
+          })
         }}
         onAddCourse={() => setAddingCourse(true)}
         onAddAssignment={() => {
@@ -918,7 +924,7 @@ export function StudentPage() {
                 const c = courseMap[a.courseId]
                 const isPast = a.deadline && a.deadline < getToday() && !a.done
                 return (
-                  <tr key={a.id} className={`group border-b border-border/60 transition-colors hover:bg-secondary/30 ${isPast ? 'opacity-40' : ''} ${a.done ? 'opacity-60' : ''}`}>
+                  <tr key={a.id} id={`student-assignment-${a.id}`} tabIndex={-1} className={`group border-b border-border/60 transition-colors hover:bg-secondary/30 ${isPast ? 'opacity-40' : ''} ${a.done ? 'opacity-60' : ''}`}>
                     <td className="px-4 py-2.5">
                       {/* Done toggle — documented compact pattern (13px control in a dense row). */}
                       <button onClick={() => toggleDone(a.id)} aria-label={a.done ? `Mark ${a.name} not done` : `Mark ${a.name} done`} className="cursor-pointer">

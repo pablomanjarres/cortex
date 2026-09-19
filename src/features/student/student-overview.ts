@@ -1,5 +1,5 @@
 import { getWeekDates } from '@/lib/date-utils'
-import type { Assignment, Course } from './student-types'
+import type { Assignment, AssignmentType, Course } from './student-types'
 
 export interface StudentOverview {
   courseCount: number
@@ -8,6 +8,11 @@ export interface StudentOverview {
   overdueCount: number
   priorityAssignment?: Assignment
   deadlineQueue: Assignment[]
+}
+
+/** Keep the priority row visible when navigating from the hero. */
+export function includeAssignmentType(selected: ReadonlySet<AssignmentType>, type: AssignmentType): Set<AssignmentType> {
+  return new Set([...selected, type])
 }
 
 /** Facts for the selected semester only; no example records or target percentages. */
