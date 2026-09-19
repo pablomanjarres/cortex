@@ -46,7 +46,9 @@ function GcpBillingCredential() {
   useEffect(() => {
     if (!api) return
     let active = true
-    void api.gcpCredentialStatus().then((result) => { if (active) setIdentity(result) })
+    void api.gcpCredentialStatus()
+      .then((result) => { if (active) setIdentity(result) })
+      .catch(() => { if (active) setMessage('GCP key status is unavailable.') })
     return () => { active = false }
   }, [api])
 
