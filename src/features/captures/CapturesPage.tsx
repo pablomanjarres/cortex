@@ -398,7 +398,7 @@ export function CapturesPage() {
       >
         <ClipboardPaste className="h-4 w-4 text-foreground-faint" />
         <p className="text-xs text-foreground-faint">
-          <span className="font-mono text-2xs text-muted-foreground">Ctrl+V</span> to paste screenshot or{' '}
+          <span className="font-mono text-2xs text-muted-foreground">⌘V</span> to paste screenshot or{' '}
           <span className="font-medium text-muted-foreground">drop image</span> here
         </p>
       </div>
