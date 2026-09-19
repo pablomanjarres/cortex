@@ -8,11 +8,12 @@ export const DEFAULT_CLOUD_COST_SETTINGS: CloudCostSettings = {
 }
 
 export const EMPTY_CLOUD_COST_CACHE: CloudCostCache = {
-  version: 1,
+  version: 2,
   periodStart: '',
   periodEnd: '',
   fetchedAt: '',
-  items: [],
+  usageItems: [],
+  accountAdjustments: [],
   sources: {
     aws: { configured: false, ok: false, sourceId: null, fetchedAt: null, attemptedAt: null, error: null },
     gcp: { configured: false, ok: false, sourceId: null, fetchedAt: null, attemptedAt: null, error: null },

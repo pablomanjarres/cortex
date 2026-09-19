@@ -1,6 +1,8 @@
 import type {
   CloudCostCache,
   CloudCostLineItem,
+  CloudAccountAdjustment,
+  ProviderCosts,
   CloudCostSettings,
   CloudCostSourceStatus,
   CloudProvider,
@@ -12,10 +14,18 @@ export interface BillingWindow {
 }
 
 export type ProviderFetchResult =
-  | { ok: true; items: CloudCostLineItem[] }
+  | ({ ok: true } & ProviderCosts)
   | { ok: false; error: string }
 
 export type ProviderResults = Partial<Record<CloudProvider, ProviderFetchResult>>
+
+type CacheInput = CloudCostCache | (Partial<CloudCostCache> & { version?: number }) | null
+
+export function compatibleCloudCostCache(value: CacheInput): CloudCostCache | null {
+  return value?.version === 2 && Array.isArray(value.usageItems) && Array.isArray(value.accountAdjustments)
+    ? value as CloudCostCache
+    : null
+}
 
 const PROVIDERS: CloudProvider[] = ['aws', 'gcp']
 export const AUTOMATIC_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000
@@ -39,11 +49,12 @@ export function providerSourceId(provider: CloudProvider, settings: CloudCostSet
 }
 
 export function automaticRefreshDelayMs(
-  previous: CloudCostCache | null,
+  previous: CacheInput,
   settings: CloudCostSettings,
   nowMs: number = Date.now(),
   intervalMs: number = AUTOMATIC_REFRESH_INTERVAL_MS,
 ): number {
+  previous = compatibleCloudCostCache(previous)
   let earliest = intervalMs
   let hasConfiguredProvider = false
 
@@ -106,13 +117,15 @@ function sourceStatus(
 }
 
 export function mergeProviderResults(
-  previous: CloudCostCache | null,
+  previous: CacheInput,
   settings: CloudCostSettings,
   results: ProviderResults,
   window: BillingWindow,
   nowIso: string,
 ): CloudCostCache {
-  let items = (previous?.items ?? []).filter((item) => item.date >= window.start && item.date < window.end)
+  previous = compatibleCloudCostCache(previous)
+  let usageItems: CloudCostLineItem[] = (previous?.usageItems ?? []).filter((item) => item.date >= window.start && item.date < window.end)
+  let accountAdjustments: CloudAccountAdjustment[] = (previous?.accountAdjustments ?? []).filter((item) => item.date >= window.start && item.date < window.end)
   const sources = {} as Record<CloudProvider, CloudCostSourceStatus>
   let anySuccess = false
 
@@ -122,28 +135,33 @@ export function mergeProviderResults(
     const sourceId = providerSourceId(provider, settings)
     const sourceChanged = previous?.sources?.[provider]?.sourceId !== sourceId
     if (!configured) {
-      items = items.filter((item) => item.provider !== provider)
+      usageItems = usageItems.filter((item) => item.provider !== provider)
+      accountAdjustments = accountAdjustments.filter((item) => item.provider !== provider)
     } else if (result?.ok) {
-      items = items.filter((item) => item.provider !== provider).concat(result.items)
+      usageItems = usageItems.filter((item) => item.provider !== provider).concat(result.usageItems)
+      accountAdjustments = accountAdjustments.filter((item) => item.provider !== provider).concat(result.accountAdjustments)
       anySuccess = true
     } else if (sourceChanged) {
-      items = items.filter((item) => item.provider !== provider)
+      usageItems = usageItems.filter((item) => item.provider !== provider)
+      accountAdjustments = accountAdjustments.filter((item) => item.provider !== provider)
     }
     sources[provider] = sourceStatus(configured, previous?.sources?.[provider], result, nowIso, sourceId)
   }
 
-  items.sort((a, b) =>
+  usageItems.sort((a, b) =>
     a.date.localeCompare(b.date)
       || a.provider.localeCompare(b.provider)
       || a.service.localeCompare(b.service)
       || a.project.localeCompare(b.project))
+  accountAdjustments.sort((a, b) => a.date.localeCompare(b.date) || a.provider.localeCompare(b.provider) || a.account.localeCompare(b.account))
 
   return {
-    version: 1,
+    version: 2,
     periodStart: window.start,
     periodEnd: window.end,
     fetchedAt: anySuccess ? nowIso : previous?.fetchedAt ?? nowIso,
-    items,
+    usageItems,
+    accountAdjustments,
     sources,
   }
 }

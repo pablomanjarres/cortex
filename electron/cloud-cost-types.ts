@@ -7,7 +7,21 @@ export interface CloudCostLineItem {
   account: string
   project: string
   service: string
+  resource: string | null
   amountUsd: number
+}
+
+export interface CloudAccountAdjustment {
+  date: string
+  provider: CloudProvider
+  account: string
+  kind: 'credit' | 'other'
+  amountUsd: number
+}
+
+export interface ProviderCosts {
+  usageItems: CloudCostLineItem[]
+  accountAdjustments: CloudAccountAdjustment[]
 }
 
 export interface CloudCostSourceStatus {
@@ -20,11 +34,12 @@ export interface CloudCostSourceStatus {
 }
 
 export interface CloudCostCache {
-  version: 1
+  version: 2
   periodStart: string
   periodEnd: string
   fetchedAt: string
-  items: CloudCostLineItem[]
+  usageItems: CloudCostLineItem[]
+  accountAdjustments: CloudAccountAdjustment[]
   sources: Record<CloudProvider, CloudCostSourceStatus>
 }
 

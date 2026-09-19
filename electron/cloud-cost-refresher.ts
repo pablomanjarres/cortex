@@ -11,6 +11,7 @@ import type {
 import {
   automaticRefreshDelayMs,
   billingWindow,
+  compatibleCloudCostCache,
   isProviderConfigured,
   mergeProviderResults,
   safeCloudCostError,
@@ -61,10 +62,10 @@ async function fetchProvider(
   end: string,
 ): Promise<ProviderFetchResult> {
   try {
-    const items = provider === 'aws'
+    const costs = provider === 'aws'
       ? await fetchAwsCosts(settings, start, end)
       : await fetchGcpCosts(settings, start, end)
-    return { ok: true, items }
+    return { ok: true, ...costs }
   } catch (error) {
     const safeError = safeCloudCostError(error)
     console.error(`[Cloud costs] ${provider} refresh failed: ${safeError}`)
@@ -136,7 +137,7 @@ async function scheduleFromCache(settingsOverride?: CloudCostSettings): Promise<
 
 async function seedFromDisk(): Promise<void> {
   if (!deps) return
-  cache = await deps.readDataKeyParsed<CloudCostCache | null>(CACHE_KEY, null)
+  cache = compatibleCloudCostCache(await deps.readDataKeyParsed<CloudCostCache | null>(CACHE_KEY, null))
 }
 
 export function startCloudCostRefresher(dependencies: CloudCostRefresherDeps): void {
