@@ -9,6 +9,7 @@ import { assignmentDay, dayName, dayNumber, eventOverlapsDay, formatMinutes, wee
 
 export function WeekMap({
   days,
+  today,
   selectedDay,
   onSelectedDay,
   sessionsByDay,
@@ -20,6 +21,7 @@ export function WeekMap({
   onOpenStudent,
 }: {
   days: string[]
+  today: string
   selectedDay: string
   onSelectedDay: (day: string) => void
   sessionsByDay: Record<string, SprintSession[]>
@@ -64,7 +66,8 @@ export function WeekMap({
                 key={day}
                 type="button"
                 onClick={() => onSelectedDay(day)}
-                aria-current={selected ? 'date' : undefined}
+                aria-current={day === today ? 'date' : undefined}
+                aria-pressed={selected}
                 className={cn(
                   'min-h-44 rounded-2xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring',
                   selected ? 'border-accent bg-accent/10' : 'border-border bg-card/60 hover:bg-secondary/60',

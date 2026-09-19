@@ -192,7 +192,7 @@ function WeekDayButton({ group, selected, today, state, compact, onSelect }: { g
   const summary = state === 'loading' ? 'Loading' : state === 'ready' ? (total ? `${total} ${total === 1 ? 'event' : 'events'}` : 'No events') : 'Check source'
   const mobileSummary = state === 'ready' ? `${total}${group.allDay.length ? ` · ${group.allDay.length} all-day` : ''}` : summary
   return (
-    <button type="button" onClick={onSelect} aria-pressed={selected} aria-label={`${weekFmt.format(new Date(`${group.date}T12:00:00`))} ${group.date.slice(8)} ${summary}`} className={cn(
+    <button type="button" onClick={onSelect} aria-pressed={selected} aria-current={today ? 'date' : undefined} aria-label={`${weekFmt.format(new Date(`${group.date}T12:00:00`))} ${group.date.slice(8)} ${summary}`} className={cn(
       'rounded-2xl border p-3 text-left outline-none transition focus-visible:outline-2 focus-visible:outline-ring',
       compact ? 'min-h-16' : 'min-h-16 md:min-h-24',
       selected ? 'border-accent bg-focus-surface text-foreground shadow-card ring-2 ring-progress-surface' : 'border-border bg-card/70 hover:bg-secondary/60',

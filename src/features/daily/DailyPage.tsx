@@ -326,6 +326,7 @@ export function DailyPage() {
         <div className="min-w-0 xl:order-4 xl:col-span-8">
           <WeekMap
             days={week}
+            today={today}
             selectedDay={effectiveSelectedDay}
             onSelectedDay={setSelectedDay}
             sessionsByDay={liveSessionsByDay}
