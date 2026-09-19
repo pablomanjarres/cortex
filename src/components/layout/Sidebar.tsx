@@ -4,16 +4,14 @@ import { BookOpen, BriefcaseBusiness, Globe, Home, UserRound } from 'lucide-reac
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
+import { CortexWordmark } from '@/components/brand/CortexWordmark'
 import { mobileDestinationForPath, NAV_GROUPS } from '@/lib/routes'
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <>
       <div className="flex items-center gap-3 px-5 pb-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-focus-surface text-sidebar-primary shadow-[inset_0_0_0_1px_rgba(98,74,181,0.16)]">
-          <span className="text-xl font-black leading-none">C</span>
-        </div>
-        <span className="text-2xl font-bold tracking-tight text-sidebar-foreground">Cortex</span>
+        <CortexWordmark />
       </div>
 
       <Separator className="mx-5 bg-sidebar-border/70" />
