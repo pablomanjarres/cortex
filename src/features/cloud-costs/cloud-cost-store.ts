@@ -19,3 +19,9 @@ export const EMPTY_CLOUD_COST_CACHE: CloudCostCache = {
     gcp: { configured: false, ok: false, sourceId: null, fetchedAt: null, attemptedAt: null, error: null },
   },
 }
+
+export function cloudUsageEmptyMessage(hasLiveSource: boolean, hasFailedSource: boolean): string {
+  if (hasLiveSource) return 'No usage in the retained period.'
+  if (hasFailedSource) return 'Usage unavailable. Refresh the configured sources.'
+  return 'Waiting for the first billing snapshot.'
+}

@@ -28,7 +28,7 @@ import { projectRanking, resourceRanking, spendDrivers, topServices } from './br
 import { CloudCostSettings } from './CloudCostSettings'
 import { DailyBurnChart, MonthlyProjectChart, MonthlySpendChart, ServiceMixChart } from './CloudCostCharts'
 import { AccountEstimateCard, ProjectRankingCard, ResourceRankingCard, SpendDriversCard } from './CloudCostBreakdowns'
-import { DEFAULT_CLOUD_COST_SETTINGS, EMPTY_CLOUD_COST_CACHE } from './cloud-cost-store'
+import { cloudUsageEmptyMessage, DEFAULT_CLOUD_COST_SETTINGS, EMPTY_CLOUD_COST_CACHE } from './cloud-cost-store'
 import { fmtUsd } from './format'
 
 const PROVIDERS: Array<{ value: CloudProviderFilter; label: string }> = [
@@ -94,6 +94,7 @@ export function CloudCostsPage() {
   const errors = (['aws', 'gcp'] as CloudProvider[])
     .map((source) => cache.sources[source].error)
     .filter((error): error is string => Boolean(error))
+  const hasLiveSource = Object.values(cache.sources).some((source) => source.ok)
 
   return (
     <PageShell>
@@ -128,7 +129,7 @@ export function CloudCostsPage() {
       {errors.length > 0 ? (
         <div className="flex items-start gap-2 rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{[...new Set(errors)].join(' ') } Last successful values remain visible.</span>
+          <span>{[...new Set(errors)].join(' ')} {cache.usageItems.length > 0 ? 'Last successful values remain visible.' : 'Usage is unavailable until a refresh succeeds.'}</span>
         </div>
       ) : null}
 
@@ -157,7 +158,7 @@ export function CloudCostsPage() {
           <AccountEstimateCard estimate={estimate} scope={provider === 'all' ? 'AWS + GCP accounts' : `${provider.toUpperCase()} accounts`} />
 
           {cache.usageItems.length === 0 ? (
-            <EmptyState message="Usage unavailable." hint="Refresh to load usage before credits from the configured sources." />
+            <EmptyState message={cloudUsageEmptyMessage(hasLiveSource, errors.length > 0)} hint="Refresh to load usage before credits from the configured sources." />
           ) : (
             <>
               <div className="grid gap-4 lg:grid-cols-4">
