@@ -21,6 +21,7 @@ test('a dedicated billing key overrides local and ambient Google credentials', (
     credentials.resolveGcpAuthOptions(JSON.stringify(serviceAccount), '/home/pablo/.config/gcloud/application_default_credentials.json'),
     {
       credentials: {
+        type: 'service_account',
         project_id: 'nella-sync',
         client_email: 'cortex-billing-reader@nella-sync.iam.gserviceaccount.com',
         private_key: serviceAccount.private_key,
@@ -40,9 +41,17 @@ test('service-account import rejects user credentials and strips untrusted endpo
   assert.equal(typeof credentials.parseGcpServiceAccount, 'function')
   assert.throws(() => credentials.parseGcpServiceAccount(JSON.stringify({ type: 'authorized_user', refresh_token: 'secret' })), /service account/i)
   assert.deepEqual(credentials.parseGcpServiceAccount(JSON.stringify(serviceAccount)), {
+    type: 'service_account',
     project_id: 'nella-sync',
     client_email: 'cortex-billing-reader@nella-sync.iam.gserviceaccount.com',
     private_key: serviceAccount.private_key,
+  })
+})
+
+test('the sanitized key can be loaded again after encrypted storage serialization', () => {
+  const stored = JSON.stringify(credentials.parseGcpServiceAccount(JSON.stringify(serviceAccount)))
+  assert.deepEqual(credentials.resolveGcpAuthOptions(stored, null), {
+    credentials: credentials.parseGcpServiceAccount(stored),
   })
 })
 
