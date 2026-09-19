@@ -680,19 +680,13 @@ export function StudentPage() {
         }}
       />
 
-      {/* PREP */}
-      <div className="surface rounded-xl px-4 py-3">
-        <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">P.R.E.P = Preview &rarr; Record &rarr; Exercise &rarr; Promote</p>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          <span className="text-foreground">Preview</span> &mdash; Skim topic, 3 ideas + 2 doubts &nbsp;|&nbsp;
-          <span className="text-foreground">Record</span> &mdash; In class: defs, formulas, examples &nbsp;|&nbsp;
-          <span className="text-foreground">Exercise</span> &mdash; Same day: 5-10 problems &nbsp;|&nbsp;
-          <span className="text-foreground">Promote</span> &mdash; Weekly review + mark mastered
-        </p>
-      </div>
-
       {/* Course Cards */}
-      <div id="student-courses" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <section id="student-courses" className="space-y-3">
+        <div className="flex items-end justify-between gap-3">
+          <div><p className="text-xs font-semibold uppercase tracking-wider text-accent">Your semester</p><h2 className="text-xl font-semibold">Courses</h2></div>
+          <span className="rounded-full bg-focus-surface/55 px-3 py-1 text-xs font-semibold text-accent dark:bg-accent/15">{activeCourses.length} active</span>
+        </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
         {activeCourses.map((c) => {
           const Icon = ICONS[c.iconKey] ?? GraduationCap
           const count = assignments.filter((a) => a.courseId === c.id).length
@@ -707,19 +701,19 @@ export function StudentPage() {
               key={c.id}
               onClick={() => setSelectedCourse(sel ? null : c.id)}
               aria-pressed={sel}
-              className={`flex cursor-pointer flex-col gap-2 rounded-xl border px-4 py-3 text-left transition-colors ${
-                sel ? 'border-accent/40 bg-accent/5' : 'border-border hover:border-input hover:bg-muted/30'
+              className={`flex min-h-36 cursor-pointer flex-col gap-3 rounded-[1.35rem] border px-4 py-4 text-left shadow-card transition-[border-color,background-color,transform] hover:-translate-y-0.5 ${
+                sel ? 'border-accent/50 bg-focus-surface/50 dark:bg-accent/20' : 'border-border bg-card hover:border-accent/35 hover:bg-focus-surface/15'
               }`}
             >
-              <div className="flex items-center gap-2">
-                <Icon className={`h-4 w-4 ${sel ? 'text-accent' : 'text-muted-foreground'}`} />
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex size-9 items-center justify-center rounded-xl bg-focus-surface/70 text-accent dark:bg-accent/15"><Icon className="size-5" /></span>
                 <Chip variant={diffVariant[c.difficulty]} size="sm">{c.difficulty}</Chip>
               </div>
-              <p className="text-xs font-medium leading-tight">{c.name}</p>
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-2xs tabular-nums text-muted-foreground">{done}/{count}</span>
+              <p className="text-sm font-semibold leading-snug">{c.name}</p>
+              <div className="mt-auto flex items-end justify-between gap-2">
+                <span className="text-xs text-muted-foreground">{count ? `${done} of ${count} done` : 'No assignments'}</span>
                 {g && g.gradedWeight > 0 && (
-                  <span className={`font-mono text-2xs font-medium tabular-nums ${gradeInk(g.gradeSum / g.gradedWeight)}`}>{(g.gradeSum / g.gradedWeight).toFixed(1)}</span>
+                  <span className={`font-mono text-xs font-semibold tabular-nums ${gradeInk(g.gradeSum / g.gradedWeight)}`}>{(g.gradeSum / g.gradedWeight).toFixed(1)}</span>
                 )}
               </div>
             </button>
@@ -749,6 +743,18 @@ export function StudentPage() {
             <span className="font-mono text-2xs">Add course</span>
           </button>
         )}
+      </div>
+      </section>
+
+      {/* Existing P.R.E.P. method, kept close to the courses it guides. */}
+      <div className="surface rounded-xl px-4 py-3">
+        <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">P.R.E.P = Preview &rarr; Record &rarr; Exercise &rarr; Promote</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          <span className="text-foreground">Preview</span> &mdash; Skim topic, 3 ideas + 2 doubts &nbsp;|&nbsp;
+          <span className="text-foreground">Record</span> &mdash; In class: defs, formulas, examples &nbsp;|&nbsp;
+          <span className="text-foreground">Exercise</span> &mdash; Same day: 5-10 problems &nbsp;|&nbsp;
+          <span className="text-foreground">Promote</span> &mdash; Weekly review + mark mastered
+        </p>
       </div>
 
       {/* Course Detail Panel */}
