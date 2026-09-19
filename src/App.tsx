@@ -6,6 +6,7 @@ import { StoreToast } from '@/components/shared/StoreToast'
 
 // Route-level code splitting: each page loads on first visit.
 const DailyPage = lazy(() => import('@/features/daily/DailyPage').then((m) => ({ default: m.DailyPage })))
+const CalendarPage = lazy(() => import('@/features/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })))
 const HabitsSection = lazy(() => import('@/features/habits/HabitsSection').then((m) => ({ default: m.HabitsSection })))
 const GoalsPage = lazy(() => import('@/features/goals/GoalsPage').then((m) => ({ default: m.GoalsPage })))
 const FounderPage = lazy(() => import('@/features/founder/FounderPage').then((m) => ({ default: m.FounderPage })))
@@ -45,6 +46,7 @@ export function App() {
         <Route element={<DashboardLayout />}>
           <Route index element={<Navigate to="/daily" replace />} />
           <Route path="daily" element={page('Daily', <DailyPage />)} />
+          <Route path="calendar" element={page('Calendar', <CalendarPage />)} />
           <Route path="habits" element={page('Habits', <HabitsSection />)} />
           <Route path="goals" element={page('Goals', <GoalsPage />)} />
           <Route path="system" element={page('System', <SystemPage />)} />
