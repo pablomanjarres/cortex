@@ -35,7 +35,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --muted: #E8EBF3;
   --muted-foreground: #66707B;
 
-  --foreground-faint: #8C95A3;
+  --foreground-faint: #596474;
 
   --accent: #624AB5;
   --accent-foreground: #FFFFFF;
@@ -45,6 +45,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --destructive: #B92F2C; --destructive-foreground: #FFFFFF;
   --success: #227746; --success-foreground: #FFFFFF;
   --warning: #8A4D0F; --warning-foreground: #FFFFFF;
+  --info: #256E9D;
   --border: #DDE2EB; --input: #D6DCE8; --ring: #624AB5;
 
   --radius: 1rem;
@@ -77,6 +78,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --destructive: #F27A72; --destructive-foreground: #2A0E0C;
   --success: #62D489; --success-foreground: #0B2414;
   --warning: #F2B35D; --warning-foreground: #2A1907;
+  --info: #82C7FF;
   --border: #3A4257; --input: #4A536A; --ring: #B7A6FF;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 18px 44px rgba(0, 0, 0, 0.34);
   --shadow-lift: 0 8px 18px rgba(0, 0, 0, 0.32), 0 28px 70px rgba(0, 0, 0, 0.40);
@@ -110,6 +112,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
