@@ -300,75 +300,6 @@ export function DailyPage() {
             onReset={resetTimer}
           />
         </div>
-      </WidgetCard>
-
-      {/* ─── SCHEDULE + HABITS ──────────────────────────── */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {/* Schedule */}
-        <WidgetCard
-          title="Schedule"
-          description={isElectron ? `${calendarEvents.length} events` : '—'}
-          delay={0.15}
-          compact
-        >
-          {isElectron && calendarLoading && calendarEvents.length === 0 ? (
-            <div className="flex flex-col gap-2 py-1">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-            </div>
-          ) : isElectron && calendarEvents.length > 0 ? (
-            <div className="flex max-h-36 flex-col gap-0.5 overflow-y-auto">
-              {calendarEvents.map((evt, i) => {
-                const isClass = evt.calendar === 'Classes (Cortex)' || evt.title.startsWith('Class:')
-                return (
-                  <div key={`${evt.title}-${i}`} className="flex items-center gap-2 py-1">
-                    <span className="w-10 shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
-                      {evt.isAllDay ? 'ALL' : evt.startTime}
-                    </span>
-                    <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', isClass ? 'bg-accent' : 'bg-muted-foreground/25')} />
-                    <span className="truncate text-xs">{isClass ? evt.title.replace(/^Class:\s*/, '') : evt.title}</span>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <EmptyState
-              className="py-3"
-              message={isElectron ? 'Clear calendar today.' : 'Calendar lives in the desktop app.'}
-              action={isElectron ? (
-                <Button variant="ghost" size="sm" onClick={fetchCalendar} disabled={calendarLoading}>
-                  <RefreshCw />
-                  Refresh
-                </Button>
-              ) : undefined}
-            />
-          )}
-        </WidgetCard>
-
-        {/* Compact Habits */}
-        <WidgetCard title="Habits" description={`${habitsCompleted}/${habits.length}`} delay={0.2} compact>
-          <div className="flex items-center justify-between">
-            {habits.map((h) => (
-              <Button
-                key={h.id}
-                variant="ghost"
-                size="icon-lg"
-                onClick={() => toggleHabit(h.id)}
-                aria-pressed={isHabitDone(h.id)}
-                aria-label={h.name}
-                className={cn(
-                  'size-10 rounded-full text-base',
-                  isHabitDone(h.id)
-                    ? 'border-success/25 bg-success/10'
-                    : 'bg-secondary/80 opacity-40 hover:opacity-70'
-                )}
-              >
-                {h.emoji}
-              </Button>
-            ))}
-          </div>
-        </WidgetCard>
-      </div>
 
         <div className="xl:order-5 xl:col-span-4">
           <UpNext
@@ -404,6 +335,25 @@ export function DailyPage() {
           />
         </div>
       </div>
+
+      <NeedsAttention
+        overdue={overdue}
+        calendarError={calendarError}
+        onOpenStudent={() => navigate('/student')}
+        onRetryCalendar={fetchCalendar}
+      />
+
+      <DailyShortcuts
+        habits={habits.map((habit) => ({
+          id: habit.id,
+          name: habit.name,
+          emoji: habit.emoji,
+          done: isHabitDone(habit.id),
+          onToggle: () => toggleHabit(habit.id),
+        }))}
+        onOpenStudent={() => navigate('/student')}
+        onOpenCalendar={() => navigate('/calendar')}
+      />
     </PageShell>
   )
 }
