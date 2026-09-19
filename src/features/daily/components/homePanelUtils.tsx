@@ -5,12 +5,26 @@ import type { HomeCalendarEvent } from '../home-model'
 
 export type CalendarState = 'loading' | 'ready' | 'error' | 'empty' | 'ambiguous'
 
+export interface WorkBreakdown {
+  overdue: number
+  thisWeek: number
+  later: number
+  undated: number
+}
+
+export type FactVisual =
+  | { kind: 'bars'; days: string[]; values: number[]; unit: 'minutes' | 'events' }
+  | { kind: 'habits'; done: number; total: number }
+  | { kind: 'work'; breakdown: WorkBreakdown }
+  | { kind: 'unavailable'; message: string }
+
 export interface FactItem {
   label: string
   value: ReactNode
   detail: string
   tone: 'focus' | 'habit' | 'deadline' | 'calendar'
   icon: ReactNode
+  visual: FactVisual
 }
 
 export interface HabitChip {
@@ -47,6 +61,26 @@ export const formatMinutes = (minutes: number) =>
 
 export const assignmentDay = (assignment: Assignment) => assignment.deadline?.slice(0, 10)
 
+const validLocalDay = (day: string | undefined) => {
+  if (!day || !dateOnlyPattern.test(day)) return false
+  const date = new Date(`${day}T12:00:00`)
+  return !Number.isNaN(date.getTime()) &&
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` === day
+}
+
+export function openWorkBreakdown(assignments: Assignment[], today: string, weekEnd: string): WorkBreakdown {
+  const breakdown = { overdue: 0, thisWeek: 0, later: 0, undated: 0 }
+  for (const assignment of assignments) {
+    if (assignment.done) continue
+    const day = assignmentDay(assignment)
+    if (!validLocalDay(day)) breakdown.undated++
+    else if (day! < today) breakdown.overdue++
+    else if (day! <= weekEnd) breakdown.thisWeek++
+    else breakdown.later++
+  }
+  return breakdown
+}
+
 export const eventDay = (event: HomeCalendarEvent) => {
   const start = parseCalendarDate(event.startDate)
   if (!start) return event.startDate.slice(0, 10)
@@ -71,6 +105,9 @@ export const eventOverlapsDay = (event: HomeCalendarEvent, day: string) => {
   return start < nextDay && end > dayStart
 }
 
+export const weeklyEventCounts = (days: string[], events: HomeCalendarEvent[]) =>
+  days.map((day) => events.filter((event) => eventOverlapsDay(event, day)).length)
+
 export const weekRangeLabel = (days: string[]) => {
   if (days.length === 0) return ''
   const start = new Date(`${days[0]}T12:00:00`)
@@ -93,27 +130,35 @@ export const calendarDetailForState = (state: CalendarState) =>
 
 export function buildFacts({
   focusMinutes,
+  focusWeekMinutes,
+  weekDays,
+  today,
   habitsDone,
   habitsTotal,
-  openAssignments,
+  assignments,
   calendarState,
-  eventCount,
+  calendarEvents,
 }: {
   focusMinutes: number
+  focusWeekMinutes: number[]
+  weekDays: string[]
+  today: string
   habitsDone: number
   habitsTotal: number
-  openAssignments: number
+  assignments: Assignment[]
   calendarState: CalendarState
-  eventCount: number
+  calendarEvents: HomeCalendarEvent[]
 }): FactItem[] {
-  const calendarValue = calendarState === 'loading' || calendarState === 'error' || calendarState === 'ambiguous' ? 'Check' : eventCount
+  const calendarValue = calendarState === 'loading' || calendarState === 'error' || calendarState === 'ambiguous' ? 'Check' : calendarEvents.length
   const calendarDetail = calendarDetailForState(calendarState)
+  const work = openWorkBreakdown(assignments, today, weekDays[weekDays.length - 1])
+  const openAssignments = work.overdue + work.thisWeek + work.later + work.undated
 
   return [
-    { label: 'Deep work', value: formatMinutes(focusMinutes), detail: 'Completed today', tone: 'focus', icon: <TimerReset /> },
-    { label: 'Habits', value: `${habitsDone}/${habitsTotal}`, detail: 'Active habits today', tone: 'habit', icon: <CheckCircle2 /> },
-    { label: 'Open work', value: openAssignments, detail: 'Student assignments', tone: 'deadline', icon: <ClipboardList /> },
-    { label: 'Schedule', value: calendarValue, detail: calendarDetail, tone: 'calendar', icon: <CalendarDays /> },
+    { label: 'Deep work', value: formatMinutes(focusMinutes), detail: 'Completed today', tone: 'focus', icon: <TimerReset />, visual: { kind: 'bars', days: weekDays, values: focusWeekMinutes, unit: 'minutes' } },
+    { label: 'Habits', value: `${habitsDone}/${habitsTotal}`, detail: 'Active habits today', tone: 'habit', icon: <CheckCircle2 />, visual: { kind: 'habits', done: habitsDone, total: habitsTotal } },
+    { label: 'Open work', value: openAssignments, detail: 'Student assignments', tone: 'deadline', icon: <ClipboardList />, visual: { kind: 'work', breakdown: work } },
+    { label: 'Schedule', value: calendarValue, detail: calendarDetail, tone: 'calendar', icon: <CalendarDays />, visual: calendarState === 'ready' ? { kind: 'bars', days: weekDays, values: weeklyEventCounts(weekDays, calendarEvents), unit: 'events' } : { kind: 'unavailable', message: 'Calendar chart unavailable' } },
   ]
 }
 

@@ -15,7 +15,6 @@ import { DailyShortcuts, NeedsAttention } from './components/HomeExtras'
 import { buildFacts, buildShortcutHabits, homeCalendarState } from './components/homePanelUtils'
 import {
   activeHabitSummary,
-  countOpenAssignments,
   independentCalendarEvents,
   overdueAssignments,
   upNextItems,
@@ -153,11 +152,14 @@ export function DailyPage() {
   const calendarState = homeCalendarState(calendarLoading, calendarError, calendarEvents)
   const facts = buildFacts({
     focusMinutes: totalDeepWorkMin,
+    focusWeekMinutes: focusMinutes,
+    weekDays: week,
+    today,
     habitsDone: habitSummary.done,
     habitsTotal: habitSummary.total,
-    openAssignments: countOpenAssignments(assignments || []),
+    assignments: assignments || [],
     calendarState,
-    eventCount: calendarEvents.length,
+    calendarEvents,
   })
   const nextItems = useMemo(
     () => upNextItems({ events: independentEvents, assignments: assignments || [], courseNames, now: new Date() }),
