@@ -448,10 +448,10 @@ export function GoalsPage() {
       {/* Add goal */}
       <WidgetCard title="New goal">
         <div className="flex flex-wrap items-center gap-2">
-          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addGoal()} placeholder="What do you want to achieve?" className="h-9 min-w-[180px] flex-1 text-sm" />
-          <Input value={newArea} onChange={(e) => setNewArea(e.target.value)} placeholder="Area" className="h-9 w-32 text-sm" list="goal-areas" />
-          <Input value={newPeriod} onChange={(e) => setNewPeriod(e.target.value)} placeholder="2026-Q3" className="h-9 w-28 text-sm" />
-          <input type="date" value={newTarget} onChange={(e) => setNewTarget(e.target.value)} className="h-9 rounded-md border border-input bg-input/20 px-2 text-sm text-foreground" />
+          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addGoal()} aria-label="Goal title" placeholder="What do you want to achieve?" className="h-11 w-full min-w-0 text-sm sm:h-9 sm:w-auto sm:min-w-[180px] sm:flex-1" />
+          <Input value={newArea} onChange={(e) => setNewArea(e.target.value)} aria-label="Goal area" placeholder="Area" className="h-11 w-32 text-sm sm:h-9" list="goal-areas" />
+          <Input value={newPeriod} onChange={(e) => setNewPeriod(e.target.value)} aria-label="Goal timeframe" placeholder="2026-Q3" className="h-11 w-28 text-sm sm:h-9" />
+          <input type="date" value={newTarget} onChange={(e) => setNewTarget(e.target.value)} aria-label="Goal target date" className="h-11 rounded-md border border-input bg-input/20 px-2 text-sm text-foreground sm:h-9" />
           <Button variant="secondary" size="icon-lg" onClick={addGoal} aria-label="Add goal" title="Add goal">
             <Plus className="size-5" />
           </Button>
