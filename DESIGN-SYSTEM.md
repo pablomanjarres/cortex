@@ -15,9 +15,22 @@ Source of truth:
 
 ## Tokens
 
-Dark is the default theme. The `:root` values below are the light alternative,
-kept intact for the Settings appearance switch. `.dark` is the primary token set
-and must keep the lilac focus and lime progress surfaces visible.
+Dark is the default theme. `.dark` is the primary token set; `:root` is the
+selectable light alternative. Keep the lilac focus and lime progress surfaces
+visible in both modes.
+
+| Dark role | CSS var | Value |
+|---|---|---:|
+| Canvas | `--background` | `#141720` |
+| Surface | `--card` | `#202536` |
+| Primary ink | `--foreground` | `#F6F7FB` |
+| Secondary ink | `--muted-foreground` | `#C1C8D6` |
+| Iris action | `--accent` | `#B7A6FF` |
+| Lilac focus | `--focus-surface` | `#413574` |
+| Lime progress | `--progress-surface` | `#29472D` |
+
+The Home focus hero and weekly rhythm use brighter versions of those pastels
+for their primary moments; the token surfaces remain calm elsewhere.
 
 | Light role | CSS var | Value | Use |
 |---|---|---:|---|
@@ -68,7 +81,7 @@ Use the existing 8px rhythm: `gap-4` for normal grids, `gap-3` for dense groups,
 
 ## Surfaces
 
-`.surface` is the normal card/panel surface: white fill, quiet hairline, and the
+`.surface` is the normal card/panel surface: token fill, quiet hairline, and the
 shared ambient shadow. `.surface-strong` is for dialogs, popovers, and elevated
 moments. `.liquid-glass` is a restrained translucent surface for compact chrome
 and KPI moments; it must not bring back graphite inset shine.
@@ -85,8 +98,8 @@ Use `@/components/ui/button` for every app button.
 Variants:
 
 - `default`: iris primary action.
-- `secondary`: white quiet action.
-- `outline`: white/transparent low-emphasis action.
+- `secondary`: quiet token-surface action.
+- `outline`: transparent low-emphasis action.
 - `ghost`: chrome, row tools, icon-only controls.
 - `destructive`: soft danger action.
 - `accent-outline`: selected or engagement state.
@@ -97,13 +110,13 @@ Sizes are `xs`, `sm`, `default`, `lg`, `icon`, `icon-xs`, `icon-sm`, and
 
 ### Input
 
-Use `@/components/ui/input`. Inputs are 40px tall by default, white on the fog
-canvas, with a 12px radius and token focus ring.
+Use `@/components/ui/input`. Inputs are 40px tall by default, with a token
+surface, 12px radius, and token focus ring.
 
 ### Tabs
 
-Use `@/components/ui/tabs`. The default list is a soft segmented control with a
-white active segment. `variant="line"` is for denser page sections where an
+Use `@/components/ui/tabs`. The default list is a soft segmented control with
+an active token-surface segment. `variant="line"` is for denser page sections where an
 underline reads better.
 
 ### Chip
