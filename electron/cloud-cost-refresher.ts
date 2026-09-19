@@ -3,6 +3,7 @@ import path from 'path'
 import { ipcMain, powerMonitor } from 'electron'
 import { encryptAndWriteAsync } from './crypto.js'
 import { deleteKey, getKey, hasKey, saveKey } from './keychain.js'
+import { GCP_BILLING_KEY_SERVICE } from './keychain-access.js'
 import type {
   CloudCostCache,
   CloudCostSettings,
@@ -24,7 +25,6 @@ import { fetchGcpCosts, parseGcpServiceAccount } from './integrations/gcp-costs.
 
 const CACHE_KEY = 'cortex-cloud-costs'
 const SETTINGS_KEY = 'cortex-cloud-cost-settings'
-export const GCP_BILLING_KEY_SERVICE = 'cloud-cost-gcp-service-account'
 const JITTER_MS = 10 * 60 * 1000
 const PROVIDERS: CloudProvider[] = ['aws', 'gcp']
 
