@@ -14,6 +14,7 @@ import {
   Settings,
   Dumbbell,
   Cpu,
+  Cloud,
 } from 'lucide-react'
 
 /**
@@ -43,6 +44,7 @@ export const ROUTES: AppRoute[] = [
   { path: '/system', title: 'System', navLabel: 'System', group: 'Core', icon: Cpu },
   // ── Roles ─────────────────────────────────────────────────────────────────
   { path: '/founder', title: 'Founder Mode', navLabel: 'Founder', group: 'Roles', icon: Rocket },
+  { path: '/cloud-costs', title: 'Cloud Spend', navLabel: 'Cloud Spend', group: 'Roles', icon: Cloud },
   { path: '/student', title: 'Student Mode', navLabel: 'Student', group: 'Roles', icon: GraduationCap },
   { path: '/projects', title: 'Projects', navLabel: 'Projects', group: 'Roles', icon: FolderKanban },
   { path: '/opportunities', title: 'Opportunities', navLabel: 'Opportunities', group: 'Roles', icon: Radar },

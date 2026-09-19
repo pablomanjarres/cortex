@@ -1,4 +1,5 @@
 import type { GitHubStats, LemonStats, VercelStats, SupabaseStats } from './metrics'
+import type { CloudCostCache, CloudCostSettings, CloudCostSourceStatus, CloudProvider } from '../../electron/cloud-cost-types'
 
 interface ProjectInfo {
   name: string
@@ -76,6 +77,10 @@ interface ElectronAPI {
     lemon: () => Promise<(LemonStats & { error?: undefined }) | { error: string } | null>
     vercel: () => Promise<(VercelStats & { error?: undefined }) | { error: string } | null>
     supabase: () => Promise<(SupabaseStats & { error?: undefined }) | { error: string } | null>
+  }
+  cloudCosts: {
+    refresh: (settings?: CloudCostSettings) => Promise<CloudCostCache | null>
+    status: () => Promise<Record<CloudProvider, CloudCostSourceStatus>>
   }
   media: {
     save: (id: string, base64: string) => Promise<boolean>

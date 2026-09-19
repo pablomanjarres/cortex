@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     status: () => ipcRenderer.invoke('founder:status'),
   },
 
+  cloudCosts: {
+    refresh: (settings?: { awsProfile: string; gcpBillingTable: string; gcpQueryProject: string; monthlyBudgetUsd: number }) =>
+      ipcRenderer.invoke('cloud-costs:refresh', settings),
+    status: () => ipcRenderer.invoke('cloud-costs:status'),
+  },
+
   projects: {
     scan: () => ipcRenderer.invoke('projects:scan'),
   },
