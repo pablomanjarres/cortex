@@ -92,7 +92,13 @@ export function SocialPage() {
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   // Scroll to expanded contact row when selected from widgets
   useEffect(() => {
@@ -134,7 +140,7 @@ export function SocialPage() {
   }
 
   const toggleSort = (k: SortKey) => { if (sortKey === k) setSortAsc((p) => !p); else { setSortKey(k); setSortAsc(true) } }
-  const SortIcon = ({ k }: { k: SortKey }) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
+  const sortIcon = (k: SortKey) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const filtered = useMemo(() =>
     contacts
@@ -164,14 +170,14 @@ export function SocialPage() {
     contacts.filter((c) => {
       if (!c.lastContact || !c.interval) return false
       const last = new Date(c.lastContact)
-      const daysSince = Math.ceil((Date.now() - last.getTime()) / 86_400_000)
+      const daysSince = Math.ceil((now - last.getTime()) / 86_400_000)
       return daysSince > c.interval
     }).sort((a, b) => {
-      const da = Math.ceil((Date.now() - new Date(a.lastContact).getTime()) / 86_400_000) - a.interval
-      const db = Math.ceil((Date.now() - new Date(b.lastContact).getTime()) / 86_400_000) - b.interval
+      const da = Math.ceil((now - new Date(a.lastContact).getTime()) / 86_400_000) - a.interval
+      const db = Math.ceil((now - new Date(b.lastContact).getTime()) / 86_400_000) - b.interval
       return db - da
     }),
-    [contacts],
+    [contacts, now],
   )
 
   return (
@@ -211,7 +217,7 @@ export function SocialPage() {
           ) : (
             <div className="flex max-h-[200px] flex-col gap-1 overflow-y-auto">
               {needsReachOut.map((c) => {
-                const daysSince = Math.ceil((Date.now() - new Date(c.lastContact).getTime()) / 86_400_000)
+                const daysSince = Math.ceil((now - new Date(c.lastContact).getTime()) / 86_400_000)
                 const overdue = daysSince - c.interval
                 return (
                   <div key={c.id} className={`flex items-center gap-3 rounded-md px-3 py-2 transition-colors duration-150 hover:bg-secondary/50 ${expanded === c.id ? 'ring-1 ring-accent/40' : ''}`}>
@@ -261,13 +267,17 @@ export function SocialPage() {
       {/* Mobile: Contact cards */}
       <div className="flex flex-col gap-3 md:hidden">
         {filtered.map((c) => (
-          <div key={c.id} className="surface rounded-xl p-4" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{c.name}{c.nickname ? <span className="ml-1 text-2xs text-muted-foreground">({c.nickname})</span> : null}</p>
-                <p className="truncate text-xs text-muted-foreground">{c.title || 'No title'}</p>
-              </div>
-              <Button variant="ghost" size="icon-sm" aria-label="Delete contact" className="shrink-0 active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
+          <div key={c.id} className="surface rounded-xl p-4">
+            <div className="flex items-start justify-between gap-2">
+              <Button variant="ghost" size="sm" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id}
+                onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                className="h-auto min-h-11 min-w-0 flex-1 justify-start p-0 text-left whitespace-normal">
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{c.name}{c.nickname ? <span className="ml-1 text-2xs text-muted-foreground">({c.nickname})</span> : null}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{c.title || 'No title'}</span>
+                </span>
+              </Button>
+              <Button variant="ghost" size="icon-lg" aria-label="Delete contact" className="shrink-0 active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
                 <Trash2 />
               </Button>
             </div>
@@ -281,7 +291,7 @@ export function SocialPage() {
               {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
             </div>
             {expanded === c.id && (
-              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
                 <div><label className={labelCls}>Name</label><input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} /></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className={labelCls}>Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className={lineInputCls} /></div>
@@ -327,13 +337,13 @@ export function SocialPage() {
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
                   {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
-                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon k="name" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title <SortIcon k="title" /></button></th>
+                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name {sortIcon('name')}</button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title {sortIcon('title')}</button></th>
                   <th className={thCls}>Category</th>
                   <th className={thCls}>Field</th>
-                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age <SortIcon k="birthday" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age {sortIcon('birthday')}</button></th>
                   <th className={thCls}>Phone</th>
-                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last <SortIcon k="lastContact" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last {sortIcon('lastContact')}</button></th>
                   <th className="w-6 py-2"></th>
                 </tr>
               </thead>
@@ -342,7 +352,9 @@ export function SocialPage() {
                   <Fragment key={c.id}>
                     <tr ref={(el) => { rowRefs.current[c.id] = el }} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
                       className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                      <td className="px-4 py-2.5"><span className="font-medium">{c.name}</span>{c.nickname && <span className="ml-1.5 text-2xs text-muted-foreground">({c.nickname})</span>}</td>
+                      <td className="px-4 py-2.5"><Button variant="ghost" size="xs" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id}
+                        onClick={(e) => { e.stopPropagation(); setExpanded(expanded === c.id ? null : c.id) }}
+                        className="min-h-7 px-0 text-left font-medium hover:text-accent">{c.name}</Button>{c.nickname && <span className="ml-1.5 text-2xs text-muted-foreground">({c.nickname})</span>}</td>
                       <td className="py-2.5 text-muted-foreground">{c.title}</td>
                       <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.categories.slice(0, 2).map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}{c.categories.length > 2 && <span className="font-mono text-3xs text-foreground-faint">+{c.categories.length - 2}</span>}</div></td>
                       <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}</div></td>

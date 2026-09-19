@@ -126,7 +126,7 @@ export function BooksPage() {
   }
 
   const toggleSort = (k: SortKey) => { if (sortKey === k) setSortAsc((p) => !p); else { setSortKey(k); setSortAsc(true) } }
-  const SortIcon = ({ k }: { k: SortKey }) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
+  const sortIcon = (k: SortKey) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const filtered = useMemo(() =>
     books
@@ -157,7 +157,7 @@ export function BooksPage() {
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Total" value={stats.total} icon={<BookMarked />} />
-        <StatTile label="Reading" value={stats.reading} icon={<BookOpen />} />
+        <StatTile label="Reading" value={stats.reading} icon={<BookOpen />} className="[--card:var(--focus-surface)]" />
         <StatTile label="Completed" value={stats.done} icon={<CheckCircle2 />} />
         <StatTile label="To read" value={stats.toRead} icon={<Clock />} />
       </div>
@@ -187,25 +187,27 @@ export function BooksPage() {
       {/* Mobile: Book cards */}
       <div className="flex flex-col gap-3 md:hidden">
         {filtered.map((b) => (
-          <div key={b.id} className="surface rounded-xl p-4" onClick={() => setExpanded(expanded === b.id ? null : b.id)}>
-            <div className="flex items-start justify-between">
-              <div className="flex min-w-0 items-center gap-2.5">
+          <div key={b.id} className="surface rounded-xl p-4">
+            <div className="flex items-start justify-between gap-2">
+              <Button variant="ghost" size="sm" aria-label={`Details for ${b.title}`} aria-expanded={expanded === b.id}
+                onClick={() => setExpanded(expanded === b.id ? null : b.id)}
+                className="h-auto min-h-11 min-w-0 flex-1 justify-start gap-2.5 p-0 text-left whitespace-normal">
                 <span className="shrink-0">{statusIcon(b.status)}</span>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{b.title}</p>
                   <p className="truncate text-xs text-muted-foreground">{b.author}</p>
                 </div>
-              </div>
+              </Button>
               <div className="flex shrink-0 items-center gap-2">
                 <Stars score={b.score} />
-                <Button variant="ghost" size="icon-sm" aria-label="Delete book" className="active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }}>
+                <Button variant="ghost" size="icon-lg" aria-label="Delete book" className="active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }}>
                   <Trash2 />
                 </Button>
               </div>
             </div>
             {b.genre && <div className="mt-1.5"><Chip size="sm">{b.genre}</Chip></div>}
             {expanded === b.id && (
-              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
                 <div><label className={labelCls}>Title</label><input value={b.title} onChange={(e) => setField(b.id, { title: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} /></div>
                 <div><label className={labelCls}>Author</label><input value={b.author} onChange={(e) => setField(b.id, { author: e.target.value })} className={lineInputCls} /></div>
                 <div className="grid grid-cols-2 gap-3">
@@ -247,10 +249,10 @@ export function BooksPage() {
                 <tr className="border-b border-border/60 text-muted-foreground">
                   <th className="w-6 px-4 py-2"></th>
                   {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
-                  <th className={thCls}><button onClick={() => toggleSort('title')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Title <SortIcon k="title" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('author')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Author <SortIcon k="author" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('genre')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Genre <SortIcon k="genre" /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('score')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Rating <SortIcon k="score" /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('title')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Title {sortIcon('title')}</button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('author')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Author {sortIcon('author')}</button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('genre')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Genre {sortIcon('genre')}</button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('score')} className="flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground">Rating {sortIcon('score')}</button></th>
                   <th className="w-6 py-2"></th>
                 </tr>
               </thead>
@@ -260,7 +262,9 @@ export function BooksPage() {
                     <tr onClick={() => setExpanded(expanded === b.id ? null : b.id)}
                       className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === b.id ? 'bg-secondary/20' : ''}`}>
                       <td className="px-4 py-2.5">{statusIcon(b.status)}</td>
-                      <td className="py-2.5 font-medium">{b.title}</td>
+                      <td className="py-2.5 font-medium"><Button variant="ghost" size="xs" aria-label={`Details for ${b.title}`} aria-expanded={expanded === b.id}
+                        onClick={(e) => { e.stopPropagation(); setExpanded(expanded === b.id ? null : b.id) }}
+                        className="min-h-7 px-0 text-left hover:text-accent">{b.title}</Button></td>
                       <td className="py-2.5 text-muted-foreground">{b.author}</td>
                       <td className="py-2.5">{b.genre ? <Chip size="sm">{b.genre}</Chip> : <span className="text-foreground-faint">—</span>}</td>
                       <td className="py-2.5"><Stars score={b.score} /></td>
