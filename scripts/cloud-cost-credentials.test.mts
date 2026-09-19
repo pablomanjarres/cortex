@@ -37,6 +37,10 @@ test('local user ADC wins over unrelated process-wide Google credentials', () =>
   )
 })
 
+test('missing dedicated and local credentials never fall through to ambient Google credentials', () => {
+  assert.throws(() => credentials.resolveGcpAuthOptions(null, null), /credentials unavailable/i)
+})
+
 test('service-account import rejects user credentials and strips untrusted endpoints', () => {
   assert.equal(typeof credentials.parseGcpServiceAccount, 'function')
   assert.throws(() => credentials.parseGcpServiceAccount(JSON.stringify({ type: 'authorized_user', refresh_token: 'secret' })), /service account/i)
