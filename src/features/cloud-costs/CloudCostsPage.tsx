@@ -94,6 +94,11 @@ export function CloudCostsPage() {
     .map((source) => cache.sources[source].error)
     .filter((error): error is string => Boolean(error))
   const hasLiveSource = Object.values(cache.sources).some((source) => source.ok)
+  const selectedSourceId = provider === 'aws' ? settings.awsProfile.trim() : provider === 'gcp' ? settings.gcpBillingTable.trim() : ''
+  const selectedConfigured = provider === 'all' ? hasConfiguredSource : Boolean(selectedSourceId)
+  const selectedHasUsage = cache.usageItems.some((item) => provider === 'all' || item.provider === provider)
+  const selectedLive = provider === 'all' ? hasLiveSource : cache.sources[provider].ok && cache.sources[provider].sourceId === selectedSourceId
+  const selectedFailed = provider === 'all' ? errors.length > 0 : Boolean(cache.sources[provider].error)
 
   return (
     <PageShell>
@@ -134,7 +139,7 @@ export function CloudCostsPage() {
         </div>
       ) : null}
 
-      {!hasConfiguredSource || cache.usageItems.length === 0 ? (
+      {!selectedConfigured || !selectedHasUsage ? (
         <section className="surface grid gap-6 rounded-xl p-5 sm:p-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" aria-labelledby="cloud-empty-title">
           <div className="flex flex-col justify-center gap-4">
             <span className="flex size-12 items-center justify-center rounded-xl bg-focus-surface text-accent" aria-hidden>
@@ -142,10 +147,10 @@ export function CloudCostsPage() {
             </span>
             <div className="space-y-2">
               <h2 id="cloud-empty-title" className="text-xl font-semibold text-foreground sm:text-2xl">
-                {hasConfiguredSource ? cloudUsageEmptyMessage(hasLiveSource, errors.length > 0) : 'Connect your cloud costs'}
+                {selectedConfigured ? cloudUsageEmptyMessage(selectedLive, selectedFailed) : provider === 'all' ? 'Connect your cloud costs' : `Connect ${provider.toUpperCase()} to see its costs`}
               </h2>
               <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-                {hasConfiguredSource ? 'Check the source status, then refresh after billing data is available. Usage and estimates appear when a snapshot contains usage.' : 'Set up AWS Cost Explorer or GCP Billing Export in Connections below. Cortex reads local credentials and keeps the ledger on this Mac.'}
+                {selectedConfigured ? 'Check the source status, then refresh after billing data is available. Usage and estimates appear when a snapshot contains usage.' : 'Set up the source in Connections below. Cortex reads local credentials and keeps the ledger on this Mac.'}
               </p>
             </div>
           </div>
