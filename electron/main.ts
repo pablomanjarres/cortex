@@ -11,7 +11,7 @@ import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { initEncryption, encrypt, encryptAndWrite, encryptAndWriteAsync, readAndDecrypt, readAndDecryptAsync, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
 import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.js'
 import type { FounderSource } from './founder-refresher.js'
-import { startCloudCostRefresher } from './cloud-cost-refresher.js'
+import { GCP_BILLING_KEY_SERVICE, startCloudCostRefresher } from './cloud-cost-refresher.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 
@@ -1183,11 +1183,11 @@ ipcMain.on('sprint:sync', (_event, data: { active: boolean; endTimeMs?: number; 
 
 // ─── IPC: Keychain ─────────────────────────────────────────
 
-ipcMain.handle('keychain:save', async (_event, service: string, value: string) => saveKey(service, value))
-ipcMain.handle('keychain:get', async (_event, service: string) => getKey(service))
-ipcMain.handle('keychain:delete', async (_event, service: string) => deleteKey(service))
+ipcMain.handle('keychain:save', async (_event, service: string, value: string) => service === GCP_BILLING_KEY_SERVICE ? false : saveKey(service, value))
+ipcMain.handle('keychain:get', async (_event, service: string) => service === GCP_BILLING_KEY_SERVICE ? null : getKey(service))
+ipcMain.handle('keychain:delete', async (_event, service: string) => service === GCP_BILLING_KEY_SERVICE ? false : deleteKey(service))
 ipcMain.handle('keychain:has', async (_event, service: string) => hasKey(service))
-ipcMain.handle('keychain:list', async () => listKeys())
+ipcMain.handle('keychain:list', async () => listKeys().filter((service) => service !== GCP_BILLING_KEY_SERVICE))
 
 // ─── IPC: Founder integrations (legacy per-source handlers) ──
 // Route through the refresher so every path shares one cache shape/write.
