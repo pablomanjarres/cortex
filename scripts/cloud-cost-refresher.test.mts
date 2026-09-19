@@ -6,6 +6,7 @@ import {
   mergeProviderResults,
   safeCloudCostError,
 } from '../electron/cloud-cost-refresh-state.ts'
+import { cloudUsageEmptyMessage } from '../src/features/cloud-costs/cloud-cost-store.ts'
 
 const previous = {
   version: 2,
@@ -141,4 +142,10 @@ test('safeCloudCostError never returns credential material', () => {
   const safe = safeCloudCostError(error)
   assert.equal(safe, 'Access denied. Grant read-only billing permissions.')
   assert.doesNotMatch(safe, /AKIA|very-private/)
+})
+
+test('empty usage explains a live zero-cost window separately from failed refresh', () => {
+  assert.equal(cloudUsageEmptyMessage(true, true), 'No usage in the retained period.')
+  assert.equal(cloudUsageEmptyMessage(false, true), 'Usage unavailable. Refresh the configured sources.')
+  assert.equal(cloudUsageEmptyMessage(false, false), 'Waiting for the first billing snapshot.')
 })
