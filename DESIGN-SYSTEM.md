@@ -90,43 +90,34 @@ Variants:
 - `accent-outline`: selected or engagement state.
 - `link`: inline text action.
 
-Variants: `default` (white-on-black — THE primary), `secondary` (surface-toned),
-`ghost`, `outline`, `destructive` (soft danger tint), `accent-outline` (rare
-selected/engage), `link`. Sizes: `sm` / `default` / `lg` (+ `xs`, `icon`, `icon-xs`,
-`icon-sm`, `icon-lg`).
+Sizes are `xs`, `sm`, `default`, `lg`, `icon`, `icon-xs`, `icon-sm`, and
+`icon-lg`. Icon-only buttons need an `aria-label`.
 
-```tsx
-<Button onClick={save}>Save</Button>
-<Button variant="secondary" size="sm">Edit</Button>
-<Button variant="ghost" size="icon-sm" aria-label="Delete"><Trash2 /></Button>
-```
+### Input
 
-### Chip (`@/components/ui/chip`)
+Use `@/components/ui/input`. Inputs are 40px tall by default, white on the fog
+canvas, with a 12px radius and token focus ring.
 
-The ONE tag/category/filter primitive. `neutral` (hairline + mono — the DEFAULT for
-categories/tags/domains), `accent` (selected/active), `success|warning|danger`
-(status only). Sizes `sm|md`. `selectable` renders a button; `selected` promotes to accent.
+### Tabs
 
-```tsx
-<Chip>compilers</Chip>
-<Chip variant="danger" size="sm">overdue</Chip>
-<Chip selectable selected={filter === 'week'} onClick={() => setFilter('week')}>week</Chip>
-```
+Use `@/components/ui/tabs`. The default list is a soft segmented control with a
+white active segment. `variant="line"` is for denser page sections where an
+underline reads better.
 
-### Badge (`@/components/ui/badge`)
+### Chip
 
-Small sans status/count pill (`default`, `secondary`, `outline`, `accent`, `success`,
-`warning`, `destructive`). For categories/tags prefer `Chip`.
+Use `@/components/ui/chip` for tags, categories, filters, and compact statuses.
+Neutral chips are the default for categories. `accent` means selected/active.
+`success`, `warning`, and `danger` are status only.
 
-```tsx
-<Badge variant="secondary">12</Badge>
-<Badge variant="success">paid</Badge>
-```
+## Shared Panels
 
-### StatTile (`@/components/shared/StatTile`)
+### WidgetCard
 
-THE KPI tile — replaces every hand-rolled metric tile. `variant="glass"` is one of the
-two sanctioned `.liquid-glass` roles (hero KPI rows only).
+`WidgetCard` is the standard dashboard card. It preserves the existing props:
+`title`, `description`, `children`, `className`, `delay`, `variant`, and
+`compact`. Titles render as sentence-case sans labels; callers should pass the
+actual label they want visible.
 
 ```tsx
 <StatTile label="MRR" value="$4,120" delta={<TrendBadge value={12.4} />} />
