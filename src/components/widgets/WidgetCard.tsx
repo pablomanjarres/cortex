@@ -16,11 +16,7 @@ interface WidgetCardProps {
 /** Total entrance stagger never exceeds this (seconds). */
 const MAX_STAGGER = 0.45
 
-/**
- * WidgetCard — the standard dashboard panel. Title is forced to the
- * mono-uppercase card-title style via CSS, so caller casing never matters.
- * urgent/success variants use the semantic hairline + soft glow classes.
- */
+/** WidgetCard — the standard dashboard panel. */
 export function WidgetCard({
   title,
   description,
@@ -38,18 +34,18 @@ export function WidgetCard({
       transition={{ duration: 0.5, delay: Math.min(delay, MAX_STAGGER), ease: 'easeOut' }}
       className={cn(
         'surface rounded-xl',
-        compact ? 'p-3' : 'p-4',
+        compact ? 'p-4' : 'p-5',
         variant === 'urgent' && 'glow-danger',
         variant === 'success' && 'glow-success',
         className
       )}
     >
       <div className={compact ? 'mb-2' : 'mb-3'}>
-        <h3 className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">
+        <h3 className="text-base font-semibold leading-tight text-foreground">
           {title}
         </h3>
         {description && (
-          <p className="mt-0.5 text-xs text-foreground-faint">{description}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         )}
       </div>
       {children}
