@@ -92,6 +92,15 @@ function gcpCredentialStatus(): { configured: boolean; email: string | null } {
   }
 }
 
+export function storeGcpCredential(raw: string): string {
+  if (raw.length > 20_000) throw new Error('Choose a GCP service account key smaller than 20 KB.')
+  const credentials = parseGcpServiceAccount(raw)
+  if (!saveKey(GCP_BILLING_KEY_SERVICE, JSON.stringify(credentials))) {
+    throw new Error('Secure macOS storage is unavailable.')
+  }
+  return credentials.client_email
+}
+
 async function writeCache(next: CloudCostCache): Promise<void> {
   if (!deps) return
   const file = path.join(deps.dataDir, `${CACHE_KEY}.json`)
@@ -163,24 +172,25 @@ export function startCloudCostRefresher(dependencies: CloudCostRefresherDeps): v
   deps = dependencies
   ipcMain.handle('cloud-costs:gcp-credential-status', () => gcpCredentialStatus())
   ipcMain.handle('cloud-costs:gcp-credential-import', async (_event, raw: unknown) => {
-    if (typeof raw !== 'string' || raw.length > 20_000) {
+    if (typeof raw !== 'string') {
       return { ok: false, error: 'Choose a valid GCP service account key file.' }
     }
     try {
-      const credentials = parseGcpServiceAccount(raw)
-      if (!saveKey(GCP_BILLING_KEY_SERVICE, JSON.stringify(credentials))) {
-        return { ok: false, error: 'Secure macOS storage is unavailable.' }
-      }
+      const email = storeGcpCredential(raw)
+      if (cycleInflight) await cycleInflight.catch(() => null)
       const result = await refreshCloudCosts()
       await scheduleFromCache()
-      return { ok: true, email: credentials.client_email, source: result?.sources.gcp ?? null }
-    } catch {
-      return { ok: false, error: 'Choose a valid GCP service account key file.' }
+      return { ok: true, email, source: result?.sources.gcp ?? null }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      return { ok: false, error: message.startsWith('Secure macOS storage') || message.includes('20 KB')
+        ? message : 'Choose a valid GCP service account key file.' }
     }
   })
   ipcMain.handle('cloud-costs:gcp-credential-remove', async () => {
     const removed = deleteKey(GCP_BILLING_KEY_SERVICE)
     if (removed) {
+      if (cycleInflight) await cycleInflight.catch(() => null)
       await refreshCloudCosts()
       await scheduleFromCache()
     }

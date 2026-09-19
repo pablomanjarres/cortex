@@ -11,7 +11,7 @@ import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { initEncryption, encrypt, encryptAndWrite, encryptAndWriteAsync, readAndDecrypt, readAndDecryptAsync, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
 import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.js'
 import type { FounderSource } from './founder-refresher.js'
-import { GCP_BILLING_KEY_SERVICE, startCloudCostRefresher } from './cloud-cost-refresher.js'
+import { GCP_BILLING_KEY_SERVICE, startCloudCostRefresher, storeGcpCredential } from './cloud-cost-refresher.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 
@@ -1787,6 +1787,22 @@ let autoExportInterval: ReturnType<typeof setInterval> | null = null
 // ─── App lifecycle ─────────────────────────────────────────
 
 app.on('ready', () => {
+  const gcpImportArg = process.argv.find((arg) => arg.startsWith('--import-gcp-billing-key='))
+  if (gcpImportArg) {
+    try {
+      const keyFile = gcpImportArg.slice('--import-gcp-billing-key='.length)
+      if (!path.isAbsolute(keyFile) || !fs.statSync(keyFile).isFile() || fs.statSync(keyFile).size > 20_000) {
+        throw new Error('invalid key file')
+      }
+      const email = storeGcpCredential(fs.readFileSync(keyFile, 'utf8'))
+      console.log(`[Cortex] GCP billing identity stored: ${email}`)
+      app.exit(0)
+    } catch {
+      console.error('[Cortex] GCP billing identity import failed')
+      app.exit(1)
+    }
+    return
+  }
   console.log(`[Cortex] Web port: ${WEB_PORT}${process.env.CORTEX_PORT ? ' (CORTEX_PORT)' : ''} — data dir: ${dataDir}${envDataDir ? ' (CORTEX_DATA_DIR)' : ''}`)
 
   // Initialize at-rest encryption before any data access
