@@ -20,6 +20,7 @@ const SettingsPage = lazy(() => import('@/features/settings/SettingsPage').then(
 const LibraryPage = lazy(() => import('@/features/library/LibraryPage').then((m) => ({ default: m.LibraryPage })))
 const GymPage = lazy(() => import('@/features/gym/GymPage').then((m) => ({ default: m.GymPage })))
 const SystemPage = lazy(() => import('@/features/system/SystemPage').then((m) => ({ default: m.SystemPage })))
+const AutomationsPage = lazy(() => import('@/features/automations/AutomationsPage').then((m) => ({ default: m.AutomationsPage })))
 
 function page(name: string, node: ReactNode) {
   return (
@@ -47,6 +48,7 @@ export function App() {
           <Route path="habits" element={page('Habits', <HabitsSection />)} />
           <Route path="goals" element={page('Goals', <GoalsPage />)} />
           <Route path="system" element={page('System', <SystemPage />)} />
+          <Route path="automations" element={page('Automations', <AutomationsPage />)} />
           <Route path="founder" element={page('Founder', <FounderPage />)} />
           <Route path="cloud-costs" element={page('Cloud Spend', <CloudCostsPage />)} />
           <Route path="student" element={page('Student', <StudentSection />)} />
@@ -60,7 +62,6 @@ export function App() {
           <Route path="settings" element={page('Settings', <SettingsPage />)} />
           {/* Reorg redirects — pages that moved into a parent section as tabs */}
           <Route path="stats" element={<Navigate to="/habits" replace />} />
-          <Route path="automations" element={<Navigate to="/system" replace />} />
           <Route path="crm" element={<Navigate to="/social" replace />} />
           <Route path="courses" element={<Navigate to="/library" replace />} />
           <Route path="captures" element={<Navigate to="/library" replace />} />

@@ -109,9 +109,9 @@ export function HostHistory({ host }: { host: HostKey }) {
         if (cancelled) return
         setData(json)
         setError(null)
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (cancelled) return
-        setError(e?.message ?? 'fetch failed')
+        setError(e instanceof Error ? e.message : 'fetch failed')
       } finally {
         if (!cancelled) {
           setLoading(false)
@@ -120,7 +120,6 @@ export function HostHistory({ host }: { host: HostKey }) {
       }
     }
 
-    setLoading(true)
     tick()
     return () => { cancelled = true; if (timer) clearTimeout(timer) }
   }, [host, windowKey])
@@ -142,12 +141,12 @@ export function HostHistory({ host }: { host: HostKey }) {
   const [cCpu, cMem, cLoad] = chartColors()
 
   return (
-    <div className="mt-4 flex flex-col gap-4 border-t border-border/60 pt-4">
+    <div className="flex flex-col gap-4">
       {/* Header + window selector */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
           <Activity className="h-3 w-3" />
-          History
+          Recorded samples
           {data && data.count > 0 && (
             <span className="ml-1 normal-case tracking-normal text-foreground-faint">
               · {data.count} samples
@@ -161,7 +160,13 @@ export function HostHistory({ host }: { host: HostKey }) {
               selectable
               size="sm"
               selected={windowKey === w.key}
-              onClick={() => setWindowKey(w.key)}
+              onClick={() => {
+                if (windowKey === w.key) return
+                setLoading(true)
+                setData(null)
+                setError(null)
+                setWindowKey(w.key)
+              }}
             >
               {w.label}
             </Chip>
