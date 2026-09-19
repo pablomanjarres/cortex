@@ -38,7 +38,7 @@ export function RouteSearch() {
   }
 
   return (
-    <div className="relative w-full max-w-[420px] [-webkit-app-region:no-drag]">
+    <div className="relative min-w-[10rem] flex-1 lg:max-w-[420px] [-webkit-app-region:no-drag]">
       <button
         type="button"
         onClick={() => setOpen(true)}

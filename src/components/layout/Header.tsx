@@ -16,7 +16,7 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
 
   return (
     <header className="sticky top-0 z-30 flex min-h-[calc(4.75rem+env(safe-area-inset-top))] items-center gap-3 border-b border-border/70 bg-background/85 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-xl [-webkit-app-region:drag] md:px-6">
-      <div className="flex min-w-0 items-center gap-3 md:w-[240px]">
+      <div className="flex min-w-0 items-center gap-3 md:min-w-[7rem] lg:w-[220px]">
         {/* Hamburger — mobile only */}
         {onMenuToggle && (
           <button
@@ -36,20 +36,22 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
           </h1>
         </span>
       </div>
-      <div className="hidden min-w-0 flex-1 items-center justify-between gap-4 md:flex">
+      <div className="hidden min-w-0 flex-1 items-center justify-between gap-2 md:flex lg:gap-4">
         <RouteSearch />
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-2 lg:gap-3">
           <button
             onClick={() => navigate('/system')}
-            className="flex h-11 items-center gap-2 rounded-full bg-card px-4 text-sm font-semibold text-foreground shadow-card transition-colors hover:bg-secondary [-webkit-app-region:no-drag]"
+            aria-label="Open system status"
+            className="flex h-11 items-center gap-2 rounded-full bg-card px-3 text-sm font-semibold text-foreground shadow-card transition-colors hover:bg-secondary lg:px-4 [-webkit-app-region:no-drag]"
           >
             <span className="h-2.5 w-2.5 rounded-full bg-success" />
-            System
+            <span className="hidden xl:inline">System</span>
           </button>
           <button
             onClick={() => navigate('/daily')}
+            aria-label={sprintActive ? `Open active focus sprint, ${mins} minutes ${secs} seconds left` : 'Open focus sprint, idle'}
             className={cn(
-              'flex h-11 items-center gap-2 rounded-full px-4 font-mono text-xs font-medium tabular-nums shadow-card transition-colors active:scale-[0.98] [-webkit-app-region:no-drag]',
+              'flex h-11 items-center gap-2 rounded-full px-3 font-mono text-xs font-medium tabular-nums shadow-card transition-colors active:scale-[0.98] lg:px-4 [-webkit-app-region:no-drag]',
               sprintActive
                 ? isRunning
                   ? 'bg-focus-surface text-sidebar-accent-foreground hover:bg-focus-surface/80'
@@ -58,14 +60,17 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
             )}
           >
             <Activity className="h-4 w-4" />
-            {sprintActive ? `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}` : 'Focus idle'}
+            <span className="hidden xl:inline">
+              {sprintActive ? `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}` : 'Focus idle'}
+            </span>
           </button>
           <button
             onClick={() => navigate('/library?kind=captures')}
-            className="flex h-11 items-center gap-2 rounded-2xl bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-[0_14px_32px_rgba(98,74,181,0.28)] transition-colors hover:bg-primary/90 [-webkit-app-region:no-drag]"
+            aria-label="Capture"
+            className="flex h-11 items-center gap-2 rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-[0_14px_32px_rgba(98,74,181,0.28)] transition-colors hover:bg-primary/90 lg:px-5 [-webkit-app-region:no-drag]"
           >
             <Plus className="h-4 w-4" />
-            Capture
+            <span className="hidden lg:inline">Capture</span>
           </button>
         </div>
       </div>
