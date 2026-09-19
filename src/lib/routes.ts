@@ -15,6 +15,7 @@ import {
   Dumbbell,
   Cpu,
   Cloud,
+  Workflow,
 } from 'lucide-react'
 
 /**
@@ -42,6 +43,7 @@ export const ROUTES: AppRoute[] = [
   { path: '/habits', title: 'Habit Tracking', navLabel: 'Habits', group: 'Core', icon: Target },
   { path: '/goals', title: 'Goals', navLabel: 'Goals', group: 'Core', icon: Goal },
   { path: '/system', title: 'System', navLabel: 'System', group: 'Core', icon: Cpu },
+  { path: '/automations', title: 'Automations', navLabel: 'Automations', group: 'Core', icon: Workflow },
   // ── Roles ─────────────────────────────────────────────────────────────────
   { path: '/founder', title: 'Founder Mode', navLabel: 'Founder', group: 'Roles', icon: Rocket },
   { path: '/cloud-costs', title: 'Cloud Spend', navLabel: 'Cloud Spend', group: 'Roles', icon: Cloud },
