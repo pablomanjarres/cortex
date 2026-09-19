@@ -110,7 +110,7 @@ test('upcomingAssignments keeps open valid deadlines from today onward without m
   ]
   const originalOrder = assignments.map((item) => item.id)
 
-  const result = upcomingAssignments(assignments, new Date('2026-09-19T23:59:00-05:00'))
+  const result = upcomingAssignments(assignments, new Date(2026, 8, 19, 23, 59))
 
   assert.deepEqual(result.map((item) => item.id), ['today', 'same-a', 'same-b', 'later'])
   assert.deepEqual(assignments.map((item) => item.id), originalOrder)
@@ -136,16 +136,16 @@ test('upNextItems merges future calendar events and open deadlines by actual tim
       {
         id: 'late-call',
         title: 'Late call',
-        startDate: '2026-09-19T20:00:00-05:00',
-        endDate: '2026-09-19T21:00:00-05:00',
+        startDate: '2026-09-19T20:00:00',
+        endDate: '2026-09-19T21:00:00',
         calendar: 'Work',
         isAllDay: false,
       },
       {
         id: 'past-event',
         title: 'Already happened',
-        startDate: '2026-09-19T07:00:00-05:00',
-        endDate: '2026-09-19T08:00:00-05:00',
+        startDate: '2026-09-19T07:00:00',
+        endDate: '2026-09-19T08:00:00',
         calendar: 'Work',
         isAllDay: false,
       },
@@ -156,7 +156,7 @@ test('upNextItems merges future calendar events and open deadlines by actual tim
       assignment({ id: 'done', deadline: '2026-09-19', done: true }),
     ],
     courseNames: new Map([['cs', 'Computer Science'], ['math', 'Math']]),
-    now: new Date('2026-09-19T08:00:00-05:00'),
+    now: new Date(2026, 8, 19, 8),
   })
 
   assert.deepEqual(result.map((item) => `${item.kind}:${item.id}`), [
