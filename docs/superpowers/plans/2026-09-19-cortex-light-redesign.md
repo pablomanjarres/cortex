@@ -112,4 +112,4 @@
 
 - [ ] **Step 1:** Capture a read-only snapshot of relevant live encrypted data hashes and the installed app SHA. Build/package the branch and install `/Applications/Cortex.app` with exact-target checks; do not run the `cortex:install` script blindly because it removes the old app before copying.
 - [ ] **Step 2:** Verify signature, packaged-versus-installed `app.asar` hash, app port/health, and data hash preservation. Inspect Home, Calendar, Student, Finance, Cloud Spend, and mobile width in dark-default and optional light themes against the approved compositions. Record screenshots.
-- [ ] **Step 3:** Open a PR from `codex/cortex-light-redesign`; run one official code review pass and submit a GitHub review object. Fix verified findings, re-run focused checks, and stop without merging.
+- [ ] **Step 3:** Open a PR from `codex/cortex-workspace-redesign`; run one official code review pass and submit a GitHub review object. Fix verified findings, re-run focused checks, and stop without merging.
