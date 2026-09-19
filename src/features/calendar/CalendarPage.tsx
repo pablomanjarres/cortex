@@ -186,7 +186,7 @@ function WeekDayButton({ group, selected, today, state, compact, onSelect }: { g
       today && !selected && 'ring-2 ring-progress-surface',
     )}>
       <div className="flex flex-col gap-0 md:flex-row md:items-center md:justify-between md:gap-2"><span className="font-semibold">{weekFmt.format(new Date(`${group.date}T12:00:00`))}</span><span className="font-mono text-xs text-muted-foreground">{group.date.slice(8)}</span></div>
-      <p className={cn('mt-2 text-sm text-muted-foreground', compact ? 'sr-only' : 'sr-only md:not-sr-only')}>{summary}</p>
+      <p className={cn('mt-2 text-sm text-muted-foreground', compact ? 'hidden' : 'hidden md:block')}>{summary}</p>
       <span className={cn('mt-2 block h-1.5 w-8 rounded-full md:hidden', compact && 'xl:block', selected || today ? 'bg-progress-surface' : 'bg-secondary')} aria-hidden="true" />
       {!compact && state === 'ready' && group.timed.slice(0, 2).map((event) => <p key={eventKey(event)} className="mt-1 truncate text-xs text-foreground">{event.title}</p>)}
     </button>
