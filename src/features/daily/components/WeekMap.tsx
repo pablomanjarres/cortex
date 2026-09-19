@@ -45,6 +45,11 @@ export function WeekMap({
           {weekRangeLabel(days)}
         </p>
       </div>
+      {calendarState === 'error' && (
+        <p className="mb-3 rounded-2xl border border-info/20 bg-info/10 px-3 py-2 text-xs text-muted-foreground">
+          Calendar could not be loaded, so this map is showing known focus sessions and deadlines only.
+        </p>
+      )}
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
         <div className="grid min-w-[44rem] grid-cols-7 gap-2 md:min-w-0">
           {days.map((day) => {
@@ -90,11 +95,11 @@ export function WeekMap({
                       {assignment.name}
                     </div>
                   ))}
-                {dayEvents.length + daySessions.length + dayDeadlines.length === 0 && (
-                  <p className="pt-8 text-center text-xs text-muted-foreground">
-                    {calendarState === 'error' ? 'Calendar unavailable' : 'No focus/deadlines'}
-                  </p>
-                )}
+                  {dayEvents.length + daySessions.length + dayDeadlines.length === 0 && (
+                    <p className="pt-8 text-center text-xs text-muted-foreground">
+                      No focus/deadlines
+                    </p>
+                  )}
                 </div>
               </button>
             )

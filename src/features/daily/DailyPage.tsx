@@ -281,8 +281,8 @@ export function DailyPage() {
         </p>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-12">
-        <div className="xl:order-1 xl:col-span-5">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+        <div className="min-w-0 xl:order-1 xl:col-span-5">
           <FocusHero
             isRunning={isRunning}
             isPaused={isPaused}
@@ -301,7 +301,7 @@ export function DailyPage() {
           />
         </div>
 
-        <div className="xl:order-5 xl:col-span-4">
+        <div className="min-w-0 xl:order-5 xl:col-span-4">
           <UpNext
             items={nextItems}
             calendarState={calendarState}
@@ -312,15 +312,15 @@ export function DailyPage() {
           />
         </div>
 
-        <div className="xl:order-2 xl:col-span-3">
+        <div className="min-w-0 xl:order-2 xl:col-span-3">
           <FactGrid facts={facts} />
         </div>
 
-        <div className="xl:order-3 xl:col-span-4">
+        <div className="min-w-0 xl:order-3 xl:col-span-4">
           <WeeklyRhythm days={week} minutes={focusMinutes} />
         </div>
 
-        <div className="xl:order-4 xl:col-span-8">
+        <div className="min-w-0 xl:order-4 xl:col-span-8">
           <WeekMap
             days={week}
             selectedDay={effectiveSelectedDay}
