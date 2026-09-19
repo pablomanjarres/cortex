@@ -51,6 +51,17 @@ test('homeCalendarState treats empty range reads as ambiguous until the backend 
   assert.equal(homeCalendarState(false, null, [], 'http'), 'ambiguous')
 })
 
+test('schedule fact describes the Monday-to-Sunday range actually queried', async () => {
+  const { calendarDetailForState } = await loadUtils()
+  assert.equal(calendarDetailForState('ready'), 'Events this week')
+  assert.equal(calendarDetailForState('loading'), 'Loading this week')
+})
+
+test('date-only student deadlines never display an invented time', async () => {
+  const { dueDateLabel } = await loadUtils()
+  assert.equal(dueDateLabel('2026-09-19'), 'Due Sep 19')
+})
+
 test('buildShortcutHabits excludes held habits from toggle shortcuts', async () => {
   const { buildShortcutHabits } = await loadUtils()
   const toggled: string[] = []
