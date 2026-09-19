@@ -54,37 +54,39 @@ export function WeekMap({
             : 'Calendar returned no events. Retry before treating the week as clear.'}
         </p>
       )}
-      <div className="-mx-1 overflow-x-auto px-1 pb-1">
-        <div className="grid min-w-[44rem] grid-cols-7 gap-2 md:min-w-0">
+      <div className="min-w-0 pb-1">
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {days.map((day) => {
             const dayEvents = events.filter((event) => eventOverlapsDay(event, day))
             const daySessions = sessionsByDay[day] ?? []
             const dayDeadlines = assignments.filter((assignment) => assignmentDay(assignment) === day && !assignment.done)
             const selected = day === selectedDay
+            const summary = `${new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}: ${dayEvents.length} calendar event${dayEvents.length === 1 ? '' : 's'}, ${daySessions.length} focus session${daySessions.length === 1 ? '' : 's'}, ${dayDeadlines.length} deadline${dayDeadlines.length === 1 ? '' : 's'}`
             return (
               <button
                 key={day}
                 type="button"
                 onClick={() => onSelectedDay(day)}
+                aria-label={summary}
                 aria-current={day === today ? 'date' : undefined}
                 aria-pressed={selected}
                 className={cn(
-                  'min-h-44 rounded-2xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring',
+                  'min-w-0 min-h-[4.5rem] rounded-xl border px-0.5 py-2 text-center transition-colors focus-visible:outline-2 focus-visible:outline-ring sm:min-h-44 sm:rounded-2xl sm:p-3 sm:text-left',
                   selected ? 'border-accent bg-accent/10' : 'border-border bg-card/60 hover:bg-secondary/60',
                 )}
               >
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-1 flex flex-col items-center justify-center gap-1 sm:mb-3 sm:flex-row sm:justify-between">
                   <div>
-                    <p className="text-xs font-semibold text-muted-foreground">{dayName(day)}</p>
-                    <p className="font-mono text-lg font-semibold text-foreground">{dayNumber(day)}</p>
+                    <p className="text-[10px] font-semibold text-muted-foreground sm:text-xs">{dayName(day)}</p>
+                    <p className="font-mono text-base font-semibold text-foreground sm:text-lg">{dayNumber(day)}</p>
                   </div>
-                  <div className="flex gap-1">
-                    {dayEvents.length > 0 && <span className="size-2 rounded-full bg-info" />}
-                    {daySessions.length > 0 && <span className="size-2 rounded-full bg-accent" />}
-                    {dayDeadlines.length > 0 && <span className="size-2 rounded-full bg-warning" />}
+                  <div className="flex gap-0.5 sm:gap-1" aria-hidden="true">
+                    {dayEvents.length > 0 && <span className="size-1.5 rounded-full bg-info sm:size-2" />}
+                    {daySessions.length > 0 && <span className="size-1.5 rounded-full bg-accent sm:size-2" />}
+                    {dayDeadlines.length > 0 && <span className="size-1.5 rounded-full bg-warning sm:size-2" />}
                   </div>
                 </div>
-                <div className="space-y-1.5">
+                <div className="hidden space-y-1.5 sm:block" aria-hidden="true">
                   {daySessions.slice(0, 1).map((session) => (
                     <div key={session.id} className="rounded-lg bg-accent/15 px-2 py-1 text-xs text-foreground">
                       {formatMinutes(session.duration)} focus
