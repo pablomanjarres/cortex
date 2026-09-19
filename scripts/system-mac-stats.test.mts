@@ -26,6 +26,14 @@ test('selectPrimaryDisk ignores a zero-sized Data volume', () => {
   assert.equal(selectPrimaryDisk([...volumes.slice(0, 4), missingData])?.mnt_point, '/')
 })
 
+test('selectPrimaryDisk uses the largest usable volume when neither Data nor root exists', () => {
+  const otherVolumes: MacDisk[] = [
+    { ...volumes[0], mnt_point: '/Volumes/Backup', size: 1_000_000_000 },
+    { ...volumes[0], mnt_point: '/Volumes/Work', size: 2_000_000_000 },
+  ]
+  assert.equal(selectPrimaryDisk(otherVolumes)?.mnt_point, '/Volumes/Work')
+})
+
 test('selectPrimaryDisk returns null when Glances reports no volumes', () => {
   assert.equal(selectPrimaryDisk([]), null)
 })
