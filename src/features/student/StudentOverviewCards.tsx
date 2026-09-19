@@ -16,7 +16,7 @@ export function StudentOverviewCards({ semester, overview, priorityCourse, onOpe
   const action = next
     ? { label: 'Review assignment', onClick: () => onOpenPriority(next) }
     : overview.courseCount > 0
-      ? { label: 'Add an assignment', onClick: onAddAssignment }
+      ? { label: overview.courseCount === 1 ? 'Add an assignment' : 'Choose a course', onClick: onAddAssignment }
       : { label: 'Add your first course', onClick: onAddCourse }
 
   return (

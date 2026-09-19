@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { cn } from '@/lib/utils'
 
 interface WidgetCardProps {
+  id?: string
   title: string
   description?: string
   children: ReactNode
@@ -18,6 +19,7 @@ const MAX_STAGGER = 0.06
 
 /** WidgetCard — the standard dashboard panel. */
 export function WidgetCard({
+  id,
   title,
   description,
   children,
@@ -29,6 +31,7 @@ export function WidgetCard({
   const reduceMotion = useReducedMotion()
   return (
     <motion.div
+      id={id}
       initial={reduceMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: reduceMotion ? 0 : 0.18, delay: reduceMotion ? 0 : Math.min(delay, MAX_STAGGER), ease: 'easeOut' }}

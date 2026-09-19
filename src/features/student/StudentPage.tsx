@@ -8,6 +8,8 @@ import { useStore, readStore, updateStoreValue } from '@/lib/store'
 import { deleteFile } from '@/lib/media'
 import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 import { ClassSchedule } from './ClassSchedule'
+import { StudentOverviewCards } from './StudentOverviewCards'
+import { studentOverview } from './student-overview'
 import { DEFAULT_ASSIGNMENTS, DEFAULT_COURSES, DEFAULT_SEMESTERS, DEFAULT_TOPICS } from './student-defaults'
 import { ICONS, ICON_CYCLE, ICON_OPTIONS } from './course-icons'
 import {
@@ -464,6 +466,8 @@ export function StudentPage() {
   const activeCourses = useMemo(() => courses.filter((c) => c.semester === activeSemester), [courses, activeSemester])
   const activeCourseIds = useMemo(() => new Set(activeCourses.map((c) => c.id)), [activeCourses])
   const semesterAssignments = useMemo(() => assignments.filter((a) => activeCourseIds.has(a.courseId)), [assignments, activeCourseIds])
+  const today = getToday()
+  const overview = useMemo(() => studentOverview(courses, assignments, activeSemester, today), [courses, assignments, activeSemester, today])
 
   const changeSemester = (s: string) => {
     setActiveSemester(() => s)
@@ -560,10 +564,7 @@ export function StudentPage() {
   }
   const toggleSort = (key: SortKey) => { if (sortKey === key) setSortAsc((p) => !p); else { setSortKey(key); setSortAsc(true) } }
 
-  const upcoming = useMemo(
-    () => semesterAssignments.filter((a) => a.deadline && a.deadline >= getToday() && !a.done).sort((a, b) => a.deadline!.localeCompare(b.deadline!)),
-    [semesterAssignments],
-  )
+  const upcoming = overview.deadlineQueue
 
   const filtered = useMemo(
     () => semesterAssignments.filter((a) => (!selectedCourse || a.courseId === selectedCourse) && selectedTypes.has(a.type)).sort((a, b) => cmp(a, b, sortKey, sortAsc)),
@@ -659,6 +660,26 @@ export function StudentPage() {
         )}
       </div>
 
+      <StudentOverviewCards
+        semester={activeSemester}
+        overview={overview}
+        priorityCourse={overview.priorityAssignment ? courseMap[overview.priorityAssignment.courseId] : undefined}
+        onOpenPriority={(assignment) => {
+          setSelectedCourse(assignment.courseId)
+          requestAnimationFrame(() => document.getElementById('student-assignments')?.scrollIntoView({ block: 'start' }))
+        }}
+        onAddCourse={() => setAddingCourse(true)}
+        onAddAssignment={() => {
+          if (activeCourses.length === 1) {
+            setSelectedCourse(activeCourses[0].id)
+            setAdding(true)
+            requestAnimationFrame(() => document.getElementById('student-assignments')?.scrollIntoView({ block: 'start' }))
+          } else {
+            document.getElementById('student-courses')?.scrollIntoView({ block: 'start' })
+          }
+        }}
+      />
+
       {/* PREP */}
       <div className="surface rounded-xl px-4 py-3">
         <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">P.R.E.P = Preview &rarr; Record &rarr; Exercise &rarr; Promote</p>
@@ -671,7 +692,7 @@ export function StudentPage() {
       </div>
 
       {/* Course Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div id="student-courses" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {activeCourses.map((c) => {
           const Icon = ICONS[c.iconKey] ?? GraduationCap
           const count = assignments.filter((a) => a.courseId === c.id).length
@@ -746,9 +767,9 @@ export function StudentPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Upcoming */}
-        <WidgetCard title="Upcoming Deadlines" description={`${upcoming.length} remaining`} delay={0.1} className="lg:col-span-2">
+        <WidgetCard title="Deadline queue" description={`${upcoming.length} open with dates`} delay={0.1} className="lg:col-span-2">
           {upcoming.length === 0 ? (
-            <EmptyState message="All caught up." hint="Deadlines you add will queue here." />
+            <EmptyState message="No dated work in the queue." hint="Add a deadline to an assignment to see it here." />
           ) : (
             <div className="flex max-h-[340px] flex-col gap-1 overflow-y-auto">
               {upcoming.map((a) => {
@@ -819,6 +840,7 @@ export function StudentPage() {
 
       {/* All Assignments */}
       <WidgetCard
+        id="student-assignments"
         title={selected ? selected.name : 'All Assignments'}
         description={`${filtered.length} of ${semesterAssignments.length}`}
         delay={0.2}
