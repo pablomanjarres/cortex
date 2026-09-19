@@ -1,5 +1,6 @@
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react'
-import type { ProjectCost, SpendDriver } from './breakdowns.ts'
+import type { AccountEstimate } from './analytics.ts'
+import type { ProjectCost, RankedCost, SpendDriver } from './breakdowns.ts'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Chip } from '@/components/ui/chip'
@@ -25,6 +26,38 @@ export function ProjectRankingCard({ projects }: { projects: ProjectCost[] }) {
       ) : (
         <EmptyState message="No project costs yet." />
       )}
+    </WidgetCard>
+  )
+}
+
+export function ResourceRankingCard({ project, resources }: { project: string; resources: RankedCost[] }) {
+  return (
+    <WidgetCard title="Resource costs" description={`${project} · current month`}>
+      {resources.length > 0 ? (
+        <div className="max-h-64 space-y-3 overflow-y-auto pr-1">
+          {resources.map((resource) => (
+            <div key={resource.name} className="space-y-1.5">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="min-w-0 flex-1 truncate text-foreground" title={resource.name}>{resource.name}</span>
+                <span className="shrink-0 font-mono tabular-nums text-foreground">{fmtUsd(resource.amount)}</span>
+              </div>
+              <Progress value={Math.min(100, resource.share)} aria-label={`${resource.name} share ${resource.share}%`} />
+            </div>
+          ))}
+        </div>
+      ) : <EmptyState message="No resource costs for this month." />}
+    </WidgetCard>
+  )
+}
+
+export function AccountEstimateCard({ estimate, scope }: { estimate: AccountEstimate; scope: string }) {
+  return (
+    <WidgetCard title="Account estimate" description={`${scope} · current month · credits are not assigned to projects`} compact>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div><p className="text-2xs text-foreground-faint">Promotional credits</p><p className="font-mono text-sm tabular-nums text-foreground">{fmtUsd(estimate.credits)}</p></div>
+        <div><p className="text-2xs text-foreground-faint">Other adjustments</p><p className="font-mono text-sm tabular-nums text-foreground">{fmtUsd(estimate.other)}</p></div>
+        <div><p className="text-2xs text-foreground-faint">Estimated net after credits</p><p className="font-mono text-sm tabular-nums text-foreground">{fmtUsd(estimate.estimatedNet)}</p></div>
+      </div>
     </WidgetCard>
   )
 }

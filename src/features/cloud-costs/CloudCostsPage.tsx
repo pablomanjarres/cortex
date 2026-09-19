@@ -17,15 +17,17 @@ import { useStore } from '@/lib/store'
 import { useUtcToday } from '@/lib/use-today'
 import {
   cloudCostSummary,
+  accountEstimate,
   dailyCumulativeSeries,
   monthKey,
+  monthlyProjectSeries,
   monthlySeries,
   previousMonth,
 } from './analytics'
-import { projectRanking, spendDrivers, topServices } from './breakdowns'
+import { projectRanking, resourceRanking, spendDrivers, topServices } from './breakdowns'
 import { CloudCostSettings } from './CloudCostSettings'
-import { DailyBurnChart, MonthlySpendChart, ServiceMixChart } from './CloudCostCharts'
-import { ProjectRankingCard, SpendDriversCard } from './CloudCostBreakdowns'
+import { DailyBurnChart, MonthlyProjectChart, MonthlySpendChart, ServiceMixChart } from './CloudCostCharts'
+import { AccountEstimateCard, ProjectRankingCard, ResourceRankingCard, SpendDriversCard } from './CloudCostBreakdowns'
 import { DEFAULT_CLOUD_COST_SETTINGS, EMPTY_CLOUD_COST_CACHE } from './cloud-cost-store'
 import { fmtUsd } from './format'
 
@@ -50,26 +52,38 @@ function SourceChip({ provider, sourceId, status }: {
 export function CloudCostsPage() {
   const today = useUtcToday()
   const now = useMemo(() => new Date(`${today}T12:00:00Z`), [today])
-  const [cache] = useStore('cortex-cloud-costs', EMPTY_CLOUD_COST_CACHE)
+  const [rawCache] = useStore('cortex-cloud-costs', EMPTY_CLOUD_COST_CACHE)
+  const cache = rawCache.version === 2 && Array.isArray(rawCache.usageItems) && Array.isArray(rawCache.accountAdjustments)
+    ? rawCache : EMPTY_CLOUD_COST_CACHE
   const [settings, updateSettings] = useStore('cortex-cloud-cost-settings', DEFAULT_CLOUD_COST_SETTINGS)
   const [provider, setProvider] = useState<CloudProviderFilter>('all')
+  const [projectSelection, setProjectSelection] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const currentMonth = monthKey(now)
   const hasConfiguredSource = Boolean(settings.awsProfile.trim() || settings.gcpBillingTable.trim())
   const canRefresh = Boolean(window.electronAPI?.cloudCosts) && hasConfiguredSource
 
-  const monthly = useMemo(() => monthlySeries(cache.items, provider, now), [cache.items, provider, now])
-  const daily = useMemo(() => dailyCumulativeSeries(cache.items, provider, currentMonth), [cache.items, provider, currentMonth])
+  const monthly = useMemo(() => monthlySeries(cache.usageItems, provider, now), [cache.usageItems, provider, now])
+  const daily = useMemo(() => dailyCumulativeSeries(cache.usageItems, provider, currentMonth), [cache.usageItems, provider, currentMonth])
   const summary = useMemo(
-    () => cloudCostSummary(cache.items, provider, now, settings.monthlyBudgetUsd),
-    [cache.items, provider, now, settings.monthlyBudgetUsd],
+    () => cloudCostSummary(cache.usageItems, provider, now, settings.monthlyBudgetUsd),
+    [cache.usageItems, provider, now, settings.monthlyBudgetUsd],
   )
-  const services = useMemo(() => topServices(cache.items, provider, currentMonth), [cache.items, provider, currentMonth])
-  const projects = useMemo(() => projectRanking(cache.items, provider, currentMonth), [cache.items, provider, currentMonth])
+  const services = useMemo(() => topServices(cache.usageItems, provider, currentMonth), [cache.usageItems, provider, currentMonth])
+  const projects = useMemo(() => projectRanking(cache.usageItems, provider, currentMonth), [cache.usageItems, provider, currentMonth])
   const drivers = useMemo(
-    () => spendDrivers(cache.items, provider, currentMonth, previousMonth(currentMonth)),
-    [cache.items, provider, currentMonth],
+    () => spendDrivers(cache.usageItems, provider, currentMonth, previousMonth(currentMonth)),
+    [cache.usageItems, provider, currentMonth],
   )
+  const estimate = useMemo(
+    () => accountEstimate(cache.usageItems, cache.accountAdjustments, provider, currentMonth),
+    [cache.usageItems, cache.accountAdjustments, provider, currentMonth],
+  )
+  const projectNames = useMemo(() => [...new Set(cache.usageItems.filter((item) => item.provider === 'gcp').map((item) => item.project))].sort(), [cache.usageItems])
+  const selectedProject = projectNames.includes(projectSelection) ? projectSelection : projectNames[0] ?? ''
+  const projectMonthly = useMemo(() => monthlyProjectSeries(cache.usageItems, selectedProject, now), [cache.usageItems, selectedProject, now])
+  const projectServices = useMemo(() => topServices(cache.usageItems, 'gcp', currentMonth, selectedProject), [cache.usageItems, currentMonth, selectedProject])
+  const projectResources = useMemo(() => resourceRanking(cache.usageItems, selectedProject, currentMonth), [cache.usageItems, currentMonth, selectedProject])
 
   const refresh = async () => {
     if (!window.electronAPI?.cloudCosts || refreshing) return
@@ -126,10 +140,10 @@ export function CloudCostsPage() {
       ) : (
         <>
           <div className={`grid gap-3 sm:grid-cols-2 ${summary.budgetPct === null ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
-            <StatTile label="Month to date" value={fmtUsd(summary.currentMonth)} icon={<WalletCards />} delta={summary.changePct === null ? undefined : <TrendBadge value={summary.changePct} invert />} />
-            <StatTile label="Prior month" value={fmtUsd(summary.previousMonth)} icon={<CalendarRange />} />
-            <StatTile label="Projected" value={fmtUsd(summary.projectedMonth)} icon={<Gauge />} sub="At the current daily pace" />
-            <StatTile label="13-month total" value={fmtUsd(summary.total13Months)} icon={<History />} />
+            <StatTile label="Month to date usage" value={fmtUsd(summary.currentMonth)} icon={<WalletCards />} delta={summary.changePct === null ? undefined : <TrendBadge value={summary.changePct} invert />} />
+            <StatTile label="Prior month usage" value={fmtUsd(summary.previousMonth)} icon={<CalendarRange />} />
+            <StatTile label="Projected usage" value={fmtUsd(summary.projectedMonth)} icon={<Gauge />} sub="At the current daily pace" />
+            <StatTile label="13-month usage" value={fmtUsd(summary.total13Months)} icon={<History />} />
             {summary.budgetPct !== null ? (
               <StatTile
                 label="Budget used"
@@ -140,8 +154,10 @@ export function CloudCostsPage() {
             ) : null}
           </div>
 
-          {cache.items.length === 0 ? (
-            <EmptyState message="Waiting for the first billing snapshot." hint="Refresh after local cloud credentials are ready." />
+          <AccountEstimateCard estimate={estimate} scope={provider === 'all' ? 'AWS + GCP accounts' : `${provider.toUpperCase()} accounts`} />
+
+          {cache.usageItems.length === 0 ? (
+            <EmptyState message="Usage unavailable." hint="Refresh to load usage before credits from the configured sources." />
           ) : (
             <>
               <div className="grid gap-4 lg:grid-cols-4">
@@ -153,6 +169,22 @@ export function CloudCostsPage() {
                 <DailyBurnChart data={daily} provider={provider} />
                 <SpendDriversCard drivers={drivers} />
               </div>
+              {provider !== 'aws' && projectNames.length > 0 ? (
+                <section className="space-y-3" aria-label="GCP project costs">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label htmlFor="cloud-project" className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">GCP project</label>
+                    <select id="cloud-project" value={selectedProject} onChange={(event) => setProjectSelection(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground">
+                      {projectNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                    <span className="font-mono text-xs tabular-nums text-foreground">Current month {fmtUsd(projectMonthly.at(-1)?.total ?? 0)} before credits</span>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-3">
+                    <MonthlyProjectChart data={projectMonthly} project={selectedProject} />
+                    <ServiceMixChart data={projectServices} title={`${selectedProject} services`} />
+                  </div>
+                  <ResourceRankingCard project={selectedProject} resources={projectResources} />
+                </section>
+              ) : null}
             </>
           )}
         </>
