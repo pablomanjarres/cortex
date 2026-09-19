@@ -119,16 +119,13 @@ Neutral chips are the default for categories. `accent` means selected/active.
 `compact`. Titles render as sentence-case sans labels; callers should pass the
 actual label they want visible.
 
-```tsx
-<StatTile label="MRR" value="$4,120" delta={<TrendBadge value={12.4} />} />
-<StatTile label="Deep work" value="3.5h" sub="of 6h target" icon={<Timer />} />
-<StatTile variant="glass" label="Streak" value={21} />
-```
+### StatTile
 
-### TrendBadge (`@/components/shared/TrendBadge`)
+`StatTile` is the KPI tile. Labels are sentence case, values use tabular mono, and
+icons use the iris accent. `variant="glass"` keeps the existing optional
+translucent treatment.
 
-▲/▼/— + percent, mono `text-2xs`. Up = success, down = danger; `invert` flips
-(expenses, load). Flat renders neutral.
+### PageHeader
 
 ```tsx
 <TrendBadge value={8.2} />
