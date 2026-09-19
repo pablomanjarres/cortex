@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -139,8 +139,8 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   const [data, setData] = useState<GlancesPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [stale, setStale] = useState(false)
-  const cpuHistory = useRef<number[]>([])
-  const memHistory = useRef<number[]>([])
+  const [cpuHistory, setCpuHistory] = useState<number[]>([])
+  const [memHistory, setMemHistory] = useState<number[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -155,8 +155,8 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         setData(json)
         setError(null)
         setStale(false)
-        cpuHistory.current = [...cpuHistory.current, json.cpu?.total ?? 0].slice(-30)
-        memHistory.current = [...memHistory.current, json.mem?.percent ?? 0].slice(-30)
+        setCpuHistory((history) => [...history, json.cpu?.total ?? 0].slice(-30))
+        setMemHistory((history) => [...history, json.mem?.percent ?? 0].slice(-30))
       } catch (e: unknown) {
         if (cancelled) return
         setError(e instanceof Error ? e.message : 'fetch failed')
@@ -288,8 +288,8 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
         <WidgetCard title="Live activity" description="CPU and memory · last 60 seconds" delay={delay} className="min-w-0">
           <div className="grid gap-4 sm:grid-cols-2">
-            <TrendPanel label="CPU" value={cpuPct} values={cpuHistory.current} />
-            <TrendPanel label="RAM" value={memPct} values={memHistory.current} />
+            <TrendPanel label="CPU" value={cpuPct} values={cpuHistory} />
+            <TrendPanel label="RAM" value={memPct} values={memHistory} />
           </div>
         </WidgetCard>
 

@@ -120,7 +120,6 @@ export function HostHistory({ host }: { host: HostKey }) {
       }
     }
 
-    setLoading(true)
     tick()
     return () => { cancelled = true; if (timer) clearTimeout(timer) }
   }, [host, windowKey])
@@ -161,7 +160,13 @@ export function HostHistory({ host }: { host: HostKey }) {
               selectable
               size="sm"
               selected={windowKey === w.key}
-              onClick={() => setWindowKey(w.key)}
+              onClick={() => {
+                if (windowKey === w.key) return
+                setLoading(true)
+                setData(null)
+                setError(null)
+                setWindowKey(w.key)
+              }}
             >
               {w.label}
             </Chip>
