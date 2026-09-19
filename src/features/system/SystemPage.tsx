@@ -4,9 +4,7 @@ import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock, ChevronDown, ChevronUp } from 'lucide-react'
-import { AutomationsPage } from '@/features/automations/AutomationsPage'
 import { HostHistory } from './HostHistory'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
@@ -41,9 +39,9 @@ const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 
   ? 'http://127.0.0.1:3456'
   : ''
 
-const HOSTS: HostSpec[] = [
-  { key: 'mac', label: 'Mac mini', path: '/api/system/mac', noteIfDown: 'glances launchd service not running' },
-]
+const MAC: HostSpec = {
+  key: 'mac', label: 'Mac mini', path: '/api/system/mac', noteIfDown: 'glances launchd service not running',
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -366,30 +364,10 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
 export function SystemPage() {
   return (
     <PageShell>
-      <Tabs defaultValue="live">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="live">Live</TabsTrigger>
-          <TabsTrigger value="automations">Automations</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="live">
-          <div className="flex flex-col gap-4">
-            <p className="font-mono text-2xs text-foreground-faint">
-              Live host metrics · polled every 2s · history sampled every 5s · powered by Glances
-            </p>
-
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {HOSTS.map((host, i) => (
-                <HostCard key={host.key} host={host} delay={i * 0.05} />
-              ))}
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="automations">
-          <AutomationsPage />
-        </TabsContent>
-      </Tabs>
+      <p className="font-mono text-2xs text-foreground-faint">
+        Live Mac metrics · polled every 2s · history sampled every 5s · powered by Glances
+      </p>
+      <HostCard host={MAC} delay={0} />
     </PageShell>
   )
 }
