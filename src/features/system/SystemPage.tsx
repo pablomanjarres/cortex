@@ -4,8 +4,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { Skeleton } from '@/components/shared/Skeleton'
-import { Button } from '@/components/ui/button'
-import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
 import { selectPrimaryDisk } from './mac-stats'
 
@@ -140,7 +139,6 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
   const [data, setData] = useState<GlancesPayload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [stale, setStale] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
   const cpuHistory = useRef<number[]>([])
   const memHistory = useRef<number[]>([])
 
@@ -159,9 +157,9 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
         setStale(false)
         cpuHistory.current = [...cpuHistory.current, json.cpu?.total ?? 0].slice(-30)
         memHistory.current = [...memHistory.current, json.mem?.percent ?? 0].slice(-30)
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (cancelled) return
-        setError(e?.message ?? 'fetch failed')
+        setError(e instanceof Error ? e.message : 'fetch failed')
         setStale(true)
       } finally {
         if (!cancelled) timer = setTimeout(tick, 2000)
@@ -306,7 +304,11 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <WidgetCard title="Storage" description="Macintosh HD · Data volume" delay={delay + 0.1}>
+        <WidgetCard
+          title="Storage"
+          description={disk?.mnt_point === '/System/Volumes/Data' ? 'Macintosh HD · Data volume' : disk?.mnt_point ?? 'Primary volume'}
+          delay={delay + 0.1}
+        >
           {disk ? (
             <div className="flex flex-col gap-4">
               <div className="flex items-baseline gap-2">
@@ -323,53 +325,47 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
           ) : <p className="text-xs text-foreground-faint">Storage data unavailable.</p>}
         </WidgetCard>
 
-        <WidgetCard title="System details" delay={delay + 0.15} className="xl:col-span-2">
-
-        {/* Network */}
-        {nets.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <div className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Network</div>
-            {nets.map((n) => (
-              <div key={n.interface_name} className="flex items-center justify-between text-2xs">
-                <span className="font-mono text-muted-foreground">{n.interface_name}</span>
-                <div className="flex gap-3 font-mono tabular-nums">
-                  <span className="text-muted-foreground">↓ {fmtRate(n.bytes_recv_rate_per_sec ?? 0)}</span>
-                  <span className="text-foreground-faint">↑ {fmtRate(n.bytes_sent_rate_per_sec ?? 0)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Top processes */}
-        {topProcs.length > 0 && (
-          <div className="flex flex-col gap-1">
-            <div className="mb-1 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Top processes</div>
-            <div className="flex flex-col gap-0.5 font-mono text-2xs">
-              <div className="flex items-center gap-2 px-1 text-3xs uppercase tracking-wider text-foreground-faint">
-                <span className="flex-1">name</span>
-                <span className="w-12 text-right">cpu</span>
-                <span className="w-12 text-right">mem</span>
-              </div>
-              {topProcs.map((p) => (
-                <div key={p.pid} className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-secondary/20">
-                  <span className="flex-1 truncate text-muted-foreground" title={`${p.name} (pid ${p.pid}, ${p.username})`}>{p.name}</span>
-                  <span className={`w-12 text-right tabular-nums ${pctTone(p.cpu_percent) || 'text-foreground'}`}>{p.cpu_percent.toFixed(1)}%</span>
-                  <span className="w-12 text-right tabular-nums text-muted-foreground">{p.memory_percent.toFixed(1)}%</span>
+        <WidgetCard title="Network" description="Active interfaces · current throughput" delay={delay + 0.15}>
+          {nets.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              {nets.map((n) => (
+                <div key={n.interface_name} className="flex flex-col gap-1 border-b border-border/50 pb-2 last:border-0 last:pb-0">
+                  <span className="font-mono text-xs text-foreground">{n.interface_name}</span>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-2xs tabular-nums">
+                    <span className="text-accent">↓ {fmtRate(n.bytes_recv_rate_per_sec ?? 0)}</span>
+                    <span className="text-muted-foreground">↑ {fmtRate(n.bytes_sent_rate_per_sec ?? 0)}</span>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : <p className="text-xs text-foreground-faint">No active network traffic.</p>}
+        </WidgetCard>
 
-        {/* History expander */}
-        <Button variant="secondary" size="sm" className="mt-1 w-full" onClick={() => setShowHistory((v) => !v)}>
-          {showHistory ? <ChevronUp /> : <ChevronDown />}
-          {showHistory ? 'Hide history' : 'Show history & averages'}
-        </Button>
-        {showHistory && <HostHistory host={host.key} />}
+        <WidgetCard title="Top processes" description="Sorted by CPU use" delay={delay + 0.2}>
+          {topProcs.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <div className="flex flex-col gap-0.5 font-mono text-2xs">
+                <div className="flex items-center gap-2 px-1 text-3xs uppercase tracking-wider text-foreground-faint">
+                  <span className="flex-1">name</span>
+                  <span className="w-12 text-right">cpu</span>
+                  <span className="w-12 text-right">mem</span>
+                </div>
+                {topProcs.map((p) => (
+                  <div key={p.pid} className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-secondary/20">
+                    <span className="flex-1 truncate text-muted-foreground" title={`${p.name} (pid ${p.pid}, ${p.username})`}>{p.name}</span>
+                    <span className={`w-12 text-right tabular-nums ${pctTone(p.cpu_percent) || 'text-foreground'}`}>{p.cpu_percent.toFixed(1)}%</span>
+                    <span className="w-12 text-right tabular-nums text-muted-foreground">{p.memory_percent.toFixed(1)}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : <p className="text-xs text-foreground-faint">No process data available.</p>}
         </WidgetCard>
       </div>
+
+      <WidgetCard title="History & averages" description="Recorded Mac activity · 15 minutes to 7 days" delay={delay + 0.25}>
+        <HostHistory host={host.key} />
+      </WidgetCard>
     </div>
   )
 }
