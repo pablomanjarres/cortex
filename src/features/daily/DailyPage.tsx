@@ -15,9 +15,11 @@ import { DailyShortcuts, NeedsAttention } from './components/HomeExtras'
 import { buildFacts, buildShortcutHabits, homeCalendarState } from './components/homePanelUtils'
 import {
   activeHabitSummary,
+  countOpenAssignments,
+  independentCalendarEvents,
   overdueAssignments,
   upNextItems,
-  upcomingAssignments,
+  withLiveDaySessions,
   weekDates,
   weeklyFocusMinutes,
   type HomeCalendarEvent,
@@ -143,22 +145,23 @@ export function DailyPage() {
       })
   }, [week])
 
-  const focusMinutes = useMemo(() => weeklyFocusMinutes(week, sessionsByDay), [week, sessionsByDay])
+  const liveSessionsByDay = useMemo(() => withLiveDaySessions(sessionsByDay, today, sprintSessions), [sessionsByDay, today, sprintSessions])
+  const focusMinutes = useMemo(() => weeklyFocusMinutes(week, liveSessionsByDay), [week, liveSessionsByDay])
   const effectiveSelectedDay = week.includes(selectedDay) ? selectedDay : today
-  const openAssignments = useMemo(() => upcomingAssignments(assignments || [], new Date(`${today}T12:00:00`)), [assignments, today])
   const overdue = useMemo(() => overdueAssignments(assignments || [], new Date(`${today}T12:00:00`)), [assignments, today])
+  const independentEvents = useMemo(() => independentCalendarEvents(calendarEvents, assignments || []), [calendarEvents, assignments])
   const calendarState = homeCalendarState(calendarLoading, calendarError, calendarEvents)
   const facts = buildFacts({
     focusMinutes: totalDeepWorkMin,
     habitsDone: habitSummary.done,
     habitsTotal: habitSummary.total,
-    openAssignments: openAssignments.length,
+    openAssignments: countOpenAssignments(assignments || []),
     calendarState,
     eventCount: calendarEvents.length,
   })
   const nextItems = useMemo(
-    () => upNextItems({ events: calendarEvents, assignments: assignments || [], courseNames, now: new Date() }),
-    [calendarEvents, assignments, courseNames],
+    () => upNextItems({ events: independentEvents, assignments: assignments || [], courseNames, now: new Date() }),
+    [independentEvents, assignments, courseNames],
   )
   const hour = new Date().getHours()
   const greeting = (() => {
@@ -325,8 +328,8 @@ export function DailyPage() {
             days={week}
             selectedDay={effectiveSelectedDay}
             onSelectedDay={setSelectedDay}
-            sessionsByDay={sessionsByDay}
-            events={calendarEvents}
+            sessionsByDay={liveSessionsByDay}
+            events={independentEvents}
             assignments={assignments || []}
             courseNames={courseNames}
             calendarState={calendarState}

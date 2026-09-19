@@ -3,6 +3,7 @@ import type { Assignment } from '../student/student-types'
 
 export interface HomeCalendarEvent {
   id?: string
+  notes?: string
   title: string
   startDate: string
   endDate?: string
@@ -92,6 +93,27 @@ export function weeklyFocusMinutes(days: string[], sessionsByDay: Record<string,
       return Number.isFinite(duration) ? sum + duration : sum
     }, 0),
   )
+}
+
+export function withLiveDaySessions(
+  stored: Record<string, SprintSession[]>,
+  today: string,
+  live: SprintSession[],
+): Record<string, SprintSession[]> {
+  return { ...stored, [today]: live }
+}
+
+export function countOpenAssignments(assignments: Assignment[]): number {
+  return assignments.filter((assignment) => !assignment.done).length
+}
+
+/** EventKit copies of Student deadlines should not appear beside their source assignment. */
+export function independentCalendarEvents(events: HomeCalendarEvent[], assignments: Assignment[]): HomeCalendarEvent[] {
+  const assignmentIds = new Set(assignments.map((assignment) => assignment.id))
+  return events.filter((event) => {
+    const marker = /^cortex:assignment:([^\s]+)/.exec(event.notes?.trim() ?? '')
+    return !marker || !assignmentIds.has(marker[1])
+  })
 }
 
 export function activeHabitSummary(
