@@ -29,7 +29,8 @@ test('student overview counts only active open work and leads with overdue work'
     dueThisWeek: result.dueThisWeek,
     overdueCount: result.overdueCount,
     priorityId: result.priorityAssignment?.id,
-  }, { courseCount: 1, openCount: 3, dueThisWeek: 2, overdueCount: 1, priorityId: 'overdue' })
+    deadlineQueueIds: result.deadlineQueue?.map((item) => item.id),
+  }, { courseCount: 1, openCount: 3, dueThisWeek: 2, overdueCount: 1, priorityId: 'overdue', deadlineQueueIds: ['overdue', 'sunday'] })
 })
 
 test('student overview leaves an empty semester genuinely empty', () => {
