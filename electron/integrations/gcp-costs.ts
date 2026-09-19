@@ -1,6 +1,37 @@
 import { BigQuery } from '@google-cloud/bigquery'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import type { CloudCostSettings, ProviderCosts } from '../cloud-cost-types.js'
 import { normalizeGcpRows, validateBillingTable } from '../cloud-cost-normalizers.js'
+
+interface GcpServiceAccount {
+  project_id: string
+  client_email: string
+  private_key: string
+}
+
+export function parseGcpServiceAccount(raw: string): GcpServiceAccount {
+  let value: unknown
+  try { value = JSON.parse(raw) } catch { /* reject below */ }
+  if (!value || typeof value !== 'object') throw new Error('GCP credentials: invalid service account key')
+  const key = value as Record<string, unknown>
+  if (key.type !== 'service_account'
+    || typeof key.project_id !== 'string' || !/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(key.project_id)
+    || typeof key.client_email !== 'string' || !/^[^\s@]+@[^\s@]+\.iam\.gserviceaccount\.com$/.test(key.client_email)
+    || typeof key.private_key !== 'string' || !key.private_key.startsWith('-----BEGIN PRIVATE KEY-----\n')
+    || !key.private_key.includes('\n-----END PRIVATE KEY-----')) {
+    throw new Error('GCP credentials: invalid service account key')
+  }
+  return { project_id: key.project_id, client_email: key.client_email, private_key: key.private_key }
+}
+
+export function resolveGcpAuthOptions(serviceAccountJson: string | null, localAdcPath: string | null):
+  { credentials?: GcpServiceAccount; keyFilename?: string } {
+  if (serviceAccountJson !== null) return { credentials: parseGcpServiceAccount(serviceAccountJson) }
+  if (localAdcPath) return { keyFilename: localAdcPath }
+  return {}
+}
 
 interface BigQueryLike {
   query(options: {
@@ -72,8 +103,13 @@ export async function fetchGcpCosts(
   settings: CloudCostSettings,
   start: string,
   end: string,
+  serviceAccountJson: string | null = null,
 ): Promise<ProviderCosts> {
-  const client = new BigQuery({ projectId: settings.gcpQueryProject.trim() || undefined })
+  const adcPath = path.join(os.homedir(), '.config', 'gcloud', 'application_default_credentials.json')
+  const client = new BigQuery({
+    projectId: settings.gcpQueryProject.trim() || undefined,
+    ...resolveGcpAuthOptions(serviceAccountJson, fs.existsSync(adcPath) ? adcPath : null),
+  })
   const queryClient: BigQueryLike = {
     query: async (options) => {
       const [rows] = await client.query(options)
