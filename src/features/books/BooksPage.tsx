@@ -193,10 +193,10 @@ export function BooksPage() {
                 onClick={() => setExpanded(expanded === b.id ? null : b.id)}
                 className="h-auto min-h-11 min-w-0 flex-1 justify-start gap-2.5 p-0 text-left whitespace-normal">
                 <span className="shrink-0">{statusIcon(b.status)}</span>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{b.title}</p>
-                  <p className="truncate text-xs text-muted-foreground">{b.author}</p>
-                </div>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{b.title}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{b.author}</span>
+                </span>
               </Button>
               <div className="flex shrink-0 items-center gap-2">
                 <Stars score={b.score} />
