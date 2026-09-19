@@ -5,7 +5,7 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { cn } from '@/lib/utils'
 import type { UpNextItem } from '../home-model'
 import type { CalendarState } from './homePanelUtils'
-import { shortTime } from './homePanelUtils'
+import { dueDateLabel, shortTime } from './homePanelUtils'
 
 export function UpNext({
   items,
@@ -58,7 +58,7 @@ export function UpNext({
             >
               <span className={cn('size-2.5 shrink-0 rounded-full', item.kind === 'event' ? 'bg-info' : 'bg-warning')} />
               <span className="w-24 shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-                {item.kind === 'event' && item.isAllDay ? 'All day' : shortTime(item.startsAt)}
+                {item.kind === 'deadline' ? dueDateLabel(item.assignment.deadline!) : item.isAllDay ? 'All day' : shortTime(item.startsAt)}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold text-foreground">{item.title}</span>

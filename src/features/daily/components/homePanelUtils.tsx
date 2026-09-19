@@ -39,6 +39,9 @@ export const dayNumber = (day: string) => String(new Date(`${day}T12:00:00`).get
 export const shortTime = (date: Date) =>
   date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
+export const dueDateLabel = (day: string) =>
+  `Due ${new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+
 export const formatMinutes = (minutes: number) =>
   minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60 ? `${minutes % 60}m` : ''}`.trim() : `${minutes}m`
 
@@ -79,6 +82,15 @@ export const weekRangeLabel = (days: string[]) => {
   return startMonth === endMonth ? `${startMonth} ${startDay}-${endDay}` : `${startMonth} ${startDay}-${endMonth} ${endDay}`
 }
 
+export const calendarDetailForState = (state: CalendarState) =>
+  state === 'error'
+    ? 'This week’s Calendar read failed'
+    : state === 'loading'
+      ? 'Loading this week'
+      : state === 'ambiguous'
+        ? 'Calendar access needs checking'
+        : 'Events this week'
+
 export function buildFacts({
   focusMinutes,
   habitsDone,
@@ -95,13 +107,7 @@ export function buildFacts({
   eventCount: number
 }): FactItem[] {
   const calendarValue = calendarState === 'loading' || calendarState === 'error' || calendarState === 'ambiguous' ? 'Check' : eventCount
-  const calendarDetail = calendarState === 'error'
-    ? '7-day Calendar read failed'
-    : calendarState === 'loading'
-      ? 'Loading next 7 days'
-      : calendarState === 'ambiguous'
-        ? 'Calendar access needs checking'
-        : 'Events in next 7 days'
+  const calendarDetail = calendarDetailForState(calendarState)
 
   return [
     { label: 'Deep work', value: formatMinutes(focusMinutes), detail: 'Completed today', tone: 'focus', icon: <TimerReset /> },
