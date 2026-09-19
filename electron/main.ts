@@ -11,7 +11,8 @@ import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { initEncryption, encrypt, encryptAndWrite, encryptAndWriteAsync, readAndDecrypt, readAndDecryptAsync, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
 import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.js'
 import type { FounderSource } from './founder-refresher.js'
-import { startCloudCostRefresher } from './cloud-cost-refresher.js'
+import { startCloudCostRefresher, storeGcpCredential } from './cloud-cost-refresher.js'
+import { isPublicKeychainService } from './keychain-access.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 
@@ -1183,11 +1184,15 @@ ipcMain.on('sprint:sync', (_event, data: { active: boolean; endTimeMs?: number; 
 
 // ─── IPC: Keychain ─────────────────────────────────────────
 
-ipcMain.handle('keychain:save', async (_event, service: string, value: string) => saveKey(service, value))
-ipcMain.handle('keychain:get', async (_event, service: string) => getKey(service))
-ipcMain.handle('keychain:delete', async (_event, service: string) => deleteKey(service))
-ipcMain.handle('keychain:has', async (_event, service: string) => hasKey(service))
-ipcMain.handle('keychain:list', async () => listKeys())
+ipcMain.handle('keychain:save', async (_event, service: unknown, value: unknown) =>
+  isPublicKeychainService(service) && typeof value === 'string' ? saveKey(service, value) : false)
+ipcMain.handle('keychain:get', async (_event, service: unknown) =>
+  isPublicKeychainService(service) ? getKey(service) : null)
+ipcMain.handle('keychain:delete', async (_event, service: unknown) =>
+  isPublicKeychainService(service) ? deleteKey(service) : false)
+ipcMain.handle('keychain:has', async (_event, service: unknown) =>
+  isPublicKeychainService(service) ? hasKey(service) : false)
+ipcMain.handle('keychain:list', async () => listKeys().filter(isPublicKeychainService))
 
 // ─── IPC: Founder integrations (legacy per-source handlers) ──
 // Route through the refresher so every path shares one cache shape/write.
@@ -1787,6 +1792,22 @@ let autoExportInterval: ReturnType<typeof setInterval> | null = null
 // ─── App lifecycle ─────────────────────────────────────────
 
 app.on('ready', () => {
+  const gcpImportArg = process.argv.find((arg) => arg.startsWith('--import-gcp-billing-key='))
+  if (gcpImportArg) {
+    try {
+      const keyFile = gcpImportArg.slice('--import-gcp-billing-key='.length)
+      if (!path.isAbsolute(keyFile) || !fs.statSync(keyFile).isFile() || fs.statSync(keyFile).size > 20_000) {
+        throw new Error('invalid key file')
+      }
+      const email = storeGcpCredential(fs.readFileSync(keyFile, 'utf8'))
+      console.log(`[Cortex] GCP billing identity stored: ${email}`)
+      app.exit(0)
+    } catch {
+      console.error('[Cortex] GCP billing identity import failed')
+      app.exit(1)
+    }
+    return
+  }
   console.log(`[Cortex] Web port: ${WEB_PORT}${process.env.CORTEX_PORT ? ' (CORTEX_PORT)' : ''} — data dir: ${dataDir}${envDataDir ? ' (CORTEX_DATA_DIR)' : ''}`)
 
   // Initialize at-rest encryption before any data access

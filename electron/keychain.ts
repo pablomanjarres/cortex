@@ -19,7 +19,8 @@ function readStore(): StoredKeys {
 }
 
 function writeStore(store: StoredKeys) {
-  fs.writeFileSync(KEYS_FILE(), JSON.stringify(store, null, 2))
+  fs.writeFileSync(KEYS_FILE(), JSON.stringify(store, null, 2), { mode: 0o600 })
+  fs.chmodSync(KEYS_FILE(), 0o600)
 }
 
 export function saveKey(service: string, value: string): boolean {
