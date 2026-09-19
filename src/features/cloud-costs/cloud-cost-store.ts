@@ -1,4 +1,4 @@
-import type { CloudCostCache, CloudCostSettings } from '../../../electron/cloud-cost-types.ts'
+import type { CloudCostCache, CloudCostSettings, CloudProviderFilter } from '../../../electron/cloud-cost-types.ts'
 
 export const DEFAULT_CLOUD_COST_SETTINGS: CloudCostSettings = {
   awsProfile: '',
@@ -24,4 +24,13 @@ export function cloudUsageEmptyMessage(hasLiveSource: boolean, hasFailedSource: 
   if (hasLiveSource) return 'No usage in the retained period.'
   if (hasFailedSource) return 'Usage unavailable. Refresh the configured sources.'
   return 'Waiting for the first billing snapshot.'
+}
+
+export function cloudCostViewState(cache: CloudCostCache, provider: CloudProviderFilter, month: string) {
+  const includesProvider = (row: { provider: string }) => provider === 'all' || row.provider === provider
+  const showUsageAnalytics = cache.usageItems.some(includesProvider)
+  const hasCurrentAdjustments = cache.accountAdjustments.some(
+    (row) => includesProvider(row) && row.date.startsWith(`${month}-`),
+  )
+  return { showUsageAnalytics, showAccountEstimate: showUsageAnalytics || hasCurrentAdjustments }
 }

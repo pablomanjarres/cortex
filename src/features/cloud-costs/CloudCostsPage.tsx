@@ -27,7 +27,7 @@ import { projectRanking, resourceRanking, spendDrivers, topServices } from './br
 import { CloudCostSettings } from './CloudCostSettings'
 import { DailyBurnChart, MonthlyProjectChart, MonthlySpendChart, ServiceMixChart } from './CloudCostCharts'
 import { AccountEstimateCard, ProjectRankingCard, ResourceRankingCard, SpendDriversCard } from './CloudCostBreakdowns'
-import { cloudUsageEmptyMessage, DEFAULT_CLOUD_COST_SETTINGS, EMPTY_CLOUD_COST_CACHE } from './cloud-cost-store'
+import { cloudCostViewState, cloudUsageEmptyMessage, DEFAULT_CLOUD_COST_SETTINGS, EMPTY_CLOUD_COST_CACHE } from './cloud-cost-store'
 import { fmtUsd } from './format'
 
 const PROVIDERS: Array<{ value: CloudProviderFilter; label: string }> = [
@@ -96,7 +96,7 @@ export function CloudCostsPage() {
   const hasLiveSource = Object.values(cache.sources).some((source) => source.ok)
   const selectedSourceId = provider === 'aws' ? settings.awsProfile.trim() : provider === 'gcp' ? settings.gcpBillingTable.trim() : ''
   const selectedConfigured = provider === 'all' ? hasConfiguredSource : Boolean(selectedSourceId)
-  const selectedHasUsage = cache.usageItems.some((item) => provider === 'all' || item.provider === provider)
+  const selectedView = cloudCostViewState(cache, provider, currentMonth)
   const selectedLive = provider === 'all' ? hasLiveSource : cache.sources[provider].ok && cache.sources[provider].sourceId === selectedSourceId
   const selectedFailed = provider === 'all' ? errors.length > 0 : Boolean(cache.sources[provider].error)
 
@@ -114,7 +114,7 @@ export function CloudCostsPage() {
         )}
       />
 
-      {hasConfiguredSource && cache.usageItems.length > 0 && (
+      {hasConfiguredSource && (
         <div className="flex flex-wrap items-center gap-2">
           {PROVIDERS.map((option) => (
             <Chip key={option.value} selectable selected={provider === option.value} onClick={() => setProvider(option.value)}>
@@ -139,7 +139,8 @@ export function CloudCostsPage() {
         </div>
       ) : null}
 
-      {!selectedConfigured || !selectedHasUsage ? (
+      {!selectedConfigured || !selectedView.showUsageAnalytics ? (
+        <>
         <section className="surface grid gap-6 rounded-xl p-5 sm:p-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" aria-labelledby="cloud-empty-title">
           <div className="flex flex-col justify-center gap-4">
             <span className="flex size-12 items-center justify-center rounded-xl bg-focus-surface text-accent" aria-hidden>
@@ -147,10 +148,10 @@ export function CloudCostsPage() {
             </span>
             <div className="space-y-2">
               <h2 id="cloud-empty-title" className="text-xl font-semibold text-foreground sm:text-2xl">
-                {selectedConfigured ? cloudUsageEmptyMessage(selectedLive, selectedFailed) : provider === 'all' ? 'Connect your cloud costs' : `Connect ${provider.toUpperCase()} to see its costs`}
+                {selectedConfigured ? selectedView.showAccountEstimate ? 'Account adjustment available' : cloudUsageEmptyMessage(selectedLive, selectedFailed) : provider === 'all' ? 'Connect your cloud costs' : `Connect ${provider.toUpperCase()} to see its costs`}
               </h2>
               <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-                {selectedConfigured ? 'Check the source status, then refresh after billing data is available. Usage and estimates appear when a snapshot contains usage.' : 'Set up the source in Connections below. Cortex reads local credentials and keeps the ledger on this Mac.'}
+                {selectedConfigured ? selectedView.showAccountEstimate ? 'No usage rows were returned. The current-month account adjustment is shown below; usage charts need usage data.' : 'Check the source status, then refresh after billing data is available. Usage charts appear when a snapshot contains usage.' : 'Set up the source in Connections below. Cortex reads local credentials and keeps the ledger on this Mac.'}
               </p>
             </div>
           </div>
@@ -163,6 +164,10 @@ export function CloudCostsPage() {
             {cache.fetchedAt && <p className="mt-4 border-t border-border/60 pt-3 font-mono text-xs text-muted-foreground">Last snapshot {new Date(cache.fetchedAt).toLocaleString()}</p>}
           </div>
         </section>
+        {selectedConfigured && selectedView.showAccountEstimate ? (
+          <AccountEstimateCard estimate={estimate} scope={provider === 'all' ? 'AWS + GCP accounts' : `${provider.toUpperCase()} accounts`} />
+        ) : null}
+        </>
       ) : (
         <>
           <div className={`grid gap-3 sm:grid-cols-2 ${summary.budgetPct === null ? 'xl:grid-cols-4' : 'xl:grid-cols-5'}`}>
