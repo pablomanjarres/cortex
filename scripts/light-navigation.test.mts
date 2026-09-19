@@ -45,3 +45,15 @@ test('navigation search returns route and action destinations without user recor
   assert.deepEqual(searchNavigation('capture').map((item) => item.href), ['/library?kind=captures'])
   assert.deepEqual(searchNavigation('missing-person-name'), [])
 })
+
+test('mobile bottom nav selects the representative destination for each route group', () => {
+  assert.equal(typeof routes.mobileDestinationForPath, 'function')
+  const mobileDestinationForPath = routes.mobileDestinationForPath as (pathname: string) => string | undefined
+  assert.equal(mobileDestinationForPath('/calendar'), '/daily')
+  assert.equal(mobileDestinationForPath('/habits'), '/daily')
+  assert.equal(mobileDestinationForPath('/projects'), '/founder')
+  assert.equal(mobileDestinationForPath('/cloud-costs/aws'), '/founder')
+  assert.equal(mobileDestinationForPath('/library?kind=captures'), '/student')
+  assert.equal(mobileDestinationForPath('/gym/history'), '/finance')
+  assert.equal(mobileDestinationForPath('/settings'), undefined)
+})
