@@ -15,17 +15,17 @@ export function themeColorFor(theme: ThemePreference): string {
   return THEME_COLORS[theme]
 }
 
-export function readStoredThemePreference(storage = globalThis.localStorage): ThemePreference {
+export function readStoredThemePreference(storage?: Storage): ThemePreference {
   try {
-    return resolveThemePreference(storage.getItem(THEME_STORAGE_KEY))
+    return resolveThemePreference((storage ?? globalThis.localStorage).getItem(THEME_STORAGE_KEY))
   } catch {
     return "dark"
   }
 }
 
-export function writeStoredThemePreference(theme: ThemePreference, storage = globalThis.localStorage) {
+export function writeStoredThemePreference(theme: ThemePreference, storage?: Storage) {
   try {
-    storage.setItem(THEME_STORAGE_KEY, theme)
+    (storage ?? globalThis.localStorage).setItem(THEME_STORAGE_KEY, theme)
   } catch {
     // Cosmetic preference only; a blocked localStorage write should not break Settings.
   }
