@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the approved light Cortex desktop and mobile design while preserving every existing data and integration contract.
+**Goal:** Build the approved colorful Cortex desktop and mobile composition, dark by default with a light option, while preserving every existing data and integration contract.
 
 **Architecture:** Replace tokens and shared visual primitives first, then the shell. Add pure Home selectors and use them in responsive Home components. Add Calendar as a read-only route over the existing range bridge, reshape the Student overview, and visually align the remaining page families without changing their stores.
 
@@ -15,7 +15,7 @@
 - The three approved images are composition references only; never hard-code their sample people, dates, courses, targets, counts, or quotes.
 - Preserve encrypted store keys, Electron preload and HTTP contracts, MCP contracts, finance arithmetic, EventKit mutation semantics, and legacy redirects.
 - No `Co-Authored-By`, no push to main, no force-push, no merge. Stage exact files. Never mix test and production files in a commit; each commit changes at most four files and 200 added/deleted lines.
-- Light default tokens: canvas `#F1F2F7`, surface `#FFFFFF`, ink `#22232B`, secondary `#66707B`, iris `#624AB5`, lilac `#DDD2FF`, lime `#E2F2C7`. Provide dark overrides.
+- Light alternative tokens: canvas `#F1F2F7`, surface `#FFFFFF`, ink `#22232B`, secondary `#66707B`, iris `#624AB5`, lilac `#DDD2FF`, lime `#E2F2C7`. Dark is the user-preferred default; keep lilac/lime panels expressive and contrast-safe in both modes.
 - Home and Calendar must use actual stores and the existing `getEventsInRange`/`/api/calendar/events` reads. Blank or failed reads must not render invented zero claims.
 - Every visual surface works at desktop and phone widths. Keyboard focus, reduced motion, safe areas, and mobile touch targets remain usable.
 - The installed `/Applications/Cortex.app` is the final target. Preserve its live encrypted data and verify installation, not just a Vite preview.
@@ -55,6 +55,16 @@
 - [ ] **Step 2:** Implement the four pure selectors with local date boundaries. A sample expected assertion is `assert.deepEqual(weeklyFocusMinutes(['2026-09-14'], {'2026-09-14': [{id:'a', task:'X', duration:25, startedAt:'2026-09-14T23:50:00-05:00', completedAt:'2026-09-15T00:15:00-05:00'}]}), [25])`.
 - [ ] **Step 3:** Run the focused test, `npm run build`, and changed-file lint. Commit `home-model.ts` and `home-model.test.mts` separately under the test/production split rule.
 
+### Task 3b: Dark-first appearance preference
+
+**Files:** Modify `index.html`, `src/index.css`, `src/main.tsx`, `src/features/settings/SettingsPage.tsx`, `DESIGN-SYSTEM.md`; add a focused theme helper and Node test if useful.
+
+**Interfaces:** Keep the light tokens as an option. A namespaced local cosmetic preference selects dark or light without changing encrypted stores or Electron contracts.
+
+- [ ] **Step 1:** Test missing, invalid, light, and dark saved values. Default to dark. Run the test RED before implementation.
+- [ ] **Step 2:** Initialize dark before React mounts, persist theme changes, update the browser theme color, and expose a labelled Dark/Light control in Settings without disrupting its Keychain/data features.
+- [ ] **Step 3:** Refine the dark lilac/lime surface tokens for vivid but readable cards. Build, lint changed files, inspect Home and Settings in both themes and mobile width. Commit test and production in separate granular slices.
+
 ### Task 4: Home desktop and phone composition
 
 **Files:** Modify `src/features/daily/DailyPage.tsx`, `src/features/daily/UpcomingDeadlines.tsx`; create small components in `src/features/daily/components/` for `FocusHero`, `WeeklyRhythm`, `WeekMap`, and `UpNext`. Reuse Task 3 selectors.
@@ -92,7 +102,7 @@
 
 **Interfaces:** No data shape or calculation changes. Preserve `CloudCostsPage` source-health states and Finance `months`, `paid`, and `paidAmounts` semantics.
 
-- [ ] **Step 1:** Inspect every routed page at desktop and phone widths, including one populated and one empty representative screen in each nav group; record concrete layout defects caused by the new design system.
+- [ ] **Step 1:** Inspect every routed page in dark-default and optional light themes at desktop and phone widths, including one populated and one empty representative screen in each nav group; record concrete layout defects caused by the new design system.
 - [ ] **Step 2:** Fix those defects with shared components before page-specific CSS. Keep controls labelled and reachable by keyboard. For behavior changes, write a failing Node test first and commit it separately.
 - [ ] **Step 3:** Run full focused tests, build, Electron compile, MCP build, and changed-file lint. Commit small page-family slices.
 
@@ -101,5 +111,5 @@
 **Files:** No product changes unless verification finds a defect; update `tasks/todo.md` only as ignored local progress.
 
 - [ ] **Step 1:** Capture a read-only snapshot of relevant live encrypted data hashes and the installed app SHA. Build/package the branch and install `/Applications/Cortex.app` with exact-target checks; do not run the `cortex:install` script blindly because it removes the old app before copying.
-- [ ] **Step 2:** Verify signature, packaged-versus-installed `app.asar` hash, app port/health, and data hash preservation. Inspect Home, Calendar, Student, Finance, Cloud Spend, and mobile width against the approved compositions. Record screenshots.
+- [ ] **Step 2:** Verify signature, packaged-versus-installed `app.asar` hash, app port/health, and data hash preservation. Inspect Home, Calendar, Student, Finance, Cloud Spend, and mobile width in dark-default and optional light themes against the approved compositions. Record screenshots.
 - [ ] **Step 3:** Open a PR from `codex/cortex-light-redesign`; run one official code review pass and submit a GitHub review object. Fix verified findings, re-run focused checks, and stop without merging.

@@ -1,14 +1,14 @@
-# Cortex light workspace redesign
+# Cortex workspace redesign
 
 ## Outcome and scope
 
-Replace the dark editorial instrument-panel presentation with the approved light Cortex visual direction. The generated desktop Home, Student, and mobile images are composition references only. Their dates, courses, targets, counts, and quotes are illustrative and must never become seeded user data or hard-coded UI claims.
+Replace the old dark editorial instrument-panel presentation with the approved friendly Cortex visual composition. Pablo later clarified that he prefers dark mode: the finished app defaults to a rich dark version of the concept, with light available as an option. The generated desktop Home, Student, and mobile images are composition references only. Their dates, courses, targets, counts, and quotes are illustrative and must never become seeded user data or hard-coded UI claims.
 
 The redesign covers the shared shell and component language, a new Home composition, a Calendar view over existing EventKit range reads, a Student overview composition, and visual consistency across all routed feature pages. Existing encrypted stores, Electron APIs, MCP contracts, calculations, and integrations stay intact. This is a UI migration, not a data migration.
 
 ## Visual contract
 
-| Role | Token | Value |
+| Light-theme role | Token | Value |
 |---|---|---|
 | Canvas | `--background` | `#F1F2F7` |
 | Surface | `--card` | `#FFFFFF` |
@@ -18,11 +18,11 @@ The redesign covers the shared shell and component language, a new Home composit
 | Lilac focus | `--focus-surface` | `#DDD2FF` |
 | Lime progress | `--progress-surface` | `#E2F2C7` |
 
-Success, warning, and error tokens remain semantic, with readable text and an icon or word rather than color alone. Add a matching dark theme through token overrides, with light as the default. Use a single self-hosted humanist sans face for UI and headings, and IBM Plex Mono only for times, currency, and tabular measurements. Headers and card labels use sentence case. The hero focus timer is the strong element; surrounding surfaces stay quiet. Cards use approximately 20px corners, controls 12px, and the existing 8px spacing rhythm. Motion is limited to purposeful state changes and respects reduced motion.
+Success, warning, and error tokens remain semantic, with readable text and an icon or word rather than color alone. Dark is the default; keep the light palette above as a switchable alternative. Dark surfaces must retain vivid lilac focus and lime rhythm areas, not collapse into the old flat charcoal design. Persist the local cosmetic choice without migrating encrypted stores. Use a single self-hosted humanist sans face for UI and headings, and IBM Plex Mono only for times, currency, and tabular measurements. Headers and card labels use sentence case. The hero focus timer is the strong element; surrounding surfaces stay quiet. Cards use approximately 20px corners, controls 12px, and the existing 8px spacing rhythm. Motion is limited to purposeful state changes and respects reduced motion.
 
 ## Global shell
 
-The desktop shell has a 236 to 252px light sidebar, grouped navigation, and a top bar with route title, keyboard-accessible navigation search, current sprint state, a Capture action, and a compact system-status entry. Preserve native window drag behavior. Group routes as Today, Build, Study, Life, and System, retaining all existing destinations and legacy redirects. Calendar is added under Today. Search initially locates routes and actions; it does not imply cross-record search. Capture opens the existing capture flow. No unsupported notification count.
+The desktop shell has a 236 to 252px sidebar, grouped navigation, and a top bar with route title, keyboard-accessible navigation search, current sprint state, a Capture action, and a compact system-status entry. Preserve native window drag behavior. Group routes as Today, Build, Study, Life, and System, retaining all existing destinations and legacy redirects. Calendar is added under Today. Search initially locates routes and actions; it does not imply cross-record search. Capture opens the existing capture flow. No unsupported notification count.
 
 On narrow screens, navigation is a drawer and a four-destination bottom bar gives quick access to Home, Study, Build, and Life. Neither obscures page content or the macOS/PWA safe areas. Pointer controls remain keyboard operable and touch targets are at least 44px in the mobile layout.
 
@@ -50,4 +50,4 @@ Errors and loading states are explicit. A failed Calendar request explains that 
 
 ## Acceptance
 
-The app builds and existing focused tests pass. New pure selectors have red-green coverage for local-date grouping, ordering, missing data, and active-only habit counts. Home, Calendar, Student, and representative pages from every other group are visually checked at desktop and phone widths, with keyboard and reduced-motion checks. Package and install `/Applications/Cortex.app`, verify its signature and packaged hash, then inspect the installed app without changing or losing live encrypted data. If Keychain authorization blocks a live read, report that boundary precisely.
+The app builds and existing focused tests pass. New pure selectors have red-green coverage for local-date grouping, ordering, missing data, and active-only habit counts. Home, Calendar, Student, and representative pages from every other group are visually checked in dark-default and optional light themes at desktop and phone widths, with keyboard and reduced-motion checks. Package and install `/Applications/Cortex.app`, verify its signature and packaged hash, then inspect the installed app without changing or losing live encrypted data. If Keychain authorization blocks a live read, report that boundary precisely.
