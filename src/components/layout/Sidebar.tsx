@@ -18,7 +18,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
       <Separator className="mx-5 bg-sidebar-border/70" />
 
-      <ScrollArea className="flex-1 px-3 py-5">
+      <ScrollArea className="min-h-0 flex-1 px-3 py-5">
         <nav className="flex flex-col gap-7">
           {NAV_GROUPS.map((group, i) => (
             <div key={group.label || `group-${i}`}>
