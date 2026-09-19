@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite --host",
     "build": "tsc -b && vite build",
+    "test": "tsx --test scripts/*.test.mts && node --test scripts/*.test.mjs",
     "test:cloud": "tsx --test scripts/cloud-cost-*.test.mts",
     "lint": "eslint .",
     "preview": "vite preview",
