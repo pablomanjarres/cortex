@@ -1,5 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import {
+  CalendarDays,
   LayoutDashboard,
   Target,
   Goal,
@@ -16,6 +17,7 @@ import {
   Cpu,
   Cloud,
   Workflow,
+  Plus,
 } from 'lucide-react'
 
 /**
@@ -31,33 +33,59 @@ export interface AppRoute {
   /** Sidebar nav label (short) */
   navLabel: string
   /** Sidebar group; '' renders without a group heading */
-  group: 'Core' | 'Roles' | 'Life' | ''
+  group: 'Today' | 'Build' | 'Study' | 'Life' | 'System'
   icon: LucideIcon
   /** Optional one-line subtitle for future use (Header/PageHeader) */
   subtitle?: string
 }
 
 export const ROUTES: AppRoute[] = [
-  // ── Core ──────────────────────────────────────────────────────────────────
-  { path: '/daily', title: 'Execute', navLabel: 'Daily', group: 'Core', icon: LayoutDashboard },
-  { path: '/habits', title: 'Habit Tracking', navLabel: 'Habits', group: 'Core', icon: Target },
-  { path: '/goals', title: 'Goals', navLabel: 'Goals', group: 'Core', icon: Goal },
-  { path: '/system', title: 'System', navLabel: 'System', group: 'Core', icon: Cpu },
-  { path: '/automations', title: 'Automations', navLabel: 'Automations', group: 'Core', icon: Workflow },
-  // ── Roles ─────────────────────────────────────────────────────────────────
-  { path: '/founder', title: 'Founder Mode', navLabel: 'Founder', group: 'Roles', icon: Rocket },
-  { path: '/cloud-costs', title: 'Cloud Spend', navLabel: 'Cloud Spend', group: 'Roles', icon: Cloud },
-  { path: '/student', title: 'Student Mode', navLabel: 'Student', group: 'Roles', icon: GraduationCap },
-  { path: '/projects', title: 'Projects', navLabel: 'Projects', group: 'Roles', icon: FolderKanban },
-  { path: '/opportunities', title: 'Opportunities', navLabel: 'Opportunities', group: 'Roles', icon: Radar },
+  // ── Today ─────────────────────────────────────────────────────────────────
+  { path: '/daily', title: 'Home', navLabel: 'Home', group: 'Today', icon: LayoutDashboard },
+  { path: '/calendar', title: 'Calendar', navLabel: 'Calendar', group: 'Today', icon: CalendarDays },
+  { path: '/habits', title: 'Habits', navLabel: 'Habits', group: 'Today', icon: Target },
+  { path: '/goals', title: 'Goals', navLabel: 'Goals', group: 'Today', icon: Goal },
+  // ── Build ─────────────────────────────────────────────────────────────────
+  { path: '/founder', title: 'Founder', navLabel: 'Founder', group: 'Build', icon: Rocket },
+  { path: '/projects', title: 'Projects', navLabel: 'Projects', group: 'Build', icon: FolderKanban },
+  { path: '/opportunities', title: 'Opportunities', navLabel: 'Opportunities', group: 'Build', icon: Radar },
+  { path: '/cloud-costs', title: 'Cloud Spend', navLabel: 'Cloud Spend', group: 'Build', icon: Cloud },
+  // ── Study ─────────────────────────────────────────────────────────────────
+  { path: '/student', title: 'Student', navLabel: 'Student', group: 'Study', icon: GraduationCap },
+  { path: '/library', title: 'Library', navLabel: 'Library', group: 'Study', icon: LibraryBig },
+  { path: '/books', title: 'Books', navLabel: 'Books', group: 'Study', icon: Library },
   // ── Life ──────────────────────────────────────────────────────────────────
   { path: '/finance', title: 'Financial Pulse', navLabel: 'Finance', group: 'Life', icon: Wallet },
   { path: '/gym', title: 'Gym', navLabel: 'Gym', group: 'Life', icon: Dumbbell },
   { path: '/social', title: 'Contacts', navLabel: 'Social', group: 'Life', icon: Users },
-  { path: '/books', title: 'Books', navLabel: 'Books', group: 'Life', icon: Library },
-  { path: '/library', title: 'Library', navLabel: 'Library', group: 'Life', icon: LibraryBig },
-  // ── Ungrouped ─────────────────────────────────────────────────────────────
-  { path: '/settings', title: 'Settings', navLabel: 'Settings', group: '', icon: Settings },
+  // ── System ────────────────────────────────────────────────────────────────
+  { path: '/system', title: 'System', navLabel: 'System', group: 'System', icon: Cpu },
+  { path: '/automations', title: 'Automations', navLabel: 'Automations', group: 'System', icon: Workflow },
+  { path: '/settings', title: 'Settings', navLabel: 'Settings', group: 'System', icon: Settings },
+]
+
+export interface NavAction {
+  id: string
+  label: string
+  href: string
+  group: 'Action'
+  icon: LucideIcon
+  keywords?: string[]
+}
+
+export type NavigationSearchItem =
+  | (AppRoute & { kind: 'route'; href: string })
+  | (NavAction & { kind: 'action' })
+
+export const NAV_ACTIONS: NavAction[] = [
+  {
+    id: 'capture',
+    label: 'Capture',
+    href: '/library?kind=captures',
+    group: 'Action',
+    icon: Plus,
+    keywords: ['screenshot', 'clip', 'library', 'captures'],
+  },
 ]
 
 export interface NavGroup {
@@ -87,4 +115,23 @@ export function routeForPath(pathname: string): AppRoute | undefined {
 /** Topbar title for a pathname; falls back to 'Dashboard' for unknown paths. */
 export function titleForPath(pathname: string): string {
   return routeForPath(pathname)?.title ?? 'Dashboard'
+}
+
+export function searchNavigation(query: string): NavigationSearchItem[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+
+  const routeMatches = ROUTES.filter((route) =>
+    [route.navLabel, route.title, route.path, route.group].some((value) =>
+      value.toLowerCase().includes(q)
+    )
+  ).map((route) => ({ ...route, kind: 'route' as const, href: route.path }))
+
+  const actionMatches = NAV_ACTIONS.filter((action) =>
+    [action.label, action.href, action.group, ...(action.keywords ?? [])].some((value) =>
+      value.toLowerCase().includes(q)
+    )
+  ).map((action) => ({ ...action, kind: 'action' as const }))
+
+  return [...routeMatches, ...actionMatches]
 }
