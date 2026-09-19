@@ -1,4 +1,4 @@
-import type { CloudCostLineItem } from './cloud-cost-types.js'
+import type { ProviderCosts } from './cloud-cost-types.js'
 
 interface AwsMetricValue {
   Amount?: string
@@ -20,8 +20,17 @@ export interface AwsCostExplorerPage {
   ResultsByTime?: AwsTimeResult[]
 }
 
+export type AwsCostPass = 'usage' | 'credit' | 'net'
+
+export interface AwsCostRow {
+  date: string
+  account: string
+  service: string
+  amountUsd: number
+}
+
 export interface NormalizedAwsPage {
-  items: CloudCostLineItem[]
+  rows: AwsCostRow[]
   nextPageToken?: string
 }
 
@@ -46,13 +55,14 @@ function dateValue(value: unknown): string | null {
   return null
 }
 
-export function normalizeAwsPage(page: AwsCostExplorerPage): NormalizedAwsPage {
-  const items: CloudCostLineItem[] = []
+export function normalizeAwsPage(page: AwsCostExplorerPage, pass: AwsCostPass): NormalizedAwsPage {
+  const metricName = { usage: 'AmortizedCost', credit: 'UnblendedCost', net: 'NetAmortizedCost' }[pass]
+  const rows: AwsCostRow[] = []
   for (const result of page.ResultsByTime ?? []) {
     const date = dateValue(result.TimePeriod?.Start)
     if (!date) continue
     for (const group of result.Groups ?? []) {
-      const metric = group.Metrics?.NetUnblendedCost
+      const metric = group.Metrics?.[metricName]
       const amount = finiteNumber(metric?.Amount)
       if (amount === null || amount === 0) continue
       if (metric?.Unit !== 'USD') {
@@ -60,34 +70,45 @@ export function normalizeAwsPage(page: AwsCostExplorerPage): NormalizedAwsPage {
       }
       const service = text(group.Keys?.[0], 'Unassigned service')
       const account = text(group.Keys?.[1], 'Unassigned account')
-      items.push({ date, provider: 'aws', account, project: account, service, amountUsd: amount })
+      rows.push({ date, account, service, amountUsd: amount })
     }
   }
-  return { items, nextPageToken: page.NextPageToken }
+  return { rows, nextPageToken: page.NextPageToken }
 }
 
-export function normalizeGcpRows(rows: ReadonlyArray<unknown>): CloudCostLineItem[] {
-  const items: CloudCostLineItem[] = []
+export function normalizeGcpRows(rows: ReadonlyArray<unknown>): ProviderCosts {
+  const result: ProviderCosts = { usageItems: [], accountAdjustments: [] }
   for (const raw of rows) {
     if (!raw || typeof raw !== 'object') continue
     const row = raw as Record<string, unknown>
     const date = dateValue(row.usageDate)
-    const cost = finiteNumber(row.cost)
+    const usageCost = finiteNumber(row.usageCost)
+    const otherCost = finiteNumber(row.otherCost) ?? 0
     const credits = finiteNumber(row.credits) ?? 0
     const rate = finiteNumber(row.currencyConversionRate)
-    if (!date || cost === null || rate === null || rate <= 0) continue
-    const amountUsd = (cost + credits) / rate
-    if (!Number.isFinite(amountUsd) || amountUsd === 0) continue
-    items.push({
-      date,
-      provider: 'gcp',
-      account: text(row.account, 'Unassigned billing account'),
-      project: text(row.project, 'Unassigned'),
-      service: text(row.service, 'Unassigned service'),
-      amountUsd,
-    })
+    if (!date || usageCost === null || rate === null || rate <= 0) continue
+    const account = text(row.account, 'Unassigned billing account')
+    const amountUsd = usageCost / rate
+    if (amountUsd > 0) {
+      result.usageItems.push({
+        date,
+        provider: 'gcp',
+        account,
+        project: text(row.project, 'Unassigned'),
+        service: text(row.service, 'Unassigned service'),
+        resource: typeof row.resource === 'string' && row.resource.trim() ? row.resource.trim() : null,
+        amountUsd,
+      })
+    }
+    const otherUsd = (otherCost + Math.min(0, usageCost)) / rate
+    if (otherUsd !== 0) {
+      result.accountAdjustments.push({ date, provider: 'gcp', account, kind: 'other', amountUsd: otherUsd })
+    }
+    if (credits !== 0) {
+      result.accountAdjustments.push({ date, provider: 'gcp', account, kind: 'credit', amountUsd: credits / rate })
+    }
   }
-  return items
+  return result
 }
 
 export function validateBillingTable(value: string): string {
