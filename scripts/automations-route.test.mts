@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { routeForPath } from '../src/lib/routes.ts'
 
-test('automations have a dedicated navigable page outside System', () => {
+test('automations retain a dedicated page in the redesigned System navigation', () => {
   const route = routeForPath('/automations')
+  assert.equal(route?.path, '/automations')
   assert.equal(route?.title, 'Automations')
-  assert.equal(route?.group, 'Core')
+  assert.equal(route?.group, 'System')
 })
