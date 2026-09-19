@@ -1,37 +1,44 @@
-# Cortex Design System — "Editorial Instrument Panel"
+# Cortex Design System
 
-**This is the contract.** Every re-skin agent obeys it. The voice: an editorial serif
-over quiet, instrument-grade telemetry. Restraint reads as luxury. One signal color.
-Hairlines, not borders. Mono numerals everywhere.
+This is the shared visual contract for the light Cortex workspace. The app should
+feel like a clear personal command center: fog canvas, quiet white work surfaces,
+iris actions, lilac focus moments, and lime progress moments. Use the existing
+data and route contracts; this document only defines shared visual language.
 
-Source of truth: `src/index.css` (tokens), `src/lib/routes.ts` (navigation),
-`src/lib/chart-theme.tsx` (charts), the primitives in `src/components/{ui,shared,widgets}`.
+Source of truth:
 
----
+- `src/index.css` for tokens, surfaces, focus, selection, radius, and typography.
+- `src/components/ui/*` for controls.
+- `src/components/shared/*` and `src/components/widgets/*` for reusable panels.
+- `src/lib/chart-theme.tsx` for chart colors and tooltip styling.
 
-## (a) Tokens
+## Tokens
 
-All colors are oklch on a warm-graphite axis (hue 75, chroma ≤ 0.006 for neutrals).
-The accent + semantic trio sit at matched L/C so they read as one family of indicator lights.
+Light is the default theme. `.dark` is a contrast-safe override, not the primary
+experience.
 
-### Ground (neutrals)
+| Role | CSS var | Value | Use |
+|---|---|---:|---|
+| Canvas | `--background` | `#F1F2F7` | App and page background. |
+| Surface | `--card` | `#FFFFFF` | Cards, panels, popovers, dialogs. |
+| Primary ink | `--foreground` | `#22232B` | Body, titles, important values. |
+| Secondary ink | `--muted-foreground` | `#66707B` | Labels, descriptions, secondary metadata. |
+| Faint ink | `--foreground-faint` | `#8C95A3` | Decorative microcopy only. |
+| Iris action | `--accent` | `#624AB5` | Primary actions, selected states, focus rings, key chart series. |
+| Lilac focus | `--focus-surface` | `#DDD2FF` | Focus session hero and related emphasis surfaces. |
+| Lime progress | `--progress-surface` | `#E2F2C7` | Weekly rhythm/progress surfaces. |
 
-| CSS var | Value | Tailwind utility | Use |
-|---|---|---|---|
-| `--background` | `oklch(0.11 0.004 75)` | `bg-background` | App ground. Page canvas only. |
-| `--card` / `--popover` | `oklch(0.22 0.005 75)` | `bg-card` / `bg-popover` | Panel fill (prefer `.surface` class for cards). |
-| `--secondary` / `--muted` | `oklch(0.27 0.005 75)` | `bg-secondary` / `bg-muted` | Lifted controls, hover fills, wells. |
-| `--sidebar` | `oklch(0.09 0.004 75)` | `bg-sidebar` | Sidebar only. |
-| `--border` | `oklch(0.26 0.005 75)` | `border-border` (default on `*`) | THE hairline. Never brighter. `border-border/60` for sub-hairlines. |
-| `--input` | `oklch(0.32 0.005 75)` | `border-input` | Form-control hairline (slightly brighter than `--border`). |
+Semantic tokens remain meaning-driven:
 
-### Ink (exactly three text roles)
+| Role | CSS var | Light value | Use |
+|---|---|---:|---|
+| Success | `--success` | `#2F9E55` | Done, available, on track, gains. |
+| Warning | `--warning` | `#B86E16` | Pending, stale, at risk. |
+| Danger | `--destructive` | `#C73E3A` | Errors, overdue, destructive actions, losses. |
 
-| CSS var | Value | Tailwind utility | Use |
-|---|---|---|---|
-| `--foreground` | `oklch(0.985 0.002 75)` | `text-foreground` | Primary ink: values, body, titles. |
-| `--muted-foreground` | `oklch(0.74 0.006 75)` | `text-muted-foreground` | Secondary ink: labels, descriptions, axis ticks. |
-| `--foreground-faint` | `oklch(0.62 0.006 75)` | `text-foreground-faint` | Tertiary ink: micro-copy, placeholders, sub-lines. Never body text. |
+Never rely on color alone. Pair semantic color with a word, icon, status dot, or
+direction glyph. Avoid raw Tailwind palette colors in feature code; prefer these
+tokens and the shared primitives.
 
 No fourth role. No `text-foreground/50` improvisations.
 
