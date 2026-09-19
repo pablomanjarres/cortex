@@ -287,7 +287,7 @@ export function DailyPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-        <div className="min-w-0 xl:order-1 xl:col-span-5">
+        <div className="min-w-0 xl:order-1 xl:col-span-6 2xl:col-span-5">
           <FocusHero
             isRunning={isRunning}
             isPaused={isPaused}
@@ -317,11 +317,11 @@ export function DailyPage() {
           />
         </div>
 
-        <div className="min-w-0 xl:order-2 xl:col-span-3">
+        <div className="min-w-0 xl:order-2 xl:col-span-6 2xl:col-span-3">
           <FactGrid facts={facts} />
         </div>
 
-        <div className="min-w-0 xl:order-3 xl:col-span-4">
+        <div className="min-w-0 xl:order-3 xl:col-span-12 2xl:col-span-4">
           <WeeklyRhythm days={week} minutes={focusMinutes} />
         </div>
 
