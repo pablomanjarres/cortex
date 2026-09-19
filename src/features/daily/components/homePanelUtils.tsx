@@ -3,7 +3,8 @@ import { CalendarDays, CheckCircle2, ClipboardList, TimerReset } from 'lucide-re
 import type { Assignment } from '@/features/student/student-types'
 import type { HomeCalendarEvent } from '../home-model'
 
-export type CalendarState = 'loading' | 'ready' | 'error' | 'empty'
+export type CalendarSource = 'electron' | 'http'
+export type CalendarState = 'loading' | 'ready' | 'error' | 'empty' | 'ambiguous'
 
 export interface FactItem {
   label: string
@@ -21,6 +22,16 @@ export interface HabitChip {
   onToggle: () => void
 }
 
+const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/
+
+const localDateTime = (day: string, time: string) => new Date(`${day}T${time}`)
+
+const parseCalendarDate = (value: string) => {
+  if (dateOnlyPattern.test(value)) return localDateTime(value, '00:00:00')
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 export const dayName = (day: string) =>
   new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' })
 
@@ -34,7 +45,29 @@ export const formatMinutes = (minutes: number) =>
 
 export const assignmentDay = (assignment: Assignment) => assignment.deadline?.slice(0, 10)
 
-export const eventDay = (event: HomeCalendarEvent) => event.startDate.slice(0, 10)
+export const eventDay = (event: HomeCalendarEvent) => {
+  const start = parseCalendarDate(event.startDate)
+  if (!start) return event.startDate.slice(0, 10)
+  const month = String(start.getMonth() + 1).padStart(2, '0')
+  const day = String(start.getDate()).padStart(2, '0')
+  return `${start.getFullYear()}-${month}-${day}`
+}
+
+export const eventOverlapsDay = (event: HomeCalendarEvent, day: string) => {
+  const start = parseCalendarDate(event.startDate)
+  if (!start) return false
+
+  const dayStart = localDateTime(day, '00:00:00')
+  const nextDay = new Date(dayStart)
+  nextDay.setDate(nextDay.getDate() + 1)
+
+  const parsedEnd = event.endDate ? parseCalendarDate(event.endDate) : null
+  const end = parsedEnd && parsedEnd > start
+    ? parsedEnd
+    : new Date(start.getTime() + (event.isAllDay ? 24 * 60 * 60 * 1000 : 1))
+
+  return start < nextDay && end > dayStart
+}
 
 export const weekRangeLabel = (days: string[]) => {
   if (days.length === 0) return ''
@@ -62,12 +95,14 @@ export function buildFacts({
   calendarState: CalendarState
   eventCount: number
 }): FactItem[] {
-  const calendarValue = calendarState === 'loading' ? '...' : calendarState === 'error' ? 'Check' : eventCount
+  const calendarValue = calendarState === 'loading' || calendarState === 'error' || calendarState === 'ambiguous' ? 'Check' : eventCount
   const calendarDetail = calendarState === 'error'
     ? '7-day Calendar read failed'
     : calendarState === 'loading'
       ? 'Loading next 7 days'
-      : 'Events in next 7 days'
+      : calendarState === 'ambiguous'
+        ? 'Calendar access needs checking'
+        : 'Events in next 7 days'
 
   return [
     { label: 'Deep work', value: formatMinutes(focusMinutes), detail: 'Completed today', tone: 'focus', icon: <TimerReset /> },
@@ -77,9 +112,31 @@ export function buildFacts({
   ]
 }
 
-export const homeCalendarState = (loading: boolean, error: string | null, events: HomeCalendarEvent[]): CalendarState => {
+export function buildShortcutHabits<T extends { id: string; name: string; emoji: string; onHold?: boolean }>(
+  habits: T[],
+  isCompleted: (habitId: string) => boolean,
+  toggle: (habitId: string) => void,
+): HabitChip[] {
+  return habits
+    .filter((habit) => !habit.onHold)
+    .map((habit) => ({
+      id: habit.id,
+      name: habit.name,
+      emoji: habit.emoji,
+      done: isCompleted(habit.id),
+      onToggle: () => toggle(habit.id),
+    }))
+}
+
+export const homeCalendarState = (
+  loading: boolean,
+  error: string | null,
+  events: HomeCalendarEvent[],
+  source: CalendarSource = 'http',
+): CalendarState => {
   if (loading) return 'loading'
   if (error) return 'error'
+  if (events.length === 0 && source === 'electron') return 'ambiguous'
   if (events.length === 0) return 'empty'
   return 'ready'
 }

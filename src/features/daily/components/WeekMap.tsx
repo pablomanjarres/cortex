@@ -5,7 +5,7 @@ import type { SprintSession } from '@/lib/sprint-context'
 import type { Assignment } from '@/features/student/student-types'
 import type { HomeCalendarEvent } from '../home-model'
 import type { CalendarState } from './homePanelUtils'
-import { assignmentDay, dayName, dayNumber, eventDay, formatMinutes, weekRangeLabel } from './homePanelUtils'
+import { assignmentDay, dayName, dayNumber, eventOverlapsDay, formatMinutes, weekRangeLabel } from './homePanelUtils'
 
 export function WeekMap({
   days,
@@ -30,7 +30,7 @@ export function WeekMap({
   onOpenCalendar: () => void
   onOpenStudent: () => void
 }) {
-  const selectedEvents = events.filter((event) => eventDay(event) === selectedDay)
+  const selectedEvents = events.filter((event) => eventOverlapsDay(event, selectedDay))
   const selectedSessions = sessionsByDay[selectedDay] ?? []
   const selectedDeadlines = assignments.filter((assignment) => assignmentDay(assignment) === selectedDay && !assignment.done)
 
@@ -45,24 +45,28 @@ export function WeekMap({
           {weekRangeLabel(days)}
         </p>
       </div>
-      {calendarState === 'error' && (
+      {(calendarState === 'error' || calendarState === 'ambiguous') && (
         <p className="mb-3 rounded-2xl border border-info/20 bg-info/10 px-3 py-2 text-xs text-muted-foreground">
-          Calendar could not be loaded, so this map is showing known focus sessions and deadlines only.
+          {calendarState === 'error'
+            ? 'Calendar could not be loaded, so this map is showing known focus sessions and deadlines only.'
+            : 'Calendar returned no events from the desktop bridge. Retry before treating the week as clear.'}
         </p>
       )}
       <div className="-mx-1 overflow-x-auto px-1 pb-1">
-        <div className="grid min-w-[44rem] grid-cols-7 gap-2 md:min-w-0">
+        <div role="tablist" aria-label="Week map days" className="grid min-w-[44rem] grid-cols-7 gap-2 md:min-w-0">
           {days.map((day) => {
-            const dayEvents = events.filter((event) => eventDay(event) === day)
+            const dayEvents = events.filter((event) => eventOverlapsDay(event, day))
             const daySessions = sessionsByDay[day] ?? []
             const dayDeadlines = assignments.filter((assignment) => assignmentDay(assignment) === day && !assignment.done)
             const selected = day === selectedDay
             return (
               <button
                 key={day}
+                role="tab"
                 type="button"
                 onClick={() => onSelectedDay(day)}
-                aria-pressed={selected}
+                aria-selected={selected}
+                aria-controls="week-map-selected-day"
                 className={cn(
                   'min-h-44 rounded-2xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring',
                   selected ? 'border-accent bg-accent/10' : 'border-border bg-card/60 hover:bg-secondary/60',
@@ -106,7 +110,7 @@ export function WeekMap({
           })}
         </div>
       </div>
-      <div className="mt-4 rounded-2xl bg-secondary/45 p-3">
+      <div id="week-map-selected-day" role="tabpanel" className="mt-4 rounded-2xl bg-secondary/45 p-3">
         <p className="mb-2 text-sm font-semibold text-foreground">
           {new Date(`${selectedDay}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
         </p>

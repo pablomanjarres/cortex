@@ -22,6 +22,13 @@ export function UpNext({
   onOpenStudent: () => void
   onRetryCalendar: () => void
 }) {
+  const emptyMessage = calendarError
+    || (calendarState === 'error'
+      ? 'Calendar could not be loaded.'
+      : calendarState === 'ambiguous'
+        ? 'Calendar returned no events from the desktop bridge. Retry before treating the week as clear.'
+        : 'No events or deadlines ahead this week.')
+
   return (
     <section className="surface rounded-[1.75rem] p-5 shadow-card">
       <div className="mb-4 flex items-center justify-between gap-3">
@@ -64,8 +71,8 @@ export function UpNext({
       ) : (
         <EmptyState
           className="py-6"
-          message={calendarError || (calendarState === 'error' ? 'Calendar could not be loaded.' : 'No events or deadlines ahead this week.')}
-          action={calendarState === 'error' ? (
+          message={emptyMessage}
+          action={calendarState === 'error' || calendarState === 'ambiguous' ? (
             <Button variant="secondary" size="sm" onClick={onRetryCalendar}>Retry calendar</Button>
           ) : undefined}
         />

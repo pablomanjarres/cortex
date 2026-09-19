@@ -12,7 +12,7 @@ import { WeeklyRhythm } from './components/WeeklyRhythm'
 import { UpNext } from './components/UpNext'
 import { WeekMap } from './components/WeekMap'
 import { DailyShortcuts, NeedsAttention } from './components/HomeExtras'
-import { buildFacts, homeCalendarState } from './components/homePanelUtils'
+import { buildFacts, buildShortcutHabits, homeCalendarState, type CalendarSource } from './components/homePanelUtils'
 import {
   activeHabitSummary,
   overdueAssignments,
@@ -102,6 +102,7 @@ export function DailyPage() {
   const [calendarEvents, setCalendarEvents] = useState<HomeCalendarEvent[]>([])
   const [calendarLoading, setCalendarLoading] = useState(true)
   const [calendarError, setCalendarError] = useState<string | null>(null)
+  const [calendarSource, setCalendarSource] = useState<CalendarSource>('http')
 
   const fetchCalendar = useCallback(async () => {
     const startDay = week[0]
@@ -112,8 +113,10 @@ export function DailyPage() {
     setCalendarError(null)
     try {
       if (window.electronAPI?.calendar) {
+        setCalendarSource('electron')
         setCalendarEvents(await window.electronAPI.calendar.getEventsInRange(startDay, endDay))
       } else {
+        setCalendarSource('http')
         const res = await fetch(`/api/calendar/events?start=${startDay}&end=${endDay}`)
         if (!res.ok) throw new Error(`Calendar returned ${res.status}`)
         const body = await res.json()
@@ -147,7 +150,7 @@ export function DailyPage() {
   const effectiveSelectedDay = week.includes(selectedDay) ? selectedDay : today
   const openAssignments = useMemo(() => upcomingAssignments(assignments || [], new Date(`${today}T12:00:00`)), [assignments, today])
   const overdue = useMemo(() => overdueAssignments(assignments || [], new Date(`${today}T12:00:00`)), [assignments, today])
-  const calendarState = homeCalendarState(calendarLoading, calendarError, calendarEvents)
+  const calendarState = homeCalendarState(calendarLoading, calendarError, calendarEvents, calendarSource)
   const facts = buildFacts({
     focusMinutes: totalDeepWorkMin,
     habitsDone: habitSummary.done,
@@ -344,13 +347,7 @@ export function DailyPage() {
       />
 
       <DailyShortcuts
-        habits={habits.map((habit) => ({
-          id: habit.id,
-          name: habit.name,
-          emoji: habit.emoji,
-          done: isHabitDone(habit.id),
-          onToggle: () => toggleHabit(habit.id),
-        }))}
+        habits={buildShortcutHabits(habits, isHabitDone, toggleHabit)}
         onOpenStudent={() => navigate('/student')}
         onOpenCalendar={() => navigate('/calendar')}
       />
