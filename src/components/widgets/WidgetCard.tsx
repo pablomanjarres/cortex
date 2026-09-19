@@ -7,14 +7,14 @@ interface WidgetCardProps {
   description?: string
   children: ReactNode
   className?: string
-  /** Stagger delay in seconds — capped at 0.45s total */
+  /** Stagger delay in seconds — capped at 0.06s total */
   delay?: number
   variant?: 'default' | 'urgent' | 'success'
   compact?: boolean
 }
 
 /** Total entrance stagger never exceeds this (seconds). */
-const MAX_STAGGER = 0.45
+const MAX_STAGGER = 0.06
 
 /** WidgetCard — the standard dashboard panel. */
 export function WidgetCard({
@@ -29,9 +29,9 @@ export function WidgetCard({
   const reduceMotion = useReducedMotion()
   return (
     <motion.div
-      initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: Math.min(delay, MAX_STAGGER), ease: 'easeOut' }}
+      transition={{ duration: reduceMotion ? 0 : 0.18, delay: reduceMotion ? 0 : Math.min(delay, MAX_STAGGER), ease: 'easeOut' }}
       className={cn(
         'surface rounded-xl',
         compact ? 'p-4' : 'p-5',
