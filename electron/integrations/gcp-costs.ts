@@ -6,6 +6,7 @@ import type { CloudCostSettings, ProviderCosts } from '../cloud-cost-types.js'
 import { normalizeGcpRows, validateBillingTable } from '../cloud-cost-normalizers.js'
 
 interface GcpServiceAccount {
+  type: 'service_account'
   project_id: string
   client_email: string
   private_key: string
@@ -23,7 +24,7 @@ export function parseGcpServiceAccount(raw: string): GcpServiceAccount {
     || !key.private_key.includes('\n-----END PRIVATE KEY-----')) {
     throw new Error('GCP credentials: invalid service account key')
   }
-  return { project_id: key.project_id, client_email: key.client_email, private_key: key.private_key }
+  return { type: 'service_account', project_id: key.project_id, client_email: key.client_email, private_key: key.private_key }
 }
 
 export function resolveGcpAuthOptions(serviceAccountJson: string | null, localAdcPath: string | null):
