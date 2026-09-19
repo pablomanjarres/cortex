@@ -15,15 +15,15 @@ export function DashboardLayout() {
 
   return (
     <SprintProvider>
-      <div className="flex min-h-screen bg-background">
+      <div className="flex h-dvh overflow-hidden bg-background">
         <Sidebar />
         <MobileSidebar open={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-        <MobileBottomNav />
-        <div className="ml-0 flex min-w-0 flex-1 flex-col md:ml-[244px]">
+        <div className="ml-0 flex min-h-0 min-w-0 flex-1 flex-col md:ml-[244px]">
           <Header onMenuToggle={() => setMobileNavOpen((p) => !p)} />
-          <main className="flex-1 overflow-x-hidden p-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:p-6">
+          <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6">
             <Outlet />
           </main>
+          <MobileBottomNav />
         </div>
       </div>
     </SprintProvider>

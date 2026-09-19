@@ -101,7 +101,7 @@ export function MobileSidebar({ open, onClose }: { open: boolean; onClose: () =>
       {/* Scrim — matches the app-wide overlay rule (bg-black/70 + blur) */}
       <div className="fixed inset-0 z-50 bg-black/35 backdrop-blur-sm md:hidden" onClick={onClose} />
       {/* Drawer */}
-      <aside className="fixed left-0 top-0 z-50 flex h-screen w-[300px] max-w-[86vw] flex-col border-r border-sidebar-border bg-sidebar pt-[env(safe-area-inset-top)] motion-safe:animate-in motion-safe:slide-in-from-left motion-safe:duration-200 md:hidden">
+      <aside className="fixed left-0 top-0 z-50 flex h-dvh w-[300px] max-w-[86vw] flex-col border-r border-sidebar-border bg-sidebar pt-[env(safe-area-inset-top)] motion-safe:animate-in motion-safe:slide-in-from-left motion-safe:duration-200 md:hidden">
         <div className="h-5 shrink-0" />
         <SidebarContent onNavigate={onClose} />
       </aside>
@@ -123,7 +123,7 @@ export function MobileBottomNav() {
   return (
     <nav
       aria-label="Primary mobile navigation"
-      className="fixed inset-x-3 bottom-3 z-40 rounded-3xl border border-border/80 bg-card/95 px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-lift backdrop-blur-xl md:hidden"
+      className="z-40 shrink-0 border-t border-border/80 bg-card/95 px-2 py-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur-xl md:hidden"
     >
       <div className="grid grid-cols-4 gap-1">
         {MOBILE_DESTINATIONS.map((item) => (
@@ -133,7 +133,7 @@ export function MobileBottomNav() {
             aria-label={item.label}
             className={() =>
               cn(
-                'flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl text-2xs font-semibold transition-colors',
+                'flex min-h-11 items-center justify-center gap-1.5 rounded-2xl text-xs font-semibold transition-colors',
                 activeDestination === item.to
                   ? 'bg-focus-surface text-sidebar-accent-foreground'
                   : 'text-sidebar-muted hover:bg-secondary hover:text-foreground'
@@ -141,7 +141,7 @@ export function MobileBottomNav() {
             }
           >
             <item.icon className="h-5 w-5" />
-            {item.label}
+            <span>{item.label}</span>
           </NavLink>
         ))}
       </div>

@@ -15,7 +15,7 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const secs = timeLeft % 60
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-[calc(4.75rem+env(safe-area-inset-top))] items-center gap-3 border-b border-border/70 bg-background/85 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-xl [-webkit-app-region:drag] md:px-6">
+    <header className="relative z-30 flex min-h-[calc(4.75rem+env(safe-area-inset-top))] shrink-0 items-center gap-3 border-b border-border/70 bg-background/85 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-xl [-webkit-app-region:drag] md:px-6">
       <div className="flex min-w-0 items-center gap-3 md:min-w-[7rem] lg:w-[220px]">
         {/* Hamburger — mobile only */}
         {onMenuToggle && (
