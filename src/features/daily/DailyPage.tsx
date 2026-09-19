@@ -1,20 +1,28 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useStore, readStore, writeStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import { useToday } from '@/lib/use-today'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import { useSprintTimer, type SprintSession } from '@/lib/sprint-context'
 import { useNavigate } from 'react-router-dom'
-import { cn } from '@/lib/utils'
 import { PageShell } from '@/components/shared/PageShell'
-import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { UpcomingDeadlines } from './UpcomingDeadlines'
-import { StatTile } from '@/components/shared/StatTile'
-import { EmptyState } from '@/components/shared/EmptyState'
-import { Skeleton } from '@/components/shared/Skeleton'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Play, Pause, RotateCcw, RefreshCw } from 'lucide-react'
+import { FocusHero } from './components/FocusHero'
+import { FactGrid } from './components/HomeFacts'
+import { WeeklyRhythm } from './components/WeeklyRhythm'
+import { UpNext } from './components/UpNext'
+import { WeekMap } from './components/WeekMap'
+import { DailyShortcuts, NeedsAttention } from './components/HomeExtras'
+import { buildFacts, homeCalendarState } from './components/homePanelUtils'
+import {
+  activeHabitSummary,
+  overdueAssignments,
+  upNextItems,
+  upcomingAssignments,
+  weekDates,
+  weeklyFocusMinutes,
+  type HomeCalendarEvent,
+} from './home-model'
+import type { Assignment, Course } from '@/features/student/student-types'
 
 // ─── FOUNDER HISTORY ──────────────────────────────────────
 
@@ -34,6 +42,8 @@ interface HabitDef {
   id: string
   name: string
   emoji: string
+  onHold?: boolean
+  cadence?: 'weekly' | 'monthly'
 }
 
 const defaultHabits: HabitDef[] = [
@@ -61,44 +71,101 @@ export function DailyPage() {
     sessions: sprintSessions, sessionCount, totalDeepWorkMin,
     setTask: setTimerTask, setDuration, start, pause, resume, reset: resetTimer,
   } = useSprintTimer()
-  const timerPresets = [15, 25, 45, 60, 90]
-  const [showCustomTime, setShowCustomTime] = useState(false)
-  const [customTimeInput, setCustomTimeInput] = useState('')
 
   // Habits (from shared store — same as HabitsPage)
   const [habits] = useStore<HabitDef[]>('cortex-habits', defaultHabits)
 
   // Habits — single source of truth via shared hook
   const { completedCount: habitsCompleted, isCompleted: isHabitDone, toggle: toggleHabit } = useDailyHabits(today)
+  const completedHabits = useMemo(
+    () => Object.fromEntries(habits.map((habit) => [habit.id, isHabitDone(habit.id)])),
+    [habits, isHabitDone],
+  )
+  const habitSummary = useMemo(
+    () => activeHabitSummary(habits, completedHabits),
+    [habits, completedHabits],
+  )
 
-  // Calendar — auto-refresh every 5 min + on window focus
-  const [calendarEvents, setCalendarEvents] = useState<{ title: string; startTime: string; endTime: string; calendar: string; isAllDay: boolean }[]>([])
-  const [calendarLoading, setCalendarLoading] = useState(false)
-  const isElectron = !!window.electronAPI
+  const [assignments] = useStore<Assignment[]>('cortex-student-assignments', [])
+  const [courses] = useStore<Course[]>('cortex-student-courses', [])
+  const courseNames = useMemo(
+    () => new Map((courses || []).filter((course) => course?.id).map((course) => [course.id, course.name || course.id])),
+    [courses],
+  )
 
-  const fetchCalendar = async () => {
+  const week = useMemo(() => weekDates(new Date(`${today}T12:00:00`)), [today])
+  const [selectedDay, setSelectedDay] = useState(today)
+  const [sessionsByDay, setSessionsByDay] = useState<Record<string, SprintSession[]>>({})
+
+  // Calendar — read a seven-day range; Vite preview has no /api proxy, so
+  // failed JSON reads are surfaced as source states instead of counted as zero.
+  const [calendarEvents, setCalendarEvents] = useState<HomeCalendarEvent[]>([])
+  const [calendarLoading, setCalendarLoading] = useState(true)
+  const [calendarError, setCalendarError] = useState<string | null>(null)
+
+  const fetchCalendar = useCallback(async () => {
+    const startDay = week[0]
+    const afterEnd = new Date(`${week[6]}T12:00:00`)
+    afterEnd.setDate(afterEnd.getDate() + 1)
+    const endDay = localDate(afterEnd)
     setCalendarLoading(true)
+    setCalendarError(null)
     try {
       if (window.electronAPI?.calendar) {
-        setCalendarEvents(await window.electronAPI.calendar.getTodayEvents())
+        setCalendarEvents(await window.electronAPI.calendar.getEventsInRange(startDay, endDay))
       } else {
-        const res = await fetch('/api/calendar/today')
-        if (res.ok) setCalendarEvents(await res.json())
+        const res = await fetch(`/api/calendar/events?start=${startDay}&end=${endDay}`)
+        if (!res.ok) throw new Error(`Calendar returned ${res.status}`)
+        const body = await res.json()
+        if (!Array.isArray(body)) throw new Error('Calendar returned a non-event response')
+        setCalendarEvents(body)
       }
-    } catch { /* silent */ }
-    finally { setCalendarLoading(false) }
-  }
+    } catch {
+      setCalendarEvents([])
+      setCalendarError('Calendar could not be loaded.')
+    } finally {
+      setCalendarLoading(false)
+    }
+  }, [week])
 
   useEffect(() => {
-    fetchCalendar()
+    const initial = window.setTimeout(() => { void fetchCalendar() }, 0)
     const interval = setInterval(fetchCalendar, 5 * 60 * 1000) // every 5 min
     const onFocus = () => fetchCalendar()
     window.addEventListener('focus', onFocus)
-    return () => { clearInterval(interval); window.removeEventListener('focus', onFocus) }
-  }, [])
+    return () => { clearTimeout(initial); clearInterval(interval); window.removeEventListener('focus', onFocus) }
+  }, [fetchCalendar])
 
-  const mins = Math.floor(timeLeft / 60)
-  const secs = timeLeft % 60
+  useEffect(() => {
+    Promise.all(week.map((date) => readStore<SprintSession[]>(`cortex-daily-sessions-${date}`, [])))
+      .then((results) => {
+        setSessionsByDay(Object.fromEntries(week.map((date, index) => [date, results[index] || []])))
+      })
+  }, [week])
+
+  const focusMinutes = useMemo(() => weeklyFocusMinutes(week, sessionsByDay), [week, sessionsByDay])
+  const effectiveSelectedDay = week.includes(selectedDay) ? selectedDay : today
+  const openAssignments = useMemo(() => upcomingAssignments(assignments || [], new Date(`${today}T12:00:00`)), [assignments, today])
+  const overdue = useMemo(() => overdueAssignments(assignments || [], new Date(`${today}T12:00:00`)), [assignments, today])
+  const calendarState = homeCalendarState(calendarLoading, calendarError, calendarEvents)
+  const facts = buildFacts({
+    focusMinutes: totalDeepWorkMin,
+    habitsDone: habitSummary.done,
+    habitsTotal: habitSummary.total,
+    openAssignments: openAssignments.length,
+    calendarState,
+    eventCount: calendarEvents.length,
+  })
+  const nextItems = useMemo(
+    () => upNextItems({ events: calendarEvents, assignments: assignments || [], courseNames, now: new Date() }),
+    [calendarEvents, assignments, courseNames],
+  )
+  const hour = new Date().getHours()
+  const greeting = (() => {
+    if (hour < 12) return 'Good morning, Pablo'
+    if (hour < 18) return 'Good afternoon, Pablo'
+    return 'Good evening, Pablo'
+  })()
 
   // ─── Tray navigation ────────────────────────────────────
   useEffect(() => {
@@ -173,7 +240,7 @@ export function DailyPage() {
 
         // Habit stats — weekly cadence only (monthly habits are scored over the month)
         const weeklyHabitIds = new Set(
-          storedHabits.filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly').map(h => h.id)
+          storedHabits.filter(h => (h.cadence ?? 'weekly') !== 'monthly').map(h => h.id)
         )
         const weekHabits = weekDates.map(wd => habitHistory[wd] || {})
         const totalHabitChecks = weekHabits.reduce(
