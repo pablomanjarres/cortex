@@ -24,11 +24,11 @@
 
 ### Task 1: Shared light visual language
 
-**Files:** Modify `src/index.css`, `src/components/widgets/WidgetCard.tsx`, `src/components/shared/StatTile.tsx`, `src/components/shared/PageHeader.tsx`, `src/components/ui/button.tsx`, `src/components/ui/input.tsx`, `src/components/ui/tabs.tsx`, `src/components/ui/chip.tsx`, `DESIGN-SYSTEM.md`. Add a local font dependency in `package.json` only if the existing Inter cannot match the approved mockups.
+**Files:** Modify `src/index.css`, `index.html`, `src/components/widgets/WidgetCard.tsx`, `src/components/shared/StatTile.tsx`, `src/components/shared/PageHeader.tsx`, `src/components/ui/button.tsx`, `src/components/ui/input.tsx`, `src/components/ui/tabs.tsx`, `src/components/ui/chip.tsx`, `DESIGN-SYSTEM.md`. Add a local font dependency in `package.json` only if the existing Inter cannot match the approved mockups.
 
 **Interfaces:** Produces the existing component signatures unchanged. Add only optional presentational variants if needed.
 
-- [ ] **Step 1:** Replace the root color variables with the exact Global Constraints palette. Example: `--background: #F1F2F7; --card: #FFFFFF; --foreground: #22232B; --accent: #624AB5;` and define `--focus-surface` and `--progress-surface`. Give `.dark` matching contrast-safe overrides.
+- [ ] **Step 1:** Replace the root color variables with the exact Global Constraints palette. Example: `--background: #F1F2F7; --card: #FFFFFF; --foreground: #22232B; --accent: #624AB5;` and define `--focus-surface` and `--progress-surface`. Give `.dark` matching contrast-safe overrides. Remove the forced `dark` class from `index.html` and set its theme color to the light canvas.
 - [ ] **Step 2:** Restyle `.surface`, `.surface-strong`, `.liquid-glass`, and global focus/selection rules for quiet white cards on the fog canvas. Remove the old inset graphite shine. Keep semantic success, warning, and danger readable on both themes.
 - [ ] **Step 3:** Update shared cards, title typography, controls, and tabs to sentence case, generous padding, approximately 20px card corners and 12px control corners. Preserve every exported prop and variant.
 - [ ] **Step 4:** Run `npm run build` and changed-file ESLint. Inspect Home, Student, Finance, and Settings at desktop width before committing visual slices. Split commits by component family under the four-file and 200-line gate.
