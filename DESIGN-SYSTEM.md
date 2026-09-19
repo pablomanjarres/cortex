@@ -1,9 +1,10 @@
 # Cortex Design System
 
-This is the shared visual contract for the light Cortex workspace. The app should
-feel like a clear personal command center: fog canvas, quiet white work surfaces,
-iris actions, lilac focus moments, and lime progress moments. Use the existing
-data and route contracts; this document only defines shared visual language.
+This is the shared visual contract for the dark-first Cortex workspace. The app
+should feel like a clear personal command center: dark canvas, quiet ink-blue
+work surfaces, iris actions, lilac focus moments, and lime progress moments.
+Light mode remains available as a selectable alternative. Use the existing data
+and route contracts; this document only defines shared visual language.
 
 Source of truth:
 
@@ -14,10 +15,11 @@ Source of truth:
 
 ## Tokens
 
-Light is the default theme. `.dark` is a contrast-safe override, not the primary
-experience.
+Dark is the default theme. The `:root` values below are the light alternative,
+kept intact for the Settings appearance switch. `.dark` is the primary token set
+and must keep the lilac focus and lime progress surfaces visible.
 
-| Role | CSS var | Value | Use |
+| Light role | CSS var | Value | Use |
 |---|---|---:|---|
 | Canvas | `--background` | `#F1F2F7` | App and page background. |
 | Surface | `--card` | `#FFFFFF` | Cards, panels, popovers, dialogs. |
@@ -157,7 +159,8 @@ replacement is equally visible. Desktop dense controls should remain at least
 
 ## Bans
 
-- Forced dark root classes or dark-only theme metadata.
+- Light-only root classes or light-only theme metadata.
+- Dark panels that collapse the approved lilac and lime surfaces into flat charcoal.
 - Raw Tailwind palette colors for semantic UI.
 - Decorative all-caps tracking for card titles and section labels.
 - New fonts without an approved design reason.

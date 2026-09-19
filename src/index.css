@@ -15,7 +15,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   cursor: pointer;
 }
 
-/* Cortex light workspace tokens. Light is the default; .dark is an override. */
+/* Cortex workspace tokens. Dark is default; :root remains the light option. */
 :root {
   --background: #F1F2F7;
   --foreground: #22232B;
@@ -66,24 +66,24 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
 }
 
 .dark {
-  --background: #141720; --foreground: #F4F6FA;
-  --card: #202432; --card-foreground: #F4F6FA;
-  --popover: #202432; --popover-foreground: #F4F6FA;
-  --primary: #A996F2; --primary-foreground: #171226;
-  --secondary: #2B3040; --secondary-foreground: #F4F6FA;
-  --muted: #2B3040; --muted-foreground: #B8C0CE; --foreground-faint: #8F99AB;
-  --accent: #A996F2; --accent-foreground: #171226;
-  --focus-surface: #362E56; --progress-surface: #263B2C;
+  --background: #141720; --foreground: #F6F7FB;
+  --card: #202536; --card-foreground: #F6F7FB;
+  --popover: #202536; --popover-foreground: #F6F7FB;
+  --primary: #B7A6FF; --primary-foreground: #171226;
+  --secondary: #2B3144; --secondary-foreground: #F6F7FB;
+  --muted: #2B3144; --muted-foreground: #C1C8D6; --foreground-faint: #96A0B2;
+  --accent: #B7A6FF; --accent-foreground: #171226;
+  --focus-surface: #413574; --progress-surface: #29472D;
   --destructive: #F27A72; --destructive-foreground: #2A0E0C;
   --success: #62D489; --success-foreground: #0B2414;
   --warning: #F2B35D; --warning-foreground: #2A1907;
-  --border: #343A4B; --input: #454C60; --ring: #A996F2;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.26), 0 18px 44px rgba(0, 0, 0, 0.30);
-  --shadow-lift: 0 8px 18px rgba(0, 0, 0, 0.28), 0 28px 70px rgba(0, 0, 0, 0.36);
-  --sidebar: #181B25; --sidebar-foreground: #F4F6FA; --sidebar-border: #343A4B;
-  --sidebar-accent: #2E2848; --sidebar-accent-foreground: #DCD4FF; --sidebar-muted: #B8C0CE;
-  --sidebar-primary: #A996F2; --sidebar-primary-foreground: #171226; --sidebar-ring: #A996F2;
-  --chart-1: #A996F2; --chart-2: #C7B9FF; --chart-3: #62D489; --chart-4: #78BFF7; --chart-5: #F2B35D;
+  --border: #3A4257; --input: #4A536A; --ring: #B7A6FF;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 18px 44px rgba(0, 0, 0, 0.34);
+  --shadow-lift: 0 8px 18px rgba(0, 0, 0, 0.32), 0 28px 70px rgba(0, 0, 0, 0.40);
+  --sidebar: #181C28; --sidebar-foreground: #F6F7FB; --sidebar-border: #3A4257;
+  --sidebar-accent: #413574; --sidebar-accent-foreground: #F7F4FF; --sidebar-muted: #C1C8D6;
+  --sidebar-primary: #B7A6FF; --sidebar-primary-foreground: #171226; --sidebar-ring: #B7A6FF;
+  --chart-1: #B7A6FF; --chart-2: #D4CAFF; --chart-3: #7AE19B; --chart-4: #82C7FF; --chart-5: #F2B35D;
 }
 
 @theme inline {
@@ -170,10 +170,25 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   box-shadow: var(--shadow-card);
 }
 
+.dark .surface {
+  background:
+    linear-gradient(145deg,
+      color-mix(in oklab, var(--card) 92%, var(--focus-surface) 8%),
+      var(--card));
+  border-color: color-mix(in oklab, var(--border) 86%, var(--focus-surface) 14%);
+}
+
 .surface-strong {
   background-color: var(--card);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lift);
+}
+
+.dark .surface-strong {
+  background:
+    linear-gradient(145deg,
+      color-mix(in oklab, var(--card) 88%, var(--focus-surface) 12%),
+      color-mix(in oklab, var(--card) 96%, var(--progress-surface) 4%));
 }
 
 .glow-danger {
