@@ -64,6 +64,38 @@ test('activeHabitSummary excludes held habits from completion and total counts',
   ), { done: 1, total: 2 })
 })
 
+test('open assignment count includes overdue and undated work but not completed work', async () => {
+  const { countOpenAssignments } = await loadModel()
+  assert.equal(countOpenAssignments([
+    assignment({ id: 'overdue', deadline: '2026-09-01' }),
+    assignment({ id: 'undated', deadline: undefined }),
+    assignment({ id: 'done', deadline: '2026-09-30', done: true }),
+  ]), 2)
+})
+
+test('live sprint sessions replace only the current day in the week map', async () => {
+  const { withLiveDaySessions } = await loadModel()
+  const earlier = [{ id: 'earlier', task: 'Earlier', duration: 25, startedAt: '2026-09-18T10:00:00', completedAt: '2026-09-18T10:25:00' }]
+  const live = [{ id: 'live', task: 'Now', duration: 45, startedAt: '2026-09-19T10:00:00', completedAt: '2026-09-19T10:45:00' }]
+  const stored = { '2026-09-18': earlier, '2026-09-19': [] }
+  const result = withLiveDaySessions(stored, '2026-09-19', live)
+  assert.deepEqual(result, { '2026-09-18': earlier, '2026-09-19': live })
+  assert.deepEqual(stored['2026-09-19'], [])
+})
+
+test('synced assignment calendar copies do not duplicate Home source items', async () => {
+  const { independentCalendarEvents } = await loadModel()
+  const event = (id: string, notes: string) => ({
+    id, notes, title: id, startDate: '2026-09-19', endDate: '2026-09-20', calendar: 'Calendar', isAllDay: true,
+  })
+  const result = independentCalendarEvents([
+    event('synced', 'cortex:assignment:a'),
+    event('meeting', ''),
+    event('orphan', 'cortex:assignment:removed'),
+  ], [assignment({ id: 'a', deadline: '2026-09-19' })])
+  assert.deepEqual(result.map((item) => item.id), ['meeting', 'orphan'])
+})
+
 test('upcomingAssignments keeps open valid deadlines from today onward without mutating inputs', async () => {
   const { upcomingAssignments } = await loadModel()
   const assignments = [
