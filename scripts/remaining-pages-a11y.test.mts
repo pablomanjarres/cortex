@@ -14,4 +14,7 @@ test('mobile book details have a keyboard-operable disclosure control', () => {
 
   assert.ok(disclosure, 'University of Success needs a button to open its details')
   assert.match(disclosure, /aria-expanded="false"/)
+  const content = html.match(/<button\b[^>]*aria-label="Details for University of Success"[^>]*>([\s\S]*?)<\/button>/)?.[1]
+  assert.ok(content)
+  assert.doesNotMatch(content, /<(?:div|p)\b/, 'button content must use phrasing elements')
 })
