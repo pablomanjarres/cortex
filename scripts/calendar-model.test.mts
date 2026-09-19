@@ -20,8 +20,8 @@ const fixtureEvents = [
   {
     id: 'timed',
     title: 'Algorithms',
-    startDate: '2026-09-21T10:00:00-05:00',
-    endDate: '2026-09-21T11:15:00-05:00',
+    startDate: '2026-09-21T10:00:00',
+    endDate: '2026-09-21T11:15:00',
     calendar: 'EAFIT',
     isAllDay: false,
     notes: '',
@@ -31,8 +31,8 @@ const fixtureEvents = [
   {
     id: 'midnight',
     title: 'Deploy watch',
-    startDate: '2026-09-21T23:30:00-05:00',
-    endDate: '2026-09-22T00:30:00-05:00',
+    startDate: '2026-09-21T23:30:00',
+    endDate: '2026-09-22T00:30:00',
     calendar: 'Work',
     isAllDay: false,
     notes: '',
