@@ -117,6 +117,16 @@ export function titleForPath(pathname: string): string {
   return routeForPath(pathname)?.title ?? 'Dashboard'
 }
 
+export function mobileDestinationForPath(pathname: string): string | undefined {
+  const path = pathname.split(/[?#]/)[0] || pathname
+  const group = routeForPath(path)?.group
+  if (group === 'Today') return '/daily'
+  if (group === 'Build') return '/founder'
+  if (group === 'Study') return '/student'
+  if (group === 'Life') return '/finance'
+  return undefined
+}
+
 export function searchNavigation(query: string): NavigationSearchItem[] {
   const q = query.trim().toLowerCase()
   if (!q) return []

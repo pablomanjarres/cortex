@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { CoursesPage } from '@/features/courses/CoursesPage'
 import { CapturesPage } from '@/features/captures/CapturesPage'
@@ -46,10 +46,20 @@ function LibraryCollection({ initialKind }: { initialKind: Kind }) {
 // separate (not merged) sub-page tab.
 export function LibraryPage() {
   const location = useLocation()
+  const navigate = useNavigate()
   const kind = kindFromSearch(location.search)
+  const hasKindQuery = new URLSearchParams(location.search).has('kind')
+  const [section, setSection] = useState<'collection' | 'thoughts'>('collection')
+  const activeSection = hasKindQuery ? 'collection' : section
+
+  function setActiveSection(value: string) {
+    const next = value === 'thoughts' ? 'thoughts' : 'collection'
+    setSection(next)
+    if (next === 'thoughts' && hasKindQuery) navigate('/library')
+  }
 
   return (
-    <Tabs defaultValue="collection">
+    <Tabs value={activeSection} onValueChange={setActiveSection}>
       <TabsList>
         <TabsTrigger value="collection">Collection</TabsTrigger>
         <TabsTrigger value="thoughts">Thoughts</TabsTrigger>

@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { BookOpen, BriefcaseBusiness, Globe, Home, UserRound } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { NAV_GROUPS } from '@/lib/routes'
+import { mobileDestinationForPath, NAV_GROUPS } from '@/lib/routes'
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
@@ -117,6 +117,9 @@ const MOBILE_DESTINATIONS = [
 ]
 
 export function MobileBottomNav() {
+  const location = useLocation()
+  const activeDestination = mobileDestinationForPath(`${location.pathname}${location.search}`)
+
   return (
     <nav
       aria-label="Primary mobile navigation"
@@ -128,10 +131,10 @@ export function MobileBottomNav() {
             key={item.to}
             to={item.to}
             aria-label={item.label}
-            className={({ isActive }) =>
+            className={() =>
               cn(
                 'flex min-h-12 flex-col items-center justify-center gap-1 rounded-2xl text-2xs font-semibold transition-colors',
-                isActive
+                activeDestination === item.to
                   ? 'bg-focus-surface text-sidebar-accent-foreground'
                   : 'text-sidebar-muted hover:bg-secondary hover:text-foreground'
               )
