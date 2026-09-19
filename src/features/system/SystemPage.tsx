@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
+import { PageHeader } from '@/components/shared/PageHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { Skeleton } from '@/components/shared/Skeleton'
@@ -227,52 +228,52 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
     .slice(0, 6)
 
   return (
-    <WidgetCard
-      title={host.label}
-      description={`${sys.hostname} · ${sys.os_name} ${sys.os_version}`}
-      delay={delay}
-    >
-      <div className="flex flex-col gap-4">
-        {/* Live indicator + uptime */}
-        <div className="flex items-center justify-between text-2xs text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <div className={`h-1.5 w-1.5 rounded-full motion-safe:animate-pulse ${stale ? 'bg-warning' : 'bg-success'}`} />
-            <span>{stale ? 'Reconnecting…' : 'Live'}</span>
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        kicker="Live host"
+        title={host.label}
+        subtitle={`${sys.hostname} · ${sys.os_name} ${sys.os_version}`}
+        actions={(
+          <div className="flex items-center gap-3 font-mono text-2xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full motion-safe:animate-pulse ${stale ? 'bg-warning' : 'bg-success'}`} />
+              {stale ? 'Reconnecting…' : 'Live'}
+            </span>
+            <span className="flex items-center gap-1.5 tabular-nums">
+              <Clock className="h-3 w-3" />{data.uptime}
+            </span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Clock className="h-3 w-3" />
-            <span className="font-mono tabular-nums">{data.uptime}</span>
-          </div>
-        </div>
+        )}
+      />
 
-        {/* Stat tiles */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile
-            label="CPU"
-            icon={<Cpu />}
-            value={<span className={pctTone(cpuPct)}>{`${cpuPct.toFixed(1)}%`}</span>}
-            sub={`${cores} cores`}
-          />
-          <StatTile
-            label="RAM"
-            icon={<MemoryStick />}
-            value={<span className={pctTone(memPct)}>{`${memPct.toFixed(1)}%`}</span>}
-            sub={`${fmtBytes(memUsed, 1)} / ${fmtBytes(memTotal, 1)}`}
-          />
-          <StatTile
-            label="Load 1m"
-            icon={<Activity />}
-            value={<span className={pctTone(loadPct)}>{load1.toFixed(2)}</span>}
-            sub={`${(load1 / Math.max(1, cores) * 100).toFixed(0)}% of ${cores}c`}
-          />
-          <StatTile
-            label="Procs"
-            icon={<Server />}
-            value={`${data.processcount?.total ?? 0}`}
-            sub={`${data.processcount?.running ?? 0} running`}
-          />
-        </div>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <StatTile
+          label="CPU"
+          icon={<Cpu />}
+          value={<span className={pctTone(cpuPct)}>{`${cpuPct.toFixed(1)}%`}</span>}
+          sub={`${cores} cores`}
+        />
+        <StatTile
+          label="RAM"
+          icon={<MemoryStick />}
+          value={<span className={pctTone(memPct)}>{`${memPct.toFixed(1)}%`}</span>}
+          sub={`${fmtBytes(memUsed, 1)} / ${fmtBytes(memTotal, 1)}`}
+        />
+        <StatTile
+          label="Load 1m"
+          icon={<Activity />}
+          value={<span className={pctTone(loadPct)}>{load1.toFixed(2)}</span>}
+          sub={`${(load1 / Math.max(1, cores) * 100).toFixed(0)}% of ${cores}c`}
+        />
+        <StatTile
+          label="Procs"
+          icon={<Server />}
+          value={`${data.processcount?.total ?? 0}`}
+          sub={`${data.processcount?.running ?? 0} running`}
+        />
+      </div>
 
+      <WidgetCard title="Live activity" description="CPU and memory · last 60 seconds" delay={delay}>
         {/* CPU + RAM sparklines */}
         <div className="grid grid-cols-2 gap-3">
           <div className={sparkTone(cpuPct)}>
@@ -354,8 +355,8 @@ function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
           {showHistory ? 'Hide history' : 'Show history & averages'}
         </Button>
         {showHistory && <HostHistory host={host.key} />}
-      </div>
-    </WidgetCard>
+      </WidgetCard>
+    </div>
   )
 }
 
