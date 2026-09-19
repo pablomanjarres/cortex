@@ -38,3 +38,8 @@ test('student overview leaves an empty semester genuinely empty', () => {
   assert.deepEqual(result && { courseCount: result.courseCount, openCount: result.openCount, priority: result.priorityAssignment },
     { courseCount: 0, openCount: 0, priority: undefined })
 })
+
+test('opening priority work keeps its type in the active filter', () => {
+  const include = (overview as typeof overview & { includeAssignmentType?: (selected: ReadonlySet<string>, type: string) => Set<string> }).includeAssignmentType
+  assert.deepEqual([...(include?.(new Set(['Exam']), 'Lab') ?? [])].sort(), ['Exam', 'Lab'])
+})
