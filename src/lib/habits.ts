@@ -1,4 +1,4 @@
-export type HabitCadence = 'weekly' | 'monthly'
+export type Cadence = 'weekly' | 'monthly'
 
 export interface Habit {
   id: string
@@ -6,7 +6,7 @@ export interface Habit {
   emoji: string
   weeklyGoal?: number
   monthlyGoal?: number
-  cadence?: HabitCadence
+  cadence?: Cadence
   category?: string
   context?: string
   onHold?: boolean
