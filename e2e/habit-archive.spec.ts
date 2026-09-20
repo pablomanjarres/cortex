@@ -27,3 +27,26 @@ test('archive keeps the habit and history, removes it from active tracking, and 
   await expect.poll(() => backend.stores['cortex-habits']).toContainEqual({ ...habit, onHold: false })
   expect(backend.stores['cortex-habits-history']).toEqual(history)
 })
+
+test('weekly audit excludes held habits and their old completions', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-21T15:00:00Z'))
+  const history = Object.fromEntries(
+    ['14', '15', '16', '17', '18', '19', '20'].map((day) => [
+      `2026-09-${day}`,
+      { held: true, ...(day === '14' ? { active: true } : {}) },
+    ]),
+  )
+  const backend = await mockStores(page, {
+    'cortex-habits': [
+      { id: 'active', name: 'Walk', emoji: 'W', weeklyGoal: 7 },
+      { id: 'held', name: 'Swim', emoji: 'S', weeklyGoal: 7, onHold: true },
+    ],
+    'cortex-habits-history': history,
+  })
+
+  await page.goto('/#/daily')
+  await expect.poll(() => {
+    const audit = backend.writes.find(({ key }) => key.startsWith('cortex-weekly-audit-'))?.data
+    return (audit as { habitStats?: { consistency: number } } | undefined)?.habitStats?.consistency
+  }).toBe(14)
+})
