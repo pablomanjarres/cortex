@@ -93,3 +93,22 @@ test('all seven habit days stay inside a 320-pixel phone card', async ({ page })
   expect(sundayBox).not.toBeNull()
   expect(sundayBox!.x + sundayBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width - 1)
 })
+
+test('a stale client displays the server-confirmed habit completion', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-19T15:00:00Z'))
+  const backend = await mockStores(page, {}, {
+    canonicalizeWrite: (key, data) => key === 'cortex-habits-history'
+      ? { '2026-09-19': {} }
+      : data,
+  })
+
+  await page.goto('/#/daily')
+  const workout = page.getByRole('button', { name: 'Workout', exact: true })
+  await expect(workout).toHaveAttribute('aria-pressed', 'false')
+  backend.set('cortex-habits', [{ id: '1', name: 'Workout', emoji: '💪', onHold: true }])
+  await workout.click()
+
+  await expect.poll(() => backend.writes.some(({ key }) => key === 'cortex-habits-history')).toBe(true)
+  await expect(workout).toHaveAttribute('aria-pressed', 'false', { timeout: 1000 })
+  expect(backend.stores['cortex-habits-history']).toEqual({ '2026-09-19': {} })
+})

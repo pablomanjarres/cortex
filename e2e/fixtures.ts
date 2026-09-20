@@ -3,7 +3,11 @@ import { test, expect, type Page } from '@playwright/test'
 export { test, expect }
 
 /** A fresh, in-memory backend per page; app data never reaches a real service. */
-export async function mockStores(page: Page, initial: Record<string, unknown> = {}) {
+export async function mockStores(
+  page: Page,
+  initial: Record<string, unknown> = {},
+  options: { canonicalizeWrite?: (key: string, data: unknown) => unknown } = {},
+) {
   const stores = structuredClone(initial)
   const revisions = new Map(Object.keys(stores).map((key) => [key, 1]))
   const writes: { key: string; data: unknown }[] = []
@@ -32,10 +36,11 @@ export async function mockStores(page: Page, initial: Record<string, unknown> = 
       if (body.baseRev != null && body.baseRev !== revision(body.key)) {
         return route.fulfill({ status: 409, json: { error: 'conflict', data: read(body.key), rev: revision(body.key) } })
       }
-      stores[body.key] = body.data
+      const saved = options.canonicalizeWrite?.(body.key, body.data) ?? body.data
+      stores[body.key] = saved
       revisions.set(body.key, (revisions.get(body.key) ?? 0) + 1)
-      writes.push({ key: body.key, data: structuredClone(body.data) })
-      return json({ ok: true, rev: revision(body.key) })
+      writes.push({ key: body.key, data: structuredClone(saved) })
+      return json({ ok: true, rev: revision(body.key), ...(options.canonicalizeWrite ? { data: saved } : {}) })
     }
     if (url.pathname.startsWith('/api/')) {
       if (request.method() !== 'GET') return route.fulfill({ status: 405, json: { error: 'Fixture blocks external writes' } })
