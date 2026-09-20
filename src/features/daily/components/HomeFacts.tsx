@@ -36,11 +36,11 @@ function HabitRing({ visual }: { visual: Extract<FactVisual, { kind: 'habits' }>
   return (
     <div className="flex items-center gap-2" role="img" aria-label={`${visual.done} of ${visual.total} habits completed today`}>
       <span
-        className="relative grid size-12 shrink-0 place-items-center rounded-full"
+        className="relative grid size-14 shrink-0 place-items-center rounded-full xl:size-16"
         style={{ background: `conic-gradient(var(--success) ${percent}%, var(--muted) 0)` }}
         aria-hidden="true"
       >
-        <span className="grid size-9 place-items-center rounded-full bg-card font-mono text-[0.65rem] font-semibold text-success">
+        <span className="grid size-11 place-items-center rounded-full bg-card font-mono text-xs font-semibold text-success xl:size-13 xl:text-sm">
           {visual.total > 0 ? `${percent}%` : '—'}
         </span>
       </span>
