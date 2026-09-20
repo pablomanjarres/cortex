@@ -479,7 +479,7 @@ export function HabitsPage() {
                     </div>
                   </div>
                   {/* Day circles */}
-                  <div className="flex items-center justify-between">
+                  <div className="grid grid-cols-7 gap-0.5">
                     {weekDays.map((day, i) => {
                       const isChecked = !!habitHistory[weekDates[i]]?.[habit.id]
                       const isToday = i === todayDayIndex
@@ -490,11 +490,11 @@ export function HabitsPage() {
                           onClick={() => toggle(habit.id, i)}
                           aria-pressed={isChecked}
                           aria-label={`${habit.name} — ${day}`}
-                          className="h-auto flex-col gap-1 px-1 py-1"
+                          className="h-auto min-w-0 flex-col gap-1 px-0 py-1"
                         >
                           <span className={cn('font-mono text-2xs', isToday ? 'text-foreground' : 'text-foreground-faint')}>{day}</span>
                           <span className={cn(
-                            'flex h-9 w-9 items-center justify-center rounded-full transition-colors',
+                            'flex h-7 w-7 items-center justify-center rounded-full transition-colors min-[360px]:h-9 min-[360px]:w-9',
                             isChecked
                               ? 'border border-success/25 bg-success/10 text-success'
                               : isToday
