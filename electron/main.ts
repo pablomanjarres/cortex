@@ -51,6 +51,7 @@ const DAILY_FILE_RETENTION_DAYS = 90 // StatsPage reads 90 days back
 let cachedEvents: { title: string; startTime: string; endTime: string; isAllDay: boolean }[] = []
 let cachedHabits: { id: string; name: string; emoji: string; onHold?: boolean }[] = []
 let cachedHabitHistory: Record<string, boolean> = {}
+let trayHabitRefreshVersion = 0
 let traySprintEndMs: number | null = null
 let traySprintTask: string | null = null
 let traySprintInterval: ReturnType<typeof setInterval> | null = null
@@ -132,15 +133,25 @@ function showAndNavigate(route: string) {
 
 async function refreshTrayData() {
   try { cachedEvents = await getTodayEvents() } catch { cachedEvents = [] }
+  await refreshTrayHabits()
+}
+
+async function refreshTrayHabits() {
+  const version = ++trayHabitRefreshVersion
+  let habits: typeof cachedHabits = []
+  let todayHistory: typeof cachedHabitHistory = {}
   try {
-    const habits = await readDataKeyParsed<{ id: string; name: string; emoji: string; onHold?: boolean }[]>('cortex-habits', [])
-    cachedHabits = habits.filter((habit) => habit.onHold !== true)
-  } catch { cachedHabits = [] }
+    const stored = await readDataKeyParsed<typeof cachedHabits>('cortex-habits', [])
+    habits = stored.filter((habit) => habit.onHold !== true)
+  } catch { /* keep an empty menu if the store cannot be read */ }
   try {
     const today = localDate()
     const history = await readDataKeyParsed<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
-    cachedHabitHistory = history[today] || {}
-  } catch { cachedHabitHistory = {} }
+    todayHistory = history[today] || {}
+  } catch { /* keep an empty completion state if the store cannot be read */ }
+  if (version !== trayHabitRefreshVersion) return
+  cachedHabits = habits
+  cachedHabitHistory = todayHistory
   if (tray) tray.setContextMenu(buildTrayMenu())
 }
 
@@ -427,13 +438,19 @@ function clearTraySprintState() {
 // renderer gets a data:changed push instead of silently racing this write.
 async function toggleHabitFromTray(habitId: string) {
   try {
+    // Native menus can outlive the cached data used to build them. Re-read the
+    // source of truth before writing history so an archived/deleted habit cannot
+    // be completed from a stale menu item.
+    const habits = await readDataKeyParsed<typeof cachedHabits>('cortex-habits', [])
+    if (!habits.some((habit) => habit.id === habitId && habit.onHold !== true)) {
+      await refreshTrayHabits()
+      return
+    }
     const today = localDate()
     const history = await readDataKeyParsed<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
     if (!history[today]) history[today] = {}
     history[today][habitId] = !history[today][habitId]
     await writeDataKey('cortex-habits-history', history, { source: 'main' })
-    cachedHabitHistory = history[today]
-    if (tray) tray.setContextMenu(buildTrayMenu())
   } catch (e) {
     console.error('[Cortex] tray habit toggle failed:', e)
   }
@@ -1568,6 +1585,11 @@ async function writeDataKey(
 
       await encryptAndWriteAsync(file, serialized)
       const rev = (await statRev(file)) ?? String(Date.now())
+      if (key === 'cortex-habits' || key === 'cortex-habits-history') {
+        // UI, HTTP/MCP, and tray writes all pass here. Update the native menu
+        // as soon as the committed store changes, not at the five-minute poll.
+        try { await refreshTrayHabits() } catch (e) { console.error('[Cortex] tray habit refresh failed:', e) }
+      }
       broadcastDataChanged(key, opts.source, rev)
       return { ok: true, rev }
     } catch (e) {
