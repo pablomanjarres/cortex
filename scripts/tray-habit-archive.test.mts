@@ -77,7 +77,7 @@ function trayHarness(
   const harness = context.harness as {
     refreshTrayHabits: () => Promise<void>
     toggleHabitFromTray: (id: string) => Promise<void>
-    writeDataKey: (key: string, data: unknown, opts: { source: string }) => Promise<unknown>
+    writeDataKey: (key: string, data: unknown, opts: { source: string }) => Promise<{ ok: boolean; data?: unknown }>
     getHabits: () => Array<{ id: string; onHold?: boolean }>
     getStats: () => { habits: string }
   }
@@ -123,13 +123,14 @@ test('history writes cannot add held completions or erase earlier held history',
     [{ id: 'active', name: 'Read', emoji: 'R' }, { id: 'held', name: 'Swim', emoji: 'S', onHold: true }],
     { history: { '2026-09-18': { held: true }, '2026-09-19': { active: false } } },
   )
-  await harness.writeDataKey('cortex-habits-history', {
+  const result = await harness.writeDataKey('cortex-habits-history', {
     '2026-09-19': { active: true, held: true },
   }, { source: 'http' })
   assert.deepEqual(records['cortex-habits-history'], {
     '2026-09-18': { held: true },
     '2026-09-19': { active: true },
   })
+  assert.deepEqual(JSON.parse(JSON.stringify(result.data)), records['cortex-habits-history'])
 })
 
 test('archive and history writes share a lock so an in-flight archive wins', async () => {
