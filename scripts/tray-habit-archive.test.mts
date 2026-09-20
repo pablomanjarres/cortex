@@ -17,14 +17,22 @@ function functionSource(name: string): string {
   return declaration.getText(tree)
 }
 
-function trayHarness(habits: Array<{ id: string; name: string; emoji: string; onHold?: boolean }>) {
+function trayHarness(
+  habits: Array<{ id: string; name: string; emoji: string; onHold?: boolean }>,
+  options: {
+    history?: Record<string, Record<string, boolean>>
+    noHabitsKey?: boolean
+    beforeCommit?: (key: string) => Promise<void>
+  } = {},
+) {
   const records = {
-    'cortex-habits': habits,
-    'cortex-habits-history': { '2026-09-19': { active: true } } as Record<string, Record<string, boolean>>,
+    'cortex-habits': options.noHabitsKey ? null : habits,
+    'cortex-habits-history': options.history ?? { '2026-09-19': { active: true } },
   }
   const writes: Array<{ key: string; data: unknown }> = []
   let menuUpdates = 0
   const declarations = [
+    functionSource('withKeyLock'),
     functionSource('refreshTrayHabits'),
     functionSource('toggleHabitFromTray'),
     functionSource('writeDataKey'),
@@ -37,24 +45,33 @@ function trayHarness(habits: Array<{ id: string; name: string; emoji: string; on
     console,
     localDate: () => '2026-09-19',
     readDataKeyParsed: async (key: keyof typeof records) => structuredClone(records[key]),
+    readDataFile: async (key: keyof typeof records) => ({
+      text: records[key] === null ? null : JSON.stringify(records[key]),
+    }),
     encryptAndWriteAsync: async (file: string, serialized: string) => {
       const key = path.basename(file, '.json') as keyof typeof records
+      await options.beforeCommit?.(key)
       const data = JSON.parse(serialized)
       writes.push({ key, data: structuredClone(data) })
       Object.assign(records, { [key]: structuredClone(data) })
     },
     KEY_RE: /^[A-Za-z0-9._-]{1,200}$/,
-    withKeyLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
+    fs: { promises: { copyFile: async () => {}, mkdir: async () => {}, readdir: async () => [] } },
+    backupDir: '/isolated-test-backup',
+    VERSIONED_BACKUPS_KEPT: 10,
     path,
     dataDir: '/isolated-test-data',
-    statRev: async () => null,
+    statRev: async (file: string) => {
+      const key = path.basename(file, '.json') as keyof typeof records
+      return records[key] === null ? null : 'unchanged-rev'
+    },
     broadcastDataChanged: () => {},
     buildTrayMenu: () => ({}),
     tray: { setContextMenu: () => { menuUpdates += 1 } },
   })
   vm.runInContext(
-    `let cachedHabits = []; let cachedHabitHistory = {}; let trayHabitRefreshVersion = 0; ${javascript}\n` +
-    'globalThis.harness = { refreshTrayHabits, toggleHabitFromTray, writeDataKey, getHabits: () => cachedHabits };',
+    `let cachedHabits = []; let cachedHabitHistory = {}; let trayHabitRefreshVersion = 0; let currentStats = { tasks: '0/0', habits: '7/9', score: '—' }; const keyWriteLocks = new Map(); ${javascript}\n` +
+    'globalThis.harness = { refreshTrayHabits, toggleHabitFromTray, writeDataKey, getHabits: () => cachedHabits, getStats: () => currentStats };',
     context,
   )
   const harness = context.harness as {
@@ -62,6 +79,7 @@ function trayHarness(habits: Array<{ id: string; name: string; emoji: string; on
     toggleHabitFromTray: (id: string) => Promise<void>
     writeDataKey: (key: string, data: unknown, opts: { source: string }) => Promise<unknown>
     getHabits: () => Array<{ id: string; onHold?: boolean }>
+    getStats: () => { habits: string }
   }
   return { records, writes, harness, menuUpdates: () => menuUpdates }
 }
@@ -98,4 +116,59 @@ test('a stale tray click cannot change archived or deleted habit history', async
   await harness.toggleHabitFromTray('active')
   assert.equal(writes.length, 1)
   assert.deepEqual(records['cortex-habits-history'], { '2026-09-19': { active: false } })
+})
+
+test('history writes cannot add held completions or erase earlier held history', async () => {
+  const { records, harness } = trayHarness(
+    [{ id: 'active', name: 'Read', emoji: 'R' }, { id: 'held', name: 'Swim', emoji: 'S', onHold: true }],
+    { history: { '2026-09-18': { held: true }, '2026-09-19': { active: false } } },
+  )
+  await harness.writeDataKey('cortex-habits-history', {
+    '2026-09-19': { active: true, held: true },
+  }, { source: 'http' })
+  assert.deepEqual(records['cortex-habits-history'], {
+    '2026-09-18': { held: true },
+    '2026-09-19': { active: true },
+  })
+})
+
+test('archive and history writes share a lock so an in-flight archive wins', async () => {
+  let startArchiveCommit!: () => void
+  let finishArchiveCommit!: () => void
+  const archiveAtCommit = new Promise<void>((resolve) => { startArchiveCommit = resolve })
+  const allowArchiveCommit = new Promise<void>((resolve) => { finishArchiveCommit = resolve })
+  const { records, harness } = trayHarness(
+    [{ id: 'active', name: 'Read', emoji: 'R' }, { id: 'held', name: 'Swim', emoji: 'S' }],
+    { beforeCommit: async (key) => {
+      if (key !== 'cortex-habits') return
+      startArchiveCommit()
+      await allowArchiveCommit
+    } },
+  )
+  const archive = harness.writeDataKey('cortex-habits', [
+    { id: 'active', name: 'Read', emoji: 'R' },
+    { id: 'held', name: 'Swim', emoji: 'S', onHold: true },
+  ], { source: 'ipc' })
+  await archiveAtCommit
+  const staleHistory = harness.writeDataKey('cortex-habits-history', {
+    '2026-09-19': { active: true, held: true },
+  }, { source: 'http' })
+  finishArchiveCommit()
+  await Promise.all([archive, staleHistory])
+  assert.deepEqual(records['cortex-habits-history'], { '2026-09-19': { active: true } })
+})
+
+test('the first history write still works before the habits key is created', async () => {
+  const { records, harness } = trayHarness([], { noHabitsKey: true, history: {} })
+  await harness.writeDataKey('cortex-habits-history', { '2026-09-19': { 'default-habit': true } }, { source: 'ipc' })
+  assert.deepEqual(records['cortex-habits-history'], { '2026-09-19': { 'default-habit': true } })
+})
+
+test('tray summary updates from active habits while Home is unmounted', async () => {
+  const { harness } = trayHarness([
+    { id: 'active', name: 'Read', emoji: 'R' },
+    { id: 'held', name: 'Swim', emoji: 'S', onHold: true },
+  ], { history: { '2026-09-19': { active: true, held: true } } })
+  await harness.refreshTrayHabits()
+  assert.equal(harness.getStats().habits, '1/1')
 })
