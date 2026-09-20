@@ -306,14 +306,11 @@ export function DailyPage() {
           />
         </div>
 
-        <div className="min-w-0 xl:order-5 xl:col-span-4">
-          <UpNext
-            items={nextItems}
-            calendarState={calendarState}
-            calendarError={calendarError}
-            onOpenCalendar={() => navigate('/calendar')}
+        <div className="min-w-0 xl:order-3 2xl:order-4 xl:col-span-12">
+          <DailyShortcuts
+            habits={buildShortcutHabits(habits, isHabitDone, toggleHabit)}
             onOpenStudent={() => navigate('/student')}
-            onRetryCalendar={fetchCalendar}
+            onOpenCalendar={() => navigate('/calendar')}
           />
         </div>
 
@@ -321,11 +318,11 @@ export function DailyPage() {
           <FactGrid facts={facts} />
         </div>
 
-        <div className="min-w-0 xl:order-3 xl:col-span-12 2xl:col-span-4">
+        <div className="min-w-0 xl:order-4 2xl:order-3 xl:col-span-12 2xl:col-span-4">
           <WeeklyRhythm days={week} minutes={focusMinutes} />
         </div>
 
-        <div className="min-w-0 xl:order-4 xl:col-span-8">
+        <div className="min-w-0 xl:order-5 xl:col-span-8">
           <WeekMap
             days={week}
             today={today}
@@ -340,6 +337,17 @@ export function DailyPage() {
             onOpenStudent={() => navigate('/student')}
           />
         </div>
+
+        <div className="min-w-0 xl:order-6 xl:col-span-4">
+          <UpNext
+            items={nextItems}
+            calendarState={calendarState}
+            calendarError={calendarError}
+            onOpenCalendar={() => navigate('/calendar')}
+            onOpenStudent={() => navigate('/student')}
+            onRetryCalendar={fetchCalendar}
+          />
+        </div>
       </div>
 
       <NeedsAttention
@@ -347,12 +355,6 @@ export function DailyPage() {
         calendarError={calendarError}
         onOpenStudent={() => navigate('/student')}
         onRetryCalendar={fetchCalendar}
-      />
-
-      <DailyShortcuts
-        habits={buildShortcutHabits(habits, isHabitDone, toggleHabit)}
-        onOpenStudent={() => navigate('/student')}
-        onOpenCalendar={() => navigate('/calendar')}
       />
     </PageShell>
   )
