@@ -165,6 +165,7 @@ test('the first history write still works before the habits key is created', asy
   const { records, harness } = trayHarness([], { noHabitsKey: true, history: {} })
   await harness.writeDataKey('cortex-habits-history', { '2026-09-19': { 'default-habit': true } }, { source: 'ipc' })
   assert.deepEqual(records['cortex-habits-history'], { '2026-09-19': { 'default-habit': true } })
+  assert.equal(harness.getStats().habits, '7/9', 'the renderer still owns built-in defaults before the key exists')
 })
 
 test('tray summary updates from active habits while Home is unmounted', async () => {
