@@ -6,7 +6,7 @@ import fs from 'fs'
 import zlib from 'zlib'
 import { fileURLToPath } from 'url'
 import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
-import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
+import type { BirthdayEntry, CreateEventPayload, UpdateEventPayload } from './calendar.js'
 import { saveKey, getKey, deleteKey, hasKey, listKeys } from './keychain.js'
 import { initEncryption, encrypt, encryptAndWrite, encryptAndWriteAsync, readAndDecrypt, readAndDecryptAsync, migrateToEncrypted, isEncryptionEnabled } from './crypto.js'
 import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.js'
@@ -1159,7 +1159,7 @@ ipcMain.handle('calendar:syncBirthdays', async (_event, birthdays: BirthdayEntry
   return syncBirthdays(birthdays, calEmail)
 })
 ipcMain.handle('calendar:createEvent', async (_event, payload: CreateEventPayload) => createCalendarEvent(payload))
-ipcMain.handle('calendar:updateEvent', async (_event, eventId: string, payload: Partial<CreateEventPayload>) => updateCalendarEvent(eventId, payload))
+ipcMain.handle('calendar:updateEvent', async (_event, eventId: string, payload: UpdateEventPayload) => updateCalendarEvent(eventId, payload))
 ipcMain.handle('calendar:deleteEvent', async (_event, eventId: string) => deleteCalendarEvent(eventId))
 ipcMain.handle('calendar:getEventsInRange', async (_event, start: string, end: string) => getEventsInRange(start, end))
 ipcMain.handle('calendar:getEvent', async (_event, eventId: string) => getCalendarEvent(eventId))

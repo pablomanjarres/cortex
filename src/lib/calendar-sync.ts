@@ -19,6 +19,11 @@ interface CalendarEventPayload {
   createCalendarIfMissing?: boolean
 }
 
+/** Which occurrences an update touches; defaults to the whole series. */
+type UpdateSpan = 'thisEvent' | 'futureEvents'
+
+type CalendarUpdatePayload = Partial<CalendarEventPayload> & { span?: UpdateSpan }
+
 interface CalendarEventResult {
   id: string
   title: string
@@ -42,6 +47,8 @@ export interface CalendarMapping {
 export interface CalendarSyncState {
   mappings: CalendarMapping[]
   lastPolled: string
+  /** Set once the one-time span-bug repair below has run. */
+  spanRepairDone?: boolean
 }
 
 // ── Sync health breadcrumbs ──────────────────────────────────────────────────
@@ -165,9 +172,35 @@ let _state: CalendarSyncState | null = null
 let _stateLoaded = false
 let _syncLock = false
 
+/**
+ * One-time repair for the `.thisEvent` span bug.
+ *
+ * Every birthday update made under that bug detached an occurrence instead of
+ * moving the series — and still recorded a current `lastSyncedHash`. So the
+ * hash check short-circuits and the sync never retries, leaving the yearly
+ * series stuck on the old date forever. Clearing those hashes makes the next
+ * pass re-issue the update, which now moves the whole series and restores the
+ * FREQ=YEARLY rule.
+ *
+ * Only birthdays are affected: assignments and exams are one-off events, where
+ * the old span behaved correctly.
+ */
+function repairSpanBugHashes(state: CalendarSyncState): CalendarSyncState {
+  if (state.spanRepairDone) return state
+  const repaired: CalendarSyncState = {
+    ...state,
+    spanRepairDone: true,
+    mappings: state.mappings.map((m) =>
+      m.cortexType === 'birthday' ? { ...m, lastSyncedHash: '' } : m,
+    ),
+  }
+  writeStore(STORE_KEY, repaired)
+  return repaired
+}
+
 async function getState(): Promise<CalendarSyncState> {
   if (!_stateLoaded) {
-    _state = await readStore<CalendarSyncState>(STORE_KEY, DEFAULT_STATE)
+    _state = repairSpanBugHashes(await readStore<CalendarSyncState>(STORE_KEY, DEFAULT_STATE))
     _stateLoaded = true
   }
   return _state!
@@ -212,7 +245,7 @@ async function calendarAPI() {
       const res = await fetch('/api/calendar/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       return res.json()
     },
-    update: async (eventId: string, payload: Partial<CalendarEventPayload>) => {
+    update: async (eventId: string, payload: CalendarUpdatePayload) => {
       const res = await fetch(`/api/calendar/update/${encodeURIComponent(eventId)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       return res.json()
     },
