@@ -70,7 +70,7 @@ export function DailyPage() {
   const [habits] = useStore<Habit[]>('cortex-habits', defaultHabits)
 
   // Habits — single source of truth via shared hook
-  const { completedCount: habitsCompleted, isCompleted: isHabitDone, toggle: toggleHabit } = useDailyHabits(today)
+  const { completedCount: habitsCompleted, isCompleted: isHabitDone, toggle: toggleHabit } = useDailyHabits(today, habits)
   const completedHabits = useMemo(
     () => Object.fromEntries(habits.map((habit) => [habit.id, isHabitDone(habit.id)])),
     [habits, isHabitDone],

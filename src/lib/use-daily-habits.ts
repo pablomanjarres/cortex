@@ -7,9 +7,8 @@ import { isActiveHabit, type Habit } from './habits'
  * Reads from cortex-habits-history (the primary store).
  * Both DailyPage and HabitsPage should use this hook.
  */
-export function useDailyHabits(date: string) {
+export function useDailyHabits(date: string, habits: Habit[]) {
   const [habitHistory, updateHabitHistory] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
-  const [habits] = useStore<Habit[]>('cortex-habits', [])
 
   const completedMap = useMemo(() => habitHistory[date] || {}, [habitHistory, date])
   const activeHabitIds = useMemo(

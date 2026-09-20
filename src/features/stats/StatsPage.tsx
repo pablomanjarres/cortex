@@ -161,7 +161,7 @@ export function StatsPage() {
   const [founderHistory] = useStore<HistoryEntry[]>('cortex-founder-history', [])
 
   // Habits — single source of truth via shared hook (reactive, stays in sync)
-  const { completedCount: habitsCompletedToday, isCompleted: isHabitDone, habitHistory } = useDailyHabits(selectedDate)
+  const { completedCount: habitsCompletedToday, isCompleted: isHabitDone, habitHistory } = useDailyHabits(selectedDate, habits)
 
   // --- GTM Data -------------------------------------------
   const [dayGtm, setDayGtm] = useState<GtmDailyLog | null>(null)
