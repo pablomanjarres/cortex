@@ -7,21 +7,13 @@ import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { Input } from '@/components/ui/input'
-import { Flame, Trophy, Plus, X, Pencil, Check, ChevronLeft, ChevronRight, StickyNote } from 'lucide-react'
-
-type Cadence = 'weekly' | 'monthly'
-
-interface Habit {
-  id: string
-  name: string
-  emoji: string
-  weeklyGoal?: number // days per week needed for 100% (0–7), defaults to 7; 0 = no target this week
-  monthlyGoal?: number // days per month needed for 100% (0–31), defaults to 1; 0 = no target this month
-  cadence?: Cadence // defaults to 'weekly'
-  category?: string
-  context?: string // free-form note: what this habit really means + what counts as done
-}
+import { Flame, Trophy, X, Pencil, Check, ChevronLeft, ChevronRight, Archive } from 'lucide-react'
+import type { Cadence, Habit } from '@/lib/habits'
+import { isActiveHabit } from '@/lib/habits'
+import { HabitAddForm, HabitEditFields } from './HabitForms'
+import { HabitNoteButton, HabitNoteEditor } from './HabitNotes'
+import { OnHoldHabitsSection } from './OnHoldHabitsSection'
+import { emptyHabitDraft, type HabitDraft } from './habitFormState'
 
 const OLD_DEFAULT_IDS = ['1', '2', '3', '4', '5', '6', '7']
 
@@ -40,11 +32,6 @@ const defaultHabits: Habit[] = [
 ]
 
 const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-// Form-control style for the raw <select>s (no Select primitive exists yet) —
-// mirrors the Input primitive's hairline/fill/focus treatment.
-const selectClass =
-  'rounded-md border border-input bg-input/20 text-foreground outline-none transition-colors duration-150 focus-visible:border-ring/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 function getWeekDatesWithOffset(offset: number): string[] {
   const now = new Date()
@@ -98,22 +85,9 @@ export function HabitsPage() {
   const setGrid = (v: Record<string, Record<string, boolean>> | ((p: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>)) => updateGrid(typeof v === 'function' ? v : () => v)
   const [habitHistory, updateHabitHistory] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
   const setHabitHistory = (v: Record<string, Record<string, boolean>> | ((p: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>)) => updateHabitHistory(typeof v === 'function' ? v : () => v)
-  const [newName, setNewName] = useState('')
-  const [newEmoji, setNewEmoji] = useState('')
-  const [newGoal, setNewGoal] = useState('')
-  const [newCategory, setNewCategory] = useState('')
-  const [newCadence, setNewCadence] = useState<Cadence>('weekly')
-  const [customCategory, setCustomCategory] = useState(false)
-
-  const handleCategoryChange = (val: string) => {
-    if (val === '__new') {
-      setCustomCategory(true)
-      setNewCategory('')
-    } else {
-      setCustomCategory(false)
-      setNewCategory(val)
-    }
-  }
+  const [activeDraft, setActiveDraft] = useState<HabitDraft>(() => emptyHabitDraft())
+  const [holdDraft, setHoldDraft] = useState<HabitDraft>(() => emptyHabitDraft())
+  const [customCategory, setCustomCategory] = useState({ active: false, hold: false })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editEmoji, setEditEmoji] = useState('')
@@ -160,9 +134,13 @@ export function HabitsPage() {
     }
   }, [habits])
 
-  // Group habits by category for rendering
-  const categories = [...new Set(habits.map(h => h.category).filter(Boolean))] as string[]
-  const uncategorized = habits.filter(h => !h.category)
+  const activeHabits = habits.filter(isActiveHabit)
+  const heldHabits = habits.filter(h => h.onHold)
+  const categoryOptions = [...new Set(habits.map(h => h.category).filter(Boolean))] as string[]
+
+  // Group active habits by category for rendering
+  const categories = [...new Set(activeHabits.map(h => h.category).filter(Boolean))] as string[]
+  const uncategorized = activeHabits.filter(h => !h.category)
 
   const toggle = (habitId: string, dayIndex: number) => {
     const date = weekDates[dayIndex]
@@ -175,24 +153,26 @@ export function HabitsPage() {
     }))
   }
 
-  const addHabit = () => {
-    if (!newName.trim()) return
+  const addHabit = (
+    draft: HabitDraft,
+    setDraft: (draft: HabitDraft) => void,
+    draftKey: 'active' | 'hold',
+    onHold = false
+  ) => {
+    if (!draft.name.trim()) return
     const base = {
       id: Date.now().toString(),
-      name: newName.trim(),
-      emoji: newEmoji || '⭐',
-      category: newCategory || undefined,
+      name: draft.name.trim(),
+      emoji: draft.emoji || '⭐',
+      category: draft.category || undefined,
+      onHold,
     }
-    const habit: Habit = newCadence === 'monthly'
-      ? { ...base, cadence: 'monthly', monthlyGoal: parseGoal(newGoal, 'monthly') }
-      : { ...base, cadence: 'weekly', weeklyGoal: parseGoal(newGoal, 'weekly') }
+    const habit: Habit = draft.cadence === 'monthly'
+      ? { ...base, cadence: 'monthly', monthlyGoal: parseGoal(draft.goal, 'monthly') }
+      : { ...base, cadence: 'weekly', weeklyGoal: parseGoal(draft.goal, 'weekly') }
     setHabits((prev) => [...prev, habit])
-    setNewName('')
-    setNewEmoji('')
-    setNewGoal('')
-    setNewCategory('')
-    setNewCadence('weekly')
-    setCustomCategory(false)
+    setDraft(emptyHabitDraft())
+    setCustomCategory((prev) => ({ ...prev, [draftKey]: false }))
   }
 
   const removeHabit = (id: string) => {
@@ -214,6 +194,10 @@ export function HabitsPage() {
       }
       return next
     })
+  }
+
+  const setHabitOnHold = (id: string, onHold: boolean) => {
+    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, onHold } : h)))
   }
 
   const startEdit = (habit: Habit) => {
@@ -247,46 +231,6 @@ export function HabitsPage() {
   const toggleNote = (id: string) => setExpandedNoteId((cur) => (cur === id ? null : id))
   const setHabitContext = (id: string, value: string) =>
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, context: value.trim() ? value : undefined } : h)))
-
-  // Small sticky-note toggle shown next to a habit name. Lit when the habit has
-  // context, faint-on-hover when empty.
-  const renderNoteButton = (habit: Habit, opts?: { mobile?: boolean }) => (
-    <Button
-      variant="ghost"
-      size={opts?.mobile ? 'icon-lg' : 'icon-xs'}
-      onClick={() => toggleNote(habit.id)}
-      title={habit.context ? 'Context — click to edit' : 'Add context'}
-      aria-label={habit.context ? 'Edit habit context' : 'Add habit context'}
-      className={cn(
-        expandedNoteId === habit.id
-          ? 'text-foreground'
-          : habit.context
-            ? 'text-warning/80 hover:text-warning'
-            : opts?.mobile
-              ? 'text-foreground-faint'
-              : 'text-foreground-faint opacity-0 focus-visible:opacity-100 group-hover:opacity-100'
-      )}
-    >
-      <StickyNote />
-    </Button>
-  )
-
-  // The inline panel to write "what this habit means / what has to be done".
-  const renderNoteEditor = (habit: Habit) => (
-    <div className="rounded-md border border-border/60 bg-secondary/30 p-3">
-      <div className="mb-1.5 flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
-        <StickyNote className="h-3 w-3" />
-        What this means · what counts as done
-      </div>
-      <textarea
-        value={habit.context ?? ''}
-        onChange={(e) => setHabitContext(habit.id, e.target.value)}
-        autoFocus
-        placeholder="Write the full meaning of this habit and exactly what has to be done to check it off…"
-        className="min-h-[72px] w-full resize-y rounded-md border border-input bg-input/20 px-2.5 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors duration-150 placeholder:text-foreground-faint focus-visible:border-ring/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-      />
-    </div>
-  )
 
   const getStreak = (habitId: string) => {
     let streak = 0
@@ -340,7 +284,7 @@ export function HabitsPage() {
   // Monthly habits are tracked over the month, so they're excluded from the weekly rollup.
   // Habits with a 0 goal are "not required this week" — excluded so they neither
   // inflate the score (as a free 100%) nor divide by zero.
-  const weeklyHabits = habits.filter(h => (h.cadence ?? 'weekly') === 'weekly')
+  const weeklyHabits = activeHabits.filter(h => (h.cadence ?? 'weekly') === 'weekly')
   const scoredWeeklyHabits = weeklyHabits.filter(h => (h.weeklyGoal ?? 7) > 0)
   const habitWeekProgress = scoredWeeklyHabits.map((h) => {
     const goal = h.weeklyGoal ?? 7
@@ -358,24 +302,28 @@ export function HabitsPage() {
     return (d + 6) % 7 // 0=Mon, 6=Sun
   })()
 
+  const editFieldProps = {
+    name: editName,
+    emoji: editEmoji,
+    goal: editGoal,
+    cadence: editCadence,
+    onNameChange: setEditName,
+    onEmojiChange: setEditEmoji,
+    onGoalChange: setEditGoal,
+    onCadenceChange: setEditCadence,
+    onSave: saveEdit,
+  }
+
   const renderHabitRow = (habit: Habit) => (
     <Fragment key={habit.id}>
     <tr className="group border-t border-border/60">
       <td className="py-2.5 pr-4 text-sm text-foreground">
         {editingId === habit.id ? (
-          <div className="flex items-center gap-1.5">
-            <Input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="h-7 w-10 px-1 text-center text-sm" />
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-7 text-sm" autoFocus />
-            <select value={editCadence} onChange={(e) => setEditCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-7 px-1 text-xs')}>
-              <option value="weekly">/wk</option>
-              <option value="monthly">/mo</option>
-            </select>
-            <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-7 w-12 px-1 text-center text-sm" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
-          </div>
+          <HabitEditFields {...editFieldProps} compact />
         ) : (
           <span className="inline-flex items-center">
             <span className="mr-2">{habit.emoji}</span>{habit.name}
-            {renderNoteButton(habit)}
+            <HabitNoteButton habit={habit} expanded={expandedNoteId === habit.id} onToggle={() => toggleNote(habit.id)} />
           </span>
         )}
       </td>
@@ -425,6 +373,9 @@ export function HabitsPage() {
               <Pencil />
             </Button>
           )}
+          <Button variant="ghost" size="icon-xs" onClick={() => setHabitOnHold(habit.id, true)} aria-label="Move habit to on hold">
+            <Archive />
+          </Button>
           <Button variant="ghost" size="icon-xs" onClick={() => removeHabit(habit.id)} aria-label="Delete habit" className="hover:text-destructive">
             <X />
           </Button>
@@ -434,7 +385,7 @@ export function HabitsPage() {
     {expandedNoteId === habit.id && (
       <tr>
         <td colSpan={weekDays.length + 3} className="px-0 pb-3 pt-0">
-          {renderNoteEditor(habit)}
+          <HabitNoteEditor habit={habit} onChange={(value) => setHabitContext(habit.id, value)} />
         </td>
       </tr>
     )}
@@ -471,7 +422,7 @@ export function HabitsPage() {
       {/* ── Mobile: card layout ───────────────────────────────────── */}
       <div className="flex flex-col gap-3 md:hidden">
         {[...categories, null].map((cat) => {
-          const catHabits = cat ? habits.filter(h => h.category === cat) : uncategorized
+          const catHabits = cat ? activeHabits.filter(h => h.category === cat) : uncategorized
           if (catHabits.length === 0) return null
           return (
             <div key={cat || 'none'} className="space-y-3">
@@ -487,15 +438,7 @@ export function HabitsPage() {
             <div key={habit.id} className="surface rounded-xl p-4">
               {editingId === habit.id ? (
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <Input value={editEmoji} onChange={(e) => setEditEmoji(e.target.value)} className="h-9 w-12 px-1 text-center" />
-                    <Input value={editName} onChange={(e) => setEditName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-9 flex-1" autoFocus />
-                    <select value={editCadence} onChange={(e) => setEditCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-9 px-1 text-xs')}>
-                      <option value="weekly">/wk</option>
-                      <option value="monthly">/mo</option>
-                    </select>
-                    <Input value={editGoal} onChange={(e) => setEditGoal(e.target.value)} className="h-9 w-14 px-1 text-center" placeholder={editCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={editCadence === 'monthly' ? 31 : 7} />
-                  </div>
+                  <HabitEditFields {...editFieldProps} />
                   <div className="flex gap-2">
                     <Button size="lg" className="flex-1" onClick={saveEdit}>Save</Button>
                     <Button variant="ghost" size="lg" onClick={() => setEditingId(null)}>Cancel</Button>
@@ -523,9 +466,12 @@ export function HabitsPage() {
                         {Math.min(done, goal)}/{goal}
                         {cadence === 'monthly' && <span className="ml-0.5 text-3xs font-normal text-foreground-faint">/mo</span>}
                       </span>
-                      {renderNoteButton(habit, { mobile: true })}
+                      <HabitNoteButton habit={habit} expanded={expandedNoteId === habit.id} onToggle={() => toggleNote(habit.id)} mobile />
                       <Button variant="ghost" size="icon-lg" onClick={() => startEdit(habit)} aria-label="Edit habit">
                         <Pencil />
+                      </Button>
+                      <Button variant="ghost" size="icon-lg" onClick={() => setHabitOnHold(habit.id, true)} aria-label="Move habit to on hold">
+                        <Archive />
                       </Button>
                       <Button variant="ghost" size="icon-lg" onClick={() => removeHabit(habit.id)} aria-label="Delete habit" className="active:text-destructive">
                         <X />
@@ -562,7 +508,9 @@ export function HabitsPage() {
                     })}
                   </div>
                   {expandedNoteId === habit.id && (
-                    <div className="mt-3">{renderNoteEditor(habit)}</div>
+                    <div className="mt-3">
+                      <HabitNoteEditor habit={habit} onChange={(value) => setHabitContext(habit.id, value)} />
+                    </div>
                   )}
                 </>
               )}
@@ -574,27 +522,33 @@ export function HabitsPage() {
         })}
 
         {/* Add new habit — mobile */}
-        <div className="flex flex-wrap items-center gap-2 pt-2">
-          <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="🎯" className="h-10 w-12 px-1 text-center" />
-          <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addHabit()} placeholder="New habit..." className="h-10 min-w-[120px] flex-1" />
-          {customCategory ? (
-            <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="Category name" className="h-10 w-28 text-sm" autoFocus onKeyDown={(e) => e.key === 'Escape' && setCustomCategory(false)} />
-          ) : (
-            <select value={newCategory} onChange={(e) => handleCategoryChange(e.target.value)} className={cn(selectClass, 'h-10 px-2 text-sm')}>
-              <option value="">No category</option>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              <option value="__new">+ New...</option>
-            </select>
-          )}
-          <select value={newCadence} onChange={(e) => setNewCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-10 px-2 text-sm')}>
-            <option value="weekly">Weekly</option>
-            <option value="monthly">Monthly</option>
-          </select>
-          <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={newCadence === 'monthly' ? 31 : 7} className="h-10 w-14 px-1 text-center" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
-          <Button variant="secondary" size="icon-lg" className="size-10" onClick={addHabit} aria-label="Add habit">
-            <Plus className="size-5" />
-          </Button>
-        </div>
+        <HabitAddForm
+          draft={activeDraft}
+          setDraft={setActiveDraft}
+          customCategory={customCategory.active}
+          setCustomCategory={(value) => setCustomCategory((prev) => ({ ...prev, active: value }))}
+          categoryOptions={categoryOptions}
+          onAdd={() => addHabit(activeDraft, setActiveDraft, 'active')}
+          className="pt-2"
+        />
+
+        <OnHoldHabitsSection
+          habits={heldHabits}
+          layout="mobile"
+          draft={holdDraft}
+          setDraft={setHoldDraft}
+          customCategory={customCategory.hold}
+          setCustomCategory={(value) => setCustomCategory((prev) => ({ ...prev, hold: value }))}
+          categoryOptions={categoryOptions}
+          edit={{ ...editFieldProps, editingId, cancel: () => setEditingId(null) }}
+          expandedNoteId={expandedNoteId}
+          onAdd={() => addHabit(holdDraft, setHoldDraft, 'hold', true)}
+          onActivate={(id) => setHabitOnHold(id, false)}
+          onEdit={startEdit}
+          onDelete={removeHabit}
+          onToggleNote={toggleNote}
+          onContextChange={setHabitContext}
+        />
       </div>
 
       {/* ── Desktop: table layout ─────────────────────────────────── */}
@@ -614,9 +568,9 @@ export function HabitsPage() {
                 <th className="w-16 pb-3" />
               </tr>
             </thead>
-            <tbody>
-              {categories.map((cat) => {
-                const catHabits = habits.filter(h => h.category === cat)
+          <tbody>
+            {categories.map((cat) => {
+                const catHabits = activeHabits.filter(h => h.category === cat)
                 if (catHabits.length === 0) return null
                 return [
                   <tr key={`cat-${cat}`}>
@@ -632,27 +586,16 @@ export function HabitsPage() {
           </table>
 
           {/* Add new habit */}
-          <div className="mt-4 flex items-center gap-2 border-t border-border/60 pt-4">
-            <Input value={newEmoji} onChange={(e) => setNewEmoji(e.target.value)} placeholder="🎯" className="h-8 w-12 px-1 text-center text-sm" />
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addHabit()} placeholder="New habit..." className="h-8 flex-1 text-sm" />
-            {customCategory ? (
-              <Input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="Category name" className="h-8 w-28 text-xs" autoFocus onKeyDown={(e) => e.key === 'Escape' && setCustomCategory(false)} />
-            ) : (
-              <select value={newCategory} onChange={(e) => handleCategoryChange(e.target.value)} className={cn(selectClass, 'h-8 px-2 text-xs')}>
-                <option value="">No category</option>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                <option value="__new">+ New...</option>
-              </select>
-            )}
-            <select value={newCadence} onChange={(e) => setNewCadence(e.target.value as Cadence)} className={cn(selectClass, 'h-8 px-2 text-xs')} title="Cadence">
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-            <Input value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={newCadence === 'monthly' ? '1' : '7'} type="number" min={0} max={newCadence === 'monthly' ? 31 : 7} className="h-8 w-14 px-1 text-center text-sm" title={newCadence === 'monthly' ? 'Days per month goal' : 'Days per week goal'} />
-            <Button variant="secondary" size="icon" onClick={addHabit} aria-label="Add habit">
-              <Plus />
-            </Button>
-          </div>
+          <HabitAddForm
+            draft={activeDraft}
+            setDraft={setActiveDraft}
+            customCategory={customCategory.active}
+            setCustomCategory={(value) => setCustomCategory((prev) => ({ ...prev, active: value }))}
+            categoryOptions={categoryOptions}
+            onAdd={() => addHabit(activeDraft, setActiveDraft, 'active')}
+            compact
+            className="mt-4 border-t border-border/60 pt-4"
+          />
         </WidgetCard>
 
         {/* Stats Column */}
@@ -665,7 +608,7 @@ export function HabitsPage() {
 
           <WidgetCard title="Streaks" delay={0.2}>
             <div className="flex flex-col gap-2">
-              {habits.map((habit) => {
+              {activeHabits.map((habit) => {
                 const { cadence, goal } = getProgress(habit)
                 const unit = cadence === 'monthly' ? 'mo' : 'd'
                 const label = cadence === 'monthly' ? `${goal}x/mo` : (goal < 7 ? `${goal}x/wk` : null)
@@ -685,6 +628,24 @@ export function HabitsPage() {
               })}
             </div>
           </WidgetCard>
+
+          <OnHoldHabitsSection
+            habits={heldHabits}
+            layout="desktop"
+            draft={holdDraft}
+            setDraft={setHoldDraft}
+            customCategory={customCategory.hold}
+            setCustomCategory={(value) => setCustomCategory((prev) => ({ ...prev, hold: value }))}
+            categoryOptions={categoryOptions}
+            edit={{ ...editFieldProps, editingId, cancel: () => setEditingId(null) }}
+            expandedNoteId={expandedNoteId}
+            onAdd={() => addHabit(holdDraft, setHoldDraft, 'hold', true)}
+            onActivate={(id) => setHabitOnHold(id, false)}
+            onEdit={startEdit}
+            onDelete={removeHabit}
+            onToggleNote={toggleNote}
+            onContextChange={setHabitContext}
+          />
 
           <WidgetCard title="Achievements" delay={0.3}>
             <div className="flex flex-col gap-2 py-2">
