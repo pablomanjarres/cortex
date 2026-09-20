@@ -50,3 +50,19 @@ test('weekly audit excludes held habits and their old completions', async ({ pag
     return (audit as { habitStats?: { consistency: number } } | undefined)?.habitStats?.consistency
   }).toBe(14)
 })
+
+test('Stats counts only active habits while retaining held history', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-19T15:00:00Z'))
+  await mockStores(page, {
+    'cortex-habits': [
+      { id: 'active', name: 'Walk', emoji: 'W', weeklyGoal: 7 },
+      { id: 'held', name: 'Swim', emoji: 'S', weeklyGoal: 7, onHold: true },
+    ],
+    'cortex-habits-history': { '2026-09-19': { held: true } },
+  })
+
+  await page.goto('/#/habits')
+  await page.getByRole('tab', { name: 'Stats', exact: true }).click()
+  await expect(page.getByText('0/1', { exact: true }).first()).toBeVisible()
+  await expect(page.getByText('S Swim', { exact: true })).toHaveCount(0)
+})
