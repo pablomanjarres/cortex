@@ -66,3 +66,15 @@ test('Stats counts only active habits while retaining held history', async ({ pa
   await expect(page.getByText('0/1', { exact: true }).first()).toBeVisible()
   await expect(page.getByText('S Swim', { exact: true })).toHaveCount(0)
 })
+
+test('Today shortcuts remain usable before the habits key has been created', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-19T15:00:00Z'))
+  const backend = await mockStores(page)
+
+  await page.goto('/#/daily')
+  await page.getByRole('button', { name: 'Workout', exact: true }).click()
+
+  await expect.poll(() => backend.stores['cortex-habits-history']).toEqual({
+    '2026-09-19': { '1': true },
+  })
+})
