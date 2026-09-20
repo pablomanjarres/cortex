@@ -138,7 +138,7 @@ test('archive and history writes share a lock so an in-flight archive wins', asy
   let finishArchiveCommit!: () => void
   const archiveAtCommit = new Promise<void>((resolve) => { startArchiveCommit = resolve })
   const allowArchiveCommit = new Promise<void>((resolve) => { finishArchiveCommit = resolve })
-  const { records, harness } = trayHarness(
+  const { records, writes, harness } = trayHarness(
     [{ id: 'active', name: 'Read', emoji: 'R' }, { id: 'held', name: 'Swim', emoji: 'S' }],
     { beforeCommit: async (key) => {
       if (key !== 'cortex-habits') return
@@ -154,6 +154,8 @@ test('archive and history writes share a lock so an in-flight archive wins', asy
   const staleHistory = harness.writeDataKey('cortex-habits-history', {
     '2026-09-19': { active: true, held: true },
   }, { source: 'http' })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.deepEqual(writes, [], 'history must wait for the archive commit')
   finishArchiveCommit()
   await Promise.all([archive, staleHistory])
   assert.deepEqual(records['cortex-habits-history'], { '2026-09-19': { active: true } })
