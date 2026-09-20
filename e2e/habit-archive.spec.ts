@@ -78,3 +78,18 @@ test('Today shortcuts remain usable before the habits key has been created', asy
     '2026-09-19': { '1': true },
   })
 })
+
+test('all seven habit days stay inside a 320-pixel phone card', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 })
+  await mockStores(page, {
+    'cortex-habits': [{ id: 'swim', name: 'Swimming', emoji: 'S', weeklyGoal: 3 }],
+  })
+
+  await page.goto('/#/habits')
+  const card = page.locator('.surface.rounded-xl.p-4').filter({ hasText: 'Swimming' }).first()
+  const cardBox = await card.boundingBox()
+  const sundayBox = await page.getByRole('button', { name: 'Swimming — Sun' }).boundingBox()
+  expect(cardBox).not.toBeNull()
+  expect(sundayBox).not.toBeNull()
+  expect(sundayBox!.x + sundayBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width - 1)
+})
