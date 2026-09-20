@@ -13,6 +13,7 @@ import { useStore, readStore } from '@/lib/store'
 import { localDate, getISOWeek, getWeekLabel, formatMinutes } from '@/lib/date-utils'
 import { useToday } from '@/lib/use-today'
 import { useDailyHabits } from '@/lib/use-daily-habits'
+import { isActiveHabit, type Habit } from '@/lib/habits'
 import {
   ChevronLeft,
   ChevronRight,
@@ -55,12 +56,6 @@ interface SprintSession {
   duration: number
   startedAt: string
   completedAt: string
-}
-
-interface HabitDef {
-  id: string
-  name: string
-  emoji: string
 }
 
 interface HistoryEntry {
@@ -161,7 +156,8 @@ export function StatsPage() {
   const todayStr = useToday()
 
   // Shared stores
-  const [habits] = useStore<HabitDef[]>('cortex-habits', [])
+  const [habits] = useStore<Habit[]>('cortex-habits', [])
+  const activeHabits = useMemo(() => habits.filter(isActiveHabit), [habits])
   const [founderHistory] = useStore<HistoryEntry[]>('cortex-founder-history', [])
 
   // Habits — single source of truth via shared hook (reactive, stays in sync)
@@ -253,14 +249,14 @@ export function StatsPage() {
   // Week habit data — respects per-habit goals. Monthly-cadence habits are tracked
   // over the month, so they're excluded from this weekly view.
   const weekHabitData = useMemo(() => {
-    return habits
-      .filter(h => ((h as any).cadence ?? 'weekly') !== 'monthly')
+    return activeHabits
+      .filter(h => (h.cadence ?? 'weekly') !== 'monthly')
       .map(h => {
-        const goal = (h as any).weeklyGoal ?? 7
+        const goal = h.weeklyGoal ?? 7
         const completed = weekDates.filter(d => habitHistory[d]?.[h.id]).length
         return { name: h.emoji + ' ' + h.name, completed, goal }
       })
-  }, [habits, habitHistory, weekDates])
+  }, [activeHabits, habitHistory, weekDates])
 
   const weekHabitConsistency = useMemo(() => {
     // 0-goal habits are "not required this week" — exclude them from the average
@@ -318,7 +314,7 @@ export function StatsPage() {
           <div className="grid grid-cols-3 gap-3">
             <StatTile variant="glass" label="Sessions" value={daySessions.length} icon={<Clock />} />
             <StatTile variant="glass" label="Deep work" value={formatMinutes(daySessions.reduce((s, x) => s + x.duration, 0))} icon={<Zap />} />
-            <StatTile variant="glass" label="Habits" value={`${mergedHabitsCount}/${habits.length}`} icon={<Target />} />
+            <StatTile variant="glass" label="Habits" value={`${mergedHabitsCount}/${activeHabits.length}`} icon={<Target />} />
           </div>
 
           {/* Sprint sessions */}
@@ -341,9 +337,9 @@ export function StatsPage() {
           </WidgetCard>
 
           {/* Habits for the day */}
-          <WidgetCard title="Habits" description={`${mergedHabitsCount}/${habits.length}`} delay={0.15} compact>
+          <WidgetCard title="Habits" description={`${mergedHabitsCount}/${activeHabits.length}`} delay={0.15} compact>
             <div className="flex flex-wrap gap-2">
-              {habits.map((h) => (
+              {activeHabits.map((h) => (
                 <Chip key={h.id} variant={isHabitDone(h.id) ? 'success' : 'neutral'}>
                   {h.emoji} {h.name}
                 </Chip>
