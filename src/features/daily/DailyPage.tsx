@@ -3,6 +3,7 @@ import { useStore, readStore, writeStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import { useToday } from '@/lib/use-today'
 import { useDailyHabits } from '@/lib/use-daily-habits'
+import { isActiveHabit, type Habit } from '@/lib/habits'
 import { useSprintTimer, type SprintSession } from '@/lib/sprint-context'
 import { useNavigate } from 'react-router-dom'
 import { PageShell } from '@/components/shared/PageShell'
@@ -39,15 +40,7 @@ interface HistoryEntry {
 
 // ─── HABITS (read from same store as HabitsPage) ─────────
 
-interface HabitDef {
-  id: string
-  name: string
-  emoji: string
-  onHold?: boolean
-  cadence?: 'weekly' | 'monthly'
-}
-
-const defaultHabits: HabitDef[] = [
+const defaultHabits: Habit[] = [
   { id: '1', name: 'Workout', emoji: '💪' },
   { id: '2', name: 'Read 30min', emoji: '📖' },
   { id: '3', name: 'Meditate', emoji: '🧘' },
@@ -74,10 +67,10 @@ export function DailyPage() {
   } = useSprintTimer()
 
   // Habits (from shared store — same as HabitsPage)
-  const [habits] = useStore<HabitDef[]>('cortex-habits', defaultHabits)
+  const [habits] = useStore<Habit[]>('cortex-habits', defaultHabits)
 
   // Habits — single source of truth via shared hook
-  const { completedCount: habitsCompleted, isCompleted: isHabitDone, toggle: toggleHabit } = useDailyHabits(today)
+  const { completedCount: habitsCompleted, isCompleted: isHabitDone, toggle: toggleHabit } = useDailyHabits(today, habits)
   const completedHabits = useMemo(
     () => Object.fromEntries(habits.map((habit) => [habit.id, isHabitDone(habit.id)])),
     [habits, isHabitDone],
@@ -186,11 +179,11 @@ export function DailyPage() {
     if (window.electronAPI?.tray) {
       window.electronAPI.tray.updateStats({
         tasks: `${sessionCount} sessions`,
-        habits: `${habitsCompleted}/${habits.length}`,
+        habits: `${habitsCompleted}/${habitSummary.total}`,
         score: '',
       })
     }
-  }, [sessionCount, habitsCompleted, habits.length])
+  }, [sessionCount, habitsCompleted, habitSummary.total])
 
   // ─── Weekly Audit Auto-Trigger ───────────────────────────
   // Keyed to the reactive day so it re-checks after a midnight rollover
@@ -229,12 +222,12 @@ export function DailyPage() {
         // Read habits fresh from the store — the `habits` hook value can still
         // be the synchronous fallback (phantom ids '1'..'7') when this effect
         // runs, which would score consistency against habits that don't exist.
-        readStore<HabitDef[]>('cortex-habits', defaultHabits),
+        readStore<Habit[]>('cortex-habits', defaultHabits),
       ]).then((results) => {
         const sessionsByDay = results.slice(0, 7) as SprintSession[][]
         const habitHistory = results[7] as Record<string, Record<string, boolean>>
         const founderHistory = results[8] as HistoryEntry[]
-        const storedHabits = results[9] as HabitDef[]
+        const storedHabits = results[9] as Habit[]
 
         const allSessions = sessionsByDay.flat()
         const totalSessions = allSessions.length
@@ -245,7 +238,7 @@ export function DailyPage() {
 
         // Habit stats — weekly cadence only (monthly habits are scored over the month)
         const weeklyHabitIds = new Set(
-          storedHabits.filter(h => (h.cadence ?? 'weekly') !== 'monthly').map(h => h.id)
+          storedHabits.filter(h => isActiveHabit(h) && (h.cadence ?? 'weekly') !== 'monthly').map(h => h.id)
         )
         const weekHabits = weekDates.map(wd => habitHistory[wd] || {})
         const totalHabitChecks = weekHabits.reduce(

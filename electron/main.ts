@@ -49,8 +49,9 @@ const DAILY_FILE_RETENTION_DAYS = 90 // StatsPage reads 90 days back
 
 // ─── Tray live data (events, sprint, habits) ─────────────
 let cachedEvents: { title: string; startTime: string; endTime: string; isAllDay: boolean }[] = []
-let cachedHabits: { id: string; name: string; emoji: string }[] = []
+let cachedHabits: { id: string; name: string; emoji: string; onHold?: boolean }[] = []
 let cachedHabitHistory: Record<string, boolean> = {}
+let trayHabitRefreshVersion = 0
 let traySprintEndMs: number | null = null
 let traySprintTask: string | null = null
 let traySprintInterval: ReturnType<typeof setInterval> | null = null
@@ -132,14 +133,34 @@ function showAndNavigate(route: string) {
 
 async function refreshTrayData() {
   try { cachedEvents = await getTodayEvents() } catch { cachedEvents = [] }
+  await refreshTrayHabits()
+}
+
+async function refreshTrayHabits() {
+  const version = ++trayHabitRefreshVersion
+  let habits: typeof cachedHabits = []
+  let todayHistory: typeof cachedHabitHistory = {}
+  let hasStoredHabits = false
   try {
-    cachedHabits = await readDataKeyParsed<{ id: string; name: string; emoji: string }[]>('cortex-habits', [])
-  } catch { cachedHabits = [] }
+    const stored = await readDataKeyParsed<typeof cachedHabits | null>('cortex-habits', null)
+    if (Array.isArray(stored)) {
+      habits = stored.filter((habit) => habit.onHold !== true)
+      hasStoredHabits = true
+    }
+  } catch { /* keep an empty menu if the store cannot be read */ }
   try {
     const today = localDate()
     const history = await readDataKeyParsed<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
-    cachedHabitHistory = history[today] || {}
-  } catch { cachedHabitHistory = {} }
+    todayHistory = history[today] || {}
+  } catch { /* keep an empty completion state if the store cannot be read */ }
+  if (version !== trayHabitRefreshVersion) return
+  cachedHabits = habits
+  cachedHabitHistory = todayHistory
+  // Home may be unmounted, so its last tray:updateStats payload can be stale.
+  // Keep the renderer's default-habit count until a habits key exists.
+  if (hasStoredHabits) {
+    currentStats.habits = `${habits.filter((habit) => todayHistory[habit.id] === true).length}/${habits.length}`
+  }
   if (tray) tray.setContextMenu(buildTrayMenu())
 }
 
@@ -426,13 +447,19 @@ function clearTraySprintState() {
 // renderer gets a data:changed push instead of silently racing this write.
 async function toggleHabitFromTray(habitId: string) {
   try {
+    // Native menus can outlive the cached data used to build them. Re-read the
+    // source of truth before writing history so an archived/deleted habit cannot
+    // be completed from a stale menu item.
+    const habits = await readDataKeyParsed<typeof cachedHabits>('cortex-habits', [])
+    if (!habits.some((habit) => habit.id === habitId && habit.onHold !== true)) {
+      await refreshTrayHabits()
+      return
+    }
     const today = localDate()
     const history = await readDataKeyParsed<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
     if (!history[today]) history[today] = {}
     history[today][habitId] = !history[today][habitId]
     await writeDataKey('cortex-habits-history', history, { source: 'main' })
-    cachedHabitHistory = history[today]
-    if (tray) tray.setContextMenu(buildTrayMenu())
   } catch (e) {
     console.error('[Cortex] tray habit toggle failed:', e)
   }
@@ -788,7 +815,7 @@ function startWebServer() {
         const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) }
         if (result.ok) {
           res.writeHead(200, headers)
-          res.end(JSON.stringify({ ok: true, rev: result.rev }))
+          res.end(JSON.stringify({ ok: true, rev: result.rev, data: result.data }))
         } else if (result.conflict) {
           res.writeHead(409, headers)
           res.end(JSON.stringify({ error: 'conflict', rev: result.rev, data: result.data }))
@@ -1452,7 +1479,7 @@ if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
 type DataChangeSource = 'ipc' | 'http' | 'main'
 
 type WriteOutcome =
-  | { ok: true; rev: string }
+  | { ok: true; rev: string; data?: unknown }
   | { ok: false; conflict: true; rev: string | null; data: unknown }
   | { ok: false; conflict?: undefined; error: string }
 
@@ -1507,7 +1534,8 @@ async function readDataFile(key: string): Promise<{ text: string | null; rev: st
 }
 
 // Serialize writes per key so concurrent writers can't interleave the
-// stat-check → backup → write sequence.
+// stat-check → backup → write sequence. Habits and their history share a lock:
+// history validation must see any archive that committed before it.
 const keyWriteLocks = new Map<string, Promise<unknown>>()
 function withKeyLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const prev = keyWriteLocks.get(key) ?? Promise.resolve()
@@ -1538,7 +1566,8 @@ async function writeDataKey(
 
   const baseRev = opts.baseRev == null ? null : String(opts.baseRev)
 
-  return withKeyLock(key, async (): Promise<WriteOutcome> => {
+  const lockKey = key === 'cortex-habits-history' ? 'cortex-habits' : key
+  return withKeyLock(lockKey, async (): Promise<WriteOutcome> => {
     const file = path.join(dataDir, `${key}.json`)
     const currentRev = await statRev(file)
 
@@ -1552,6 +1581,44 @@ async function writeDataKey(
     }
 
     try {
+      let committed = serialized
+      if (key === 'cortex-habits-history') {
+        const { text: habitsText } = await readDataFile('cortex-habits')
+        // Before the habits key is first created, the renderer may still be
+        // using its built-in defaults. Do not reject those first completions.
+        if (habitsText !== null) {
+          const habits = JSON.parse(habitsText) as typeof cachedHabits
+          const heldIds = new Set(
+            Array.isArray(habits)
+              ? habits.filter((habit) => habit?.onHold === true).map((habit) => habit.id)
+              : [],
+          )
+          if (heldIds.size > 0) {
+            const incoming = JSON.parse(serialized) as Record<string, Record<string, boolean>>
+            if (incoming && typeof incoming === 'object' && !Array.isArray(incoming)) {
+              const current = await readDataKeyParsed<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
+              // An old client may send a whole stale history snapshot. Remove
+              // its held-habit edits, then restore every held entry on disk.
+              for (const values of Object.values(incoming)) {
+                if (!values || typeof values !== 'object' || Array.isArray(values)) continue
+                for (const id of heldIds) delete values[id]
+              }
+              for (const [date, values] of Object.entries(current)) {
+                if (!values || typeof values !== 'object' || Array.isArray(values)) continue
+                const heldEntries = Object.entries(values).filter(([id]) => heldIds.has(id))
+                if (heldEntries.length === 0) continue
+                const day = Object.hasOwn(incoming, date) && incoming[date] && typeof incoming[date] === 'object' && !Array.isArray(incoming[date])
+                  ? incoming[date] : {}
+                for (const [id, done] of heldEntries) {
+                  Object.defineProperty(day, id, { value: done, enumerable: true, writable: true, configurable: true })
+                }
+                Object.defineProperty(incoming, date, { value: day, enumerable: true, writable: true, configurable: true })
+              }
+              committed = JSON.stringify(incoming)
+            }
+          }
+        }
+      }
       if (currentRev !== null) {
         // .bak + versioned backup of the previous file (copies encrypted bytes as-is)
         await fs.promises.copyFile(file, path.join(backupDir, `${key}.bak.json`))
@@ -1565,10 +1632,17 @@ async function writeDataKey(
         }
       }
 
-      await encryptAndWriteAsync(file, serialized)
+      await encryptAndWriteAsync(file, committed)
       const rev = (await statRev(file)) ?? String(Date.now())
+      if (key === 'cortex-habits' || key === 'cortex-habits-history') {
+        // UI, HTTP/MCP, and tray writes all pass here. Update the native menu
+        // as soon as the committed store changes, not at the five-minute poll.
+        try { await refreshTrayHabits() } catch (e) { console.error('[Cortex] tray habit refresh failed:', e) }
+      }
       broadcastDataChanged(key, opts.source, rev)
-      return { ok: true, rev }
+      // A stale writer may have sent held-habit edits. Tell it what actually
+      // landed so its optimistic cache does not keep showing rejected edits.
+      return { ok: true, rev, ...(committed !== serialized ? { data: JSON.parse(committed) } : {}) }
     } catch (e) {
       console.error(`data:write error for ${key}:`, e)
       return { ok: false, error: String((e as Error)?.message ?? e) }
