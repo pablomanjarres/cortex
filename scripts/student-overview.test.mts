@@ -60,6 +60,19 @@ test('assignment status distinguishes open, awaiting-grade, and graded work', ()
   ], ['Open', 'Awaiting grade', 'Graded'])
 })
 
+test('assignment status changes preserve the three valid stored states', () => {
+  const applyStatus = (overview as typeof overview & {
+    applyAssignmentStatus?: (assignment: Assignment, status: string) => Assignment
+  }).applyAssignmentStatus
+  assert.equal(typeof applyStatus, 'function')
+
+  const open = assignment('open', 'active')
+  const graded = { ...assignment('graded', 'active', '2026-09-18', true), grade: 4.5 }
+  assert.deepEqual(applyStatus!(open, 'Awaiting grade'), { ...open, done: true, grade: undefined })
+  assert.deepEqual(applyStatus!(graded, 'Open'), { ...graded, done: false, grade: undefined })
+  assert.deepEqual(applyStatus!(open, 'Graded'), { ...open, done: true })
+})
+
 test('assignment status filters keep submitted work visible without mixing buckets', () => {
   const filterByStatus = (overview as typeof overview & {
     filterAssignmentsByStatus?: (assignments: Assignment[], statuses: ReadonlySet<string>) => Assignment[]
