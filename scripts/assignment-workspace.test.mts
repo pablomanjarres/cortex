@@ -31,6 +31,6 @@ test('assignment workspace keeps due actions and responsive assignment views tog
   assert.match(html, /aria-label="Edit deadline for Lab report"/)
   assert.match(html, /aria-label="Status for Lab report"/)
   assert.match(html, /All assignments/)
-  assert.match(html, /hidden sm:table/)
+  assert.match(html, /hidden[^\"]*sm:table/)
   assert.match(html, /sm:hidden/)
 })
