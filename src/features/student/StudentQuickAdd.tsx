@@ -19,20 +19,15 @@ const TYPES: AssignmentType[] = ['Exam', 'Quiz', 'Lab', 'Project', 'Presentation
 
 export function StudentQuickAdd({ mode, courses, selectedCourseId, onAddSemester, onAddCourse, onAddAssignment, onClose }: StudentQuickAddProps) {
   const [name, setName] = useState('')
-  const [courseId, setCourseId] = useState(selectedCourseId ?? courses[0]?.id ?? '')
+  const [courseId, setCourseId] = useState(() => selectedCourseId ?? courses[0]?.id ?? '')
   const [type, setType] = useState<AssignmentType>('Exam')
   const [weight, setWeight] = useState('')
   const [deadline, setDeadline] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    setName('')
-    setCourseId(selectedCourseId ?? courses[0]?.id ?? '')
-    setType('Exam')
-    setWeight('')
-    setDeadline('')
     if (mode) requestAnimationFrame(() => nameRef.current?.focus())
-  }, [mode, selectedCourseId, courses])
+  }, [mode])
 
   if (!mode) return null
 

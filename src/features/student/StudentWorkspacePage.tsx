@@ -43,15 +43,18 @@ export function StudentWorkspacePage() {
         onStatusFilter={student.focusStatus}
       />
 
-      <StudentQuickAdd
-        mode={quickAdd}
-        courses={student.activeCourses}
-        selectedCourseId={student.selectedCourseId}
-        onAddSemester={student.addSemester}
-        onAddCourse={student.addCourse}
-        onAddAssignment={student.addAssignment}
-        onClose={() => setQuickAdd(null)}
-      />
+      {quickAdd ? (
+        <StudentQuickAdd
+          key={`${quickAdd}-${student.selectedCourseId ?? 'all'}`}
+          mode={quickAdd}
+          courses={student.activeCourses}
+          selectedCourseId={student.selectedCourseId}
+          onAddSemester={student.addSemester}
+          onAddCourse={student.addCourse}
+          onAddAssignment={student.addAssignment}
+          onClose={() => setQuickAdd(null)}
+        />
+      ) : null}
 
       <div className="space-y-3 lg:flex lg:items-start lg:gap-3 lg:space-y-0">
         <CourseSelector
