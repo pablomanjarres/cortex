@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { Assignment, Course } from '../src/features/student/student-types.ts'
 const overview = await import('../src/features/student/student-overview.ts').catch(() => ({} as {
   studentOverview?: (...args: unknown[]) => {
-    courseCount: number; openCount: number; dueThisWeek: number; overdueCount: number; priorityAssignment?: Assignment
+    courseCount: number; openCount: number; awaitingGradeCount: number; dueThisWeek: number; overdueCount: number; priorityAssignment?: Assignment
   }
 }))
 
@@ -42,4 +42,43 @@ test('student overview leaves an empty semester genuinely empty', () => {
 test('opening priority work keeps its type in the active filter', () => {
   const include = (overview as typeof overview & { includeAssignmentType?: (selected: ReadonlySet<string>, type: string) => Set<string> }).includeAssignmentType
   assert.deepEqual([...(include?.(new Set(['Exam']), 'Lab') ?? [])].sort(), ['Exam', 'Lab'])
+})
+
+test('assignment status distinguishes open, awaiting-grade, and graded work', () => {
+  const statusOf = (overview as typeof overview & {
+    assignmentStatus?: (assignment: Assignment) => string
+  }).assignmentStatus
+  assert.deepEqual([
+    statusOf?.(assignment('open', 'active')),
+    statusOf?.(assignment('awaiting', 'active', '2026-09-18', true)),
+    statusOf?.({ ...assignment('graded', 'active', '2026-09-18', true), grade: 4.5 }),
+  ], ['Open', 'Awaiting grade', 'Graded'])
+})
+
+test('assignment status filters keep submitted work visible without mixing buckets', () => {
+  const filterByStatus = (overview as typeof overview & {
+    filterAssignmentsByStatus?: (assignments: Assignment[], statuses: ReadonlySet<string>) => Assignment[]
+  }).filterAssignmentsByStatus
+  const assignments = [
+    assignment('open', 'active'),
+    assignment('awaiting', 'active', '2026-09-18', true),
+    { ...assignment('graded', 'active', '2026-09-18', true), grade: 4.5 },
+  ]
+  assert.deepEqual(
+    filterByStatus?.(assignments, new Set(['Awaiting grade'])).map((item) => item.id),
+    ['awaiting'],
+  )
+})
+
+test('student overview reports awaiting grades outside open and overdue work', () => {
+  const result = overview.studentOverview?.(courses, [
+    assignment('open', 'active', '2026-09-18'),
+    assignment('awaiting', 'active', '2026-09-18', true),
+    { ...assignment('graded', 'active', '2026-09-18', true), grade: 4.5 },
+  ], 'Fall', '2026-09-19')
+  assert.deepEqual(result && {
+    openCount: result.openCount,
+    awaitingGradeCount: result.awaitingGradeCount,
+    overdueCount: result.overdueCount,
+  }, { openCount: 1, awaitingGradeCount: 1, overdueCount: 1 })
 })
