@@ -44,6 +44,11 @@ test('opening priority work keeps its type in the active filter', () => {
   assert.deepEqual([...(include?.(new Set(['Exam']), 'Lab') ?? [])].sort(), ['Exam', 'Lab'])
 })
 
+test('opening priority work restores the open status filter', () => {
+  const include = (overview as typeof overview & { includeAssignmentStatus?: (selected: ReadonlySet<string>, status: string) => Set<string> }).includeAssignmentStatus
+  assert.deepEqual([...(include?.(new Set(['Awaiting grade']), 'Open') ?? [])].sort(), ['Awaiting grade', 'Open'])
+})
+
 test('assignment status distinguishes open, awaiting-grade, and graded work', () => {
   const statusOf = (overview as typeof overview & {
     assignmentStatus?: (assignment: Assignment) => string
