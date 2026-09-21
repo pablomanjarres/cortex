@@ -29,6 +29,12 @@ export function assignmentStatus(assignment: Assignment): AssignmentStatus {
   return assignment.done ? 'Awaiting grade' : 'Open'
 }
 
+export function applyAssignmentStatus(assignment: Assignment, status: AssignmentStatus): Assignment {
+  if (status === 'Open') return { ...assignment, done: false, grade: undefined }
+  if (status === 'Awaiting grade') return { ...assignment, done: true, grade: undefined }
+  return { ...assignment, done: true }
+}
+
 export function filterAssignmentsByStatus(
   assignments: ReadonlyArray<Assignment>,
   statuses: ReadonlySet<AssignmentStatus>,
