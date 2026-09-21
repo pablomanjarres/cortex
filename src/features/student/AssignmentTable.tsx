@@ -29,8 +29,8 @@ function optionalNumber(value: string): number | undefined {
 
 export function AssignmentTable({ assignments, courseMap, ...actions }: AssignmentTableProps) {
   return (
-    <div className="hidden overflow-x-auto sm:block">
-      <table className="hidden w-full min-w-[760px] text-xs sm:table">
+    <div className="hidden overflow-x-auto lg:block">
+      <table className="hidden w-full min-w-[760px] text-xs lg:table">
         <thead>
           <tr className="border-b border-border/60 text-left text-muted-foreground">
             <th className="px-3 py-2 font-medium">Assignment</th>

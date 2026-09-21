@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CalendarDays, Plus } from 'lucide-react'
+import { CalendarDays, Pencil, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -68,6 +68,9 @@ export function AssignmentWorkspace({
                     <span className="block truncate text-xs font-semibold">{assignment.name}</span>
                     <span className="block text-2xs text-muted-foreground">{courseMap[assignment.courseId]?.name} · {days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Today' : `${days}d`}</span>
                   </button>
+                  <Button variant="ghost" size="xs" onClick={() => actions.onOpenAssignment(assignment)} aria-label={`Open assignment ${assignment.name}`} className="min-h-9">
+                    <Pencil /> Edit
+                  </Button>
                   <AssignmentStatusControl assignmentName={assignment.name} status={assignmentStatus(assignment)} onChange={(status) => actions.onStatusChange(assignment.id, status)} compact />
                   <label className="sr-only" htmlFor={`due-deadline-${assignment.id}`}>Edit deadline for {assignment.name}</label>
                   <input id={`due-deadline-${assignment.id}`} aria-label={`Edit deadline for ${assignment.name}`} type="date" value={assignment.deadline ?? ''} onChange={(event) => actions.onDeadlineChange(assignment.id, event.target.value || undefined)} className="min-h-9 rounded-lg border border-input bg-transparent px-2 font-mono text-2xs outline-none" />

@@ -12,7 +12,7 @@ interface AssignmentCardListProps extends AssignmentActions {
 
 export function AssignmentCardList({ assignments, courseMap, ...actions }: AssignmentCardListProps) {
   return (
-    <div className="space-y-2 sm:hidden">
+    <div className="space-y-2 lg:hidden">
       {assignments.map((assignment) => (
         <article key={assignment.id} id={`student-assignment-card-${assignment.id}`} tabIndex={-1} className="rounded-xl border border-border/70 bg-card p-3 focus:border-accent/50">
           <div className="flex items-start gap-2">
