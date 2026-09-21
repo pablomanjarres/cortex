@@ -1,5 +1,5 @@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { StudentPage } from './StudentPage'
+import { StudentWorkspacePage } from './StudentWorkspacePage'
 import { MaterialsTab } from './MaterialsTab'
 import { NotesTab } from './NotesTab'
 
@@ -14,7 +14,7 @@ export function StudentSection() {
         <TabsTrigger value="notes" className="min-h-11 rounded-lg">Notes</TabsTrigger>
       </TabsList>
       <TabsContent value="overview">
-        <StudentPage />
+        <StudentWorkspacePage />
       </TabsContent>
       <TabsContent value="materials">
         <MaterialsTab />
