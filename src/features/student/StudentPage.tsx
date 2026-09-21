@@ -9,7 +9,14 @@ import { deleteFile } from '@/lib/media'
 import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 import { ClassSchedule } from './ClassSchedule'
 import { StudentOverviewCards } from './StudentOverviewCards'
-import { includeAssignmentType, studentOverview } from './student-overview'
+import {
+  ASSIGNMENT_STATUSES,
+  assignmentStatus,
+  filterAssignmentsByStatus,
+  includeAssignmentType,
+  studentOverview,
+  type AssignmentStatus,
+} from './student-overview'
 import { DEFAULT_ASSIGNMENTS, DEFAULT_COURSES, DEFAULT_SEMESTERS, DEFAULT_TOPICS } from './student-defaults'
 import { ICONS, ICON_CYCLE, ICON_OPTIONS } from './course-icons'
 import {
@@ -446,6 +453,7 @@ export function StudentPage() {
 
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null)
   const [selectedTypes, setSelectedTypes] = useState<Set<AssignmentType>>(new Set(ALL_TYPES))
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<AssignmentStatus>>(new Set(ASSIGNMENT_STATUSES))
   const [sortKey, setSortKey] = useState<SortKey>('deadline')
   const [sortAsc, setSortAsc] = useState(true)
   const [adding, setAdding] = useState(false)
@@ -473,6 +481,7 @@ export function StudentPage() {
     setActiveSemester(() => s)
     setSelectedCourse(null)
     setSelectedTypes(new Set(ALL_TYPES))
+    setSelectedStatuses(new Set(ASSIGNMENT_STATUSES))
     setAdding(false)
     setAddingCourse(false)
   }
@@ -562,13 +571,19 @@ export function StudentPage() {
   const toggleType = (t: AssignmentType) => {
     setSelectedTypes((prev) => { const next = new Set(prev); if (next.has(t)) { if (next.size > 1) next.delete(t) } else next.add(t); return next })
   }
+  const toggleStatus = (status: AssignmentStatus) => {
+    setSelectedStatuses((prev) => { const next = new Set(prev); if (next.has(status)) { if (next.size > 1) next.delete(status) } else next.add(status); return next })
+  }
   const toggleSort = (key: SortKey) => { if (sortKey === key) setSortAsc((p) => !p); else { setSortKey(key); setSortAsc(true) } }
 
   const upcoming = overview.deadlineQueue
 
   const filtered = useMemo(
-    () => semesterAssignments.filter((a) => (!selectedCourse || a.courseId === selectedCourse) && selectedTypes.has(a.type)).sort((a, b) => cmp(a, b, sortKey, sortAsc)),
-    [semesterAssignments, selectedCourse, selectedTypes, sortKey, sortAsc],
+    () => filterAssignmentsByStatus(
+      semesterAssignments.filter((a) => (!selectedCourse || a.courseId === selectedCourse) && selectedTypes.has(a.type)),
+      selectedStatuses,
+    ).sort((a, b) => cmp(a, b, sortKey, sortAsc)),
+    [semesterAssignments, selectedCourse, selectedTypes, selectedStatuses, sortKey, sortAsc],
   )
 
   const gradesByCourse = useMemo(() => {
@@ -857,19 +872,36 @@ export function StudentPage() {
         description={`${filtered.length} of ${semesterAssignments.length}`}
         delay={0.2}
       >
-        {/* Type filter + Add button */}
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex flex-wrap gap-1.5">
-            {ALL_TYPES.map((t) => {
-              const active = selectedTypes.has(t)
-              const count = semesterAssignments.filter((a) => a.type === t && (!selectedCourse || a.courseId === selectedCourse)).length
-              if (count === 0) return null
-              return (
-                <Chip key={t} selectable selected={active} onClick={() => toggleType(t)}>
-                  {t} ({count})
-                </Chip>
-              )
-            })}
+        {/* Status/type filters + Add button */}
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-1.5" aria-label="Assignment status filters">
+              {ASSIGNMENT_STATUSES.map((status) => {
+                const active = selectedStatuses.has(status)
+                const count = semesterAssignments.filter((a) =>
+                  (!selectedCourse || a.courseId === selectedCourse) &&
+                  selectedTypes.has(a.type) &&
+                  assignmentStatus(a) === status
+                ).length
+                return (
+                  <Chip key={status} selectable selected={active} onClick={() => toggleStatus(status)}>
+                    {status} ({count})
+                  </Chip>
+                )
+              })}
+            </div>
+            <div className="flex flex-wrap gap-1.5" aria-label="Assignment type filters">
+              {ALL_TYPES.map((t) => {
+                const active = selectedTypes.has(t)
+                const count = semesterAssignments.filter((a) => a.type === t && (!selectedCourse || a.courseId === selectedCourse)).length
+                if (count === 0) return null
+                return (
+                  <Chip key={t} selectable selected={active} onClick={() => toggleType(t)}>
+                    {t} ({count})
+                  </Chip>
+                )
+              })}
+            </div>
           </div>
           {selectedCourse && (
             <Button variant="ghost" size="xs" onClick={() => setAdding(true)}>
@@ -906,6 +938,7 @@ export function StudentPage() {
                   <Button variant="ghost" size="xs" onClick={() => toggleSort('name')} className="-ml-2">Name <SortIcon k="name" sortKey={sortKey} sortAsc={sortAsc} /></Button>
                 </th>
                 {!selectedCourse && <th className="py-2 text-left font-medium">Course</th>}
+                <th className="py-2 text-left font-medium">Status</th>
                 <th className="py-2 text-left font-medium">Type</th>
                 <th className="py-2 text-right font-medium">
                   <Button variant="ghost" size="xs" onClick={() => toggleSort('weight')}>Weight <SortIcon k="weight" sortKey={sortKey} sortAsc={sortAsc} /></Button>
@@ -922,6 +955,7 @@ export function StudentPage() {
             <tbody>
               {filtered.map((a) => {
                 const c = courseMap[a.courseId]
+                const status = assignmentStatus(a)
                 const isPast = a.deadline && a.deadline < getToday() && !a.done
                 return (
                   <tr key={a.id} id={`student-assignment-${a.id}`} tabIndex={-1} className={`group border-b border-border/60 transition-colors hover:bg-secondary/30 ${isPast ? 'opacity-40' : ''} ${a.done ? 'opacity-60' : ''}`}>
@@ -943,6 +977,11 @@ export function StudentPage() {
                         <span className="text-muted-foreground">{c?.name}</span>
                       </td>
                     )}
+                    <td className="py-2.5">
+                      <Chip size="sm" variant={status === 'Graded' ? 'success' : status === 'Awaiting grade' ? 'accent' : 'neutral'}>
+                        {status}
+                      </Chip>
+                    </td>
                     <td className="py-2.5">
                       <select
                         value={a.type}

@@ -60,7 +60,15 @@ export function StudentOverviewCards({ semester, today, overview, priorityCourse
         </div>
         <div className="surface flex min-h-28 flex-col justify-between rounded-[1.4rem] p-4">
           <div className="flex items-center justify-between gap-2 text-sm font-semibold text-muted-foreground"><span>Open work</span><ListTodo className="size-5 text-warning" /></div>
-          <div><p className="font-mono text-3xl font-semibold tabular-nums">{overview.openCount}</p><p className="text-xs text-muted-foreground">{overview.overdueCount ? `${overview.overdueCount} overdue` : 'Across this semester'}</p></div>
+          <div>
+            <p className="font-mono text-3xl font-semibold tabular-nums">{overview.openCount}</p>
+            <p className="text-xs text-muted-foreground">
+              {[
+                overview.overdueCount ? `${overview.overdueCount} overdue` : '',
+                overview.awaitingGradeCount ? `${overview.awaitingGradeCount} awaiting grade` : '',
+              ].filter(Boolean).join(' · ') || 'Across this semester'}
+            </p>
+          </div>
         </div>
         <div className="surface flex min-h-28 flex-col justify-between rounded-[1.4rem] p-4">
           <div className="flex items-center justify-between gap-2 text-sm font-semibold text-muted-foreground"><span>Courses</span><BookOpen className="size-5 text-accent" /></div>
