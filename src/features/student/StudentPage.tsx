@@ -13,6 +13,7 @@ import {
   ASSIGNMENT_STATUSES,
   assignmentStatus,
   filterAssignmentsByStatus,
+  includeAssignmentStatus,
   includeAssignmentType,
   studentOverview,
   type AssignmentStatus,
@@ -207,6 +208,7 @@ function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: As
           className="w-full bg-transparent text-xs font-medium outline-none placeholder:text-foreground-faint"
         />
       </td>
+      <td className="py-2"><Chip size="sm">Open</Chip></td>
       <td className="py-2">
         <select value={type} onChange={(e) => setType(e.target.value as AssignmentType)} className={`${selectCls} h-6 px-1.5 font-mono text-2xs`}>
           {ALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -683,6 +685,7 @@ export function StudentPage() {
         onOpenPriority={(assignment) => {
           setSelectedCourse(assignment.courseId)
           setSelectedTypes((current) => includeAssignmentType(current, assignment.type))
+          setSelectedStatuses((current) => includeAssignmentStatus(current, 'Open'))
           requestAnimationFrame(() => {
             const row = document.getElementById(`student-assignment-${assignment.id}`)
             row?.scrollIntoView({ block: 'center' })

@@ -19,6 +19,11 @@ export function includeAssignmentType(selected: ReadonlySet<AssignmentType>, typ
   return new Set([...selected, type])
 }
 
+/** Keep the priority row visible when its status filter was turned off. */
+export function includeAssignmentStatus(selected: ReadonlySet<AssignmentStatus>, status: AssignmentStatus): Set<AssignmentStatus> {
+  return new Set([...selected, status])
+}
+
 export function assignmentStatus(assignment: Assignment): AssignmentStatus {
   if (assignment.grade !== undefined) return 'Graded'
   return assignment.done ? 'Awaiting grade' : 'Open'
