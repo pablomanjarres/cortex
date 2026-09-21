@@ -22,9 +22,9 @@ test('workspace header exposes compact status filters and the current average', 
     currentAverage: 4.6, onChangeSemester: () => {}, onAddSemester: () => {},
     onAddAssignment: () => {}, onStatusFilter: () => {},
   }))
-  assert.match(html, /Open[^<]*4/)
-  assert.match(html, /Awaiting grade[^<]*2/)
-  assert.match(html, /Current average[^<]*4\.6/)
+  assert.match(html, /Open<\/span><span[^>]*>4/)
+  assert.match(html, /Awaiting grade<\/span><span[^>]*>2/)
+  assert.match(html, /Current average<\/span><span[^>]*>4\.6/)
   assert.match(html, /Add assignment/)
 })
 
