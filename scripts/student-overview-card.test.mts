@@ -15,9 +15,18 @@ const next: Assignment = {
 test('study hero uses the selected local day for overdue copy', () => {
   const html = renderToStaticMarkup(React.createElement(StudentOverviewCards, {
     today: '2026-09-21', semester: 'Fall',
-    overview: { courseCount: 1, openCount: 1, dueThisWeek: 0, overdueCount: 1, priorityAssignment: next, deadlineQueue: [next] },
+    overview: { courseCount: 1, openCount: 1, awaitingGradeCount: 0, dueThisWeek: 0, overdueCount: 1, priorityAssignment: next, deadlineQueue: [next] },
     onOpenPriority: () => {}, onAddCourse: () => {}, onAddAssignment: () => {},
   }))
   assert.match(html, /Needs your attention/)
   assert.match(html, /Overdue since/)
+})
+
+test('open work card keeps awaiting grades visible but outside the open count', () => {
+  const html = renderToStaticMarkup(React.createElement(StudentOverviewCards, {
+    today: '2026-09-21', semester: 'Fall',
+    overview: { courseCount: 1, openCount: 1, awaitingGradeCount: 2, dueThisWeek: 0, overdueCount: 0, deadlineQueue: [] },
+    onOpenPriority: () => {}, onAddCourse: () => {}, onAddAssignment: () => {},
+  }))
+  assert.match(html, />1<\/p><p[^>]*>2 awaiting grade<\/p>/)
 })
