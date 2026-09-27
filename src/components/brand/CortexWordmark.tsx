@@ -3,14 +3,30 @@ import { createElement } from 'react'
 export function CortexWordmark() {
   return createElement(
     'div',
-    { className: 'flex items-center gap-3' },
-    createElement('img', {
-      src: './icons/icon-192.png',
-      alt: '',
-      width: 40,
-      height: 40,
-      className: 'size-10 shrink-0 rounded-xl ring-1 ring-sidebar-border/70',
+    {
+      role: 'img',
+      'aria-label': 'Cortex',
+      className: 'flex items-center gap-2',
+    },
+    createElement('span', {
+      'aria-hidden': true,
+      className: 'block size-8 shrink-0 bg-sidebar-primary',
+      style: {
+        maskImage: 'url("./brand/mark.svg")',
+        maskSize: 'contain',
+        maskPosition: 'center',
+        maskRepeat: 'no-repeat',
+      },
     }),
-    createElement('span', { className: 'text-2xl font-bold tracking-tight text-sidebar-foreground' }, 'Cortex'),
+    createElement('span', {
+      'aria-hidden': true,
+      className: 'block h-10 w-36 shrink-0 bg-sidebar-primary',
+      style: {
+        maskImage: 'url("./brand/wordmark.svg")',
+        maskSize: 'contain',
+        maskPosition: 'center',
+        maskRepeat: 'no-repeat',
+      },
+    }),
   )
 }

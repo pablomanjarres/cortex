@@ -43,6 +43,8 @@ pnpm-debug.log*
 # Test/Coverage
 coverage/
 *.lcov
+test-results/
+playwright-report/
 
 # Private/Local
 .private/
