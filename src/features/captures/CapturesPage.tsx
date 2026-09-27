@@ -198,6 +198,7 @@ export function CapturesPage() {
     const allIds = captures.flatMap(c => c.imageIds)
     const toLoad = allIds.filter(id => id && !imageCache[id])
     if (toLoad.length === 0) return
+    let cancelled = false
     Promise.all(toLoad.map(async id => {
       const data = await loadImage(id)
       return [id, data] as const
@@ -206,11 +207,12 @@ export function CapturesPage() {
       for (const [id, data] of results) {
         if (data) newCache[id] = data
       }
-      if (Object.keys(newCache).length > 0) {
+      if (!cancelled && Object.keys(newCache).length > 0) {
         setImageCache(prev => ({ ...prev, ...newCache }))
       }
     })
-  }, [captures])
+    return () => { cancelled = true }
+  }, [captures, imageCache])
 
   const addCapture = useCallback(async (images?: string[]) => {
     const id = `cap-${Date.now()}`
