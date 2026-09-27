@@ -2,7 +2,7 @@
   <a href="https://pablomanjarres.com/oss/cortex"><img src=".github/banner.webp" alt="Cortex" width="100%" /></a>
 </p>
 
-<p align="center"><img src="public/brand/logo.svg" alt="Cortex" width="420" /></p>
+<p align="center"><img src=".github/logo.svg" alt="Cortex" width="420" /></p>
 
 Cortex is a local-first macOS dashboard for daily plans, habits, coursework, contacts, calendars, and finances. Personal data stays encrypted on your Mac. A local API and MCP server let agents work with the same records.
 
