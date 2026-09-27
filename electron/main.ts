@@ -13,6 +13,7 @@ import { startFounderRefresher, getStatsForEndpoint } from './founder-refresher.
 import type { FounderSource } from './founder-refresher.js'
 import { startCloudCostRefresher } from './cloud-cost-refresher.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
+import { shouldDeleteDailyFile } from './daily-retention.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -1808,13 +1809,7 @@ function cleanupOldDailyFiles() {
     let cleaned = 0
 
     for (const file of files) {
-      // Format: cortex-daily-{type}-YYYY-MM-DD.json — date is the last 10 chars before .json
-      const baseName = file.replace('.json', '')
-      const dateStr = baseName.slice(-10) // YYYY-MM-DD
-      const fileDate = new Date(dateStr)
-      if (isNaN(fileDate.getTime())) continue // skip if date can't be parsed
-
-      if (now - fileDate.getTime() > retentionMs) {
+      if (shouldDeleteDailyFile(file, now, retentionMs)) {
         fs.unlinkSync(path.join(dataDir, file))
         cleaned++
       }
