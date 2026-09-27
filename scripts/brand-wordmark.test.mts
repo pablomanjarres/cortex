@@ -3,12 +3,14 @@ import assert from 'node:assert/strict'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-test('workspace wordmark uses the existing Cortex C icon', async () => {
+test('workspace uses the Human Rhythm wordmark with an accessible brand name', async () => {
   const { CortexWordmark } = await import('../src/components/brand/CortexWordmark.tsx')
   const markup = renderToStaticMarkup(createElement(CortexWordmark))
 
-  assert.match(markup, /src="\.\/icons\/icon-192\.png"/)
-  assert.match(markup, /alt=""/)
-  assert.match(markup, />Cortex</)
-  assert.doesNotMatch(markup, />C<\/span>/)
+  assert.match(markup, /role="img"/)
+  assert.match(markup, /aria-label="Cortex"/)
+  assert.match(markup, /\.\/brand\/wordmark\.svg/)
+  assert.match(markup, /\.\/brand\/mark\.svg/)
+  assert.match(markup, /bg-sidebar-primary/)
+  assert.doesNotMatch(markup, /icon-192\.png|>Cortex</)
 })
