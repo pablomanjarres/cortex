@@ -39,14 +39,13 @@ interface Capture {
 }
 
 type LegacyCapture = Omit<Capture, 'imageIds'> & { imageId: string }
+type StoredCapture = Capture | LegacyCapture
 
 /** Migrate legacy captures that had a single `imageId` string */
-function migrateCapture(raw: Capture | LegacyCapture): Capture {
-  if ('imageId' in raw && !('imageIds' in raw)) {
-    const { imageId, ...rest } = raw
-    return { ...rest, imageIds: imageId ? [imageId] : [] }
-  }
-  return raw as Capture
+function migrateCapture(raw: StoredCapture): Capture {
+  if ('imageIds' in raw) return raw
+  const { imageId, ...rest } = raw
+  return { ...rest, imageIds: imageId ? [imageId] : [] }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,15 +123,17 @@ function fileToBase64(file: File): Promise<string> {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function CapturesPage() {
-  const [rawCaptures, updateCaptures] = useStore<Capture[]>('cortex-captures', [])
+  const [rawCaptures, updateRawCaptures] = useStore<StoredCapture[]>('cortex-captures', [])
+  const updateCaptures = useCallback((reducer: (previous: Capture[]) => Capture[]) => {
+    updateRawCaptures((previous) => reducer(previous.map(migrateCapture)))
+  }, [updateRawCaptures])
 
-  // One-time migration: persist migrated data if any capture had old `imageId`
+  // Migrate after persisted data arrives, preserving any concurrent edits.
   useEffect(() => {
-    const needsMigration = rawCaptures.some((c) => 'imageId' in c && !('imageIds' in c))
-    if (needsMigration) {
-      updateCaptures(() => rawCaptures.map(migrateCapture))
+    if (rawCaptures.some((capture) => !('imageIds' in capture))) {
+      updateRawCaptures((previous) => previous.map(migrateCapture))
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rawCaptures, updateRawCaptures])
 
   const captures = useMemo(() => rawCaptures.map(migrateCapture), [rawCaptures])
   const [search, setSearch] = useState('')
