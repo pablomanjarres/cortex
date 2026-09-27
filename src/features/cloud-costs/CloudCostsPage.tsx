@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CalendarRange, Gauge, History, RefreshCw, WalletCards } from 'lucide-react'
 import type {
+  CloudCostCache,
   CloudCostSourceStatus,
   CloudProvider,
   CloudProviderFilter,
@@ -12,7 +13,7 @@ import { TrendBadge } from '@/components/shared/TrendBadge'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Progress } from '@/components/ui/progress'
-import { useStore } from '@/lib/store'
+import { readStore, useStore } from '@/lib/store'
 import { useUtcToday } from '@/lib/use-today'
 import {
   cloudCostSummary,
@@ -51,7 +52,11 @@ function SourceChip({ provider, sourceId, status }: {
 export function CloudCostsPage() {
   const today = useUtcToday()
   const now = useMemo(() => new Date(`${today}T12:00:00Z`), [today])
-  const [rawCache] = useStore('cortex-cloud-costs', EMPTY_CLOUD_COST_CACHE)
+  const [storedCache] = useStore('cortex-cloud-costs', EMPTY_CLOUD_COST_CACHE)
+  const [refreshedCache, setRefreshedCache] = useState<CloudCostCache | null>(null)
+  const rawCache = refreshedCache && refreshedCache.fetchedAt > storedCache.fetchedAt
+    ? refreshedCache
+    : storedCache
   const cache = rawCache.version === 2 && Array.isArray(rawCache.usageItems) && Array.isArray(rawCache.accountAdjustments)
     ? rawCache : EMPTY_CLOUD_COST_CACHE
   const [settings, updateSettings] = useStore('cortex-cloud-cost-settings', DEFAULT_CLOUD_COST_SETTINGS)
@@ -87,7 +92,10 @@ export function CloudCostsPage() {
   const refresh = async () => {
     if (!window.electronAPI?.cloudCosts || refreshing) return
     setRefreshing(true)
-    try { await window.electronAPI.cloudCosts.refresh(settings) } finally { setRefreshing(false) }
+    try {
+      await window.electronAPI.cloudCosts.refresh(settings)
+      setRefreshedCache(await readStore('cortex-cloud-costs', EMPTY_CLOUD_COST_CACHE))
+    } finally { setRefreshing(false) }
   }
 
   const errors = (['aws', 'gcp'] as CloudProvider[])

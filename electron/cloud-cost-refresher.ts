@@ -2,6 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { ipcMain, powerMonitor } from 'electron'
 import { encryptAndWriteAsync } from './crypto.js'
+import { deleteKey, getKey, hasKey, saveKey } from './keychain.js'
+import { GCP_BILLING_KEY_SERVICE } from './keychain-access.js'
 import type {
   CloudCostCache,
   CloudCostSettings,
@@ -19,7 +21,7 @@ import {
   type ProviderResults,
 } from './cloud-cost-refresh-state.js'
 import { fetchAwsCosts } from './integrations/aws-costs.js'
-import { fetchGcpCosts } from './integrations/gcp-costs.js'
+import { fetchGcpCosts, parseGcpServiceAccount } from './integrations/gcp-costs.js'
 
 const CACHE_KEY = 'cortex-cloud-costs'
 const SETTINGS_KEY = 'cortex-cloud-cost-settings'
@@ -64,13 +66,39 @@ async function fetchProvider(
   try {
     const costs = provider === 'aws'
       ? await fetchAwsCosts(settings, start, end)
-      : await fetchGcpCosts(settings, start, end)
+      : await fetchGcpCosts(settings, start, end, storedGcpCredentials())
     return { ok: true, ...costs }
   } catch (error) {
     const safeError = safeCloudCostError(error)
     console.error(`[Cloud costs] ${provider} refresh failed: ${safeError}`)
     return { ok: false, error: safeError }
   }
+}
+
+function storedGcpCredentials(): string | null {
+  if (!hasKey(GCP_BILLING_KEY_SERVICE)) return null
+  const value = getKey(GCP_BILLING_KEY_SERVICE)
+  if (!value) throw new Error('GCP credentials: stored service account key is unavailable')
+  return value
+}
+
+function gcpCredentialStatus(): { configured: boolean; email: string | null } {
+  if (!hasKey(GCP_BILLING_KEY_SERVICE)) return { configured: false, email: null }
+  try {
+    const value = storedGcpCredentials()
+    return { configured: true, email: value ? parseGcpServiceAccount(value).client_email : null }
+  } catch {
+    return { configured: true, email: null }
+  }
+}
+
+export function storeGcpCredential(raw: string): string {
+  if (raw.length > 20_000) throw new Error('Choose a GCP service account key smaller than 20 KB.')
+  const credentials = parseGcpServiceAccount(raw)
+  if (!saveKey(GCP_BILLING_KEY_SERVICE, JSON.stringify(credentials))) {
+    throw new Error('Secure macOS storage is unavailable.')
+  }
+  return credentials.client_email
 }
 
 async function writeCache(next: CloudCostCache): Promise<void> {
@@ -142,6 +170,32 @@ async function seedFromDisk(): Promise<void> {
 
 export function startCloudCostRefresher(dependencies: CloudCostRefresherDeps): void {
   deps = dependencies
+  ipcMain.handle('cloud-costs:gcp-credential-status', () => gcpCredentialStatus())
+  ipcMain.handle('cloud-costs:gcp-credential-import', async (_event, raw: unknown, settings?: CloudCostSettings) => {
+    if (typeof raw !== 'string') {
+      return { ok: false, error: 'Choose a valid GCP service account key file.' }
+    }
+    try {
+      const email = storeGcpCredential(raw)
+      if (cycleInflight) await cycleInflight.catch(() => null)
+      const result = await refreshCloudCosts(settings)
+      await scheduleFromCache(settings)
+      return { ok: true, email, source: result?.sources.gcp ?? null }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      return { ok: false, error: message.startsWith('Secure macOS storage') || message.includes('20 KB')
+        ? message : 'Choose a valid GCP service account key file.' }
+    }
+  })
+  ipcMain.handle('cloud-costs:gcp-credential-remove', async (_event, settings?: CloudCostSettings) => {
+    const removed = deleteKey(GCP_BILLING_KEY_SERVICE)
+    if (removed) {
+      if (cycleInflight) await cycleInflight.catch(() => null)
+      await refreshCloudCosts(settings)
+      await scheduleFromCache(settings)
+    }
+    return removed
+  })
   ipcMain.handle('cloud-costs:refresh', async (_event, settings?: CloudCostSettings) => {
     const result = await refreshCloudCosts(settings)
     await scheduleFromCache(settings)
