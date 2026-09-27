@@ -1,139 +1,87 @@
-const { createCanvas, registerFont } = require('canvas');
-const fs = require('fs');
-const path = require('path');
+const { createCanvas, loadImage } = require('canvas');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 
-const BUILD_DIR = path.join(__dirname, '..', 'build');
-const ICONSET_DIR = path.join(BUILD_DIR, 'icon.iconset');
+const ROOT = path.join(__dirname, '..');
+const BUILD = path.join(ROOT, 'build');
+const ICONSET = path.join(BUILD, 'icon.iconset');
+const WEB = path.join(ROOT, 'public', 'icons');
+const VIOLET = '#624AB5';
+const mark = fs.readFileSync(path.join(ROOT, 'public', 'brand', 'mark.svg'), 'utf8');
+const [markWidth, markHeight] = mark.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/).slice(1).map(Number);
+const markBody = mark.replace(/<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '').trim();
+// Rasterize the vector above its largest output size before any downsampling.
+const renderMark = mark.replace(/width="[^"]*"/, 'width="1024"').replace(/height="[^"]*"/, `height="${1024 * markHeight / markWidth}"`);
 
-const GEORGIA_BOLD_ITALIC = '/System/Library/Fonts/Supplemental/Georgia Bold Italic.ttf';
-if (fs.existsSync(GEORGIA_BOLD_ITALIC)) {
-  registerFont(GEORGIA_BOLD_ITALIC, { family: 'GeorgiaBI', style: 'italic', weight: 'bold' });
-  console.log('Registered Georgia Bold Italic font');
-}
-const FONT_FAMILY = fs.existsSync(GEORGIA_BOLD_ITALIC) ? 'GeorgiaBI' : 'Georgia';
-
-fs.mkdirSync(BUILD_DIR, { recursive: true });
-fs.mkdirSync(ICONSET_DIR, { recursive: true });
-
-function roundedRect(ctx, x, y, w, h, r) {
+function roundedRect(ctx, x, y, size, radius) {
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.arcTo(x + w, y, x + w, y + r, r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-  ctx.lineTo(x + r, y + h);
-  ctx.arcTo(x, y + h, x, y + h - r, r);
-  ctx.lineTo(x, y + r);
-  ctx.arcTo(x, y, x + r, y, r);
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + size, y, x + size, y + size, radius);
+  ctx.arcTo(x + size, y + size, x, y + size, radius);
+  ctx.arcTo(x, y + size, x, y, radius);
+  ctx.arcTo(x, y, x + size, y, radius);
   ctx.closePath();
 }
 
-function generateAppIcon(size) {
-  const fontSize = Math.round(size * 0.72);
-  const skew = -0.18;
-  const tmp = createCanvas(size * 2, size * 2);
-  const tmpCtx = tmp.getContext('2d');
-  tmpCtx.clearRect(0, 0, tmp.width, tmp.height);
-  tmpCtx.font = `italic bold ${fontSize}px "${FONT_FAMILY}"`;
-  tmpCtx.fillStyle = '#FFFFFF';
-  tmpCtx.textAlign = 'center';
-  tmpCtx.textBaseline = 'middle';
-  tmpCtx.save();
-  tmpCtx.translate(tmp.width / 2, tmp.height / 2);
-  tmpCtx.transform(1, 0, skew, 1, 0, 0);
-  tmpCtx.fillText('C', 0, 0);
-  tmpCtx.restore();
+function drawMark(ctx, image, size, widthRatio) {
+  const width = size * widthRatio;
+  const height = width * markHeight / markWidth;
+  ctx.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+}
 
-  const imgData = tmpCtx.getImageData(0, 0, tmp.width, tmp.height);
-  const pixels = imgData.data;
-  let minX = tmp.width, maxX = 0, minY = tmp.height, maxY = 0;
-  for (let y = 0; y < tmp.height; y++) {
-    for (let x = 0; x < tmp.width; x++) {
-      const alpha = pixels[(y * tmp.width + x) * 4 + 3];
-      if (alpha > 30) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  const glyphW = maxX - minX;
-  const glyphH = maxY - minY;
-  const glyphCenterX = minX + glyphW / 2;
-  const glyphCenterY = minY + glyphH / 2;
-  const offsetX = glyphCenterX - tmp.width / 2;
-  const offsetY = glyphCenterY - tmp.height / 2;
-
+function appIcon(size, image, { native = false, maskable = false, apple = false } = {}) {
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, size, size);
-
-  const radius = Math.round(size * 0.175);
-  ctx.fillStyle = '#000000';
-  roundedRect(ctx, 0, 0, size, size, radius);
-  ctx.fill();
-
-  ctx.font = `italic bold ${fontSize}px "${FONT_FAMILY}"`;
-  ctx.fillStyle = '#FFFFFF';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.save();
-  ctx.translate(size / 2 - offsetX, size / 2 - offsetY);
-  ctx.transform(1, 0, skew, 1, 0, 0);
-  ctx.fillText('C', 0, 0);
-  ctx.restore();
-
-  return canvas;
-}
-
-function generateTrayIcon(size) {
-  const canvas = generateAppIcon(size);
-  const ctx = canvas.getContext('2d');
-  const pixels = ctx.getImageData(0, 0, size, size);
-  for (let i = 0; i < pixels.data.length; i += 4) {
-    pixels.data[i + 3] = pixels.data[i];
-    pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = 0;
+  ctx.fillStyle = VIOLET;
+  if (maskable || apple) {
+    ctx.fillRect(0, 0, size, size);
+  } else {
+    const inset = native ? size * .1 : 0;
+    const tile = size - inset * 2;
+    roundedRect(ctx, inset, inset, tile, tile * .2);
+    ctx.fill();
   }
-  ctx.putImageData(pixels, 0, 0);
+  // The maskable mark fits inside the central 80%-diameter safe zone.
+  drawMark(ctx, image, size, maskable ? .54 : native ? .528 : .66);
   return canvas;
 }
 
-function savePNG(canvas, filePath) {
-  const buffer = canvas.toBuffer('image/png');
-  fs.writeFileSync(filePath, buffer);
-  console.log(`  Created: ${path.relative(path.join(__dirname, '..'), filePath)} (${canvas.width}x${canvas.height})`);
+function save(canvas, file) {
+  fs.writeFileSync(file, canvas.toBuffer('image/png'));
 }
 
-const appSizes = [1024, 512, 256, 128, 64, 32, 16];
-console.log('Generating app icons...');
-for (const size of appSizes) {
-  const canvas = generateAppIcon(size);
-  savePNG(canvas, path.join(BUILD_DIR, `icon_${size}.png`));
+async function generate() {
+  for (const dir of [BUILD, ICONSET, WEB]) fs.mkdirSync(dir, { recursive: true });
+  const white = await loadImage(Buffer.from(renderMark.replaceAll('currentColor', '#FFFFFF')));
+  const black = await loadImage(Buffer.from(renderMark.replaceAll('currentColor', '#000000')));
+  for (const size of [16, 32, 64, 128, 256, 512, 1024]) {
+    save(appIcon(size, white, { native: true }), path.join(BUILD, `icon_${size}.png`));
+  }
+  for (const size of [22, 44]) {
+    const canvas = createCanvas(size, size);
+    drawMark(canvas.getContext('2d'), black, size, .8);
+    save(canvas, path.join(BUILD, size === 22 ? 'trayTemplate.png' : 'trayTemplate@2x.png'));
+  }
+  for (const size of [16, 32, 128, 256, 512]) {
+    for (const scale of [1, 2]) {
+      const suffix = scale === 2 ? '@2x' : '';
+      fs.copyFileSync(path.join(BUILD, `icon_${size * scale}.png`), path.join(ICONSET, `icon_${size}x${size}${suffix}.png`));
+    }
+  }
+  for (const size of [192, 512]) save(appIcon(size, white), path.join(WEB, `icon-${size}.png`));
+  save(appIcon(180, white, { apple: true }), path.join(WEB, 'apple-touch-icon.png'));
+  save(appIcon(512, white, { maskable: true }), path.join(WEB, 'icon-maskable-512.png'));
+  const width = 64 * .66;
+  const height = width * markHeight / markWidth;
+  const x = (64 - width) / 2;
+  const y = (64 - height) / 2;
+  const favicon = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12.8" fill="${VIOLET}"/><g transform="translate(${x} ${y}) scale(${width / markWidth})">${markBody.replaceAll('currentColor', '#FFFFFF')}</g></svg>\n`;
+  fs.writeFileSync(path.join(ROOT, 'public', 'favicon.svg'), favicon);
+  if (process.platform === 'darwin') {
+    execFileSync('iconutil', ['-c', 'icns', ICONSET, '-o', path.join(BUILD, 'icon.icns')]);
+  }
+  console.log('Generated Cortex icons from public/brand/mark.svg.');
 }
 
-console.log('\nGenerating tray icons...');
-savePNG(generateTrayIcon(22), path.join(BUILD_DIR, 'trayTemplate.png'));
-savePNG(generateTrayIcon(44), path.join(BUILD_DIR, 'trayTemplate@2x.png'));
-
-console.log('\nGenerating iconset...');
-const iconsetMapping = [
-  { name: 'icon_16x16.png', size: 16 },
-  { name: 'icon_16x16@2x.png', size: 32 },
-  { name: 'icon_32x32.png', size: 32 },
-  { name: 'icon_32x32@2x.png', size: 64 },
-  { name: 'icon_128x128.png', size: 128 },
-  { name: 'icon_128x128@2x.png', size: 256 },
-  { name: 'icon_256x256.png', size: 256 },
-  { name: 'icon_256x256@2x.png', size: 512 },
-  { name: 'icon_512x512.png', size: 512 },
-  { name: 'icon_512x512@2x.png', size: 1024 },
-];
-
-for (const { name, size } of iconsetMapping) {
-  const canvas = generateAppIcon(size);
-  savePNG(canvas, path.join(ICONSET_DIR, name));
-}
-
-console.log('\nDone! All icons generated.');
+generate().catch(error => { console.error(error); process.exitCode = 1; });

@@ -9,7 +9,8 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite --host",
-    "build": "tsc -b && vite build",
+    "brand:generate": "node scripts/generate-icons.cjs",
+    "build": "npm run brand:generate && tsc -b && vite build",
     "test": "tsx --test scripts/*.test.mts && npm run build --prefix mcp-server && node --test scripts/*.test.mjs",
     "test:e2e": "playwright test",
     "test:cloud": "tsx --test scripts/cloud-cost-*.test.mts",
