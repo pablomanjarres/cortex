@@ -13,7 +13,7 @@ import { TrendBadge } from '@/components/shared/TrendBadge'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Progress } from '@/components/ui/progress'
-import { useStore } from '@/lib/store'
+import { readStore, useStore } from '@/lib/store'
 import { useUtcToday } from '@/lib/use-today'
 import {
   cloudCostSummary,
@@ -93,8 +93,8 @@ export function CloudCostsPage() {
     if (!window.electronAPI?.cloudCosts || refreshing) return
     setRefreshing(true)
     try {
-      const result = await window.electronAPI.cloudCosts.refresh(settings)
-      if (result) setRefreshedCache(result)
+      await window.electronAPI.cloudCosts.refresh(settings)
+      setRefreshedCache(await readStore('cortex-cloud-costs', EMPTY_CLOUD_COST_CACHE))
     } finally { setRefreshing(false) }
   }
 
