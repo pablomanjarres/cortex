@@ -798,11 +798,11 @@ export function OpportunitiesPage() {
 
               {/* Kind group — segmented control + per-category chips within the group */}
               <div className="flex flex-wrap items-center gap-3">
-                <Tabs value={kindGroup} onValueChange={(v) => { setKindGroup(v as KindGroup); setCatFilter(null) }}>
-                  <TabsList>
-                    <TabsTrigger value="all">All</TabsTrigger>
+                <Tabs value={kindGroup} className="min-w-0 max-w-full" onValueChange={(v) => { setKindGroup(v as KindGroup); setCatFilter(null) }}>
+                  <TabsList aria-label="Opportunity kinds" className="max-w-full justify-start overflow-x-auto overscroll-x-contain">
+                    <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="all">All</TabsTrigger>
                     {(Object.keys(KIND_GROUPS) as Exclude<KindGroup, 'all'>[]).map((g) => (
-                      <TabsTrigger key={g} value={g}>{KIND_GROUPS[g].label}</TabsTrigger>
+                      <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" key={g} value={g}>{KIND_GROUPS[g].label}</TabsTrigger>
                     ))}
                   </TabsList>
                 </Tabs>

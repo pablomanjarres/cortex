@@ -3,6 +3,11 @@ export function localDate(d: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+/** UTC YYYY-MM-DD for provider billing facts. */
+export function utcDate(d: Date = new Date()): string {
+  return d.toISOString().slice(0, 10)
+}
+
 /** Get the last N days as YYYY-MM-DD strings, ending at `from` (defaults to today) */
 export function getLastNDays(n: number, from?: string): string[] {
   const end = from ? new Date(from + 'T00:00:00') : new Date()

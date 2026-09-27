@@ -45,6 +45,8 @@ coverage/
 playwright-report/
 test-results/
 *.lcov
+test-results/
+playwright-report/
 
 # Private/Local
 .private/

@@ -188,7 +188,7 @@ async function backendRead(key: string): Promise<{ data: unknown; rev: string | 
 }
 
 type BackendWriteResult =
-  | { ok: true; rev: string | null }
+  | { ok: true; rev: string | null; data?: unknown }
   | { ok: false; conflict: true; rev: string | null; data: unknown }
   | { ok: false; conflict?: false }
 
@@ -200,7 +200,7 @@ async function backendWrite(key: string, data: unknown, baseRev: string | null):
       if (res === true) return { ok: true, rev: null } // pre-rev main builds
       if (res && typeof res === 'object') {
         const r = res as IpcWriteResult
-        if (r.ok) return { ok: true, rev: r.rev ?? null }
+        if (r.ok) return { ok: true, rev: r.rev ?? null, ...('data' in r ? { data: r.data } : {}) }
         if (r.conflict) return { ok: false, conflict: true, rev: r.rev ?? null, data: r.data ?? null }
       }
       return { ok: false }
@@ -217,8 +217,13 @@ async function backendWrite(key: string, data: unknown, baseRev: string | null):
       })
       if (res.ok) {
         let rev: string | null = null
-        try { rev = ((await res.json()) as { rev?: string } | null)?.rev ?? null } catch { /* legacy body */ }
-        return { ok: true, rev }
+        let canonicalData: { data?: unknown } = {}
+        try {
+          const body = (await res.json()) as { rev?: string; data?: unknown } | null
+          rev = body?.rev ?? null
+          if (body && 'data' in body) canonicalData = { data: body.data }
+        } catch { /* legacy body */ }
+        return { ok: true, rev, ...canonicalData }
       }
       if (res.status === 409) {
         try {
@@ -309,7 +314,7 @@ async function flushKey(key: string): Promise<void> {
       if (result.ok) {
         s.pending.splice(0, ops.length) // ops enqueued during the await stay queued
         s.failures = 0
-        acceptBase(key, final, result.rev)
+        acceptBase(key, 'data' in result ? result.data : final, result.rev)
         continue // flush anything that arrived mid-write
       }
 

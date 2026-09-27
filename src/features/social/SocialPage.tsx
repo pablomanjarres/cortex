@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
-import { SortIcon } from '@/components/shared/SortIcon'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -12,6 +11,9 @@ import {
   Search,
   Plus,
   Trash2,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
   Cake,
   Clock,
   RotateCcw,
@@ -51,18 +53,18 @@ const ALL_CATEGORIES = ['Relative 👨‍👩‍👦', 'High Potential 🚀', 'A
 
 const ALL_FIELDS = ['Tech', 'Business', 'Education', 'Health', 'Design', 'Law', 'Gastronomy', 'Music', 'Industry', 'Media', 'Construction', 'Fin']
 
-function daysUntilBirthday(bday: string, now: number): number | null {
+function daysUntilBirthday(bday: string): number | null {
   if (!bday) return null
-  const today = new Date(now)
+  const today = new Date()
   const birth = new Date(bday)
   const next = new Date(today.getFullYear(), birth.getMonth(), birth.getDate())
   if (next < today) next.setFullYear(next.getFullYear() + 1)
   return Math.ceil((next.getTime() - today.getTime()) / 86_400_000)
 }
 
-function calcAge(bday: string, now: number): number | null {
+function calcAge(bday: string): number | null {
   if (!bday) return null
-  const today = new Date(now)
+  const today = new Date()
   const birth = new Date(bday)
   let age = today.getFullYear() - birth.getFullYear()
   if (today < new Date(today.getFullYear(), birth.getMonth(), birth.getDate())) age--
@@ -81,29 +83,22 @@ const labelCls = 'text-2xs text-muted-foreground'
 const thCls = 'py-2 text-left font-mono text-2xs font-normal uppercase tracking-wider'
 const thBtnCls = 'flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground'
 
-// Contact reminders depend on wall time, refreshed outside render.
-function useContactClock(): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const refresh = () => setNow(Date.now())
-    const timer = setInterval(refresh, 60_000)
-    window.addEventListener('focus', refresh)
-    return () => { clearInterval(timer); window.removeEventListener('focus', refresh) }
-  }, [])
-  return now
-}
-
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function SocialPage() {
-  const now = useContactClock()
   const [contacts, updateContacts] = useStore<Contact[]>('cortex-contacts', DEFAULT_CONTACTS)
   const [search, setSearch] = useState('')
   const [filterCat, setFilterCat] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [now, setNow] = useState(() => Date.now())
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   // Scroll to expanded contact row when selected from widgets
   useEffect(() => {
@@ -145,6 +140,7 @@ export function SocialPage() {
   }
 
   const toggleSort = (k: SortKey) => { if (sortKey === k) setSortAsc((p) => !p); else { setSortKey(k); setSortAsc(true) } }
+  const sortIcon = (k: SortKey) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const filtered = useMemo(() =>
     contacts
@@ -165,9 +161,9 @@ export function SocialPage() {
 
   const upcomingBdays = useMemo(() =>
     contacts
-      .filter((c) => c.birthday && daysUntilBirthday(c.birthday, now)! <= 30)
-      .sort((a, b) => daysUntilBirthday(a.birthday, now)! - daysUntilBirthday(b.birthday, now)!),
-    [contacts, now],
+      .filter((c) => c.birthday && daysUntilBirthday(c.birthday)! <= 30)
+      .sort((a, b) => daysUntilBirthday(a.birthday)! - daysUntilBirthday(b.birthday)!),
+    [contacts],
   )
 
   const needsReachOut = useMemo(() =>
@@ -194,8 +190,8 @@ export function SocialPage() {
           ) : (
             <div className="flex flex-col gap-1">
               {upcomingBdays.map((c) => {
-                const days = daysUntilBirthday(c.birthday, now)!
-                const age = calcAge(c.birthday, now)
+                const days = daysUntilBirthday(c.birthday)!
+                const age = calcAge(c.birthday)
                 const imminent = days <= 3
                 return (
                   <button key={c.id} onClick={() => setExpanded(expanded === c.id ? null : c.id)} className={`flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left transition-colors duration-150 ${imminent ? 'bg-warning/5 hover:bg-warning/10' : 'hover:bg-secondary/50'} ${expanded === c.id ? 'ring-1 ring-accent/40' : ''}`}>
@@ -271,13 +267,17 @@ export function SocialPage() {
       {/* Mobile: Contact cards */}
       <div className="flex flex-col gap-3 md:hidden">
         {filtered.map((c) => (
-          <div key={c.id} className="surface rounded-xl p-4" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
-            <div className="flex items-start justify-between">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{c.name}{c.nickname ? <span className="ml-1 text-2xs text-muted-foreground">({c.nickname})</span> : null}</p>
-                <p className="truncate text-xs text-muted-foreground">{c.title || 'No title'}</p>
-              </div>
-              <Button variant="ghost" size="icon-sm" aria-label="Delete contact" className="shrink-0 active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
+          <div key={c.id} className="surface rounded-xl p-4">
+            <div className="flex items-start justify-between gap-2">
+              <Button variant="ghost" size="sm" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id}
+                onClick={() => setExpanded(expanded === c.id ? null : c.id)}
+                className="h-auto min-h-11 min-w-0 flex-1 justify-start p-0 text-left whitespace-normal">
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{c.name}{c.nickname ? <span className="ml-1 text-2xs text-muted-foreground">({c.nickname})</span> : null}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{c.title || 'No title'}</span>
+                </span>
+              </Button>
+              <Button variant="ghost" size="icon-lg" aria-label="Delete contact" className="shrink-0 active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
                 <Trash2 />
               </Button>
             </div>
@@ -287,11 +287,11 @@ export function SocialPage() {
             </div>
             <div className="mt-2 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
               {c.phone && <span>{c.phone}</span>}
-              {calcAge(c.birthday, now) != null && <span className="tabular-nums">Age {calcAge(c.birthday, now)}</span>}
+              {calcAge(c.birthday) != null && <span className="tabular-nums">Age {calcAge(c.birthday)}</span>}
               {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
             </div>
             {expanded === c.id && (
-              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3" onClick={(e) => e.stopPropagation()}>
+              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
                 <div><label className={labelCls}>Name</label><input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} /></div>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className={labelCls}>Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className={lineInputCls} /></div>
@@ -337,13 +337,13 @@ export function SocialPage() {
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
                   {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
-                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon active={sortKey === 'name'} ascending={sortAsc} /></button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title <SortIcon active={sortKey === 'title'} ascending={sortAsc} /></button></th>
+                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name {sortIcon('name')}</button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title {sortIcon('title')}</button></th>
                   <th className={thCls}>Category</th>
                   <th className={thCls}>Field</th>
-                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age <SortIcon active={sortKey === 'birthday'} ascending={sortAsc} /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age {sortIcon('birthday')}</button></th>
                   <th className={thCls}>Phone</th>
-                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last <SortIcon active={sortKey === 'lastContact'} ascending={sortAsc} /></button></th>
+                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last {sortIcon('lastContact')}</button></th>
                   <th className="w-6 py-2"></th>
                 </tr>
               </thead>
@@ -352,11 +352,13 @@ export function SocialPage() {
                   <Fragment key={c.id}>
                     <tr ref={(el) => { rowRefs.current[c.id] = el }} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
                       className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                      <td className="px-4 py-2.5"><span className="font-medium">{c.name}</span>{c.nickname && <span className="ml-1.5 text-2xs text-muted-foreground">({c.nickname})</span>}</td>
+                      <td className="px-4 py-2.5"><Button variant="ghost" size="xs" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id}
+                        onClick={(e) => { e.stopPropagation(); setExpanded(expanded === c.id ? null : c.id) }}
+                        className="min-h-7 px-0 text-left font-medium hover:text-accent">{c.name}</Button>{c.nickname && <span className="ml-1.5 text-2xs text-muted-foreground">({c.nickname})</span>}</td>
                       <td className="py-2.5 text-muted-foreground">{c.title}</td>
                       <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.categories.slice(0, 2).map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}{c.categories.length > 2 && <span className="font-mono text-3xs text-foreground-faint">+{c.categories.length - 2}</span>}</div></td>
                       <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}</div></td>
-                      <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{calcAge(c.birthday, now) ?? '—'}</td>
+                      <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{calcAge(c.birthday) ?? '—'}</td>
                       <td className="py-2.5 font-mono text-muted-foreground">{c.phone || '—'}</td>
                       <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
                       <td className="py-2.5 pr-4"><Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}><Trash2 /></Button></td>

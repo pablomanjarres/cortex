@@ -3,8 +3,8 @@
   "short_name": "Cortex",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "background_color": "#141720",
+  "theme_color": "#141720",
   "icons": [
     {
       "src": "./icons/icon-192.png",
@@ -17,7 +17,7 @@
       "type": "image/png"
     },
     {
-      "src": "./icons/icon-512.png",
+      "src": "./icons/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

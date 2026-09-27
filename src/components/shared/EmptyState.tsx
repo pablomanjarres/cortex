@@ -2,9 +2,9 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 interface EmptyStateProps {
-  /** The serif italic whisper line, e.g. "Nothing captured yet." */
+  /** Short, plain empty-state message, e.g. "Nothing captured yet." */
   message: string
-  /** Optional quiet hint under the whisper */
+  /** Optional quiet hint under the message */
   hint?: string
   /** Optional action slot (a Button, usually ghost or secondary) */
   action?: ReactNode
@@ -12,8 +12,7 @@ interface EmptyStateProps {
 }
 
 /**
- * EmptyState — the ONLY empty-state affordance. A serif italic whisper,
- * an optional hint, an optional action. No dashed borders, no big icons.
+ * EmptyState — a clear message, optional hint, and optional action.
  */
 export function EmptyState({ message, hint, action, className }: EmptyStateProps) {
   return (
@@ -23,7 +22,7 @@ export function EmptyState({ message, hint, action, className }: EmptyStateProps
         className
       )}
     >
-      <p className="font-serif italic text-lg text-muted-foreground">{message}</p>
+      <p className="text-base font-medium text-muted-foreground">{message}</p>
       {hint && <p className="text-xs text-foreground-faint">{hint}</p>}
       {action && <div className="mt-2">{action}</div>}
     </div>

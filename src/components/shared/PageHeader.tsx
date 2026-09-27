@@ -2,9 +2,9 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 interface PageHeaderProps {
-  /** Mono-uppercase kicker line above the title (e.g. a section/tab context) */
+  /** Optional context line above the title (e.g. a section/tab context) */
   kicker?: string
-  /** Serif italic section title. Must NOT repeat the topbar page title. */
+  /** Section title. Must NOT repeat the topbar page title. */
   title: string
   subtitle?: string
   /** Right-aligned actions slot (Buttons, Tabs, filter Chips) */
@@ -22,11 +22,11 @@ export function PageHeader({ kicker, title, subtitle, actions, className }: Page
     <div className={cn('flex flex-wrap items-end justify-between gap-3', className)}>
       <div className="min-w-0">
         {kicker && (
-          <p className="mb-1 font-mono text-2xs uppercase tracking-widest text-foreground-faint">
+          <p className="mb-1 text-sm font-medium text-muted-foreground">
             {kicker}
           </p>
         )}
-        <h2 className="font-serif italic text-2xl font-normal leading-tight tracking-tight text-foreground">
+        <h2 className="text-2xl font-semibold leading-tight text-foreground md:text-3xl">
           {title}
         </h2>
         {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
