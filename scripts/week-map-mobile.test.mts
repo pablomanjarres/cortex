@@ -4,7 +4,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { WeekMap } from '../src/features/daily/components/WeekMap.tsx'
 import type { Assignment } from '../src/features/student/student-types.ts'
-import type { SprintSession } from '../src/lib/sprint-context.tsx'
+import type { SprintSession } from '../src/lib/sprint-context.ts'
 
 // tsx's Node transform uses the classic JSX runtime for imported components.
 Object.assign(globalThis, { React })
