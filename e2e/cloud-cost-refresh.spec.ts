@@ -65,7 +65,10 @@ test('manual cloud refresh displays the returned snapshot without remounting the
           onDataChanged: () => () => undefined,
         },
         cloudCosts: {
-          refresh: async () => refreshedCache,
+          refresh: async () => {
+            values['cortex-cloud-costs'] = refreshedCache
+            return null
+          },
           status: async () => refreshedCache.sources,
           gcpCredentialStatus: async () => ({ configured: true, email: 'cortex-billing-reader@nella-sync.iam.gserviceaccount.com' }),
         },
