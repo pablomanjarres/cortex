@@ -10,6 +10,7 @@ test('workspace uses the Human Rhythm wordmark with an accessible brand name', a
   assert.match(markup, /role="img"/)
   assert.match(markup, /aria-label="Cortex"/)
   assert.match(markup, /\.\/brand\/wordmark\.svg/)
+  assert.match(markup, /\.\/brand\/mark\.svg/)
   assert.match(markup, /bg-sidebar-primary/)
   assert.doesNotMatch(markup, /icon-192\.png|>Cortex</)
 })
