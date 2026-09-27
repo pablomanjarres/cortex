@@ -16,15 +16,15 @@ test('a restored sprint keeps edits, duration and remaining time across pause/re
   await expect.poll(async () => { await page.clock.runFor(1000); return task.count() }).toBe(1)
   await expect(task).toHaveValue('Saved task')
   await task.fill('Edited task')
-  await page.getByRole('button', { name: 'Start sprint', exact: true }).click()
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
   await page.clock.runFor(10_000)
-  await page.getByRole('button', { name: 'Pause sprint', exact: true }).click()
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
   await page.clock.runFor(20_000)
   await expect.poll(() => backend.stores['cortex-active-sprint']).toMatchObject({
     task: 'Edited task', duration: 1, isPaused: true, pausedTimeLeft: 50,
   })
   await task.fill('Final task')
-  await page.getByRole('button', { name: 'Start sprint', exact: true }).click()
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
   await page.clock.runFor(1000)
   await expect.poll(() => backend.stores['cortex-active-sprint']).toMatchObject({
     task: 'Final task', duration: 1, isPaused: false,
@@ -46,9 +46,9 @@ test('midnight completion logs once to the start day and clears the timer', asyn
   await page.goto('/#/daily')
   await expect.poll(async () => {
     await page.clock.runFor(50)
-    return page.getByRole('button', { name: 'Pause sprint', exact: true }).count()
+    return page.getByRole('button', { name: 'Pause', exact: true }).count()
   }).toBe(1)
-  await expect(page.getByRole('button', { name: 'Pause sprint', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
   await page.clock.runFor(4000)
   await expect.poll(() => backend.stores['cortex-active-sprint']).toBeNull()
   await expect.poll(() => backend.stores['cortex-daily-sessions-2026-09-15']).toEqual([
@@ -58,7 +58,7 @@ test('midnight completion logs once to the start day and clears the timer', asyn
   await page.clock.runFor(3000)
   expect(backend.stores['cortex-daily-sessions-2026-09-15']).toHaveLength(1)
   expect(backend.stores['cortex-daily-sessions-2026-09-16']).toEqual([])
-  await expect(page.getByRole('button', { name: 'Start sprint', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible()
 })
 
 test('notes formatting preserves the selection and saves from inline and fullscreen editors', async ({ page }) => {
