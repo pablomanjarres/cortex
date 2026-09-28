@@ -1,4 +1,4 @@
-import { type WorkEvidence, type WorkEvidenceFact, type WorkHoursState, type WorkReport, type WorkReportRow, type ReportSelection, type WorkSessionValues, iso, id, project, currentValues } from './work-hours-types.js'
+import { type WorkEvidence, type WorkEvidenceFact, type WorkHoursState, type WorkReport, type WorkReportRow, type ReportSelection, iso, id, project, currentValues } from './work-hours-types.js'
 
 function copyEvidence(evidence: WorkEvidence): WorkEvidence {
   const fact = <Status extends string>(value: WorkEvidenceFact<Status>): WorkEvidenceFact<Status> => ({
