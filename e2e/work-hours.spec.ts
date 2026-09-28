@@ -3,6 +3,9 @@ import { readFile } from 'node:fs/promises'
 import { applyWorkHoursCommand, emptyWorkHoursState, type WorkEvidence, type WorkHoursCommand } from '../electron/work-hours-model'
 
 test('a project can be started and stopped from Projects, leaving one saved interval', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(Crypto.prototype, 'randomUUID', { configurable: true, value: undefined })
+  })
   await page.clock.setFixedTime(new Date('2026-09-27T14:20:00.000Z'))
   let state = emptyWorkHoursState()
   const backend = await mockStores(page, { 'cortex-project-time': state })

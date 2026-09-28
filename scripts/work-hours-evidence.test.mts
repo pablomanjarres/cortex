@@ -132,6 +132,29 @@ test('production is deployed only for a successful status on the exact PR commit
   assert.deepEqual(evidence.deployment, { status: 'Deployed', source, commit, checkedAt })
 })
 
+test('latest production failure and pending states remain visible', () => {
+  const pr = {
+    number: 42, title: 'Add project hours', url: prUrl, state: 'MERGED',
+    mergedAt: '2026-09-27T18:00:00Z', headRefOid: commit,
+    mergeCommit: { oid: commit }, statusCheckRollup: [],
+  }
+  const source = 'https://api.github.com/repos/acme/construcredit/deployments/103/statuses/9'
+  for (const [state, expected] of [
+    ['failure', 'Failed'], ['error', 'Failed'],
+    ['pending', 'Pending'], ['in_progress', 'Pending'], ['queued', 'Pending'],
+  ] as const) {
+    const evidence = parseWorkHoursEvidence({
+      pr,
+      deployments: [{ id: 103, sha: commit, environment: 'production', created_at: '2026-09-27T18:20:00Z' }],
+      statusesByDeploymentId: { '103': [
+        { id: 8, state: 'success', created_at: '2026-09-27T18:21:00Z' },
+        { id: 9, state, created_at: '2026-09-27T18:22:00Z', url: source },
+      ] },
+    }, checkedAt)
+    assert.deepEqual(evidence.deployment, { status: expected, source, commit, checkedAt })
+  }
+})
+
 test('merged PR deployment follows the merge commit while CI follows the head commit', () => {
   const mergeCommit = 'c'.repeat(40)
   const source = 'https://api.github.com/repos/acme/construcredit/deployments/202/statuses/9'
