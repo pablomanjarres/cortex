@@ -96,6 +96,10 @@ export function parseWorkHoursEvidence(input: GitHubEvidenceInput, checkedAt: st
   const deployment = latestProductionDeployment(input.deployments, deploymentCommit)
   const deploymentStatus = deployment ? latestStatus(input.statusesByDeploymentId[String(deployment.id)]) : null
   const deploymentSource = text(deploymentStatus?.url)
+  const deploymentState = deploymentSource ? ({
+    success: 'Deployed', failure: 'Failed', error: 'Failed',
+    pending: 'Pending', in_progress: 'Pending', queued: 'Pending',
+  } as Record<string, WorkEvidence['deployment']['status']>)[String(deploymentStatus?.state)] ?? 'Not verified' : 'Not verified'
 
   return {
     pr: { status, number, title: text(pr.title), url, source: url, commit, checkedAt },
@@ -105,7 +109,7 @@ export function parseWorkHoursEvidence(input: GitHubEvidenceInput, checkedAt: st
       build: namedCheckStatus(pr.statusCheckRollup, /build|compil|bundl|package|webpack|vite/i),
       source: ciSource, commit, checkedAt,
     },
-    deployment: { status: deploymentStatus?.state === 'success' && deploymentSource ? 'Deployed' : 'Not verified', source: deploymentSource, commit: deploymentCommit, checkedAt },
+    deployment: { status: deploymentState, source: deploymentSource, commit: deploymentCommit, checkedAt },
   }
 }
 
