@@ -1,5 +1,6 @@
 import type { GitHubStats, LemonStats, VercelStats, SupabaseStats } from './metrics'
 import type { CloudCostCache, CloudCostSettings, CloudCostSourceStatus, CloudProvider } from '../../electron/cloud-cost-types'
+import type { WorkEvidence, WorkHoursCommand, WorkHoursState } from '../../electron/work-hours-model'
 
 interface ProjectInfo {
   name: string
@@ -104,6 +105,10 @@ interface ElectronAPI {
   }
   projects: {
     scan: () => Promise<ProjectInfo[]>
+  }
+  workHours: {
+    command: (command: WorkHoursCommand) => Promise<{ ok: true; state: WorkHoursState } | { ok: false; error: string }>
+    evidence: (prUrl: string) => Promise<WorkEvidence>
   }
   automation: {
     scheduledTasks: () => Promise<{ name: string; description: string }[]>
