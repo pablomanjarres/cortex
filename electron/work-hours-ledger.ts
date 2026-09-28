@@ -144,4 +144,3 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
     }
   }
 }
-
