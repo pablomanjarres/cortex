@@ -25,7 +25,10 @@ test('a project can be started and stopped from Projects, leaving one saved inte
   await expect(page.getByRole('heading', { name: 'Project time' })).toBeVisible()
   await page.getByPlaceholder('Project name').fill('ConstruCredit')
   await page.getByRole('button', { name: 'Add project' }).click()
-  await expect(page.getByText('ConstruCredit', { exact: true }).first()).toBeVisible()
+  await expect(page.getByLabel('Project name', { exact: true })).toHaveValue('ConstruCredit')
+  await page.getByLabel('Project name', { exact: true }).fill('ConstruCredit S.A.S.')
+  await page.getByRole('button', { name: 'Save name' }).click()
+  await expect.poll(() => state.projects[0]?.name).toBe('ConstruCredit S.A.S.')
 
   commandTime = '2026-09-27T13:00:00.000Z'
   await page.getByRole('button', { name: 'Start', exact: true }).click()
