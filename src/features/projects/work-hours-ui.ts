@@ -27,7 +27,8 @@ export function dateTime(value: string): string {
 }
 
 export function newId(): string {
-  return crypto.randomUUID().replaceAll('-', '')
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 export async function sendCommand(command: WorkHoursCommand): Promise<WorkHoursState> {
