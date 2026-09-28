@@ -81,6 +81,14 @@ test('project and session IDs are stable, unique, and validated', () => {
   assert.throws(() => applyWorkHoursCommand(stopped, { type: 'start', id: 's1', projectId: 'construcredit' }, '2026-09-01T12:00:00Z'), /already exists/)
 })
 
+test('renaming a project keeps its ID and linked sessions', () => {
+  const state = session(withProject(), 's1', 'construcredit', '2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
+  const renamed = applyWorkHoursCommand(state, { type: 'rename-project', projectId: 'construcredit', name: ' ConstruCredit ' }, '2026-09-01T12:00:00Z')
+  assert.equal(renamed.projects[0].name, 'ConstruCredit')
+  assert.equal(renamed.sessions[0].projectId, 'construcredit')
+  assert.throws(() => applyWorkHoursCommand(state, { type: 'rename-project', projectId: 'construcredit', name: '  ' }, '2026-09-01T12:00:00Z'), /required/)
+})
+
 test('corrections reject reversed times, preserve original values, and recompute exact duration', () => {
   const state = session(withProject(), 's1', 'construcredit', '2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
   assert.throws(() => applyWorkHoursCommand(state, { type: 'correct-session', sessionId: 's1', startedAt: '2026-09-01T12:00:00Z', endedAt: '2026-09-01T11:00:00Z', description: '', billable: false, prUrl: null }, '2026-09-01T13:00:00Z'), /end.*after start/i)
