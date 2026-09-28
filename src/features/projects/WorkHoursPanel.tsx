@@ -25,6 +25,7 @@ export function WorkHoursPanel() {
   const [committedState, setCommittedState] = useState<WorkHoursState | null>(null)
   const [selectedId, setSelectedId] = useState('')
   const [projectName, setProjectName] = useState('')
+  const [nameEdit, setNameEdit] = useState<{ projectId: string; value: string } | null>(null)
   const [rateEdit, setRateEdit] = useState<{ projectId: string; value: string } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -43,6 +44,7 @@ export function WorkHoursPanel() {
     ? selectedId
     : state.active?.projectId ?? state.projects[0]?.id ?? ''
   const project = state.projects.find((entry) => entry.id === projectId) ?? null
+  const nameDraft = nameEdit?.projectId === projectId ? nameEdit.value : project?.name ?? ''
   const rateDraft = rateEdit?.projectId === projectId ? rateEdit.value : project?.ratePerHour == null ? '' : String(project.ratePerHour)
   const editing = state.sessions.find((entry) => entry.id === editingId) ?? null
   const sessions = state.sessions.filter((entry) => entry.projectId === projectId).slice()
@@ -96,6 +98,12 @@ export function WorkHoursPanel() {
     if (await command({ type: 'set-rate', projectId: project.id, ratePerHour: rate })) setRateEdit(null)
   }
 
+  async function saveName(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!project) return
+    if (await command({ type: 'rename-project', projectId: project.id, name: nameDraft })) setNameEdit(null)
+  }
+
   async function saveSession(session: WorkSession, values: WorkSessionValues): Promise<boolean> {
     const corrected = await command({ type: 'correct-session', sessionId: session.id, ...values })
     if (!corrected) return false
@@ -116,7 +124,13 @@ export function WorkHoursPanel() {
 
         {project ? (
           <div className="mt-5 space-y-5 border-t border-border/70 pt-5">
-            <h4 className="text-base font-semibold">{project.name}</h4>
+            <form onSubmit={(event) => { void saveName(event) }} className="flex flex-wrap items-end gap-2">
+              <label className="min-w-48 flex-1 space-y-1.5 text-sm font-medium" htmlFor="work-project-edit-name">
+                Project name
+                <Input id="work-project-edit-name" value={nameDraft} onChange={(event) => setNameEdit({ projectId: project.id, value: event.target.value })} maxLength={120} />
+              </label>
+              <Button type="submit" variant="secondary" disabled={busy || !nameDraft.trim() || nameDraft.trim() === project.name}>Save name</Button>
+            </form>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <label className="min-w-48 flex-1 space-y-1.5 text-sm font-medium" htmlFor="work-project-select">
                 Project

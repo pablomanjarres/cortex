@@ -41,15 +41,30 @@ function overlaps(start: number, end: number, otherStart: number, otherEnd: numb
   return start < otherEnd && end > otherStart
 }
 
+function validProjectName(value: string): string {
+  const name = value.trim()
+  if (!name) throw new Error('Project name is required')
+  if (name.length > 120) throw new Error('Project name is too long')
+  return name
+}
+
 export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursCommand, now: string): WorkHoursState {
   const at = iso(now)
   switch (command.type) {
     case 'add-project': {
       const projectId = id(command.id)
-      const name = command.name.trim()
-      if (!name) throw new Error('Project name is required')
+      const name = validProjectName(command.name)
       if (state.projects.some((entry) => entry.id === projectId)) throw new Error('Project ID already exists')
       return { ...state, projects: [...state.projects, { id: projectId, name, ratePerHour: null, currency: 'COP' }] }
+    }
+    case 'rename-project': {
+      const previous = project(state, command.projectId)
+      const name = validProjectName(command.name)
+      if (previous.name === name) return state
+      return {
+        ...state,
+        projects: state.projects.map((entry) => entry.id === previous.id ? { ...entry, name } : entry),
+      }
     }
     case 'start': {
       project(state, command.projectId)

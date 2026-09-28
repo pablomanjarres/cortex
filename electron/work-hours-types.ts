@@ -89,6 +89,7 @@ export interface WorkHoursState {
 
 export type WorkHoursCommand =
   | { type: 'add-project'; id: string; name: string }
+  | { type: 'rename-project'; projectId: string; name: string }
   | { type: 'set-rate'; projectId: string; ratePerHour: number | null }
   | { type: 'start'; id: string; projectId: string }
   | { type: 'switch'; id: string; projectId: string }
