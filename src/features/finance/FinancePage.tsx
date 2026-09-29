@@ -9,6 +9,8 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CHART_FONT_MONO, ThemedTooltip, axisProps, chartColor, chartColors, cssVar } from '@/lib/chart-theme'
 import { useStore } from '@/lib/store'
+import { OneTimePayments } from './OneTimePayments'
+import { FINANCE_CATEGORIES, financeMonth, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
 import {
   TrendingUp,
   TrendingDown,
@@ -41,25 +43,6 @@ import {
   Cell,
   Legend,
 } from 'recharts'
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-type ItemType = 'Income' | 'Expense' | 'Subscription'
-
-interface FinanceItem {
-  id: string
-  name: string
-  type: ItemType
-  category?: string
-  months: number[]
-  paid?: boolean[]
-  paidAmounts?: number[] // actual amount paid per month (for partial payments)
-}
-
-interface FinanceData {
-  year: number
-  items: FinanceItem[]
-}
 
 // ── Default Data (from Finances.xlsx) ────────────────────────────────────────
 
@@ -104,8 +87,6 @@ const fmtCOP = (n: number) => {
   return `$${n}`
 }
 const fmtFull = (n: number) => `$${n.toLocaleString('es-CO')}`
-
-const CATEGORIES = ['AI', 'Infrastructure', 'Creative', 'Productivity', 'Apps', 'Food', 'Personal Care', 'Home', 'Debt', 'Health', 'Transport', 'Education', 'Entertainment', 'Other'] as const
 
 const fmtCell = (n: number) => `$${n.toLocaleString('es-CO')}`
 
@@ -172,6 +153,19 @@ export function FinancePage() {
   const deleteItem = (id: string) =>
     updateData((prev) => ({ ...prev, items: prev.items.filter((i) => i.id !== id) }))
 
+  const saveOneTimePayment = (payment: OneTimePayment) => {
+    updateData((prev) => {
+      const existing = prev.oneTimePayments ?? []
+      return { ...prev, oneTimePayments: existing.some((item) => item.id === payment.id)
+        ? existing.map((item) => item.id === payment.id ? payment : item)
+        : [...existing, payment] }
+    })
+    setSelectedMonth(Number(payment.date.slice(5, 7)) - 1)
+  }
+
+  const deleteOneTimePayment = (id: string) =>
+    updateData((prev) => ({ ...prev, oneTimePayments: (prev.oneTimePayments ?? []).filter((item) => item.id !== id) }))
+
   const [editingPaidId, setEditingPaidId] = useState<string | null>(null)
   const [paidAmountInput, setPaidAmountInput] = useState('')
 
@@ -197,43 +191,19 @@ export function FinancePage() {
     setPaidAmountInput('')
   }
 
-  const monthlyTotals = useMemo(() =>
-    MONTHS.map((_, i) => {
-      const income = data.items.filter((it) => it.type === 'Income').reduce((s, it) => s + it.months[i], 0)
-      const expenses = data.items.filter((it) => it.type !== 'Income').reduce((s, it) => s + it.months[i], 0)
-      return { month: MONTHS[i], income, expenses, savings: income - expenses }
-    }), [data.items])
+  const monthlyTotals = useMemo(() => MONTHS.map((month, i) => ({ month, ...financeMonth(data, i) })), [data])
 
   const cur = monthlyTotals[selectedMonth]
   const savingsRate = cur.income > 0 ? (cur.savings / cur.income) * 100 : 0
   const yearTotal = useMemo(() => ({ income: monthlyTotals.reduce((s, m) => s + m.income, 0), expenses: monthlyTotals.reduce((s, m) => s + m.expenses, 0) }), [monthlyTotals])
 
-  const balance = useMemo(() => {
-    const mi = selectedMonth
-    const income = data.items.filter(it => it.type === 'Income').reduce((s, it) => s + it.months[mi], 0)
-    const payable = data.items.filter(it => it.type !== 'Income' && it.months[mi] > 0)
-    const paidTotal = payable.reduce((s, it) => {
-      const pa = it.paidAmounts?.[mi] ?? (it.paid?.[mi] ? it.months[mi] : 0)
-      return s + pa
-    }, 0)
-    const unpaidTotal = payable.reduce((s, it) => s + it.months[mi], 0) - paidTotal
-    const paidCount = payable.filter(it => it.paid?.[mi] ?? false).length
-    return { current: income - paidTotal, pending: unpaidTotal, paidCount, totalPayable: payable.length }
-  }, [data.items, selectedMonth])
+  const balance = cur
 
   const mask = (v: string) => hideIncome ? '•••' : v
 
-  const expenseBreakdown = useMemo(() => {
-    const items = data.items.filter((it) => it.type !== 'Income' && it.months[selectedMonth] > 0)
-    const grouped = new Map<string, number>()
-    items.forEach((it) => {
-      const cat = it.category || 'Other'
-      grouped.set(cat, (grouped.get(cat) || 0) + it.months[selectedMonth])
-    })
-    return Array.from(grouped.entries())
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value)
-  }, [data.items, selectedMonth])
+  const expenseBreakdown = cur.categoryBreakdown
+  const oneTimeMonthTotals = monthlyTotals.map((month) => month.oneTimePayments.reduce((total, payment) => total + payment.amount, 0))
+  const oneTimeYearTotal = oneTimeMonthTotals.reduce((total, amount) => total + amount, 0)
 
   const subscriptions = useMemo(() => data.items.filter((it) => it.type === 'Subscription'), [data.items])
   const subMonthly = subscriptions.reduce((s, it) => s + it.months[selectedMonth], 0)
@@ -342,7 +312,7 @@ export function FinancePage() {
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
         <StatTile
           label={`Account Balance · ${MONTHS[selectedMonth]}`}
-          value={mask(fmtFull(balance.current))}
+          value={mask(fmtFull(balance.balance))}
           icon={<Wallet />}
         />
         <StatTile
@@ -420,6 +390,16 @@ export function FinancePage() {
         </div>
       </WidgetCard>
 
+      <OneTimePayments
+        year={data.year}
+        month={selectedMonth}
+        monthLabel={MONTHS[selectedMonth]}
+        payments={cur.oneTimePayments}
+        formatAmount={fmtFull}
+        onSave={saveOneTimePayment}
+        onDelete={deleteOneTimePayment}
+      />
+
       {/* Budget Table */}
       <WidgetCard title="Budget" description={`${filtered.length} items`} delay={0.25}>
         <div className="mb-3 flex flex-col gap-2 sm:gap-3">
@@ -457,7 +437,7 @@ export function FinancePage() {
             <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
               className="h-7 cursor-pointer rounded-md border border-input bg-transparent px-2 text-xs text-muted-foreground">
               <option value="">All Categories</option>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              {FINANCE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
@@ -561,7 +541,7 @@ export function FinancePage() {
                           {item.type !== 'Income' ? (
                             <select value={item.category || 'Other'} onChange={(e) => setField(item.id, { category: e.target.value })}
                               className="cursor-pointer rounded-full bg-transparent px-1.5 py-0.5 font-mono text-3xs text-muted-foreground outline-none hover:text-foreground">
-                              {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                              {FINANCE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
                           ) : null}
                         </td>
@@ -616,6 +596,19 @@ export function FinancePage() {
                   </tr>,
                 ]
               })}
+              {oneTimeYearTotal > 0 && (
+                <tr className="border-t border-border/40">
+                  <td className="sticky left-0 z-10 bg-card px-4 py-1.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">One-time Subtotal</td>
+                  <td></td>
+                  <td></td>
+                  {!compact && oneTimeMonthTotals.map((amount, mi) => (
+                    <td key={mi} className={`py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{fmtCell(amount)}</td>
+                  ))}
+                  {compact && <td className="bg-foreground/[0.03] py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{fmtCell(oneTimeMonthTotals[selectedMonth])}</td>}
+                  <td className="py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{fmtCell(oneTimeYearTotal)}</td>
+                  <td></td>
+                </tr>
+              )}
               <tr className="border-t border-border/50 font-medium">
                 <td className="sticky left-0 z-10 bg-card px-4 py-2.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Net</td>
                 <td></td>
