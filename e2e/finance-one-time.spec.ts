@@ -53,4 +53,10 @@ test('a one-time payment changes this month without creating a budget row', asyn
   await expect.poll(() => (backend.stores['cortex-finances'] as { oneTimePayments?: unknown[] }).oneTimePayments).toEqual([])
   await page.getByRole('tab', { name: /Sep/ }).click()
   await expect(page.getByText('Expenses', { exact: true }).first().locator('..').locator('..')).toContainText('$200K')
+
+  await page.getByRole('button', { name: 'Set paid amount for Rent' }).click()
+  await page.getByRole('textbox', { name: 'Paid amount for Rent' }).fill('150000')
+  await page.getByRole('textbox', { name: 'Paid amount for Rent' }).press('Tab')
+  await expect.poll(() => (backend.stores['cortex-finances'] as { items: { id: string; paidAmounts?: number[] }[] })
+    .items.find((item) => item.id === 'rent')?.paidAmounts?.[8]).toBe(150000)
 })
