@@ -94,6 +94,7 @@ export type WorkHoursCommand =
   | { type: 'start'; id: string; projectId: string }
   | { type: 'switch'; id: string; projectId: string }
   | { type: 'stop' }
+  | { type: 'stop-owned'; id: string }
   | { type: 'correct-session'; sessionId: string; startedAt: string; endedAt: string; description: string; billable: boolean; prUrl: string | null }
   | { type: 'review-session'; sessionId: string }
   | { type: 'mark-interrupted' }
@@ -113,7 +114,7 @@ export function iso(value: string): string {
 }
 
 export function id(value: string): string {
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value)) throw new Error('Invalid ID')
+  if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value)) throw new Error('Invalid ID')
   return value
 }
 

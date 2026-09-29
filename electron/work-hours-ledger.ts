@@ -89,6 +89,8 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
       }
     }
     case 'stop':
+    case 'stop-owned':
+      if (command.type === 'stop-owned' && state.active?.id !== id(command.id)) return state
       if (!state.active) return state
       return { ...state, active: null, sessions: [...state.sessions, completed(state.active, at, state.active.interrupted)] }
     case 'set-rate': {
