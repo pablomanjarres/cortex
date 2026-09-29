@@ -202,7 +202,7 @@ export function FinancePage() {
   const mask = (v: string) => hideIncome ? '•••' : v
 
   const expenseBreakdown = cur.categoryBreakdown
-  const oneTimeMonthTotals = monthlyTotals.map((month) => month.oneTimePayments.reduce((total, payment) => total + payment.amount, 0))
+  const oneTimeMonthTotals = monthlyTotals.map((month) => month.oneTimeTotal)
   const oneTimeYearTotal = oneTimeMonthTotals.reduce((total, amount) => total + amount, 0)
 
   const subscriptions = useMemo(() => data.items.filter((it) => it.type === 'Subscription'), [data.items])
@@ -395,6 +395,7 @@ export function FinancePage() {
         month={selectedMonth}
         monthLabel={MONTHS[selectedMonth]}
         payments={cur.oneTimePayments}
+        total={cur.oneTimeTotal}
         formatAmount={fmtFull}
         onSave={saveOneTimePayment}
         onDelete={deleteOneTimePayment}
@@ -484,23 +485,27 @@ export function FinancePage() {
                                 <div className="flex shrink-0 items-center gap-1">
                                   {editingPaidId === item.id ? (
                                     <div className="flex items-center gap-1">
-                                      <input
+                                      <Input
+                                        aria-label={`Paid amount for ${item.name}`}
                                         value={paidAmountInput}
                                         onChange={(e) => setPaidAmountInput(e.target.value.replace(/\D/g, ''))}
                                         onKeyDown={(e) => e.key === 'Enter' && commitPaidAmount(item.id, selectedMonth)}
                                         onBlur={() => commitPaidAmount(item.id, selectedMonth)}
-                                        className="h-5 w-16 rounded-md bg-input px-1 font-mono text-2xs tabular-nums outline-none"
+                                        className="h-5 w-16 border-0 bg-input px-1 py-0 font-mono text-2xs tabular-nums shadow-none"
                                         autoFocus
                                       />
                                     </div>
                                   ) : (
                                     <div className="flex items-center gap-1.5">
-                                      <button
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-xs"
                                         onClick={() => {
                                           const pa = item.paidAmounts?.[selectedMonth] ?? 0
                                           startEditPaid(item.id, pa, item.months[selectedMonth])
                                         }}
-                                        className="shrink-0 cursor-pointer"
+                                        className="shrink-0"
                                         title="Click to set paid amount"
                                         aria-label={`Set paid amount for ${item.name}`}
                                       >
@@ -515,7 +520,7 @@ export function FinancePage() {
                                         ) : (
                                           <Circle className="h-3.5 w-3.5 text-foreground-faint transition-colors hover:text-muted-foreground" />
                                         )}
-                                      </button>
+                                      </Button>
                                       {(item.paidAmounts?.[selectedMonth] ?? 0) > 0 && (item.paidAmounts?.[selectedMonth] ?? 0) < item.months[selectedMonth] && (
                                         <span className="whitespace-nowrap font-mono text-3xs tabular-nums text-warning">
                                           {fmtCOP(item.paidAmounts![selectedMonth])}/{fmtCOP(item.months[selectedMonth])}

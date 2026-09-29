@@ -26,6 +26,7 @@ test('paid and upcoming one-time expenses affect only their own month and catego
   const september = financeMonth(data, 8)
   assert.equal(september.income, 500000)
   assert.equal(september.expenses, 370000)
+  assert.equal(september.oneTimeTotal, 170000)
   assert.equal(september.savings, 130000)
   assert.equal(september.balance, 130000)
   assert.equal(september.pending, 50000)
@@ -40,6 +41,7 @@ test('paid and upcoming one-time expenses affect only their own month and catego
 
   const october = financeMonth(data, 9)
   assert.equal(october.expenses, 30000)
+  assert.equal(october.oneTimeTotal, 30000)
   assert.equal(october.balance, 0)
   assert.equal(october.pending, 30000)
   assert.deepEqual(october.oneTimePayments.map(p => p.id), ['book'])
@@ -57,6 +59,7 @@ test('older finance records without one-time payments keep their current totals'
   }, 8)
 
   assert.equal(september.expenses, 200000)
+  assert.equal(september.oneTimeTotal, 0)
   assert.equal(september.balance, 300000)
   assert.equal(september.pending, 0)
   assert.deepEqual(september.oneTimePayments, [])
