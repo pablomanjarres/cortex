@@ -48,6 +48,20 @@ function validProjectName(value: string): string {
   return name
 }
 
+function saveCorrection(state: WorkHoursState, row: WorkSession, after: WorkSessionValues, at: string, durationMs = row.durationMs): WorkHoursState {
+  const before = currentValues(row)
+  if (JSON.stringify(before) === JSON.stringify(after)) return state
+  return {
+    ...state,
+    sessions: state.sessions.map((entry) => entry.id === row.id ? {
+      ...entry,
+      ...after,
+      durationMs,
+      corrections: [...entry.corrections, { correctedAt: at, before, after }],
+    } : entry),
+  }
+}
+
 export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursCommand, now: string): WorkHoursState {
   const at = iso(now)
   switch (command.type) {
@@ -93,6 +107,19 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
       if (command.type === 'stop-owned' && state.active?.id !== id(command.id)) return state
       if (!state.active) return state
       return { ...state, active: null, sessions: [...state.sessions, completed(state.active, at, state.active.interrupted)] }
+    case 'attach-deliverable': {
+      const sessionId = id(command.id)
+      const row = state.sessions.find((entry) => entry.id === sessionId)
+      if (!row) throw new Error('Session not found')
+      if (typeof command.prUrl !== 'string' || typeof command.description !== 'string') throw new Error('Invalid deliverable')
+      const prUrl = validPrUrl(command.prUrl)
+      if (row.prUrl && row.prUrl !== prUrl) throw new Error('Session already has a different PR')
+      return saveCorrection(state, row, {
+        ...currentValues(row),
+        prUrl,
+        description: row.description.trim() ? row.description : command.description.trim(),
+      }, at)
+    }
     case 'set-rate': {
       project(state, command.projectId)
       const rate = command.ratePerHour
@@ -125,17 +152,7 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
       if (state.active && overlaps(startMs, endMs, Date.parse(state.active.startedAt), Date.parse(at))) {
         throw new Error('Corrected session overlaps active work')
       }
-      const before = currentValues(row)
-      if (JSON.stringify(before) === JSON.stringify(after)) return state
-      return {
-        ...state,
-        sessions: state.sessions.map((entry) => entry.id === row.id ? {
-          ...entry,
-          ...after,
-          durationMs: endMs - startMs,
-          corrections: [...entry.corrections, { correctedAt: at, before, after }],
-        } : entry),
-      }
+      return saveCorrection(state, row, after, at, endMs - startMs)
     }
     case 'review-session': {
       const row = state.sessions.find((entry) => entry.id === command.sessionId)

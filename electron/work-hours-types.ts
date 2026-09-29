@@ -95,6 +95,7 @@ export type WorkHoursCommand =
   | { type: 'switch'; id: string; projectId: string }
   | { type: 'stop' }
   | { type: 'stop-owned'; id: string }
+  | { type: 'attach-deliverable'; id: string; prUrl: string; description: string }
   | { type: 'correct-session'; sessionId: string; startedAt: string; endedAt: string; description: string; billable: boolean; prUrl: string | null }
   | { type: 'review-session'; sessionId: string }
   | { type: 'mark-interrupted' }
