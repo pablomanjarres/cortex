@@ -55,6 +55,7 @@ export function financeMonth(data: FinanceData, month: number) {
   return {
     income,
     expenses,
+    oneTimeTotal,
     savings: income - expenses,
     balance: income - paidTotal,
     pending,

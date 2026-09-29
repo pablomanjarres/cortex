@@ -11,6 +11,7 @@ interface Props {
   month: number
   monthLabel: string
   payments: OneTimePayment[]
+  total: number
   formatAmount: (amount: number) => string
   onSave: (payment: OneTimePayment) => void
   onDelete: (id: string) => void
@@ -26,11 +27,10 @@ function initialDate(year: number, month: number): string {
   return `${year}-${pad(month + 1)}-${pad(day)}`
 }
 
-export function OneTimePayments({ year, month, monthLabel, payments, formatAmount, onSave, onDelete }: Props) {
+export function OneTimePayments({ year, month, monthLabel, payments, total, formatAmount, onSave, onDelete }: Props) {
   const formId = useId()
   const [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
-  const total = payments.reduce((sum, payment) => sum + payment.amount, 0)
 
   const add = () => setDraft({
     id: crypto.randomUUID(), name: '', amount: '', date: initialDate(year, month),
@@ -54,17 +54,18 @@ export function OneTimePayments({ year, month, monthLabel, payments, formatAmoun
     <>
       <WidgetCard title="One-time payments" description={`${monthLabel} · extra expenses outside regular budget rows`} delay={0.22} compact>
         <div className="flex items-center gap-2">
-          <button
+          <Button
             type="button"
+            variant="ghost"
             aria-label={`${expanded ? 'Hide' : 'Show'} one-time payments for ${monthLabel}`}
             aria-expanded={expanded}
             onClick={() => setExpanded(!expanded)}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-secondary/30 focus-visible:outline-2 focus-visible:outline-accent"
+            className="h-auto min-w-0 flex-1 shrink justify-start gap-2 px-2 py-2 text-left font-normal"
           >
             <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
-            <span className="min-w-0 flex-1 text-sm text-muted-foreground">{payments.length} {payments.length === 1 ? 'payment' : 'payments'}</span>
-            <span className="font-mono text-sm font-semibold tabular-nums">{formatAmount(total)}</span>
-          </button>
+            <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{payments.length} {payments.length === 1 ? 'payment' : 'payments'}</span>
+            <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">{formatAmount(total)}</span>
+          </Button>
           <Button variant="outline" size="xs" onClick={add} aria-label="Add one-time payment" className="shrink-0">
             <Plus /> Add payment
           </Button>
