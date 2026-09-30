@@ -147,7 +147,7 @@ export function FinancePage() {
     }) }))
 
   const addItem = (type: ItemType) =>
-    updateData((prev) => ({ ...prev, items: [...prev.items, { id: `fin-${Date.now()}`, name: 'New item', type, category: type !== 'Income' ? 'Other' : undefined, months: Array(12).fill(0), ...(type === 'Income' ? { receivedAmounts: Array(12).fill(0) } : { paid: Array(12).fill(false) }) }] }))
+    updateData((prev) => ({ ...prev, items: [...prev.items, { id: `fin-${Date.now()}`, name: 'New item', type, category: type !== 'Income' ? 'Other' : undefined, months: Array(12).fill(0), paid: Array(12).fill(false) }] }))
 
   const deleteItem = (id: string) =>
     updateData((prev) => ({ ...prev, items: prev.items.filter((i) => i.id !== id) }))
