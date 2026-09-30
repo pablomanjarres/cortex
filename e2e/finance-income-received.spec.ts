@@ -38,4 +38,9 @@ test('income rows record received versus expected without changing planned incom
   await page.getByRole('button', { name: 'Income', exact: true }).first().click()
   await expect(page.getByText('$700K/$1.5M')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Set received amount for Mom' })).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Hidden' }).click()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.reload()
+  await expect(page.getByText('$700K/$1.5M')).toBeVisible()
 })
