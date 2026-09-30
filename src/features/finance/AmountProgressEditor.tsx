@@ -31,6 +31,10 @@ export function AmountProgressEditor({ kind, name, amount, expected, settled, fo
       cancelled.current = false
       return
     }
+    if (kind === 'received' && amount === null && draft === '') {
+      setEditing(false)
+      return
+    }
     const value = Number(draft || '0')
     if (Number.isSafeInteger(value) && value >= 0) onSave(value)
     setEditing(false)
