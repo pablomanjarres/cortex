@@ -43,6 +43,16 @@ test('income rows record received versus expected without changing planned incom
   await page.setViewportSize({ width: 390, height: 844 })
   await page.reload()
   await expect(page.getByText('$700K/$1.5M')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Set received amount for Mom' }).click()
+  await page.getByRole('textbox', { name: 'Received amount for Mom' }).fill('')
+  await page.getByRole('textbox', { name: 'Received amount for Mom' }).press('Tab')
+  await expect.poll(() => (backend.stores['cortex-finances'] as {
+    items: { id: string; receivedAmounts?: (number | null)[] }[]
+  }).items.find((item) => item.id === 'mom')?.receivedAmounts?.[9]).toBeNull()
+  await expect(page.getByText('$700K/$1.5M')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Set received amount for Mom' }).locator('..').getByText('Set received')).toBeVisible()
+  await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$3.300.000')
 })
 
 test('adding planned income does not invent a zero receipt', async ({ page }) => {

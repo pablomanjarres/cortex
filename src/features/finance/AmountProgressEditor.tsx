@@ -11,9 +11,10 @@ interface Props {
   settled?: boolean
   formatAmount: (amount: number) => string
   onSave: (amount: number) => void
+  onClear?: () => void
 }
 
-export function AmountProgressEditor({ kind, name, amount, expected, settled, formatAmount, onSave }: Props) {
+export function AmountProgressEditor({ kind, name, amount, expected, settled, formatAmount, onSave, onClear }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const cancelled = useRef(false)
@@ -31,7 +32,8 @@ export function AmountProgressEditor({ kind, name, amount, expected, settled, fo
       cancelled.current = false
       return
     }
-    if (kind === 'received' && amount === null && draft === '') {
+    if (kind === 'received' && draft === '') {
+      if (amount !== null) onClear?.()
       setEditing(false)
       return
     }
