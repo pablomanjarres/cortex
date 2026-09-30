@@ -44,3 +44,20 @@ test('income rows record received versus expected without changing planned incom
   await page.reload()
   await expect(page.getByText('$700K/$1.5M')).toBeVisible()
 })
+
+test('adding planned income does not invent a zero receipt', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-01T15:00:00Z'))
+  const backend = await mockStores(page, { 'cortex-finances': { year: 2026, items: [] } })
+  await page.goto('/#/finance')
+  await page.getByRole('button', { name: 'Toggle compact columns' }).click()
+  await page.getByRole('button', { name: 'Income', exact: true }).last().click()
+
+  const row = page.locator('tr').filter({ has: page.locator('input[value="New item"]') })
+  await row.locator('td').nth(3).locator('input').fill('1500000')
+  await page.getByText('Account Balance · Oct').click()
+
+  await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$1.500.000')
+  expect((backend.stores['cortex-finances'] as { items: { receivedAmounts?: (number | null)[] }[] })
+    .items[0]?.receivedAmounts).toBeUndefined()
+  await expect(page.getByRole('button', { name: 'Set received amount for New item' })).toBeVisible()
+})
