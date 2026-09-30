@@ -175,7 +175,7 @@ export function FinancePage() {
       return { ...i, paidAmounts, paid }
     }) }))
 
-  const setReceivedAmount = (id: string, monthIdx: number, amount: number) =>
+  const setReceivedAmount = (id: string, monthIdx: number, amount: number | null) =>
     updateData((prev) => withReceivedAmount(prev, id, monthIdx, amount))
 
   const monthlyTotals = useMemo(() => MONTHS.map((month, i) => ({ month, ...financeMonth(data, i) })), [data])
@@ -481,6 +481,9 @@ export function FinancePage() {
                                 onSave={(amount) => item.type === 'Income'
                                   ? setReceivedAmount(item.id, selectedMonth, amount)
                                   : setPaidAmount(item.id, selectedMonth, amount)}
+                                onClear={item.type === 'Income'
+                                  ? () => setReceivedAmount(item.id, selectedMonth, null)
+                                  : undefined}
                               />
                             ) : item.type !== 'Income' ? (
                               <span className="w-3.5 shrink-0" />

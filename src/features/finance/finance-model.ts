@@ -34,9 +34,9 @@ export function receivedAmountFor(item: FinanceItem, month: number): number | nu
   return typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 0 ? amount : null
 }
 
-export function withReceivedAmount(data: FinanceData, id: string, month: number, amount: number): FinanceData {
-  if (!Number.isInteger(month) || month < 0 || month > 11 || !Number.isSafeInteger(amount) || amount < 0) {
-    throw new RangeError('Received income must be a non-negative whole amount in a valid month')
+export function withReceivedAmount(data: FinanceData, id: string, month: number, amount: number | null): FinanceData {
+  if (!Number.isInteger(month) || month < 0 || month > 11 || (amount !== null && (!Number.isSafeInteger(amount) || amount < 0))) {
+    throw new RangeError('Received income must be null or a non-negative whole amount in a valid month')
   }
   let changed = false
   const items = data.items.map((item) => {
