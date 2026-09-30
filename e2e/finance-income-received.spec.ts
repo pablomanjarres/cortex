@@ -26,7 +26,11 @@ test('income rows record received versus expected without changing planned incom
   }).items.find((item) => item.id === 'mom')?.receivedAmounts?.[9]).toBe(700000)
   await expect(page.getByText('$700K/$1.5M')).toBeVisible()
   await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$2.500.000')
-  await expect(page.getByText('Income', { exact: true }).first().locator('..')).toContainText('$3.5M')
+  await expect(page.getByText('$3.5M', { exact: true })).toBeVisible()
   expect((backend.stores['cortex-finances'] as { items: { id: string; months: number[] }[] })
     .items.find((item) => item.id === 'mom')?.months[9]).toBe(1500000)
+
+  await page.getByRole('button', { name: 'Income', exact: true }).first().click()
+  await expect(page.getByText('$700K/$1.5M')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Set received amount for Mom' })).toHaveCount(0)
 })
