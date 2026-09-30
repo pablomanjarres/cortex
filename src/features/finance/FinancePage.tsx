@@ -10,7 +10,8 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CHART_FONT_MONO, ThemedTooltip, axisProps, chartColor, chartColors, cssVar } from '@/lib/chart-theme'
 import { useStore } from '@/lib/store'
 import { OneTimePayments } from './OneTimePayments'
-import { FINANCE_CATEGORIES, financeMonth, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
+import { AmountProgressEditor } from './AmountProgressEditor'
+import { FINANCE_CATEGORIES, financeMonth, receivedAmountFor, withReceivedAmount, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
 import {
   TrendingUp,
   TrendingDown,
@@ -18,8 +19,6 @@ import {
   PiggyBank,
   Plus,
   Trash2,
-  Check,
-  Circle,
   Wallet,
   CreditCard,
   Columns2,
@@ -166,9 +165,6 @@ export function FinancePage() {
   const deleteOneTimePayment = (id: string) =>
     updateData((prev) => ({ ...prev, oneTimePayments: (prev.oneTimePayments ?? []).filter((item) => item.id !== id) }))
 
-  const [editingPaidId, setEditingPaidId] = useState<string | null>(null)
-  const [paidAmountInput, setPaidAmountInput] = useState('')
-
   const setPaidAmount = (id: string, monthIdx: number, amount: number) =>
     updateData((prev) => ({ ...prev, items: prev.items.map((i) => {
       if (i.id !== id) return i
@@ -179,17 +175,8 @@ export function FinancePage() {
       return { ...i, paidAmounts, paid }
     }) }))
 
-  const startEditPaid = (id: string, currentAmount: number, totalAmount: number) => {
-    setEditingPaidId(id)
-    setPaidAmountInput(String(currentAmount || totalAmount))
-  }
-
-  const commitPaidAmount = (id: string, monthIdx: number) => {
-    const amount = parseInt(paidAmountInput.replace(/\D/g, '')) || 0
-    setPaidAmount(id, monthIdx, amount)
-    setEditingPaidId(null)
-    setPaidAmountInput('')
-  }
+  const setReceivedAmount = (id: string, monthIdx: number, amount: number) =>
+    updateData((prev) => withReceivedAmount(prev, id, monthIdx, amount))
 
   const monthlyTotals = useMemo(() => MONTHS.map((month, i) => ({ month, ...financeMonth(data, i) })), [data])
 
@@ -480,58 +467,23 @@ export function FinancePage() {
                       <tr key={item.id} className={`group border-b border-border/20 hover:bg-secondary/30 ${idx % 2 === 1 ? 'bg-secondary/10' : ''} ${isPaidSelected ? 'opacity-60' : ''}`}>
                         <td className="sticky left-0 z-10 bg-inherit px-4 py-2">
                           <div className="flex items-center gap-1.5">
-                            {item.type !== 'Income' ? (
-                              item.months[selectedMonth] > 0 ? (
-                                <div className="flex shrink-0 items-center gap-1">
-                                  {editingPaidId === item.id ? (
-                                    <div className="flex items-center gap-1">
-                                      <Input
-                                        aria-label={`Paid amount for ${item.name}`}
-                                        value={paidAmountInput}
-                                        onChange={(e) => setPaidAmountInput(e.target.value.replace(/\D/g, ''))}
-                                        onKeyDown={(e) => e.key === 'Enter' && commitPaidAmount(item.id, selectedMonth)}
-                                        onBlur={() => commitPaidAmount(item.id, selectedMonth)}
-                                        className="h-5 w-16 border-0 bg-input px-1 py-0 font-mono text-2xs tabular-nums shadow-none"
-                                        autoFocus
-                                      />
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-1.5">
-                                      <Button
-                                        type="button"
-                                        variant="ghost"
-                                        size="icon-xs"
-                                        onClick={() => {
-                                          const pa = item.paidAmounts?.[selectedMonth] ?? 0
-                                          startEditPaid(item.id, pa, item.months[selectedMonth])
-                                        }}
-                                        className="shrink-0"
-                                        title="Click to set paid amount"
-                                        aria-label={`Set paid amount for ${item.name}`}
-                                      >
-                                        {(item.paid?.[selectedMonth]) ? (
-                                          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-success/25 bg-success/10">
-                                            <Check className="h-2 w-2 text-success" strokeWidth={3} />
-                                          </span>
-                                        ) : (item.paidAmounts?.[selectedMonth] ?? 0) > 0 ? (
-                                          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-warning/25 bg-warning/10">
-                                            <DollarSign className="h-2 w-2 text-warning" strokeWidth={3} />
-                                          </span>
-                                        ) : (
-                                          <Circle className="h-3.5 w-3.5 text-foreground-faint transition-colors hover:text-muted-foreground" />
-                                        )}
-                                      </Button>
-                                      {(item.paidAmounts?.[selectedMonth] ?? 0) > 0 && (item.paidAmounts?.[selectedMonth] ?? 0) < item.months[selectedMonth] && (
-                                        <span className="whitespace-nowrap font-mono text-3xs tabular-nums text-warning">
-                                          {fmtCOP(item.paidAmounts![selectedMonth])}/{fmtCOP(item.months[selectedMonth])}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="w-3.5 shrink-0" />
-                              )
+                            {item.months[selectedMonth] > 0 && !(hideIncome && item.type === 'Income') ? (
+                              <AmountProgressEditor
+                                key={`${item.id}-${selectedMonth}-${item.type}`}
+                                kind={item.type === 'Income' ? 'received' : 'paid'}
+                                name={item.name}
+                                amount={item.type === 'Income'
+                                  ? receivedAmountFor(item, selectedMonth)
+                                  : (item.paidAmounts?.[selectedMonth] ?? (item.paid?.[selectedMonth] ? item.months[selectedMonth] : 0))}
+                                expected={item.months[selectedMonth]}
+                                settled={item.paid?.[selectedMonth] ?? false}
+                                formatAmount={fmtCOP}
+                                onSave={(amount) => item.type === 'Income'
+                                  ? setReceivedAmount(item.id, selectedMonth, amount)
+                                  : setPaidAmount(item.id, selectedMonth, amount)}
+                              />
+                            ) : item.type !== 'Income' ? (
+                              <span className="w-3.5 shrink-0" />
                             ) : null}
                             <input value={item.name} onChange={(e) => setField(item.id, { name: e.target.value })} className="w-full bg-transparent font-medium outline-none" />
                           </div>

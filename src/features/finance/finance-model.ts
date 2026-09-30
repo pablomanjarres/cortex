@@ -8,6 +8,7 @@ export interface FinanceItem {
   months: number[]
   paid?: boolean[]
   paidAmounts?: number[]
+  receivedAmounts?: (number | null)[]
 }
 
 export interface OneTimePayment {
@@ -27,12 +28,33 @@ export interface FinanceData {
 
 export const FINANCE_CATEGORIES = ['AI', 'Infrastructure', 'Creative', 'Productivity', 'Apps', 'Food', 'Personal Care', 'Home', 'Debt', 'Health', 'Transport', 'Education', 'Entertainment', 'Other'] as const
 
+export function receivedAmountFor(item: FinanceItem, month: number): number | null {
+  if (item.type !== 'Income') return null
+  const amount = item.receivedAmounts?.[month]
+  return typeof amount === 'number' && Number.isSafeInteger(amount) && amount >= 0 ? amount : null
+}
+
+export function withReceivedAmount(data: FinanceData, id: string, month: number, amount: number): FinanceData {
+  if (!Number.isInteger(month) || month < 0 || month > 11 || !Number.isSafeInteger(amount) || amount < 0) {
+    throw new RangeError('Received income must be a non-negative whole amount in a valid month')
+  }
+  let changed = false
+  const items = data.items.map((item) => {
+    if (item.id !== id || item.type !== 'Income') return item
+    changed = true
+    const receivedAmounts = Array.from({ length: 12 }, (_, index) => item.receivedAmounts?.[index] ?? null)
+    receivedAmounts[month] = amount
+    return { ...item, receivedAmounts }
+  })
+  return changed ? { ...data, items } : data
+}
+
 export function financeMonth(data: FinanceData, month: number) {
   const prefix = `${data.year}-${String(month + 1).padStart(2, '0')}-`
   const oneTimePayments = (data.oneTimePayments ?? []).filter((payment) => payment.date.startsWith(prefix))
-  const income = data.items
-    .filter((item) => item.type === 'Income')
-    .reduce((total, item) => total + (item.months[month] || 0), 0)
+  const incomeItems = data.items.filter((item) => item.type === 'Income')
+  const income = incomeItems.reduce((total, item) => total + (item.months[month] || 0), 0)
+  const balanceIncome = incomeItems.reduce((total, item) => total + (receivedAmountFor(item, month) ?? (item.months[month] || 0)), 0)
   const payable = data.items.filter((item) => item.type !== 'Income' && item.months[month] > 0)
   const budgetExpenses = payable.reduce((total, item) => total + item.months[month], 0)
   const oneTimeTotal = oneTimePayments.reduce((total, payment) => total + payment.amount, 0)
@@ -57,7 +79,7 @@ export function financeMonth(data: FinanceData, month: number) {
     expenses,
     oneTimeTotal,
     savings: income - expenses,
-    balance: income - paidTotal,
+    balance: balanceIncome - paidTotal,
     pending,
     paidCount: payable.filter((item) => item.paid?.[month] ?? false).length
       + oneTimePayments.filter((payment) => payment.paid).length,
