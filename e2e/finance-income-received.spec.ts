@@ -18,6 +18,11 @@ test('income rows record received versus expected without changing planned incom
   await page.goto('/#/finance')
   await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$3.300.000')
   await page.getByRole('button', { name: 'Set received amount for Mom' }).click()
+  await page.getByRole('textbox', { name: 'Received amount for Mom' }).press('Tab')
+  expect((backend.stores['cortex-finances'] as { items: { id: string; receivedAmounts?: (number | null)[] }[] })
+    .items.find((item) => item.id === 'mom')?.receivedAmounts).toBeUndefined()
+  await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$3.300.000')
+  await page.getByRole('button', { name: 'Set received amount for Mom' }).click()
   await page.getByRole('textbox', { name: 'Received amount for Mom' }).fill('700000')
   await page.getByRole('textbox', { name: 'Received amount for Mom' }).press('Tab')
 
