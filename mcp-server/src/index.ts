@@ -2160,7 +2160,7 @@ interface McpMealEntry { id: string; name: string; foods: McpFoodItem[] }
 interface McpDailyNutrition { date: string; meals: McpMealEntry[]; waterLiters: number; weight?: number; notes?: string }
 interface McpGroceryItem { id: string; name: string; price: number; quantity: number; store: string; category: string }
 interface McpWeeklyMarketLog { weekStart: string; items: McpGroceryItem[] }
-interface McpFinanceItem { id: string; name: string; type: string; category?: string; months: number[]; paid?: boolean[]; paidAmounts?: number[] }
+interface McpFinanceItem { id: string; name: string; type: string; category?: string; months: number[]; paid?: boolean[]; paidAmounts?: number[]; receivedAmounts?: (number | null)[] }
 interface McpFinanceData { year: number; items: McpFinanceItem[] }
 interface McpPantryItem { id: string; name: string; protein: number; calories: number; serving?: string; quantity?: number; category?: string; source?: string; addedAt?: string }
 interface McpMarketListItem { name: string; price: number; quantity: number; store: string; category: string; timesBought?: number; lastBought?: string; checked?: boolean }
