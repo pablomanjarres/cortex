@@ -38,6 +38,15 @@ export interface CreateEventPayload {
   createCalendarIfMissing?: boolean // create the target calendar (with calendarColor) if it doesn't exist
 }
 
+/**
+ * Which occurrences an update touches. Defaults to the whole series
+ * ("futureEvents"); pass "thisEvent" to deliberately detach a single
+ * occurrence. Only meaningful for recurring events.
+ */
+export type UpdateSpan = 'thisEvent' | 'futureEvents'
+
+export type UpdateEventPayload = Partial<CreateEventPayload> & { span?: UpdateSpan }
+
 export interface BirthdayEntry {
   name: string
   birthday: string // YYYY-MM-DD
@@ -186,6 +195,36 @@ func readJsonFromStdin() -> [String: Any]? {
     return json
 }
 
+/// Build an EKRecurrenceRule from the RRULE subset Cortex emits:
+/// FREQ (DAILY/WEEKLY/MONTHLY, else yearly), optional BYDAY=MO,WE,FR and
+/// optional UNTIL=YYYYMMDD. Shared by create and update so a rule always
+/// round-trips the same way.
+func recurrenceRule(_ recurrence: String) -> EKRecurrenceRule {
+    var freq: EKRecurrenceFrequency = .yearly
+    if recurrence.contains("DAILY") { freq = .daily }
+    else if recurrence.contains("WEEKLY") { freq = .weekly }
+    else if recurrence.contains("MONTHLY") { freq = .monthly }
+
+    // Optional BYDAY=MO,WE,FR — which weekdays a weekly event repeats on.
+    var days: [EKRecurrenceDayOfWeek]? = nil
+    if let byday = fieldAfter(recurrence, "BYDAY=") {
+        let parsed = byday.split(separator: ",").compactMap { weekdayFromToken(String($0)) }.map { EKRecurrenceDayOfWeek($0) }
+        if !parsed.isEmpty { days = parsed }
+    }
+
+    // Optional UNTIL=YYYYMMDD — bounds recurrence (e.g. term end).
+    var recEnd: EKRecurrenceEnd? = nil
+    if let until = fieldAfter(recurrence, "UNTIL=") {
+        let ymd = String(until.prefix(8))
+        let uf = DateFormatter()
+        uf.dateFormat = "yyyyMMdd"
+        uf.timeZone = TimeZone.current
+        if let untilDate = uf.date(from: ymd) { recEnd = EKRecurrenceEnd(end: untilDate) }
+    }
+
+    return EKRecurrenceRule(recurrenceWith: freq, interval: 1, daysOfTheWeek: days, daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: recEnd)
+}
+
 // ─── Commands ─────────────────────────────────────────────────────
 
 let args = CommandLine.arguments
@@ -262,30 +301,7 @@ case "create":
     }
 
     if let recurrence = recurrence {
-        var freq: EKRecurrenceFrequency = .yearly
-        if recurrence.contains("DAILY") { freq = .daily }
-        else if recurrence.contains("WEEKLY") { freq = .weekly }
-        else if recurrence.contains("MONTHLY") { freq = .monthly }
-
-        // Optional BYDAY=MO,WE,FR — which weekdays a weekly event repeats on.
-        var days: [EKRecurrenceDayOfWeek]? = nil
-        if let byday = fieldAfter(recurrence, "BYDAY=") {
-            let parsed = byday.split(separator: ",").compactMap { weekdayFromToken(String($0)) }.map { EKRecurrenceDayOfWeek($0) }
-            if !parsed.isEmpty { days = parsed }
-        }
-
-        // Optional UNTIL=YYYYMMDD — bounds recurrence (e.g. term end).
-        var recEnd: EKRecurrenceEnd? = nil
-        if let until = fieldAfter(recurrence, "UNTIL=") {
-            let ymd = String(until.prefix(8))
-            let uf = DateFormatter()
-            uf.dateFormat = "yyyyMMdd"
-            uf.timeZone = TimeZone.current
-            if let untilDate = uf.date(from: ymd) { recEnd = EKRecurrenceEnd(end: untilDate) }
-        }
-
-        let rule = EKRecurrenceRule(recurrenceWith: freq, interval: 1, daysOfTheWeek: days, daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil, daysOfTheYear: nil, setPositions: nil, end: recEnd)
-        event.addRecurrenceRule(rule)
+        event.addRecurrenceRule(recurrenceRule(recurrence))
     }
 
     do {
@@ -327,8 +343,26 @@ case "update":
         }
     }
 
+    // Replace the recurrence rule when one is supplied. Without this an event
+    // the old .thisEvent bug had already detached could never be made repeating
+    // again: its rule was gone, so the birthday sync would keep moving a
+    // one-off and reporting success. Passing no recurrence leaves the existing
+    // rule untouched.
+    if let recurrence = input["recurrence"] as? String {
+        for rule in event.recurrenceRules ?? [] { event.removeRecurrenceRule(rule) }
+        if !recurrence.isEmpty { event.addRecurrenceRule(recurrenceRule(recurrence)) }
+    }
+
+    // An update means "move the series" unless the caller explicitly asks to
+    // detach one occurrence. EventKit reads .thisEvent as "change only this
+    // occurrence", which silently splits a copy off a recurring event and
+    // leaves the rest of the series behind — never what a sync wants, and it
+    // reports success either way. Harmless for one-off events, where the two
+    // spans are equivalent.
+    let span: EKSpan = (input["span"] as? String) == "thisEvent" ? .thisEvent : .futureEvents
+
     do {
-        try store.save(event, span: .thisEvent)
+        try store.save(event, span: span)
         print("{\\"success\\":true}")
     } catch {
         print("{\\"success\\":false,\\"error\\":\\(jsonString(error.localizedDescription))}")
@@ -465,7 +499,7 @@ export function createCalendarEvent(payload: CreateEventPayload): Promise<{ id: 
   })
 }
 
-export function updateCalendarEvent(eventId: string, payload: Partial<CreateEventPayload>): Promise<{ success: boolean }> {
+export function updateCalendarEvent(eventId: string, payload: UpdateEventPayload): Promise<{ success: boolean }> {
   const input = JSON.stringify(payload)
   return runCalHelper(['update', eventId], input).then((stdout) => {
     const result = JSON.parse(stdout)
