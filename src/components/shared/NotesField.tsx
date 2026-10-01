@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import ReactDOM from 'react-dom'
-import Markdown from 'react-markdown'
+import Markdown, { type Components } from 'react-markdown'
 import TurndownService from 'turndown'
 import {
   Bold, Italic, List, Heading2, Quote, Code, Image as ImageIcon,
@@ -12,10 +12,10 @@ const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fen
 // ── Shared bits ──────────────────────────────────────────────────────────────
 
 /** Render markdown, resolving `img:<id>` sources from an in-memory cache. */
-function mdImageRenderer(images: Record<string, string>, className: string) {
+function mdImageRenderer(images: Record<string, string>, className: string): Components {
   return {
-    img: ({ src, alt, ...props }: any) => {
-      if (src?.startsWith('img:')) {
+    img: ({ src, alt, ...props }) => {
+      if (typeof src === 'string' && src.startsWith('img:')) {
         const data = images[src.slice(4)]
         if (data) return <img src={data} alt={alt || ''} className={className} {...props} />
         return <span className="text-xs italic text-foreground-faint">[image loading…]</span>
@@ -28,8 +28,7 @@ function mdImageRenderer(images: Record<string, string>, className: string) {
 type MdApply = (prefix: string, suffix?: string) => void
 
 /** Insert markdown around the current textarea selection. */
-function makeInsert(ref: React.RefObject<HTMLTextAreaElement | null>, value: string, onChange: (v: string) => void): MdApply {
-  return (prefix, suffix = '') => {
+function insertMarkdown(ref: React.RefObject<HTMLTextAreaElement | null>, value: string, onChange: (v: string) => void, prefix: string, suffix = '') {
     const ta = ref.current
     if (!ta) return
     const start = ta.selectionStart
@@ -42,7 +41,6 @@ function makeInsert(ref: React.RefObject<HTMLTextAreaElement | null>, value: str
       ta.selectionStart = start + prefix.length
       ta.selectionEnd = start + prefix.length + selected.length
     })
-  }
 }
 
 function ToolbarButton({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
@@ -126,7 +124,7 @@ function FullscreenEditor({
 }) {
   const [preview, setPreview] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const apply = makeInsert(ref, value, onChange)
+  const apply: MdApply = (prefix, suffix) => insertMarkdown(ref, value, onChange, prefix, suffix)
   const words = value.trim() ? value.trim().split(/\s+/).length : 0
 
   useEffect(() => {
@@ -230,7 +228,7 @@ export function NotesField({
   const [editing, setEditing] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const apply = makeInsert(ref, value, onChange)
+  const apply: MdApply = (prefix, suffix) => insertMarkdown(ref, value, onChange, prefix, suffix)
 
   // Auto-grow the inline textarea to fit its content.
   useLayoutEffect(() => {

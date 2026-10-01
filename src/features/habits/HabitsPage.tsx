@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
-import { useStore } from '@/lib/store'
+import { readStore, useStore } from '@/lib/store'
 import { localDate, getWeekLabel } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
 import { PageShell } from '@/components/shared/PageShell'
@@ -14,6 +14,7 @@ import { HabitAddForm, HabitEditFields } from './HabitForms'
 import { HabitNoteButton, HabitNoteEditor } from './HabitNotes'
 import { OnHoldHabitsSection } from './OnHoldHabitsSection'
 import { emptyHabitDraft, type HabitDraft } from './habitFormState'
+import { migrateLegacyHabitHistory, type HabitHistory } from './habit-migration'
 
 const OLD_DEFAULT_IDS = ['1', '2', '3', '4', '5', '6', '7']
 
@@ -79,12 +80,9 @@ function parseGoal(raw: string, cadence: Cadence): number {
 }
 
 export function HabitsPage() {
-  const [habits, updateHabits] = useStore<Habit[]>('cortex-habits', defaultHabits)
-  const setHabits = (v: Habit[] | ((p: Habit[]) => Habit[])) => updateHabits(typeof v === 'function' ? v : () => v)
-  const [grid, updateGrid] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-grid', {})
-  const setGrid = (v: Record<string, Record<string, boolean>> | ((p: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>)) => updateGrid(typeof v === 'function' ? v : () => v)
-  const [habitHistory, updateHabitHistory] = useStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {})
-  const setHabitHistory = (v: Record<string, Record<string, boolean>> | ((p: Record<string, Record<string, boolean>>) => Record<string, Record<string, boolean>>)) => updateHabitHistory(typeof v === 'function' ? v : () => v)
+  const [habits, setHabits] = useStore<Habit[]>('cortex-habits', defaultHabits)
+  const [grid, setGrid] = useStore<HabitHistory>('cortex-habits-grid', {})
+  const [habitHistory, setHabitHistory] = useStore<HabitHistory>('cortex-habits-history', {})
   const [activeDraft, setActiveDraft] = useState<HabitDraft>(() => emptyHabitDraft())
   const [holdDraft, setHoldDraft] = useState<HabitDraft>(() => emptyHabitDraft())
   const [customCategory, setCustomCategory] = useState({ active: false, hold: false })
@@ -103,24 +101,16 @@ export function HabitsPage() {
 
   // One-time migration from old weekly grid to date-based history
   useEffect(() => {
-    if (Object.keys(grid).length > 0 && Object.keys(habitHistory).length === 0) {
-      const weekDates = getWeekDatesWithOffset(0)
-      const migrated: Record<string, Record<string, boolean>> = {}
-      for (const [habitId, days] of Object.entries(grid)) {
-        for (const [dayName, done] of Object.entries(days as Record<string, boolean>)) {
-          const dayIndex = weekDays.indexOf(dayName)
-          if (dayIndex >= 0 && done) {
-            const date = weekDates[dayIndex]
-            if (!migrated[date]) migrated[date] = {}
-            migrated[date][habitId] = true
-          }
-        }
-      }
-      if (Object.keys(migrated).length > 0) {
-        setHabitHistory(() => migrated)
-      }
-    }
-  }, [])
+    if (Object.keys(grid).length === 0 || Object.keys(habitHistory).length > 0) return
+    let cancelled = false
+    void migrateLegacyHabitHistory(
+      grid,
+      getWeekDatesWithOffset(0),
+      () => readStore<HabitHistory>('cortex-habits-history', {}),
+      (update) => { if (!cancelled) setHabitHistory(update) },
+    )
+    return () => { cancelled = true }
+  }, [grid, habitHistory, setHabitHistory])
 
   // One-time migration from old default habits to new categorized ones
   const migratedRef = useRef(false)
@@ -132,7 +122,7 @@ export function HabitsPage() {
       migratedRef.current = true
       setHabits(defaultHabits)
     }
-  }, [habits])
+  }, [habits, setHabits])
 
   const activeHabits = habits.filter(isActiveHabit)
   const heldHabits = habits.filter(h => h.onHold)

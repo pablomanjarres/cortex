@@ -231,9 +231,9 @@ export function MarketLog() {
     setLog(prev => ({ ...prev, items: prev.items.filter(i => i.id !== id) }))
   }
 
-  const quickAddItem = (preset: MarketPreset) => {
+  const quickAddItem = (preset: MarketPreset, addedAt: number) => {
     const item = {
-      id: Date.now().toString(),
+      id: addedAt.toString(),
       name: preset.name,
       price: preset.price,
       quantity: preset.quantity,
@@ -463,7 +463,7 @@ export function MarketLog() {
               {presets.map((preset, i) => (
                 <div key={`${preset.name}-${i}`} className="group relative">
                   <button
-                    onClick={() => !editingPresets && quickAddItem(preset)}
+                    onClick={() => !editingPresets && quickAddItem(preset, Date.now())}
                     className={`w-full rounded-md border border-border bg-muted/40 px-3 py-2.5 text-left text-xs transition-colors sm:px-2.5 sm:py-1.5 ${
                       editingPresets ? 'cursor-default pr-7' : 'hover:bg-muted/70 active:bg-muted'
                     }`}

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -8,7 +8,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import type { DailyNutrition, FoodItem, BodyStats, NutritionTargets, PantryItem } from '@/types/gym'
 import { COMMON_FOODS, EMPTY_DAILY_NUTRITION } from '@/types/gym'
 import { localDate } from '@/lib/date-utils'
-import { useStore, readStore, writeStore } from '@/lib/store'
+import { useStore } from '@/lib/store'
 import {
   Plus,
   X,
@@ -73,19 +73,16 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
   }, [dayOffset])
   const isToday = dayOffset === 0
 
-  // For non-today dates, load/save via readStore/writeStore
-  const [otherDayData, setOtherDayData] = useState<DailyNutrition | null>(null)
-  useEffect(() => {
-    if (isToday) { setOtherDayData(null); return }
-    readStore<DailyNutrition>(`cortex-nutrition-${viewDate}`, { ...EMPTY_DAILY_NUTRITION, date: viewDate }).then(setOtherDayData)
-  }, [viewDate, isToday])
+  const emptyDay = { ...EMPTY_DAILY_NUTRITION, date: viewDate }
+  const [storedDay, setStoredDay] = useStore<DailyNutrition>(`cortex-nutrition-${viewDate}`, emptyDay)
 
-  const nutrition = isToday ? todayNutrition : (otherDayData || { ...EMPTY_DAILY_NUTRITION, date: viewDate })
+  // A date switch can render before the store subscription changes. Never
+  // display or copy the previously selected day's food into the new date.
+  const nutrition = isToday ? todayNutrition : (storedDay.date === viewDate ? storedDay : emptyDay)
   const onUpdate = useCallback((n: DailyNutrition) => {
     if (isToday) { onUpdateToday(n); return }
-    setOtherDayData(n)
-    writeStore(`cortex-nutrition-${viewDate}`, n)
-  }, [isToday, viewDate, onUpdateToday])
+    setStoredDay(() => n)
+  }, [isToday, onUpdateToday, setStoredDay])
 
   const [activeMeal, setActiveMeal] = useState(getDefaultMealIndex)
   const [quickFoods, setQuickFoods] = useStore<FoodItem[]>('cortex-quick-foods', COMMON_FOODS)

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import type { SprintSession } from '../src/lib/sprint-context.tsx'
+import type { SprintSession } from '../src/lib/sprint-context.ts'
 import type { Assignment } from '../src/features/student/student-types.ts'
 
 type HomeModel = typeof import('../src/features/daily/home-model.ts')

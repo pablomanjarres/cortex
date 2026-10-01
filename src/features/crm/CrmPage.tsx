@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
+import { SortIcon } from '@/components/shared/SortIcon'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -17,9 +18,6 @@ import {
   Globe,
   DollarSign,
   Users,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -49,6 +47,8 @@ interface CrmData {
   orgs: CrmOrg[]
   activeOrg: string
 }
+
+const EMPTY_CONTACTS: CrmContact[] = []
 
 const DEFAULT_DATA: CrmData = {
   orgs: [
@@ -101,7 +101,7 @@ export function CrmPage() {
   const [showNewOrg, setShowNewOrg] = useState(false)
 
   const activeOrg = data.orgs.find((o) => o.id === data.activeOrg) || data.orgs[0]
-  const contacts = activeOrg?.contacts || []
+  const contacts = activeOrg?.contacts ?? EMPTY_CONTACTS
 
   const setActiveOrg = (id: string) => updateData((p) => ({ ...p, activeOrg: id }))
 
@@ -155,8 +155,6 @@ export function CrmPage() {
     if (sortKey === k) setSortAsc((p) => !p)
     else { setSortKey(k); setSortAsc(true) }
   }
-  const SortIcon = ({ k }: { k: SortKey }) =>
-    sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
 
   const filtered = useMemo(() => {
     const lowerSearch = search.toLowerCase()
@@ -327,20 +325,20 @@ export function CrmPage() {
               <tr className="border-b border-border/60 text-muted-foreground">
                 {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
                 <th className={`${thCls} min-w-[160px] px-4`}>
-                  <button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon k="name" /></button>
+                  <button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon active={sortKey === 'name'} ascending={sortAsc} /></button>
                 </th>
                 <th className={`${thCls} min-w-[120px]`}>
-                  <button onClick={() => toggleSort('company')} className={thBtnCls}>Company <SortIcon k="company" /></button>
+                  <button onClick={() => toggleSort('company')} className={thBtnCls}>Company <SortIcon active={sortKey === 'company'} ascending={sortAsc} /></button>
                 </th>
                 <th className={thCls}>Role</th>
                 <th className={thCls}>
-                  <button onClick={() => toggleSort('status')} className={thBtnCls}>Status <SortIcon k="status" /></button>
+                  <button onClick={() => toggleSort('status')} className={thBtnCls}>Status <SortIcon active={sortKey === 'status'} ascending={sortAsc} /></button>
                 </th>
                 <th className={`${thCls} text-right`}>
-                  <button onClick={() => toggleSort('value')} className={`${thBtnCls} ml-auto`}>Value <SortIcon k="value" /></button>
+                  <button onClick={() => toggleSort('value')} className={`${thBtnCls} ml-auto`}>Value <SortIcon active={sortKey === 'value'} ascending={sortAsc} /></button>
                 </th>
                 <th className={`${thCls} text-right`}>
-                  <button onClick={() => toggleSort('lastContact')} className={`${thBtnCls} ml-auto`}>Last <SortIcon k="lastContact" /></button>
+                  <button onClick={() => toggleSort('lastContact')} className={`${thBtnCls} ml-auto`}>Last <SortIcon active={sortKey === 'lastContact'} ascending={sortAsc} /></button>
                 </th>
                 <th className="w-6 py-2"></th>
               </tr>

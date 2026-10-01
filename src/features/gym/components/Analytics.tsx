@@ -58,27 +58,29 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
 
   // Load sessions + nutrition for date range
   useEffect(() => {
+    let cancelled = false
     const dates = getLastNDays(range)
     Promise.all(
       dates.map(d => readStore<unknown>(`cortex-gym-session-${d}`, null))
     ).then(results => {
+      if (cancelled) return
       const loaded: WorkoutSession[] = []
       for (const r of results) {
         if (!r) continue
         if (Array.isArray(r)) loaded.push(...(r as WorkoutSession[]))
-        else if (typeof r === 'object' && 'workoutDayId' in (r as any)) loaded.push(r as WorkoutSession)
+        else if (typeof r === 'object' && 'workoutDayId' in r) loaded.push(r as WorkoutSession)
       }
       setSessions(loaded)
-      if (!selectedExercise && loaded.length > 0) {
-        const firstEx = loaded.find(s => s.exercises.length > 0)?.exercises[0]
-        if (firstEx) setSelectedExercise(firstEx.exerciseName)
-      }
+      const firstEx = loaded.find(s => s.exercises.length > 0)?.exercises[0]
+      if (firstEx) setSelectedExercise(previous => previous || firstEx.exerciseName)
     })
     Promise.all(
       dates.map(d => readStore<DailyNutrition | null>(`cortex-nutrition-${d}`, null))
     ).then(results => {
+      if (cancelled) return
       setNutritionDays(results.filter((n): n is DailyNutrition => n !== null && n.meals.some(m => m.foods.length > 0)))
     })
+    return () => { cancelled = true }
   }, [range])
 
   // All unique exercise names
