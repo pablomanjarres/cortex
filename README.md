@@ -42,6 +42,8 @@ Point your MCP client at `node /absolute/path/to/cortex/mcp-server/dist/index.js
 
 Cloud billing setup is in [docs/cloud-cost-setup.md](docs/cloud-cost-setup.md). Use read-only cloud credentials.
 
+The [Project time API](docs/work-hours-api.md) supports timer ownership and PR attachments for saved work sessions.
+
 ## Brand assets
 
 The original abstract symbol, custom lettering, and combined logo live in [public/brand](public/brand). Run `npm run brand:generate` to rebuild the app, tray, favicon, and PWA icons from the symbol SVG.
