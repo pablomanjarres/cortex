@@ -14,6 +14,7 @@ test('recorded income changes cash balance while planned income and other months
     ],
   }
 
+  assert.equal(financeMonth(data, 9).receivedIncome, 0)
   assert.equal(financeMonth(data, 9).balance, 3300000)
   const updated = withReceivedAmount(data, 'mom', 9, 700000)
   assert.equal(updated.items[0].receivedAmounts?.[9], 700000)
@@ -21,7 +22,8 @@ test('recorded income changes cash balance while planned income and other months
   assert.equal(data.items[0].receivedAmounts, undefined)
   assert.equal(updated.items[1], data.items[1])
   assert.equal(financeMonth(updated, 9).income, 3500000)
-  assert.equal(financeMonth(updated, 9).balance, 2500000)
+  assert.equal(financeMonth(updated, 9).receivedIncome, 700000)
+  assert.equal(financeMonth(updated, 9).balance, 500000)
   assert.equal(financeMonth(updated, 8).balance, 600000)
 })
 
@@ -36,6 +38,7 @@ test('zero is a recorded receipt and editing another month keeps the first amoun
   assert.equal(september.items[0].receivedAmounts?.[9], 700000)
   assert.equal(september.items[0].receivedAmounts?.[8], 0)
   assert.equal(financeMonth(september, 8).income, 600000)
+  assert.equal(financeMonth(september, 8).receivedIncome, 0)
   assert.equal(financeMonth(september, 8).balance, 0)
 })
 
@@ -48,6 +51,7 @@ test('clearing a recorded receipt returns that month to untracked', async () => 
   const recorded = withReceivedAmount(data, 'mom', 9, 700000)
   const cleared = withReceivedAmount(recorded, 'mom', 9, null)
   assert.equal(cleared.items[0].receivedAmounts?.[9], null)
+  assert.equal(financeMonth(cleared, 9).receivedIncome, 0)
   assert.equal(financeMonth(cleared, 9).balance, 1500000)
   assert.equal(recorded.items[0].receivedAmounts?.[9], 700000)
 })

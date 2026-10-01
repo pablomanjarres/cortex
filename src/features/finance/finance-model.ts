@@ -54,7 +54,9 @@ export function financeMonth(data: FinanceData, month: number) {
   const oneTimePayments = (data.oneTimePayments ?? []).filter((payment) => payment.date.startsWith(prefix))
   const incomeItems = data.items.filter((item) => item.type === 'Income')
   const income = incomeItems.reduce((total, item) => total + (item.months[month] || 0), 0)
-  const balanceIncome = incomeItems.reduce((total, item) => total + (receivedAmountFor(item, month) ?? (item.months[month] || 0)), 0)
+  const receivedIncome = incomeItems.reduce((total, item) => total + (receivedAmountFor(item, month) ?? 0), 0)
+  const isTrackingReceivedIncome = incomeItems.some((item) => receivedAmountFor(item, month) !== null)
+  const balanceIncome = isTrackingReceivedIncome ? receivedIncome : income
   const payable = data.items.filter((item) => item.type !== 'Income' && item.months[month] > 0)
   const budgetExpenses = payable.reduce((total, item) => total + item.months[month], 0)
   const oneTimeTotal = oneTimePayments.reduce((total, payment) => total + payment.amount, 0)
@@ -76,6 +78,7 @@ export function financeMonth(data: FinanceData, month: number) {
 
   return {
     income,
+    receivedIncome,
     expenses,
     oneTimeTotal,
     savings: income - expenses,

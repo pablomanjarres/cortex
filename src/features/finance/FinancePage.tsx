@@ -260,7 +260,13 @@ export function FinancePage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile variant="glass" label="Income" value={mask(fmtCOP(cur.income))} icon={<TrendingUp />} />
+        <StatTile
+          variant="glass"
+          label="Received"
+          value={mask(fmtCOP(cur.receivedIncome))}
+          sub={`${mask(fmtCOP(cur.income))} planned`}
+          icon={<TrendingUp />}
+        />
         <StatTile variant="glass" label="Expenses" value={fmtCOP(cur.expenses)} icon={<TrendingDown />} />
         <StatTile
           variant="glass"
@@ -433,7 +439,7 @@ export function FinancePage() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border/50 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
-                <th className="sticky left-0 z-10 min-w-[210px] bg-card px-4 py-2 text-left font-medium">
+                <th className="sticky left-0 z-10 min-w-[240px] bg-card px-4 py-2 text-left font-medium">
                   <Button variant="ghost" size="xs" onClick={() => toggleSort('name')} className="-ml-2 gap-1 font-mono text-2xs uppercase tracking-wider">
                     Item
                     {sortField === 'name' ? (sortDir === 'asc' ? <ChevronUp /> : <ChevronDown />) : <ChevronUp className="opacity-0 transition-opacity group-hover/button:opacity-40" />}
@@ -465,7 +471,7 @@ export function FinancePage() {
                     const isPaidSelected = item.type !== 'Income' && item.months[selectedMonth] > 0 && (item.paid?.[selectedMonth] ?? false)
                     return (
                       <tr key={item.id} className={`group border-b border-border/20 hover:bg-secondary/30 ${idx % 2 === 1 ? 'bg-secondary/10' : ''}`}>
-                        <td className="sticky left-0 z-10 min-w-[210px] bg-inherit px-4 py-2">
+                        <td className="sticky left-0 z-10 min-w-[240px] bg-inherit px-4 py-2">
                           <FinanceItemCell
                             key={`${item.id}-${selectedMonth}-${item.type}`}
                             kind={item.type === 'Income' ? 'received' : 'paid'}
