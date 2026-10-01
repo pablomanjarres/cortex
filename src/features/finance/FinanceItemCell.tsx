@@ -45,7 +45,7 @@ export function FinanceItemCell({ kind, name, onNameChange, amount, expected, se
   }
 
   return (
-    <div className="flex min-w-0 items-start gap-2">
+    <div className="flex min-h-10 min-w-0 items-start gap-2">
       {active ? (
         <Button
           type="button"
@@ -101,9 +101,9 @@ export function FinanceItemCell({ kind, name, onNameChange, amount, expected, se
             autoFocus
           />
         ) : (
-          <p className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs leading-4">
+          <p className="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-xs font-medium leading-4">
             <span className="text-muted-foreground">{kind === 'received' ? 'Received' : 'Paid'}</span>
-            <span className={`font-mono tabular-nums ${complete ? 'text-success' : partial ? 'text-warning' : 'text-muted-foreground'}`}>
+            <span className={`font-mono tabular-nums ${complete ? 'text-success' : partial ? 'text-warning' : 'text-foreground/70'}`}>
               {amount === null ? '—' : formatAmount(amount)}/{formatAmount(expected)}
             </span>
           </p>
