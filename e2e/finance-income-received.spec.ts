@@ -9,7 +9,7 @@ test('income rows record received versus expected without changing planned incom
       year: 2026,
       items: [
         { id: 'mom', name: 'Mom', type: 'Income', months: months(1500000) },
-        { id: 'salary', name: 'Salary', type: 'Income', months: months(2000000) },
+        { id: 'salary', name: 'Job Construcredit', type: 'Income', months: months(2000000) },
         { id: 'rent', name: 'Rent', type: 'Expense', category: 'Home', months: months(200000), paid: months(1).map(Boolean) },
       ],
     },
@@ -40,9 +40,22 @@ test('income rows record received versus expected without changing planned incom
   await expect(page.getByRole('button', { name: 'Set received amount for Mom' })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Hidden' }).click()
-  await page.setViewportSize({ width: 390, height: 844 })
+  await page.setViewportSize({ width: 320, height: 844 })
   await page.reload()
   await expect(page.getByText('$700K/$1.5M')).toBeVisible()
+  const momCell = page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Set received amount for Mom' }) }).locator('td').first()
+  const longNameCell = page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Set received amount for Job Construcredit' }) }).locator('td').first()
+  await expect(momCell.getByText('Received', { exact: true })).toBeVisible()
+  await expect(momCell.getByText('$700K/$1.5M')).toBeVisible()
+  await expect(page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Set paid amount for Rent' }) }).getByText('$200K/$200K')).toBeVisible()
+  for (const cell of [momCell, longNameCell]) {
+    const name = cell.getByRole('textbox', { name: /Item name for/ })
+    const progress = cell.getByText(/\$700K\/\$1\.5M|—\/\$2\.0M/)
+    const [nameBox, progressBox, cellBox] = await Promise.all([name.boundingBox(), progress.boundingBox(), cell.boundingBox()])
+    expect(nameBox && progressBox && cellBox).toBeTruthy()
+    expect(progressBox!.y).toBeGreaterThanOrEqual(nameBox!.y + nameBox!.height - 1)
+    expect(progressBox!.x + progressBox!.width).toBeLessThanOrEqual(cellBox!.x + cellBox!.width + 1)
+  }
 
   await page.getByRole('button', { name: 'Set received amount for Mom' }).click()
   await page.getByRole('textbox', { name: 'Received amount for Mom' }).fill('')
@@ -51,7 +64,7 @@ test('income rows record received versus expected without changing planned incom
     items: { id: string; receivedAmounts?: (number | null)[] }[]
   }).items.find((item) => item.id === 'mom')?.receivedAmounts?.[9]).toBeNull()
   await expect(page.getByText('$700K/$1.5M')).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Set received amount for Mom' }).locator('..').getByText('Set received')).toBeVisible()
+  await expect(momCell.getByText('—/$1.5M')).toBeVisible()
   await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$3.300.000')
 })
 
