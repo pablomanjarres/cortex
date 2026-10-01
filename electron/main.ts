@@ -4,6 +4,7 @@ import http from 'http'
 import os from 'os'
 import fs from 'fs'
 import zlib from 'zlib'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'url'
 import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
 import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
@@ -16,6 +17,9 @@ import { isPublicKeychainService } from './keychain-access.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
 import { shouldDeleteDailyFile } from './daily-retention.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
+import { emptyWorkHoursState, type WorkHoursCommand, type WorkHoursState } from './work-hours-model.js'
+import { WorkHoursService } from './work-hours-service.js'
+import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -58,6 +62,7 @@ let traySprintEndMs: number | null = null
 let traySprintTask: string | null = null
 let traySprintInterval: ReturnType<typeof setInterval> | null = null
 let trayRefreshTimer: ReturnType<typeof setInterval> | null = null
+let cachedWorkHours: WorkHoursState = emptyWorkHoursState()
 
 // ─── Live system stats (from Glances on the Mac mini) ───
 interface HostStats {
@@ -128,6 +133,8 @@ function showAndNavigate(route: string) {
     mainWindow.webContents.send('navigate', route)
   } else {
     createWindow()
+    const created = mainWindow as BrowserWindow | null
+    created?.webContents.once('did-finish-load', () => created.webContents.send('navigate', route))
   }
 }
 
@@ -404,9 +411,33 @@ function updateTraySystemTitle() {
   if (!tray) return
   // Sprint timer takes priority.
   if (traySprintEndMs && traySprintEndMs > Date.now()) return
+  if (cachedWorkHours.active) {
+    const project = cachedWorkHours.projects.find((item) => item.id === cachedWorkHours.active?.projectId)
+    const label = project?.name ?? 'Work'
+    tray.setTitle(`${label.slice(0, 16)} ${workElapsedLabel(cachedWorkHours.active.startedAt)}`)
+    tray.setToolTip(`Cortex — tracking ${label}`)
+    return
+  }
   const parts: string[] = []
   if (cachedMacStats) parts.push(`Mac ${Math.round(cachedMacStats.cpu)}·${Math.round(cachedMacStats.mem)}`)
   tray.setTitle(parts.join('  '))
+  tray.setToolTip('Cortex')
+}
+
+function workElapsedLabel(startedAt: string): string {
+  const elapsedMs = Date.now() - Date.parse(startedAt)
+  if (!Number.isFinite(elapsedMs)) return 'review'
+  const totalMinutes = Math.floor(Math.max(0, elapsedMs) / 60000)
+  return `${Math.floor(totalMinutes / 60)}h ${String(totalMinutes % 60).padStart(2, '0')}m`
+}
+
+async function workTimeTrayCommand(command: WorkHoursCommand): Promise<void> {
+  try {
+    const result = await runWorkHoursCommand(command)
+    if (!result.ok) throw new Error(result.error)
+  } catch (error) {
+    dialog.showErrorBox('Project time was not saved', String((error as Error)?.message ?? error))
+  }
 }
 
 // ─── Tray sprint title (synced from renderer) ───────────
@@ -502,6 +533,27 @@ function buildMacStatsMenuItems(): Electron.MenuItemConstructorOptions[] {
 }
 
 function buildTrayMenu() {
+  const runningProject = cachedWorkHours.active
+    ? cachedWorkHours.projects.find((project) => project.id === cachedWorkHours.active?.projectId)
+    : null
+  const workItems: Electron.MenuItemConstructorOptions[] = cachedWorkHours.active
+    ? [
+        { label: `Tracking ${runningProject?.name ?? 'project'} · ${workElapsedLabel(cachedWorkHours.active.startedAt)}`, enabled: false },
+        { label: 'Stop and save', click: () => { void workTimeTrayCommand({ type: 'stop' }) } },
+        ...cachedWorkHours.projects
+          .filter((project) => project.id !== cachedWorkHours.active?.projectId)
+          .map((project): Electron.MenuItemConstructorOptions => ({
+            label: `Switch to ${project.name}`,
+            click: () => { void workTimeTrayCommand({ type: 'switch', id: randomUUID(), projectId: project.id }) },
+          })),
+      ]
+    : cachedWorkHours.projects.map((project): Electron.MenuItemConstructorOptions => ({
+        label: `Start ${project.name}`,
+        click: () => { void workTimeTrayCommand({ type: 'start', id: randomUUID(), projectId: project.id }) },
+      }))
+  if (workItems.length === 0) workItems.push({ label: 'Add a project to start tracking', enabled: false })
+  workItems.push({ type: 'separator' }, { label: 'Open Project time', click: () => showAndNavigate('/projects') })
+
   // Sprint section (synced from renderer)
   const sprintItems: Electron.MenuItemConstructorOptions[] = []
   if (traySprintEndMs && traySprintEndMs > Date.now()) {
@@ -567,6 +619,8 @@ function buildTrayMenu() {
     { label: `Score: ${currentStats.score}`, enabled: false },
     { type: 'separator' },
     ...buildMacStatsMenuItems(),
+    { type: 'separator' },
+    { label: 'Project time', submenu: workItems },
     { type: 'separator' },
     ...sprintItems,
     { type: 'separator' },
@@ -822,10 +876,38 @@ function startWebServer() {
           res.writeHead(409, headers)
           res.end(JSON.stringify({ error: 'conflict', rev: result.rev, data: result.data }))
         } else {
-          res.writeHead(result.error === 'invalid key' ? 400 : 500, headers)
+          res.writeHead(result.error === 'managed key' ? 403 : result.error === 'invalid key' ? 400 : 500, headers)
           res.end(JSON.stringify({ error: result.error }))
         }
       } catch { res.writeHead(500); res.end('Write error') }
+      return
+    }
+
+    if (url.pathname === '/api/work-hours/command' && req.method === 'POST') {
+      const body = await readBody(req, res)
+      if (body === null) return
+      let command: unknown
+      try { command = JSON.parse(body) } catch { res.writeHead(400); res.end('Invalid JSON'); return }
+      const result = await runWorkHoursCommand(command)
+      res.writeHead(result.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+      res.end(JSON.stringify(result))
+      return
+    }
+
+    if (url.pathname === '/api/work-hours/evidence' && req.method === 'POST') {
+      const body = await readBody(req, res)
+      if (body === null) return
+      let prUrl: unknown
+      try { prUrl = JSON.parse(body)?.prUrl } catch { res.writeHead(400); res.end('Invalid JSON'); return }
+      if (typeof prUrl !== 'string') { res.writeHead(400); res.end('Invalid PR URL'); return }
+      try {
+        const evidence = await fetchWorkHoursEvidence(prUrl)
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+        res.end(JSON.stringify(evidence))
+      } catch (error) {
+        res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+        res.end(JSON.stringify({ error: String((error as Error)?.message ?? error) }))
+      }
       return
     }
 
@@ -1556,6 +1638,7 @@ async function writeDataKey(
   opts: { baseRev?: string | number | null; source: DataChangeSource },
 ): Promise<WriteOutcome> {
   if (typeof key !== 'string' || !KEY_RE.test(key)) return { ok: false, error: 'invalid key' }
+  if (key === 'cortex-project-time' && opts.source !== 'main') return { ok: false, error: 'managed key' }
 
   let serialized: string
   try {
@@ -1662,6 +1745,44 @@ async function readDataKeyParsed<T>(key: string, fallback: T): Promise<T> {
   if (text === null) return fallback
   try { return JSON.parse(text) as T } catch { return fallback }
 }
+
+const workHoursService = new WorkHoursService({
+  read: async () => {
+    const { text, rev } = await readDataFile('cortex-project-time')
+    if (text === null && rev !== null) throw new Error('Saved project time could not be read')
+    if (text === null) return null
+    const parsed: unknown = JSON.parse(text)
+    if (!parsed || typeof parsed !== 'object' ||
+      !Array.isArray((parsed as WorkHoursState).projects) ||
+      !Array.isArray((parsed as WorkHoursState).sessions) ||
+      !Array.isArray((parsed as WorkHoursState).reports) ||
+      !('active' in parsed)) throw new Error('Saved project time has an invalid format')
+    return parsed as WorkHoursState
+  },
+  write: async (state) => {
+    const result = await writeDataKey('cortex-project-time', state, { source: 'main' })
+    if (!result.ok) throw new Error(result.conflict ? 'Work time changed during save' : result.error)
+  },
+}, (state) => {
+  cachedWorkHours = state
+  updateTraySystemTitle()
+  if (tray) tray.setContextMenu(buildTrayMenu())
+})
+
+async function runWorkHoursCommand(command: unknown): Promise<{ ok: true; state: WorkHoursState } | { ok: false; error: string }> {
+  if (!command || typeof command !== 'object' || Array.isArray(command) || typeof (command as { type?: unknown }).type !== 'string') {
+    return { ok: false, error: 'Invalid work-time command' }
+  }
+  try {
+    const state = await workHoursService.command(command as WorkHoursCommand)
+    return { ok: true, state }
+  } catch (error) {
+    return { ok: false, error: String((error as Error)?.message ?? error) }
+  }
+}
+
+ipcMain.handle('work-hours:command', async (_event, command: unknown) => runWorkHoursCommand(command))
+ipcMain.handle('work-hours:evidence', async (_event, prUrl: string) => fetchWorkHoursEvidence(prUrl))
 
 ipcMain.handle('automation:scheduledTasks', async () => readScheduledTasks())
 
@@ -1860,7 +1981,7 @@ let autoExportInterval: ReturnType<typeof setInterval> | null = null
 
 // ─── App lifecycle ─────────────────────────────────────────
 
-app.on('ready', () => {
+app.on('ready', async () => {
   const gcpImportArg = process.argv.find((arg) => arg.startsWith('--import-gcp-billing-key='))
   if (gcpImportArg) {
     try {
@@ -1896,6 +2017,11 @@ app.on('ready', () => {
   } else {
     migrateToEncrypted(dataDir, backupDir)
     console.log('[Cortex] Data encryption active')
+  }
+
+  try { await workHoursService.restore() } catch (error) {
+    console.error('[Cortex] Could not restore project time:', error)
+    dialog.showErrorBox('Project time unavailable', 'Cortex could not read the saved work timer. Check the app log before tracking more time.')
   }
 
   createWindow()

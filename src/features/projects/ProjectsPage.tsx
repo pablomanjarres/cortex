@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { useStore } from '@/lib/store'
+import { WorkHoursPanel } from './WorkHoursPanel'
 import {
   RefreshCw,
   Search,
@@ -180,6 +181,7 @@ export function ProjectsPage() {
 
   return (
     <PageShell>
+      <WorkHoursPanel />
       {/* Header stats */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4 font-mono text-2xs tabular-nums">

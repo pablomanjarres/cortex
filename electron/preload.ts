@@ -61,6 +61,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     scan: () => ipcRenderer.invoke('projects:scan'),
   },
 
+  workHours: {
+    command: (command: unknown) => ipcRenderer.invoke('work-hours:command', command),
+    evidence: (prUrl: string) => ipcRenderer.invoke('work-hours:evidence', prUrl),
+  },
+
   media: {
     save: (id: string, base64: string) => ipcRenderer.invoke('media:save', id, base64),
     load: (id: string) => ipcRenderer.invoke('media:load', id),
