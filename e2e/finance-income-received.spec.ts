@@ -16,6 +16,9 @@ test('income rows record received versus expected without changing planned incom
   })
 
   await page.goto('/#/finance')
+  const receivedTile = page.getByText('Received', { exact: true }).first().locator('..').locator('..')
+  await expect(receivedTile).toContainText('$0')
+  await expect(receivedTile).toContainText('$3.5M planned')
   await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$3.300.000')
   await page.getByRole('button', { name: 'Set received amount for Mom' }).click()
   await page.getByRole('textbox', { name: 'Received amount for Mom' }).press('Tab')
@@ -30,8 +33,9 @@ test('income rows record received versus expected without changing planned incom
     items: { id: string; receivedAmounts?: (number | null)[] }[]
   }).items.find((item) => item.id === 'mom')?.receivedAmounts?.[9]).toBe(700000)
   await expect(page.getByText('$700K/$1.5M')).toBeVisible()
-  await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$2.500.000')
-  await expect(page.getByText('$3.5M', { exact: true })).toBeVisible()
+  await expect(receivedTile).toContainText('$700K')
+  await expect(receivedTile).toContainText('$3.5M planned')
+  await expect(page.getByText('Account Balance · Oct').locator('..').locator('..')).toContainText('$500.000')
   expect((backend.stores['cortex-finances'] as { items: { id: string; months: number[] }[] })
     .items.find((item) => item.id === 'mom')?.months[9]).toBe(1500000)
 
@@ -55,6 +59,9 @@ test('income rows record received versus expected without changing planned incom
     expect(nameBox && progressBox && cellBox).toBeTruthy()
     expect(progressBox!.y).toBeGreaterThanOrEqual(nameBox!.y + nameBox!.height - 1)
     expect(progressBox!.x + progressBox!.width).toBeLessThanOrEqual(cellBox!.x + cellBox!.width + 1)
+    expect(cellBox!.width).toBeGreaterThanOrEqual(240)
+    expect(await name.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(14)
+    expect(await progress.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))).toBeGreaterThanOrEqual(12)
   }
 
   await page.getByRole('button', { name: 'Set received amount for Mom' }).click()
