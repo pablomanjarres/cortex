@@ -59,4 +59,7 @@ test('a one-time payment changes this month without creating a budget row', asyn
   await page.getByRole('textbox', { name: 'Paid amount for Rent' }).press('Tab')
   await expect.poll(() => (backend.stores['cortex-finances'] as { items: { id: string; paidAmounts?: number[] }[] })
     .items.find((item) => item.id === 'rent')?.paidAmounts?.[8]).toBe(150000)
+  const rentCell = page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Set paid amount for Rent' }) }).locator('td').first()
+  await expect(rentCell.getByText('Paid', { exact: true })).toBeVisible()
+  await expect(rentCell.getByText('$150K/$200K')).toBeVisible()
 })

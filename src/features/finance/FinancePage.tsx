@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CHART_FONT_MONO, ThemedTooltip, axisProps, chartColor, chartColors, cssVar } from '@/lib/chart-theme'
 import { useStore } from '@/lib/store'
 import { OneTimePayments } from './OneTimePayments'
-import { AmountProgressEditor } from './AmountProgressEditor'
+import { FinanceItemCell } from './FinanceItemCell'
 import { FINANCE_CATEGORIES, financeMonth, receivedAmountFor, withReceivedAmount, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
 import {
   TrendingUp,
@@ -433,7 +433,7 @@ export function FinancePage() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border/50 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
-                <th className="sticky left-0 z-10 min-w-[140px] bg-card px-4 py-2 text-left font-medium">
+                <th className="sticky left-0 z-10 min-w-[210px] bg-card px-4 py-2 text-left font-medium">
                   <Button variant="ghost" size="xs" onClick={() => toggleSort('name')} className="-ml-2 gap-1 font-mono text-2xs uppercase tracking-wider">
                     Item
                     {sortField === 'name' ? (sortDir === 'asc' ? <ChevronUp /> : <ChevronDown />) : <ChevronUp className="opacity-0 transition-opacity group-hover/button:opacity-40" />}
@@ -464,32 +464,27 @@ export function FinancePage() {
                     const total = item.months.reduce((a, b) => a + b, 0)
                     const isPaidSelected = item.type !== 'Income' && item.months[selectedMonth] > 0 && (item.paid?.[selectedMonth] ?? false)
                     return (
-                      <tr key={item.id} className={`group border-b border-border/20 hover:bg-secondary/30 ${idx % 2 === 1 ? 'bg-secondary/10' : ''} ${isPaidSelected ? 'opacity-60' : ''}`}>
-                        <td className="sticky left-0 z-10 bg-inherit px-4 py-2">
-                          <div className="flex items-center gap-1.5">
-                            {item.months[selectedMonth] > 0 && !(hideIncome && item.type === 'Income') ? (
-                              <AmountProgressEditor
-                                key={`${item.id}-${selectedMonth}-${item.type}`}
-                                kind={item.type === 'Income' ? 'received' : 'paid'}
-                                name={item.name}
-                                amount={item.type === 'Income'
-                                  ? receivedAmountFor(item, selectedMonth)
-                                  : (item.paidAmounts?.[selectedMonth] ?? (item.paid?.[selectedMonth] ? item.months[selectedMonth] : 0))}
-                                expected={item.months[selectedMonth]}
-                                settled={item.paid?.[selectedMonth] ?? false}
-                                formatAmount={fmtCOP}
-                                onSave={(amount) => item.type === 'Income'
-                                  ? setReceivedAmount(item.id, selectedMonth, amount)
-                                  : setPaidAmount(item.id, selectedMonth, amount)}
-                                onClear={item.type === 'Income'
-                                  ? () => setReceivedAmount(item.id, selectedMonth, null)
-                                  : undefined}
-                              />
-                            ) : item.type !== 'Income' ? (
-                              <span className="w-3.5 shrink-0" />
-                            ) : null}
-                            <input value={item.name} onChange={(e) => setField(item.id, { name: e.target.value })} className="w-full bg-transparent font-medium outline-none" />
-                          </div>
+                      <tr key={item.id} className={`group border-b border-border/20 hover:bg-secondary/30 ${idx % 2 === 1 ? 'bg-secondary/10' : ''}`}>
+                        <td className="sticky left-0 z-10 min-w-[210px] bg-inherit px-4 py-2">
+                          <FinanceItemCell
+                            key={`${item.id}-${selectedMonth}-${item.type}`}
+                            kind={item.type === 'Income' ? 'received' : 'paid'}
+                            name={item.name}
+                            onNameChange={(name) => setField(item.id, { name })}
+                            amount={item.type === 'Income'
+                              ? receivedAmountFor(item, selectedMonth)
+                              : (item.paidAmounts?.[selectedMonth] ?? (item.paid?.[selectedMonth] ? item.months[selectedMonth] : 0))}
+                            expected={item.months[selectedMonth]}
+                            settled={item.paid?.[selectedMonth] ?? false}
+                            concealed={hideIncome && item.type === 'Income'}
+                            formatAmount={fmtCOP}
+                            onSave={(amount) => item.type === 'Income'
+                              ? setReceivedAmount(item.id, selectedMonth, amount)
+                              : setPaidAmount(item.id, selectedMonth, amount)}
+                            onClear={item.type === 'Income'
+                              ? () => setReceivedAmount(item.id, selectedMonth, null)
+                              : undefined}
+                          />
                         </td>
                         <td className="py-2">
                           <select value={item.type} onChange={(e) => setField(item.id, { type: e.target.value as ItemType })}
