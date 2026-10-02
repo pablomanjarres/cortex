@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Clock3, CalendarDays, CalendarRange, Play, Square } from 'lucide-react'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { Modal } from '@/components/shared/Modal'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import {
   emptyWorkHoursState,
@@ -19,15 +19,14 @@ import { WorkSessionEditor } from './WorkSessionEditor'
 import { WorkSessionHistory } from './WorkSessionHistory'
 import { WorkHoursReportPanel } from './WorkHoursReportPanel'
 import { WorkBillingSummary } from './WorkBillingSummary'
-import { duration, elapsed, fetchEvidence, money, newId, sendCommand, toggleBillableCommand } from './work-hours-ui'
+import { WorkProjectForm, WorkProjectSettings } from './WorkProjectSettings'
+import { duration, elapsed, fetchEvidence, newId, sendCommand, toggleBillableCommand } from './work-hours-ui'
 
 export function WorkHoursPanel() {
   const [storedState] = useStore<WorkHoursState | null>('cortex-project-time', null)
   const [committedState, setCommittedState] = useState<WorkHoursState | null>(null)
   const [selectedId, setSelectedId] = useState('')
-  const [projectName, setProjectName] = useState('')
-  const [nameEdit, setNameEdit] = useState<{ projectId: string; value: string } | null>(null)
-  const [rateEdit, setRateEdit] = useState<{ projectId: string; value: string } | null>(null)
+  const [details, setDetails] = useState<'settings' | 'history' | 'reports' | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -45,8 +44,6 @@ export function WorkHoursPanel() {
     ? selectedId
     : state.active?.projectId ?? state.projects[0]?.id ?? ''
   const project = state.projects.find((entry) => entry.id === projectId) ?? null
-  const nameDraft = nameEdit?.projectId === projectId ? nameEdit.value : project?.name ?? ''
-  const rateDraft = rateEdit?.projectId === projectId ? rateEdit.value : project?.ratePerHour == null ? '' : String(project.ratePerHour)
   const editing = state.sessions.find((entry) => entry.id === editingId) ?? null
   const sessions = state.sessions.filter((entry) => entry.projectId === projectId).slice()
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
@@ -78,31 +75,14 @@ export function WorkHoursPanel() {
     }
   }
 
-  async function addProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!projectName.trim()) return
+  async function addProject(name: string): Promise<boolean> {
+    if (!name.trim()) return false
     const id = newId()
-    if (await command({ type: 'add-project', id, name: projectName.trim() })) {
-      setProjectName('')
+    if (await command({ type: 'add-project', id, name: name.trim() })) {
       setSelectedId(id)
+      return true
     }
-  }
-
-  async function saveRate(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!project) return
-    const rate = rateDraft.trim() === '' ? null : Number(rateDraft)
-    if (rate !== null && (!Number.isFinite(rate) || rate < 0)) {
-      setError('Enter a valid hourly rate, or leave it blank.')
-      return
-    }
-    if (await command({ type: 'set-rate', projectId: project.id, ratePerHour: rate })) setRateEdit(null)
-  }
-
-  async function saveName(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (!project) return
-    if (await command({ type: 'rename-project', projectId: project.id, name: nameDraft })) setNameEdit(null)
+    return false
   }
 
   async function saveSession(session: WorkSession, values: WorkSessionValues): Promise<boolean> {
@@ -115,23 +95,10 @@ export function WorkHoursPanel() {
   return (
     <section aria-label="Project time" className="space-y-4">
       <WidgetCard title="Project time" description="Track each interval yourself. Review saved work before including it in a client report.">
-        <form onSubmit={(event) => { void addProject(event) }} className="flex flex-wrap items-end gap-2">
-          <label className="min-w-48 flex-1 space-y-1.5 text-sm font-medium" htmlFor="work-project-name">
-            New project
-            <Input id="work-project-name" placeholder="Project name" value={projectName} onChange={(event) => setProjectName(event.target.value)} maxLength={120} />
-          </label>
-          <Button type="submit" variant="secondary" disabled={busy || !projectName.trim()}>Add project</Button>
-        </form>
+        {!project && <WorkProjectForm busy={busy} onAdd={addProject} />}
 
         {project ? (
           <div className="mt-5 space-y-5 border-t border-border/70 pt-5">
-            <form onSubmit={(event) => { void saveName(event) }} className="flex flex-wrap items-end gap-2">
-              <label className="min-w-48 flex-1 space-y-1.5 text-sm font-medium" htmlFor="work-project-edit-name">
-                Project name
-                <Input id="work-project-edit-name" value={nameDraft} onChange={(event) => setNameEdit({ projectId: project.id, value: event.target.value })} maxLength={120} />
-              </label>
-              <Button type="submit" variant="secondary" disabled={busy || !nameDraft.trim() || nameDraft.trim() === project.name}>Save name</Button>
-            </form>
             <div className="flex flex-wrap items-end justify-between gap-3">
               <label className="min-w-48 flex-1 space-y-1.5 text-sm font-medium" htmlFor="work-project-select">
                 Project
@@ -157,6 +124,7 @@ export function WorkHoursPanel() {
                 ) : (
                   <Button type="button" onClick={() => { void command({ type: 'start', id: newId(), projectId: project.id }) }} disabled={busy}><Play /> Start</Button>
                 )}
+                <Button type="button" variant="secondary" onClick={() => setDetails('settings')}>Settings</Button>
               </div>
             </div>
 
@@ -174,20 +142,18 @@ export function WorkHoursPanel() {
 
             <WorkBillingSummary state={state} project={project} now={new Date(now).toISOString()} />
 
-            <form onSubmit={(event) => { void saveRate(event) }} className="flex flex-wrap items-end gap-2">
-              <label className="w-44 space-y-1.5 text-sm font-medium" htmlFor="work-hourly-rate">
-                Rate (COP/hour)
-                <Input id="work-hourly-rate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="Not set" value={rateDraft} onChange={(event) => setRateEdit({ projectId: project.id, value: event.target.value })} />
-              </label>
-              <Button type="submit" variant="secondary" disabled={busy || (rateDraft.trim() === '' ? project.ratePerHour === null : Number(rateDraft) === project.ratePerHour)}>Save rate</Button>
-              <p className="pb-2 text-xs text-muted-foreground">{project.ratePerHour === null ? 'Tracking works without a rate.' : `${money(project.ratePerHour)} per hour`}</p>
-            </form>
           </div>
         ) : (
           <EmptyState message="No time projects yet." hint="Add a project to start recording work." className="py-5" />
         )}
         {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
       </WidgetCard>
+
+      {project && details === 'settings' && (
+        <Modal open onOpenChange={(open) => { if (!open) setDetails(null) }} title="Project time settings" size="lg" className="max-h-[calc(100vh-3rem)] overflow-y-auto">
+          <WorkProjectSettings key={project.id} project={project} busy={busy} commandError={error} onCommand={command} onAdd={addProject} />
+        </Modal>
+      )}
 
       {project && (
         <>
