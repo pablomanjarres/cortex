@@ -52,3 +52,17 @@ export function chargeableWork(state: WorkHoursState, project: WorkProject): Map
   }
   return charges
 }
+
+export function billingCycleSummary(state: WorkHoursState, project: WorkProject, now: string) {
+  const policy = project.billing ?? { includedHours: 0, cycleDay: 1, timeZone: 'America/Bogota' }
+  const period = billingPeriod(now, policy.cycleDay, policy.timeZone)
+  const start = Date.parse(period.start), end = Date.parse(period.end)
+  const sessions = state.sessions.filter((row) => row.projectId === project.id && row.billable && !row.needsReview)
+    .flatMap((row) => {
+      const from = Math.max(start, Date.parse(row.startedAt)), to = Math.min(end, Date.parse(row.endedAt))
+      return to > from ? [{ ...row, startedAt: new Date(from).toISOString(), endedAt: new Date(to).toISOString(), durationMs: to - from }] : []
+    })
+  const qualifyingMs = sessions.reduce((sum, row) => sum + row.durationMs, 0)
+  const chargeableMs = [...chargeableWork({ ...state, sessions }, project).values()].reduce((sum, value) => sum + value, 0)
+  return { ...period, qualifyingMs, chargeableMs, remainingMs: Math.max(0, policy.includedHours * 3600000 - qualifyingMs) }
+}
