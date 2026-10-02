@@ -25,7 +25,7 @@ export function billingPeriod(now: string, cycleDay: number, timeZone: string): 
 }
 
 /** Allocate included time once across all qualifying work in each billing cycle. */
-export function chargeableWork(state: WorkHoursState, project: WorkProject): Map<string, number> {
+export function chargeableWork(state: Pick<WorkHoursState, 'sessions'>, project: WorkProject): Map<string, number> {
   const charges = new Map<string, number>()
   const policy = project.billing
   const consumed = new Map<string, number>()
