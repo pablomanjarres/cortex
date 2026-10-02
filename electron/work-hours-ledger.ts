@@ -90,6 +90,24 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
         active: { id: sessionId, projectId: command.projectId, startedAt: at, interrupted: false },
       }
     }
+    case 'start-owned-at': {
+      const startedAt = iso(command.startedAt)
+      const sessionId = id(command.id)
+      project(state, command.projectId)
+      if (Date.parse(startedAt) > Date.parse(at)) throw new Error('Recorded start cannot be in the future')
+      const existing = state.active?.id === sessionId ? state.active : state.sessions.find((entry) => entry.id === sessionId)
+      if (existing) {
+        if (existing.projectId !== command.projectId || existing.startedAt !== startedAt) throw new Error('Recorded start conflicts with existing session')
+        return state
+      }
+      return applyWorkHoursCommand(state, { type: 'start', id: sessionId, projectId: command.projectId }, startedAt)
+    }
+    case 'stop-owned-at': {
+      const sessionId = id(command.id)
+      const endedAt = iso(command.endedAt)
+      if (Date.parse(endedAt) > Date.parse(at)) throw new Error('Recorded stop cannot be in the future')
+      return applyWorkHoursCommand(state, { type: 'stop-owned', id: sessionId }, endedAt)
+    }
     case 'switch': {
       const active = state.active
       if (!active) throw new Error('No active work to switch')
