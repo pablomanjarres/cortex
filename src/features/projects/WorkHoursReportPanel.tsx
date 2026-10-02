@@ -12,6 +12,7 @@ import {
   type WorkSession,
 } from '../../../electron/work-hours-model'
 import { chipVariant, dateTime, downloadReport, duration, isHttpsUrl, money, prIdentity, unverifiedEvidence } from './work-hours-ui'
+import { chargeableWork } from '../../../electron/work-hours-billing'
 
 interface WorkHoursReportPanelProps {
   project: WorkProject
@@ -51,6 +52,8 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
   const currentEvidence = evidence && evidenceFor === chosenPr ? evidence : unverifiedEvidence(chosenPr || null)
   const billableMs = selectedRows.reduce((sum, row) => sum + (row.billable ? row.durationMs : 0), 0)
   const workedMs = selectedRows.reduce((sum, row) => sum + row.durationMs, 0)
+  const charges = chargeableWork({ sessions }, project)
+  const chargeableMs = selectedRows.reduce((sum, row) => sum + (charges.get(row.id) ?? 0), 0)
   const projectReports = reports.filter((report) => report.projectId === project.id).slice().reverse()
 
   function toggle(id: string) {
@@ -153,7 +156,8 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
       <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-border/70 pt-4">
         <div className="text-sm text-muted-foreground">
           <p>Selected: <span className="font-mono text-foreground">{selectedRows.length}</span> · Worked <span className="font-mono text-foreground">{duration(workedMs)}</span> · Billable <span className="font-mono text-foreground">{duration(billableMs)}</span></p>
-          <p className="mt-1">Billing: <span className="font-mono text-foreground">{project.ratePerHour === null ? 'Rate not set' : money(billableMs / 3_600_000 * project.ratePerHour)}</span></p>
+          {project.billing && <p className="mt-1">Additional work after included hours: <span className="font-mono text-foreground">{duration(chargeableMs)}</span></p>}
+          <p className="mt-1">Billing: <span className="font-mono text-foreground">{project.ratePerHour === null ? 'Rate not set' : money(chargeableMs / 3_600_000 * project.ratePerHour)}</span></p>
         </div>
         <Button type="button" onClick={() => { void finalize() }} disabled={busy || loadingEvidence || invalidRange || invalidPr || prConflict || selectedRows.length === 0 || !task.trim()}>
           Finalize report

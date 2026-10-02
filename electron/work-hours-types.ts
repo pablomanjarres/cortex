@@ -3,6 +3,7 @@ export interface WorkProject {
   name: string
   ratePerHour: number | null
   currency: 'COP'
+  billing?: { includedHours: number; cycleDay: number; timeZone: string }
 }
 
 export interface ActiveWork {
@@ -63,6 +64,7 @@ export interface ReportSelection {
 export interface WorkReportRow extends WorkSessionValues {
   id: string
   durationMs: number
+  chargeableMs?: number
 }
 
 export interface WorkReport {
@@ -74,6 +76,7 @@ export interface WorkReport {
   rows: WorkReportRow[]
   totalMs: number
   billableMs: number
+  chargeableMs?: number
   ratePerHour: number | null
   currency: 'COP'
   amount: number | null
@@ -91,6 +94,7 @@ export type WorkHoursCommand =
   | { type: 'add-project'; id: string; name: string }
   | { type: 'rename-project'; projectId: string; name: string }
   | { type: 'set-rate'; projectId: string; ratePerHour: number | null }
+  | { type: 'set-billing-policy'; projectId: string; includedHours: number; cycleDay: number; timeZone: string }
   | { type: 'start'; id: string; projectId: string }
   | { type: 'start-owned-at'; id: string; projectId: string; startedAt: string }
   | { type: 'switch'; id: string; projectId: string }

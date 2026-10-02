@@ -156,6 +156,13 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
         projects: state.projects.map((entry) => entry.id === command.projectId ? { ...entry, ratePerHour: rate } : entry),
       }
     }
+    case 'set-billing-policy': {
+      project(state, command.projectId)
+      if (!Number.isFinite(command.includedHours) || command.includedHours < 0 || !Number.isInteger(command.cycleDay) || command.cycleDay < 1 || command.cycleDay > 28 || typeof command.timeZone !== 'string' || !command.timeZone.trim()) throw new Error('Invalid billing policy')
+      new Intl.DateTimeFormat('en-US', { timeZone: command.timeZone }).format()
+      const billing = { includedHours: command.includedHours, cycleDay: command.cycleDay, timeZone: command.timeZone }
+      return { ...state, projects: state.projects.map((entry) => entry.id === command.projectId ? { ...entry, billing } : entry) }
+    }
     case 'correct-session': {
       const row = state.sessions.find((entry) => entry.id === command.sessionId)
       if (!row) throw new Error('Session not found')

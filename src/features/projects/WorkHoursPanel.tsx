@@ -18,6 +18,7 @@ import {
 import { WorkSessionEditor } from './WorkSessionEditor'
 import { WorkSessionHistory } from './WorkSessionHistory'
 import { WorkHoursReportPanel } from './WorkHoursReportPanel'
+import { WorkBillingSummary } from './WorkBillingSummary'
 import { duration, elapsed, fetchEvidence, money, newId, sendCommand, toggleBillableCommand } from './work-hours-ui'
 
 export function WorkHoursPanel() {
@@ -167,9 +168,11 @@ export function WorkHoursPanel() {
 
             <div className="grid gap-3 sm:grid-cols-3">
               <StatTile label="Today" value={duration(totals?.todayMs ?? 0)} icon={<Clock3 />} className="p-4" />
-              <StatTile label="This month" value={duration(totals?.monthMs ?? 0)} icon={<CalendarDays />} className="p-4" />
+              <StatTile label={project.billing ? 'This billing cycle' : 'This month'} value={duration(totals?.monthMs ?? 0)} icon={<CalendarDays />} className="p-4" />
               <StatTile label="All time" value={duration(totals?.totalMs ?? 0)} icon={<CalendarRange />} className="p-4" />
             </div>
+
+            <WorkBillingSummary state={state} project={project} now={new Date(now).toISOString()} />
 
             <form onSubmit={(event) => { void saveRate(event) }} className="flex flex-wrap items-end gap-2">
               <label className="w-44 space-y-1.5 text-sm font-medium" htmlFor="work-hourly-rate">
