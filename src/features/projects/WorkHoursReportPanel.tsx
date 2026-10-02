@@ -90,7 +90,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
   }
 
   return (
-    <WidgetCard title="Client reports" description="Choose reviewed sessions, check delivery evidence, then save a fixed report snapshot.">
+    <WidgetCard title="Client reports" description="Choose saved sessions, check delivery evidence, then save a fixed report snapshot.">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1.5 text-sm font-medium" htmlFor="report-from">
           From
@@ -112,7 +112,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
         </div>
       </div>
       {eligible.length === 0 ? (
-        <EmptyState message="No reviewed sessions in this range." hint="Stop a timer or review an interrupted session to make it available." className="py-5" />
+        <EmptyState message="No saved sessions ready for reporting in this range." hint="Stop a timer or review an interrupted session to make it available." className="py-5" />
       ) : (
         <div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/70 p-1">
           {eligible.map((row) => (
