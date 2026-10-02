@@ -30,6 +30,9 @@ test('a project can be started and stopped from Projects, leaving one saved inte
   await page.getByLabel('Project name', { exact: true }).fill('ConstruCredit S.A.S.')
   await page.getByRole('button', { name: 'Save name' }).click()
   await expect.poll(() => state.projects[0]?.name).toBe('ConstruCredit S.A.S.')
+  await page.getByLabel('Rate (COP/hour)').fill('65000')
+  await page.getByRole('button', { name: 'Save rate', exact: true }).click()
+  await expect.poll(() => state.projects[0]?.ratePerHour).toBe(65_000)
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
 
   commandTime = '2026-09-27T13:00:00.000Z'
@@ -103,6 +106,8 @@ test('the cycle shows one settled billing total and keeps details out of the mai
     state = applyWorkHoursCommand(state, { type: 'stop' }, session.end)
     state = applyWorkHoursCommand(state, { type: 'correct-session', sessionId: session.id, startedAt: session.start, endedAt: session.end, description: session.description, billable: session.billable, prUrl: null }, session.end)
   }
+  state = applyWorkHoursCommand(state, { type: 'start', id: 'interrupted', projectId: 'cc' }, '2026-09-26T12:00:00Z')
+  state = applyWorkHoursCommand(state, { type: 'mark-interrupted' }, '2026-09-26T16:00:00Z')
   state = applyWorkHoursCommand(state, { type: 'start', id: 'running', projectId: 'cc' }, '2026-10-02T11:30:00Z')
   await mockStores(page, { 'cortex-project-time': state })
   await page.goto('/#/projects')
@@ -126,7 +131,10 @@ test('the cycle shows one settled billing total and keeps details out of the mai
   const history = page.getByRole('dialog')
   await expect(history.getByText('Client delivery', { exact: true })).toBeVisible()
   await expect(history.getByText('Internal support', { exact: true })).toBeVisible()
-  await history.getByRole('button', { name: 'Close', exact: true }).click()
+  await history.getByRole('button', { name: 'Review', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(1)
+  await expect(page.getByRole('dialog', { name: 'Review interrupted session' })).toBeVisible()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.setViewportSize({ width: 700, height: 900 })
   await expect(panel.getByText('4h 53m of 6h', { exact: true })).toBeVisible()
