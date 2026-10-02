@@ -109,7 +109,9 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
       const saved = state.sessions.find((entry) => entry.id === sessionId)
       if (saved?.needsReview) {
         if (Date.parse(endedAt) < Date.parse(saved.startedAt)) throw new Error('Stop time precedes start time')
-        if (Date.parse(endedAt) > Date.parse(saved.endedAt)) throw new Error('Recorded stop cannot extend interrupted work')
+        const start = Date.parse(saved.startedAt), end = Date.parse(endedAt)
+        if (state.sessions.some((entry) => entry.id !== sessionId && overlaps(start, end, Date.parse(entry.startedAt), Date.parse(entry.endedAt)))) throw new Error('Recorded stop overlaps another session')
+        if (state.active && overlaps(start, end, Date.parse(state.active.startedAt), Date.parse(at))) throw new Error('Recorded stop overlaps active work')
         const corrected = saveCorrection(state, saved, { ...currentValues(saved), endedAt }, at, Date.parse(endedAt) - Date.parse(saved.startedAt))
         return { ...corrected, sessions: corrected.sessions.map((entry) => entry.id === sessionId ? { ...entry, needsReview: false } : entry) }
       }
