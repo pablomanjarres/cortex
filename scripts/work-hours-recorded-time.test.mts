@@ -10,7 +10,7 @@ function ledger() {
   }
   const service = new WorkHoursService({ read: async () => state, write: async (next) => { state = next } })
   const command = (value: unknown) => service.command(value as WorkHoursCommand, '2026-10-01T20:00:00Z')
-  return { command, read: () => state }
+  return { command, read: () => state, service }
 }
 
 test('recorded activity excludes queue time and recovery polling delay', async () => {
@@ -76,4 +76,20 @@ test('recorded completion trims an interrupted interval after app restart with a
   assert.equal(saved.corrections[0].after.endedAt, '2026-10-01T19:10:00.000Z')
   await command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:10:00Z' })
   assert.equal(read().sessions[0].corrections.length, 1)
+})
+
+test('verified work continuing after restart can recover until completion without overlapping another timer', async () => {
+  const { command, read, service } = ledger()
+  await command({ type: 'start-owned-at', id: 'ccw-one', projectId: 'p', startedAt: '2026-10-01T19:00:00Z' })
+  await service.restore('2026-10-01T19:10:00Z')
+  await command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:20:00Z' })
+  assert.equal(read().sessions[0].durationMs, 1200000)
+  assert.equal(read().sessions[0].needsReview, false)
+
+  const other = ledger()
+  await other.command({ type: 'start-owned-at', id: 'ccw-one', projectId: 'p', startedAt: '2026-10-01T19:00:00Z' })
+  await other.service.restore('2026-10-01T19:10:00Z')
+  await other.service.command({ type: 'start', id: 'manual', projectId: 'p' }, '2026-10-01T19:11:00Z')
+  await assert.rejects(other.command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:20:00Z' }), /overlaps/)
+  assert.equal(other.read().active?.id, 'manual')
 })
