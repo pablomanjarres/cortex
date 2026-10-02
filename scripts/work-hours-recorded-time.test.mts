@@ -62,3 +62,18 @@ test('recorded stop rejects future or reversed endpoints without changing the ac
   assert.equal(read().active?.id, 'ccw-one')
   assert.equal(read().sessions.length, 0)
 })
+
+test('recorded completion trims an interrupted interval after app restart with an audit record', async () => {
+  const { command, read } = ledger()
+  await command({ type: 'start-owned-at', id: 'ccw-one', projectId: 'p', startedAt: '2026-10-01T19:00:00Z' })
+  await command({ type: 'mark-interrupted' })
+  assert.equal(read().sessions[0].durationMs, 3600000)
+  await command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:10:00Z' })
+  const saved = read().sessions[0]
+  assert.equal(saved.durationMs, 600000)
+  assert.equal(saved.needsReview, false)
+  assert.equal(saved.corrections[0].before.endedAt, '2026-10-01T20:00:00.000Z')
+  assert.equal(saved.corrections[0].after.endedAt, '2026-10-01T19:10:00.000Z')
+  await command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:10:00Z' })
+  assert.equal(read().sessions[0].corrections.length, 1)
+})
