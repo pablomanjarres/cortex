@@ -22,6 +22,10 @@ export function money(amount: number): string {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 }).format(amount)
 }
 
+export function copAmount(amount: number): string {
+  return `COP ${new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 }).format(amount)}`
+}
+
 export function dateTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
