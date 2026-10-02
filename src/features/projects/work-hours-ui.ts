@@ -13,6 +13,17 @@ export function duration(milliseconds: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`
 }
 
+/** Round the allowance once so displayed used and remaining time add up. */
+export function includedTimeDisplay(qualifyingMs: number, includedHours: number) {
+  const includedMinutes = Math.max(0, Math.round(includedHours * 60))
+  const usedMinutes = Math.min(includedMinutes, Math.max(0, Math.round(qualifyingMs / 60_000)))
+  return {
+    used: duration(usedMinutes * 60_000),
+    remaining: duration((includedMinutes - usedMinutes) * 60_000),
+    included: includedMinutes % 60 === 0 ? `${includedMinutes / 60}h` : duration(includedMinutes * 60_000),
+  }
+}
+
 export function elapsed(milliseconds: number): string {
   const seconds = Math.floor(Math.max(0, milliseconds) / 1_000)
   return `${Math.floor(seconds / 3_600)}:${String(Math.floor(seconds % 3_600 / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
@@ -20,6 +31,10 @@ export function elapsed(milliseconds: number): string {
 
 export function money(amount: number): string {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 2 }).format(amount)
+}
+
+export function copAmount(amount: number): string {
+  return `COP ${new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2 }).format(amount)}`
 }
 
 export function dateTime(value: string): string {
