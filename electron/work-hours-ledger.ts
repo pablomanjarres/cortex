@@ -106,6 +106,13 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
       const sessionId = id(command.id)
       const endedAt = iso(command.endedAt)
       if (Date.parse(endedAt) > Date.parse(at)) throw new Error('Recorded stop cannot be in the future')
+      const saved = state.sessions.find((entry) => entry.id === sessionId)
+      if (saved?.needsReview) {
+        if (Date.parse(endedAt) < Date.parse(saved.startedAt)) throw new Error('Stop time precedes start time')
+        if (Date.parse(endedAt) > Date.parse(saved.endedAt)) throw new Error('Recorded stop cannot extend interrupted work')
+        const corrected = saveCorrection(state, saved, { ...currentValues(saved), endedAt }, at, Date.parse(endedAt) - Date.parse(saved.startedAt))
+        return { ...corrected, sessions: corrected.sessions.map((entry) => entry.id === sessionId ? { ...entry, needsReview: false } : entry) }
+      }
       return applyWorkHoursCommand(state, { type: 'stop-owned', id: sessionId }, endedAt)
     }
     case 'switch': {
