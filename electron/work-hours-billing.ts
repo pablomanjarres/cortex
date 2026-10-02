@@ -29,7 +29,7 @@ export function chargeableWork(state: Pick<WorkHoursState, 'sessions'>, project:
   const charges = new Map<string, number>()
   const policy = project.billing
   const consumed = new Map<string, number>()
-  const periods = new Map<string, { start: string; end: string }>()
+  let currentPeriod: { start: string; end: string } | undefined
   const rows = state.sessions.filter((row) => row.projectId === project.id && row.billable && !row.needsReview)
     .slice().sort((a, b) => a.startedAt.localeCompare(b.startedAt))
   for (const row of rows) {
@@ -39,8 +39,9 @@ export function chargeableWork(state: Pick<WorkHoursState, 'sessions'>, project:
     let charged = 0
     while (start < end) {
       const date = new Date(start).toISOString()
-      const period = periods.get(date) ?? billingPeriod(date, policy.cycleDay, policy.timeZone)
-      periods.set(date, period)
+      const period = currentPeriod && start >= Date.parse(currentPeriod.start) && start < Date.parse(currentPeriod.end)
+        ? currentPeriod : billingPeriod(date, policy.cycleDay, policy.timeZone)
+      currentPeriod = period
       const stop = Math.min(end, Date.parse(period.end))
       const duration = stop - start
       const used = consumed.get(period.start) ?? 0
