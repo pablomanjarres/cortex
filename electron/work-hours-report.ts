@@ -1,4 +1,5 @@
 import { type WorkEvidence, type WorkEvidenceFact, type WorkHoursState, type WorkReport, type WorkReportRow, type ReportSelection, iso, id, project, currentValues } from './work-hours-types.js'
+import { billingPeriod, chargeableWork } from './work-hours-billing.js'
 
 function copyEvidence(evidence: WorkEvidence): WorkEvidence {
   const fact = <Status extends string>(value: WorkEvidenceFact<Status>): WorkEvidenceFact<Status> => ({
@@ -30,6 +31,7 @@ function prIdentity(value: string): string {
 
 export function createWorkHoursReport(state: WorkHoursState, selection: ReportSelection, evidence: WorkEvidence, now: string): WorkReport {
   const selectedProject = project(state, selection.projectId)
+  const charges = chargeableWork(state, selectedProject)
   const reportId = id(selection.id)
   const task = selection.task.trim()
   if (!task) throw new Error('Report task is required')
@@ -39,7 +41,7 @@ export function createWorkHoursReport(state: WorkHoursState, selection: ReportSe
     const row = state.sessions.find((entry) => entry.id === sessionId)
     if (!row || row.projectId !== selectedProject.id) throw new Error('Selected session not found for project')
     if (row.needsReview) throw new Error('Interrupted session requires review')
-    return { ...currentValues(row), id: row.id, durationMs: row.durationMs }
+    return { ...currentValues(row), id: row.id, durationMs: row.durationMs, ...(selectedProject.billing ? { chargeableMs: charges.get(row.id) ?? 0 } : {}) }
   })
   const attachedPrs = new Set(rows.flatMap((row) => row.prUrl === null ? [] : [prIdentity(row.prUrl)]))
   if (attachedPrs.size > 1) throw new Error('Selected sessions have conflicting PR URLs')
@@ -49,6 +51,7 @@ export function createWorkHoursReport(state: WorkHoursState, selection: ReportSe
   }
   const totalMs = rows.reduce((sum, row) => sum + row.durationMs, 0)
   const billableMs = rows.reduce((sum, row) => sum + (row.billable ? row.durationMs : 0), 0)
+  const chargeableMs = rows.reduce((sum, row) => sum + (row.chargeableMs ?? (row.billable ? row.durationMs : 0)), 0)
   return {
     id: reportId,
     projectId: selectedProject.id,
@@ -58,15 +61,16 @@ export function createWorkHoursReport(state: WorkHoursState, selection: ReportSe
     rows,
     totalMs,
     billableMs,
+    ...(selectedProject.billing ? { chargeableMs } : {}),
     ratePerHour: selectedProject.ratePerHour,
     currency: selectedProject.currency,
-    amount: selectedProject.ratePerHour === null ? null : billableMs / 3_600_000 * selectedProject.ratePerHour,
+    amount: selectedProject.ratePerHour === null ? null : chargeableMs / 3_600_000 * selectedProject.ratePerHour,
     evidence: copyEvidence(evidence),
   }
 }
 
 export function workHoursTotals(state: WorkHoursState, projectId: string, now: string, timeZone: string): { todayMs: number; monthMs: number; totalMs: number } {
-  project(state, projectId)
+  const selectedProject = project(state, projectId)
   const nowMs = Date.parse(iso(now))
   const formatter = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
   const localKey = (milliseconds: number, period: 'day' | 'month'): string => {
@@ -87,7 +91,7 @@ export function workHoursTotals(state: WorkHoursState, projectId: string, now: s
     return atOrAfter
   }
   const todayStart = boundary('day')
-  const monthStart = boundary('month')
+  const monthStart = selectedProject.billing ? Date.parse(billingPeriod(now, selectedProject.billing.cycleDay, selectedProject.billing.timeZone).start) : boundary('month')
   let todayMs = 0
   let monthMs = 0
   let totalMs = 0

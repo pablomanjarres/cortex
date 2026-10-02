@@ -72,7 +72,7 @@ export function exportWorkHoursMarkdown(report: WorkReport): string {
       evidenceText(report, 'pr', row),
       evidenceText(report, 'ci', row),
       evidenceText(report, 'deployment', row),
-      billingText(report, row.billable ? row.durationMs : 0),
+      billingText(report, row.chargeableMs ?? (row.billable ? row.durationMs : 0)),
     ]
     lines.push(`| ${cells.map(markdownCell).join(' | ')} |`)
   }
@@ -89,7 +89,7 @@ export function exportWorkHoursCsv(report: WorkReport): string {
       evidenceText(report, 'pr', row),
       evidenceText(report, 'ci', row),
       evidenceText(report, 'deployment', row),
-      billingText(report, row.billable ? row.durationMs : 0),
+      billingText(report, row.chargeableMs ?? (row.billable ? row.durationMs : 0)),
     ]
     lines.push(cells.map(csvCell).join(','))
   }
