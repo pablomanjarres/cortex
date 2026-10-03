@@ -36,8 +36,8 @@ function PaymentHistory({ payments, pending, onEdit, onVoid }: {
       {payment.note && <p className="mt-1 break-words text-xs text-muted-foreground">{payment.note}</p>}
     </div>
     <div className="flex items-center gap-2"><Chip size="sm" variant={payment.status === 'completed' ? 'success' : 'neutral'}>{payment.status}</Chip>
-      {payment.status !== 'voided' && <><Button size="sm" variant="ghost" disabled={pending} onClick={() => onEdit(payment)} aria-label={`Correct payment ${payment.id}`}>Correct</Button>
-        <Button size="sm" variant="ghost" disabled={pending} onClick={() => onVoid(payment)} aria-label={`Void payment ${payment.id}`}>Void</Button></>}
+      {payment.status !== 'voided' && <><Button size="sm" variant="ghost" disabled={pending} onClick={() => onEdit(payment)} aria-label={`Correct payment of ${cardMoney(payment.amount)} on ${cardDate(payment.paidDate)}`}>Correct</Button>
+        <Button size="sm" variant="ghost" disabled={pending} onClick={() => onVoid(payment)} aria-label={`Void payment of ${cardMoney(payment.amount)} on ${cardDate(payment.paidDate)}`}>Void</Button></>}
     </div>
   </li>)}</ul>
 }

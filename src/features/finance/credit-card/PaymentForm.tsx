@@ -9,7 +9,7 @@ function PaymentAllocation({ allocation, purchases, onChange, onRemove }: {
   allocation: CreditCardAllocation; purchases: CreditCardPurchase[]
   onChange: (allocation: CreditCardAllocation) => void; onRemove: () => void
 }) {
-  const [classifying, setClassifying] = useState(Boolean(allocation.principal?.length || allocation.feesAmount !== undefined))
+  const classifying = allocation.principal !== undefined || allocation.feesAmount !== undefined
   return <fieldset className="space-y-3 rounded-lg border border-border p-3">
     <legend className="px-1 text-xs text-muted-foreground">Cycle allocation</legend>
     <div className="grid grid-cols-2 gap-3">
@@ -17,8 +17,8 @@ function PaymentAllocation({ allocation, purchases, onChange, onRemove }: {
       <CardInput label="Allocated amount (COP)" type="number" min={0} step={1} required value={allocation.amount} onChange={(event) => onChange({ ...allocation, amount: Number(event.target.value) })} />
     </div>
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={classifying} onChange={(event) => {
-      setClassifying(event.target.checked)
-      if (!event.target.checked) onChange({ cycleId: allocation.cycleId, amount: allocation.amount })
+      onChange(event.target.checked ? { ...allocation, principal: allocation.principal ?? [] }
+        : { cycleId: allocation.cycleId, amount: allocation.amount })
     }} />I know the bank's principal and charge breakdown</label>
     {classifying && <div className="space-y-3">
       <p className="text-xs text-muted-foreground">Enter only confirmed allocation amounts. Blank amounts stay unclassified.</p>

@@ -7,13 +7,15 @@ export function CardSettingsForm({ card, pending, onSave, onClose }: {
   card: CreditCardProfile | null; pending: boolean; onSave: SaveCardCommand; onClose: () => void
 }) {
   const [name, setName] = useState(card?.name ?? '')
+  const [id] = useState(() => card?.id ?? crypto.randomUUID())
   const [limit, setLimit] = useState(String(card?.limit ?? ''))
   const [closingDay, setClosingDay] = useState(String(card?.closingDay ?? 4))
   const [dueDay, setDueDay] = useState(String(card?.dueDay ?? 24))
   return <form className="space-y-4" onSubmit={async (event) => {
     event.preventDefault()
-    if (await onSave({ type: 'configure', card: { id: card?.id ?? crypto.randomUUID(), name: name.trim(),
-      limit: Number(limit), closingDay: Number(closingDay), dueDay: Number(dueDay) } })) onClose()
+    const profile = { id, name: name.trim(),
+      limit: Number(limit), closingDay: Number(closingDay), dueDay: Number(dueDay) }
+    if (await onSave(card ? { type: 'configure', card: profile } : { type: 'initialize', card: profile, purchases: [] })) onClose()
   }}>
     <CardInput label="Card name" required value={name} onChange={(event) => setName(event.target.value)} />
     <CardInput label="Credit limit (COP)" type="number" min={1} step={1} required value={limit} onChange={(event) => setLimit(event.target.value)} />
