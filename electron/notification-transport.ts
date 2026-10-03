@@ -23,9 +23,10 @@ export interface NotificationTransportDeps {
 }
 
 export function createNotificationTransport(deps: NotificationTransportDeps) {
+  const available = (probe: () => boolean) => { try { return probe() } catch { return false } }
   const readiness = (): NotificationReadiness => ({
-    native: deps.nativeAvailable() ? { ready: true } : { ready: false, error: 'Native notifications unavailable' },
-    phone: deps.phoneAvailable() ? { ready: true } : { ready: false, error: 'Phone sender unavailable' },
+    native: available(deps.nativeAvailable) ? { ready: true } : { ready: false, error: 'Native notifications unavailable' },
+    phone: available(deps.phoneAvailable) ? { ready: true } : { ready: false, error: 'Phone sender unavailable' },
   })
   const send = async (input: NotificationMessage): Promise<NotificationDelivery> => {
     const ready = readiness()[input.channel]
