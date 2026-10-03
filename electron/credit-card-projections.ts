@@ -1,4 +1,4 @@
-import type { CreditCardCycleSummary, CreditCardInstallment, CreditCardMonthSummary,
+import type { CreditCardCycle, CreditCardCycleSummary, CreditCardInstallment, CreditCardMonthSummary,
   CreditCardOverview, CreditCardState } from './credit-card-types.js'
 import { assertCreditCardDate, creditCardAddMonths, creditCardMonthDate, creditCardMonthNumber } from './credit-card-dates.js'
 import { creditCardInteger } from './credit-card-validation.js'
@@ -21,18 +21,32 @@ export function creditCardInstallments(state: CreditCardState): Map<string, Cred
   return result
 }
 
+interface ProjectionIndex {
+  installments: Map<string, CreditCardInstallment[]>
+  cycles: Map<string, CreditCardCycle>
+  paid: Map<string, number>
+}
+function projectionIndex(state: CreditCardState): ProjectionIndex {
+  const paid = new Map<string, number>()
+  for (const payment of state.payments) {
+    if (payment.status !== 'completed') continue
+    for (const allocation of payment.allocations) paid.set(allocation.cycleId, (paid.get(allocation.cycleId) ?? 0) + allocation.amount)
+  }
+  return { installments: creditCardInstallments(state), cycles: new Map(state.cycles.map(cycle => [cycle.id, cycle])), paid }
+}
 function cycleSummary(state: CreditCardState, id: string, asOfDate: string,
-  installments: CreditCardInstallment[]): CreditCardCycleSummary {
-  const cycle = state.cycles.find(item => item.id === id)
-  const dueDate = cycle?.dueDate ?? installments[0]?.dueDate ?? creditCardMonthDate(id, state.card?.dueDay ?? 24)
+  index: ProjectionIndex): CreditCardCycleSummary {
+  const cycle = index.cycles.get(id)
+  const installments = index.installments.get(id) ?? []
+  const firstDue = installments.reduce<string | undefined>((date, item) => !date || item.dueDate < date ? item.dueDate : date, undefined)
+  const dueDate = cycle?.dueDate ?? firstDue ?? creditCardMonthDate(id, state.card?.dueDay ?? 24)
   const closingDay = state.card?.closingDay ?? 4
   const closingMonth = closingDay > Number(dueDate.slice(8)) ? creditCardAddMonths(id, -1) : id
   const closingDate = creditCardMonthDate(closingMonth, closingDay)
   const principal = installments.reduce((sum, installment) => sum + installment.amount, 0)
   const interest = cycle?.interest ?? 0, fees = cycle?.fees ?? 0
   const target = Math.max(principal + interest + fees, cycle?.confirmedAmount ?? 0, cycle?.minimumAmount ?? 0)
-  const paid = state.payments.filter(payment => payment.status === 'completed')
-    .reduce((sum, payment) => sum + (payment.allocations.find(item => item.cycleId === id)?.amount ?? 0), 0)
+  const paid = index.paid.get(id) ?? 0
   const remaining = Math.max(0, target - paid)
   const reserved = state.reserves[id] ?? 0
   return { id, dueDate, closingDate, principal, interest, fees, minimum: cycle?.minimumAmount ?? null,
@@ -48,19 +62,19 @@ export function creditCardSchedule(state: CreditCardState, fromMonth: string,
   monthCount: number, asOfDate: string): CreditCardCycleSummary[] {
   creditCardMonthNumber(fromMonth); assertCreditCardDate(asOfDate)
   creditCardInteger(monthCount, 'schedule month count', 1, 600)
-  const installments = creditCardInstallments(state)
+  const projection = projectionIndex(state)
   return Array.from({ length: monthCount }, (_, index) => {
     const id = creditCardAddMonths(fromMonth, index)
-    return cycleSummary(state, id, asOfDate, installments.get(id) ?? [])
+    return cycleSummary(state, id, asOfDate, projection)
   })
 }
 
 /** Enumerates actual tracked cycles without replaying empty historical calendar months. */
 export function creditCardCycles(state: CreditCardState, asOfDate: string): CreditCardCycleSummary[] {
   assertCreditCardDate(asOfDate)
-  const installments = creditCardInstallments(state)
-  const ids = new Set([...installments.keys(), ...state.cycles.map(cycle => cycle.id), ...Object.keys(state.reserves)])
-  return [...ids].sort().map(id => cycleSummary(state, id, asOfDate, installments.get(id) ?? []))
+  const projection = projectionIndex(state)
+  const ids = new Set([...projection.installments.keys(), ...projection.cycles.keys(), ...Object.keys(state.reserves)])
+  return [...ids].sort().map(id => cycleSummary(state, id, asOfDate, projection))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
 }
 
@@ -71,7 +85,7 @@ export function creditCardMonth(state: CreditCardState, yearMonth: string, asOfD
   return { yearMonth, planned: cycles.reduce((sum, cycle) => sum + cycle.target, 0),
     remaining: cycles.reduce((sum, cycle) => sum + cycle.remaining, 0),
     cashPaid: cashPayments.reduce((sum, payment) => sum + payment.amount, 0),
-    paidCount: cashPayments.length, totalPayable: cycles.length, cycles }
+    paidCount: cycles.filter(cycle => cycle.target > 0 && cycle.remaining === 0).length, totalPayable: cycles.filter(cycle => cycle.target > 0).length, cycles }
 }
 
 export function creditCardOverview(state: CreditCardState, asOfDate: string): CreditCardOverview {
