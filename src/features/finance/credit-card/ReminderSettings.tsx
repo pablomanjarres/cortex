@@ -66,7 +66,14 @@ export function ReminderSettings({ settings, pending, onSave, onClose }: {
       <Button type="button" size="sm" variant="ghost" disabled={busy || pending} onClick={() => { void run(async () => setStatus(api ? await api.retry() : await cardRequest<CreditCardAlertStatus>('retry', {}))) }}>Retry current reminders</Button>
     </div>}
     {delivery && <p role="status" className={`text-sm ${delivery.status === 'Failed' ? 'text-destructive' : 'text-muted-foreground'}`}>Test {delivery.channel}: {delivery.status === 'Sent' && delivery.channel === 'phone' ? 'Provider accepted; check your phone for display' : delivery.status}{delivery.error ? ` · ${delivery.error}` : ''}</p>}
-    <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!login?.available || busy || pending} checked={login?.enabled ?? false} onChange={(event) => { const next = event.target.checked; void run(async () => setLogin(api ? await api.setLogin(next) : await cardRequest<CreditCardLogin>('login', { enabled: next }))) }} />Launch Cortex at login{login && !login.available ? ' · Unavailable on this host' : ''}</label>
+    <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={!login?.available || busy || pending} checked={login?.enabled ?? false} onChange={(event) => {
+      const next = event.target.checked, previous = login
+      if (login) setLogin({ ...login, enabled: next })
+      void run(async () => {
+        try { setLogin(api ? await api.setLogin(next) : await cardRequest<CreditCardLogin>('login', { enabled: next })) }
+        catch (failure) { setLogin(previous); throw failure }
+      })
+    }} />Launch Cortex at login{login && !login.available ? ' · Unavailable on this host' : ''}</label>
     <p className="text-xs text-muted-foreground">Cortex checks on startup, hourly, after wake, and after saved card changes. The tray keeps it running when you close the window. Quitting Cortex or sleeping the Mac pauses checks.</p>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <CardFormActions pending={pending || busy} label="Save reminders" />
