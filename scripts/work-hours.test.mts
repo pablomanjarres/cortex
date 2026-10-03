@@ -137,6 +137,29 @@ test('report includes selected sessions, bills exact milliseconds, and snapshots
   assert.deepEqual(state.reports[0], report)
 })
 
+test('client exports hide internal rows and elapsed totals from legacy report snapshots', () => {
+  let state = withProject()
+  state = applyWorkHoursCommand(state, { type: 'set-rate', projectId: 'construcredit', ratePerHour: 100_000 }, '2026-09-01T09:00:00Z')
+  state = session(state, 'client', 'construcredit', '2026-09-01T10:00:00Z', '2026-09-01T11:00:01Z')
+  state = session(state, 'internal', 'construcredit', '2026-09-01T12:00:00Z', '2026-09-01T12:30:00Z')
+  state = applyWorkHoursCommand(state, {
+    type: 'correct-session', sessionId: 'internal', startedAt: '2026-09-01T12:00:00Z',
+    endedAt: '2026-09-01T12:30:00Z', description: 'Internal planning', billable: false, prUrl: null,
+  }, '2026-09-01T13:00:00Z')
+  const report = createWorkHoursReport(state, {
+    id: 'legacy', projectId: 'construcredit', sessionIds: ['client', 'internal'], task: 'Client delivery',
+  }, noEvidence, '2026-09-01T14:00:00Z')
+  const before = structuredClone(report)
+
+  for (const exported of [exportWorkHoursMarkdown(report), exportWorkHoursCsv(report)]) {
+    assert.doesNotMatch(exported, /Internal planning|Worked|1h 30m/i)
+    assert.match(exported, /Billable 1h 0m 1s/i)
+    assert.match(exported, /COP 100,027\.78/)
+  }
+  assert.match(exportWorkHoursMarkdown(report), /Total billable: 1h 0m 1s/)
+  assert.deepEqual(report, before)
+})
+
 test('unset rate produces no amount, and missing evidence remains unverified', () => {
   const state = session(withProject(), 's1', 'construcredit', '2026-09-01T10:00:00Z', '2026-09-01T11:00:00Z')
   const report = createWorkHoursReport(state, { id: 'r1', projectId: 'construcredit', sessionIds: ['s1'], task: 'Delivery' }, noEvidence, '2026-09-01T12:00:00Z')
