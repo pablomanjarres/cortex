@@ -15,8 +15,8 @@ test("theme preference preserves explicit light and dark values", () => {
 })
 
 test("theme metadata uses the matching canvas color", () => {
-  assert.equal(themeColorFor("dark"), "#141720")
-  assert.equal(themeColorFor("light"), "#F1F2F7")
+  assert.equal(themeColorFor("dark"), "#181C1B")
+  assert.equal(themeColorFor("light"), "#F2F4EF")
 })
 
 test("blocked localStorage getter falls back without preventing startup", () => {
