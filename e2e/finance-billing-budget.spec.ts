@@ -64,6 +64,7 @@ for (const width of [320, 1440]) {
     await expect(row('Desk lamp')).toContainText('1/3')
     await expect(row('Desk lamp')).toContainText('Nov 24')
     await expect(row('Desk lamp')).toContainText('$40.000')
+    await expect(row('Desk lamp').locator('td').first()).toContainText('$40.000')
     await expect(row('Interest')).toContainText('$1.000')
     await expect(row('Fees')).toContainText('$500')
     await expect(row('Additional statement amount')).toContainText('$8.500')
