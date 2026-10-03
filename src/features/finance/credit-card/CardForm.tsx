@@ -17,4 +17,3 @@ export function CardSelect({ label, children, ...props }: ComponentProps<'select
 export function CardFormActions({ pending, label = 'Save changes' }: { pending: boolean; label?: string }) {
   return <div className="flex justify-end pt-2"><Button type="submit" disabled={pending}>{pending ? 'Saving…' : label}</Button></div>
 }
-export const optionalMoney = (value: string) => value.trim() === '' ? undefined : Number(value)

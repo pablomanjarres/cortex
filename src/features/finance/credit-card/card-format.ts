@@ -1,4 +1,5 @@
 export const cardMoney = (amount: number) => `$${amount.toLocaleString('es-CO')}`
+export const optionalMoney = (value: string) => value.trim() === '' ? undefined : Number(value)
 export const cardDate = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
   month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Bogota',
 })
