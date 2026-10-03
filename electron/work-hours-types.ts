@@ -11,6 +11,8 @@ export interface ActiveWork {
   projectId: string
   startedAt: string
   interrupted: boolean
+  /** Automatic activity is unbilled until explicitly reviewed. Legacy/manual timers omit this flag. */
+  billable?: boolean
 }
 
 export interface WorkSessionValues {
