@@ -4,6 +4,7 @@ import path from 'node:path'
 import test from 'node:test'
 import vm from 'node:vm'
 import ts from 'typescript'
+import { CREDIT_CARD_KEY, CREDIT_CARD_ALERTS_KEY } from '../electron/credit-card-types.ts'
 
 const source = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
 const tree = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true)
@@ -56,6 +57,8 @@ function trayHarness(
       Object.assign(records, { [key]: structuredClone(data) })
     },
     KEY_RE: /^[A-Za-z0-9._-]{1,200}$/,
+    CREDIT_CARD_KEY,
+    CREDIT_CARD_ALERTS_KEY,
     fs: { promises: { copyFile: async () => {}, mkdir: async () => {}, readdir: async () => [] } },
     backupDir: '/isolated-test-backup',
     VERSIONED_BACKUPS_KEPT: 10,
@@ -77,12 +80,24 @@ function trayHarness(
   const harness = context.harness as {
     refreshTrayHabits: () => Promise<void>
     toggleHabitFromTray: (id: string) => Promise<void>
-    writeDataKey: (key: string, data: unknown, opts: { source: string }) => Promise<{ ok: boolean; data?: unknown }>
+    writeDataKey: (key: string, data: unknown, opts: { source: string }) => Promise<{ ok: boolean; data?: unknown; error?: string }>
     getHabits: () => Array<{ id: string; onHold?: boolean }>
     getStats: () => { habits: string }
   }
   return { records, writes, harness, menuUpdates: () => menuUpdates }
 }
+
+test('generic desktop and HTTP writes cannot replace managed card ledger or delivery state', async () => {
+  const { harness, writes } = trayHarness([])
+  for (const key of [CREDIT_CARD_KEY, CREDIT_CARD_ALERTS_KEY]) {
+    for (const source of ['ipc', 'http']) {
+      const result = await harness.writeDataKey(key, { overwritten: true }, { source })
+      assert.equal(result.ok, false)
+      assert.equal(result.error, 'managed key')
+    }
+  }
+  assert.deepEqual(writes, [])
+})
 
 test('tray refresh drops newly archived habits without waiting for its five-minute poll', async () => {
   const { records, harness, menuUpdates } = trayHarness([
