@@ -1,6 +1,6 @@
 # Credit card in Finance
 
-Status: design for review; product implementation has not started.
+Status: approved and implemented; shipping verification is recorded in the pull request.
 
 ## Intended outcome
 
