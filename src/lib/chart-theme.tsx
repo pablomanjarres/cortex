@@ -28,7 +28,7 @@ export function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
-/** The 5-color chart family: [accent-cyan, green, amber, violet, rose]. */
+/** The 5-color chart family: [teal, sand, olive, blue, clay]. */
 export function chartColors(): string[] {
   return CHART_VARS.map((v) => cssVar(v))
 }
