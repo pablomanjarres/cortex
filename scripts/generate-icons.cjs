@@ -7,7 +7,7 @@ const ROOT = path.join(__dirname, '..');
 const BUILD = path.join(ROOT, 'build');
 const ICONSET = path.join(BUILD, 'icon.iconset');
 const WEB = path.join(ROOT, 'public', 'icons');
-const VIOLET = '#624AB5';
+const BRAND_TEAL = '#246B5B';
 const mark = fs.readFileSync(path.join(ROOT, 'public', 'brand', 'mark.svg'), 'utf8');
 const [markWidth, markHeight] = mark.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/).slice(1).map(Number);
 const markBody = mark.replace(/<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '').trim();
@@ -35,7 +35,7 @@ function drawMark(ctx, image, size, widthRatio) {
 function appIcon(size, image, { native = false, maskable = false, apple = false } = {}) {
   const canvas = createCanvas(size, size);
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = VIOLET;
+  ctx.fillStyle = BRAND_TEAL;
   if (maskable || apple) {
     ctx.fillRect(0, 0, size, size);
   } else {
@@ -78,11 +78,11 @@ async function generate() {
   const height = width * markHeight / markWidth;
   const x = (64 - width) / 2;
   const y = (64 - height) / 2;
-  const favicon = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12.8" fill="${VIOLET}"/><g transform="translate(${x} ${y}) scale(${width / markWidth})">${markBody.replaceAll('currentColor', '#FFFFFF')}</g></svg>\n`;
+  const favicon = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12.8" fill="${BRAND_TEAL}"/><g transform="translate(${x} ${y}) scale(${width / markWidth})">${markBody.replaceAll('currentColor', '#FFFFFF')}</g></svg>\n`;
   fs.writeFileSync(path.join(ROOT, 'public', 'favicon.svg'), favicon);
-  const symbol = `<g transform="scale(${320 / markHeight})" fill="${VIOLET}">${markBody.replaceAll('currentColor', VIOLET)}</g>`;
+  const symbol = `<g transform="scale(${320 / markHeight})" fill="${BRAND_TEAL}">${markBody.replaceAll('currentColor', BRAND_TEAL)}</g>`;
   const lettering = `<g transform="translate(421 25.5)" fill="#000000">${wordmarkBody.replaceAll('currentColor', '#000000')}</g>`;
-  const logo = background => `<svg xmlns="http://www.w3.org/2000/svg" width="1590" height="320" viewBox="0 0 1590 320">${background ? '<rect width="1590" height="320" fill="#FAF8F3"/>' : ''}${symbol}${lettering}</svg>\n`;
+  const logo = background => `<svg xmlns="http://www.w3.org/2000/svg" width="1590" height="320" viewBox="0 0 1590 320">${background ? '<rect width="1590" height="320" fill="#F2F4EF"/>' : ''}${symbol}${lettering}</svg>\n`;
   fs.writeFileSync(path.join(ROOT, 'public', 'brand', 'logo.svg'), logo(false));
   fs.writeFileSync(path.join(ROOT, '.github', 'logo.svg'), logo(true));
   if (process.platform === 'darwin') {
