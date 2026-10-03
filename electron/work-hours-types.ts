@@ -92,9 +92,11 @@ export type WorkHoursCommand =
   | { type: 'rename-project'; projectId: string; name: string }
   | { type: 'set-rate'; projectId: string; ratePerHour: number | null }
   | { type: 'start'; id: string; projectId: string }
+  | { type: 'start-owned-at'; id: string; projectId: string; startedAt: string }
   | { type: 'switch'; id: string; projectId: string }
   | { type: 'stop' }
   | { type: 'stop-owned'; id: string }
+  | { type: 'stop-owned-at'; id: string; endedAt: string }
   | { type: 'attach-deliverable'; id: string; prUrl: string; description: string }
   | { type: 'correct-session'; sessionId: string; startedAt: string; endedAt: string; description: string; billable: boolean; prUrl: string | null }
   | { type: 'review-session'; sessionId: string }
