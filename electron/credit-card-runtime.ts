@@ -6,6 +6,10 @@ import { emptyCreditCardState } from './credit-card-model.js'
 import { cardReminderAllowed } from './credit-card-alerts-model.js'
 import type { CreditCardAlertState } from './credit-card-alerts-types.js'
 import type { createNotificationTransport } from './notification-transport.js'
+import { validateCreditCardState } from './credit-card-validation.js'
+import { validateCreditCardAllocations } from './credit-card-payment-validation.js'
+import { creditCardToday } from './credit-card-dates.js'
+import { readCreditCardAlertState } from './credit-card-alerts-state.js'
 
 interface CreditCardRuntimeDeps {
   transport: ReturnType<typeof createNotificationTransport>
@@ -60,5 +64,22 @@ export function createCreditCardRuntime(deps: CreditCardRuntimeDeps) {
     getLogin: deps.getLogin,
     setLogin: deps.setLogin,
   })
-  return { api, alerts, transport }
+  const validateImport = (bundle: Record<string, unknown>): void => {
+    if (!bundle || typeof bundle !== 'object' || Array.isArray(bundle)) throw new Error('Import bundle must be an object')
+    if (Object.hasOwn(bundle, CREDIT_CARD_KEY)) {
+      const state = bundle[CREDIT_CARD_KEY] as CreditCardState
+      validateCreditCardState(state)
+      validateCreditCardAllocations(state, creditCardToday())
+    }
+    if (Object.hasOwn(bundle, CREDIT_CARD_ALERTS_KEY)) readCreditCardAlertState(bundle[CREDIT_CARD_ALERTS_KEY])
+  }
+  const restore = async (bundle: Record<string, unknown>): Promise<number> => {
+    validateImport(bundle)
+    const hasLedger = Object.hasOwn(bundle, CREDIT_CARD_KEY), hasAlerts = Object.hasOwn(bundle, CREDIT_CARD_ALERTS_KEY)
+    if (!hasLedger && !hasAlerts) return 0
+    const ledger = hasLedger ? structuredClone(bundle[CREDIT_CARD_KEY]) as CreditCardState : undefined
+    const state = hasAlerts ? readCreditCardAlertState(bundle[CREDIT_CARD_ALERTS_KEY]) : undefined
+    return alerts.restore(state, commitAlerts => service.restore(ledger, commitAlerts))
+  }
+  return { api, alerts, transport, validateImport, restore }
 }

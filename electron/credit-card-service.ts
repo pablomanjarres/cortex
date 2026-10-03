@@ -38,4 +38,25 @@ export class CreditCardService {
       return state
     })
   }
+  /** The main-process import owner holds the alert queue before entering this queue. */
+  restore(state: CreditCardState | undefined, commitRelated: () => Promise<void>): Promise<number> {
+    return this.enqueue(async () => {
+      if (state !== undefined) {
+        validateCreditCardState(state)
+        validateCreditCardAllocations(state, creditCardToday())
+      }
+      const previous = await this.store.read() ?? emptyCreditCardState()
+      const next = state === undefined ? undefined : structuredClone(state)
+      try {
+        if (next) await this.store.write(next)
+        await commitRelated()
+      } catch (cause) {
+        if (next) try { await this.store.write(previous) }
+        catch (rollback) { throw new AggregateError([cause, rollback], 'Credit card restore failed and ledger rollback failed') }
+        throw cause
+      }
+      if (next) this.onCommitted(next)
+      return next ? 1 : 0
+    })
+  }
 }

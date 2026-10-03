@@ -111,11 +111,49 @@ export function createCreditCardAlerts(deps: CreditCardAlertsDeps) {
     } catch { error = 'Could not persist credit card reminder test outcome' }
     return outcome
   })
+  /** Import joins the same queue as delivery, then holds the ledger queue through both writes. */
+  const restore = (incoming: CreditCardAlertState | undefined,
+    restoreLedger: (commitAlerts: () => Promise<void>) => Promise<number>): Promise<number> => serialized(async () => {
+    const previous = await read()
+    const next = incoming === undefined ? previous : readCreditCardAlertState(incoming)
+    if (incoming !== undefined) for (const [key, existing] of Object.entries(previous.occurrences)) {
+      const imported = next.occurrences[key]
+      if (!imported || existing.generation > imported.generation) next.occurrences[key] = existing
+      else if (existing.generation === imported.generation) {
+        imported.failureNoticeAttempted ||= existing.failureNoticeAttempted
+        for (const channel of ['native', 'phone'] as const) {
+          const old = existing.channels[channel], fresh = imported.channels[channel]
+          if (!old) continue
+          const accepted = old.status === 'Sent' ? old : fresh?.status === 'Sent' ? fresh : undefined
+          imported.channels[channel] = { ...(accepted || (!fresh || old.attempts >= fresh.attempts ? old : fresh)),
+            attempts: Math.max(old.attempts, fresh?.attempts ?? 0) }
+        }
+      }
+    }
+    if (incoming !== undefined) {
+      next.lastFailureNoticeDay = [next.lastFailureNoticeDay, previous.lastFailureNoticeDay].filter(Boolean).sort().at(-1)
+      readCreditCardAlertState(next)
+    }
+    let touched = false
+    try {
+      const count = await restoreLedger(async () => {
+        if (incoming === undefined) return
+        touched = true
+        await persistCardAlertState(deps, next)
+      })
+      remembered = next; error = undefined; failureNoticeDay = next.lastFailureNoticeDay
+      return count + (incoming === undefined ? 0 : 1)
+    } catch (cause) {
+      if (touched) try { await persistCardAlertState(deps, previous); remembered = previous }
+      catch (rollback) { throw new AggregateError([cause, rollback], 'Credit card restore failed and reminder rollback failed') }
+      throw cause
+    }
+  })
   const stop = () => { if (interval) clearInterval(interval); interval = undefined }
   const start = () => {
     if (interval) return
     void check()
     interval = setInterval(() => { void check() }, 60 * 60_000)
   }
-  return { check, start, stop, status, test, retry }
+  return { check, start, stop, status, test, retry, restore }
 }
