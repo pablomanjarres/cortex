@@ -1,6 +1,7 @@
 import type { GitHubStats, LemonStats, VercelStats, SupabaseStats } from './metrics'
 import type { CloudCostCache, CloudCostSettings, CloudCostSourceStatus, CloudProvider } from '../../electron/cloud-cost-types'
 import type { WorkEvidence, WorkHoursCommand, WorkHoursState } from '../../electron/work-hours-model'
+import type { CreditCardAPI } from '../../electron/credit-card-api'
 
 interface ProjectInfo {
   name: string
@@ -110,6 +111,7 @@ interface ElectronAPI {
     command: (command: WorkHoursCommand) => Promise<{ ok: true; state: WorkHoursState } | { ok: false; error: string }>
     evidence: (prUrl: string) => Promise<WorkEvidence>
   }
+  creditCard: CreditCardAPI
   automation: {
     scheduledTasks: () => Promise<{ name: string; description: string }[]>
   }

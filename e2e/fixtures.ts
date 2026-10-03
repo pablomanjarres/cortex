@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
+import { applyCreditCardCommand, emptyCreditCardState } from '../electron/credit-card-model'
+import { CREDIT_CARD_KEY, type CreditCardCommand, type CreditCardState } from '../electron/credit-card-types'
 
 export { test, expect }
 
@@ -11,6 +13,10 @@ export async function mockStores(
   const stores = structuredClone(initial)
   const revisions = new Map(Object.keys(stores).map((key) => [key, 1]))
   const writes: { key: string; data: unknown }[] = []
+  const cardCommands: CreditCardCommand[] = []
+  const cardTests: string[] = []
+  let launchAtLogin = false
+  const alertStatus = () => ({ lastCheckedAt: null, outcomes: [], channels: { native: { ready: true }, phone: { ready: true } } })
   const read = (key: string) => stores[key] ?? null
   const revision = (key: string) => revisions.has(key) ? String(revisions.get(key)) : null
 
@@ -42,6 +48,27 @@ export async function mockStores(
       writes.push({ key: body.key, data: structuredClone(saved) })
       return json({ ok: true, rev: revision(body.key), ...(options.canonicalizeWrite ? { data: saved } : {}) })
     }
+    if (url.pathname === '/api/credit-card/command' && request.method() === 'POST') {
+      const command = request.postDataJSON() as CreditCardCommand
+      try {
+        const state = applyCreditCardCommand((stores[CREDIT_CARD_KEY] ?? emptyCreditCardState()) as CreditCardState, command,
+          await page.evaluate(() => new Date().toISOString()))
+        stores[CREDIT_CARD_KEY] = state
+        revisions.set(CREDIT_CARD_KEY, (revisions.get(CREDIT_CARD_KEY) ?? 0) + 1)
+        cardCommands.push(command)
+        return json({ ok: true, state })
+      } catch (error) { return json({ ok: false, error: error instanceof Error ? error.message : 'Invalid card command' }) }
+    }
+    if (url.pathname === '/api/credit-card/alerts' || url.pathname === '/api/credit-card/retry') return json(alertStatus())
+    if (url.pathname === '/api/credit-card/test') {
+      const { channel } = request.postDataJSON() as { channel: string }
+      cardTests.push(channel)
+      return json({ channel, status: 'Sent', id: 'synthetic-test', title: 'Credit card test', at: new Date().toISOString() })
+    }
+    if (url.pathname === '/api/credit-card/login') {
+      if (request.method() === 'POST') launchAtLogin = request.postDataJSON().enabled === true
+      return json({ available: true, enabled: launchAtLogin })
+    }
     if (url.pathname.startsWith('/api/')) {
       if (request.method() !== 'GET') return route.fulfill({ status: 405, json: { error: 'Fixture blocks external writes' } })
       return json(/calendar|scheduled-tasks|projects\/scan|media|keychain/.test(url.pathname) ? [] : {})
@@ -53,6 +80,8 @@ export async function mockStores(
   return {
     stores,
     writes,
+    cardCommands,
+    cardTests,
     set(key: string, data: unknown) {
       stores[key] = structuredClone(data)
       revisions.set(key, (revisions.get(key) ?? 0) + 1)

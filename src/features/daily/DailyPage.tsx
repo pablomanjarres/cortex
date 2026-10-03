@@ -13,6 +13,7 @@ import { WeeklyRhythm } from './components/WeeklyRhythm'
 import { UpNext } from './components/UpNext'
 import { WeekMap } from './components/WeekMap'
 import { DailyShortcuts, NeedsAttention } from './components/HomeExtras'
+import { CreditCardAttention } from '@/features/finance/credit-card/CreditCardAttention'
 import { buildFacts, buildShortcutHabits, homeCalendarState } from './components/homePanelUtils'
 import {
   activeHabitSummary,
@@ -343,6 +344,7 @@ export function DailyPage() {
         </div>
       </div>
 
+      <CreditCardAttention />
       <NeedsAttention
         overdue={overdue}
         calendarError={calendarError}

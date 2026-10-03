@@ -66,6 +66,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     evidence: (prUrl: string) => ipcRenderer.invoke('work-hours:evidence', prUrl),
   },
 
+  creditCard: {
+    command: (command: unknown) => ipcRenderer.invoke('credit-card:command', command),
+    alertStatus: () => ipcRenderer.invoke('credit-card:alerts'),
+    test: (channel: 'native' | 'phone') => ipcRenderer.invoke('credit-card:test', channel),
+    retry: () => ipcRenderer.invoke('credit-card:retry'),
+    getLogin: () => ipcRenderer.invoke('credit-card:login'),
+    setLogin: (enabled: boolean) => ipcRenderer.invoke('credit-card:set-login', enabled),
+  },
+
   media: {
     save: (id: string, base64: string) => ipcRenderer.invoke('media:save', id, base64),
     load: (id: string) => ipcRenderer.invoke('media:load', id),

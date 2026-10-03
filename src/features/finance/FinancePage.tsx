@@ -11,6 +11,11 @@ import { CHART_FONT_MONO, ThemedTooltip, axisProps, chartColor, chartColors, css
 import { useStore } from '@/lib/store'
 import { OneTimePayments } from './OneTimePayments'
 import { FinanceItemCell } from './FinanceItemCell'
+import { CreditCardSection } from './credit-card/CreditCardSection'
+import { BudgetSubtotalRow } from './BudgetSubtotalRow'
+import { useCreditCard } from './credit-card/use-credit-card'
+import { useCardToday } from './credit-card/use-card-today'
+import { creditCardMonth } from '../../../electron/credit-card-model'
 import { FINANCE_CATEGORIES, financeMonth, receivedAmountFor, withReceivedAmount, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
 import {
   TrendingUp,
@@ -114,6 +119,8 @@ function CurrencyCell({ value, onChange, className }: { value: number; onChange:
 export function FinancePage() {
   const currentMonth = new Date().getMonth()
   const [data, updateData] = useStore<FinanceData>('cortex-finances', DEFAULT_DATA)
+  const card = useCreditCard()
+  const cardToday = useCardToday()
   const [selectedMonth, setSelectedMonth] = useState(() => currentMonth)
   const [filterType, setFilterType] = useState<ItemType | null>(null)
   const [compact, setCompact] = useState(window.innerWidth < 768)
@@ -178,7 +185,9 @@ export function FinancePage() {
   const setReceivedAmount = (id: string, monthIdx: number, amount: number | null) =>
     updateData((prev) => withReceivedAmount(prev, id, monthIdx, amount))
 
-  const monthlyTotals = useMemo(() => MONTHS.map((month, i) => ({ month, ...financeMonth(data, i) })), [data])
+  const cardMonths = useMemo(() => MONTHS.map((_, index) => creditCardMonth(card.state,
+    `${data.year}-${String(index + 1).padStart(2, '0')}`, cardToday)), [card.state, data.year, cardToday])
+  const monthlyTotals = useMemo(() => MONTHS.map((month, i) => ({ month, ...financeMonth(data, i, cardMonths[i]) })), [data, cardMonths])
 
   const cur = monthlyTotals[selectedMonth]
   const savingsRate = cur.income > 0 ? (cur.savings / cur.income) * 100 : 0
@@ -227,8 +236,11 @@ export function FinancePage() {
 
   return (
     <PageShell>
-      {/* Month selector + hide toggle */}
+      {/* Budget jump, month selector, and hide toggle */}
       <div className="flex items-center gap-3">
+        <Button variant="secondary" size="sm" onClick={() => document.getElementById('budget')?.scrollIntoView({ block: 'start' })}>
+          <Columns2 />Budget
+        </Button>
         <Button
           variant={hideIncome ? 'secondary' : 'ghost'}
           size="sm"
@@ -317,6 +329,10 @@ export function FinancePage() {
         <StatTile label="Paid" value={`${balance.paidCount}/${balance.totalPayable}`} sub="bills settled this month" />
       </div>
 
+      <CreditCardSection key={`${data.year}-${selectedMonth}`} state={card.state}
+        yearMonth={`${data.year}-${String(selectedMonth + 1).padStart(2, '0')}`} today={cardToday}
+        loading={card.loading} pending={card.pending} error={card.error} onSave={card.command} />
+
       <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-5">
         {/* Bar chart */}
         <WidgetCard title={hideIncome ? 'Expenses' : 'Income vs Expenses'} description={hideIncome ? `${data.year}` : `${data.year} · Net: ${fmtCOP(yearTotal.income - yearTotal.expenses)}`} delay={0.1} className="lg:col-span-3">
@@ -395,7 +411,7 @@ export function FinancePage() {
       />
 
       {/* Budget Table */}
-      <WidgetCard title="Budget" description={`${filtered.length} items`} delay={0.25}>
+      <WidgetCard id="budget" title="Budget" description={`${filtered.length} items`} delay={0.25} className="scroll-mt-24">
         <div className="mb-3 flex flex-col gap-2 sm:gap-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 overflow-x-auto sm:gap-2">
@@ -463,7 +479,6 @@ export function FinancePage() {
             <tbody>
               {groupedRows.map((group) => {
                 const groupSubtotals = MONTHS.map((_, mi) => group.items.reduce((s, it) => s + it.months[mi], 0))
-                const groupTotal = groupSubtotals.reduce((a, b) => a + b, 0)
 
                 return [
                   ...group.items.map((item, idx) => {
@@ -544,32 +559,15 @@ export function FinancePage() {
                       </tr>
                     )
                   }),
-                  <tr key={`subtotal-${group.type}`} className="border-t border-border/40">
-                    <td className="sticky left-0 z-10 bg-card px-4 py-1.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{group.type} Subtotal</td>
-                    <td></td>
-                    <td></td>
-                    {!compact && groupSubtotals.map((val, mi) => (
-                      <td key={mi} className={`py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{hideIncome && group.type === 'Income' ? '•••' : fmtCell(val)}</td>
-                    ))}
-                    {compact && <td className="bg-foreground/[0.03] py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{hideIncome && group.type === 'Income' ? '•••' : fmtCell(groupSubtotals[selectedMonth])}</td>}
-                    <td className="py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{hideIncome && group.type === 'Income' ? '•••' : fmtCell(groupTotal)}</td>
-                    <td></td>
-                  </tr>,
+                  <BudgetSubtotalRow key={`subtotal-${group.type}`} label={`${group.type} Subtotal`} amounts={groupSubtotals}
+                    selectedMonth={selectedMonth} compact={compact} concealed={hideIncome && group.type === 'Income'} formatAmount={fmtCell} />,
                 ]
               })}
               {oneTimeYearTotal > 0 && (
-                <tr className="border-t border-border/40">
-                  <td className="sticky left-0 z-10 bg-card px-4 py-1.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">One-time Subtotal</td>
-                  <td></td>
-                  <td></td>
-                  {!compact && oneTimeMonthTotals.map((amount, mi) => (
-                    <td key={mi} className={`py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{fmtCell(amount)}</td>
-                  ))}
-                  {compact && <td className="bg-foreground/[0.03] py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{fmtCell(oneTimeMonthTotals[selectedMonth])}</td>}
-                  <td className="py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{fmtCell(oneTimeYearTotal)}</td>
-                  <td></td>
-                </tr>
+                <BudgetSubtotalRow label="One-time Subtotal" amounts={oneTimeMonthTotals} selectedMonth={selectedMonth} compact={compact} formatAmount={fmtCell} />
               )}
+              {cardMonths.some((month) => month.planned > 0) && <BudgetSubtotalRow label="Credit card Subtotal"
+                amounts={cardMonths.map((month) => month.planned)} selectedMonth={selectedMonth} compact={compact} formatAmount={fmtCell} />}
               <tr className="border-t border-border/50 font-medium">
                 <td className="sticky left-0 z-10 bg-card px-4 py-2.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Net</td>
                 <td></td>
