@@ -45,7 +45,8 @@ export interface CreditCardAlertsDeps {
   readiness?(): NotificationReadiness
   now?(): Date
   url?: string
-  onFailure?(failure: { id: string; message: string }): Promise<void>
+  /** False means deferred without a delivery attempt; it does not consume the daily cap. */
+  onFailure?(failure: { id: string; message: string; now: Date }): Promise<boolean | void>
 }
 export const emptyCreditCardAlertState = (): CreditCardAlertState => ({
   version: 1, lastCheckedAt: null, occurrences: {}, outcomes: [],

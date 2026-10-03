@@ -34,16 +34,22 @@ export function createCreditCardAlerts(deps: CreditCardAlertsDeps) {
   const notifyFailure = async (now: Date, message: string) => {
     const day = creditCardToday(now)
     if (!deps.onFailure || failureNoticeDay === day) return
-    failureNoticeDay = day
+    let saved: CreditCardAlertState | undefined
     try {
-      const saved = readCreditCardAlertState(await deps.readAlertState())
-      if (saved.lastFailureNoticeDay === day) return
-      saved.lastFailureNoticeDay = day
+      saved = readCreditCardAlertState(await deps.readAlertState())
+      if (saved.lastFailureNoticeDay === day) { failureNoticeDay = day; return }
       saved.error = message
       await deps.writeAlertState(saved)
     } catch { /* Storage failure cannot silence its own actionable notification. */ }
-    try { await deps.onFailure({ id: `cortex-card:checker-failure:${day}`, message }) }
-    catch { /* The retained visible failure remains even if its reporter also fails. */ }
+    failureNoticeDay = day
+    try {
+      const attempted = await deps.onFailure({ id: `cortex-card:checker-failure:${day}`, message, now: new Date(now) })
+      if (attempted === false) { failureNoticeDay = undefined; return }
+    } catch { /* A throwing reporter may have attempted delivery; retain the daily cap. */ }
+    if (saved) try {
+      saved.lastFailureNoticeDay = day
+      await deps.writeAlertState(saved)
+    } catch { /* Stable notification ID and the in-memory cap survive bookkeeping failure. */ }
   }
   const run = async (now: Date, force: boolean, retry: boolean, liveDeps: CreditCardAlertsDeps) => {
     try {
