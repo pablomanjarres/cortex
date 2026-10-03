@@ -26,6 +26,7 @@ export function CreditCardBudgetRows({ months, selectedMonth, compact, year }: {
     {rows.map((row) => <tr key={row.id} className="border-b border-border/20 hover:bg-secondary/30">
       <td className="sticky left-0 z-10 min-w-[240px] bg-card px-4 py-2">
         <p className="font-medium text-foreground">{row.name}</p>
+        {row.months[selectedMonth] > 0 && <p className="mt-1 font-mono tabular-nums text-foreground">{cardMoney(row.months[selectedMonth])} this month</p>}
         {row.details[selectedMonth].map((detail, index) => <p key={`${detail.dueDate}-${index}`} className="mt-1 text-2xs text-muted-foreground">
           {detail.installmentNumber !== undefined && `Installment ${detail.installmentNumber}/${detail.installmentCount} · `}
           Due {cardDate(detail.dueDate)}
