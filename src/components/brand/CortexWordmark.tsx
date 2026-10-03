@@ -20,7 +20,7 @@ export function CortexWordmark() {
     }),
     createElement('span', {
       'aria-hidden': true,
-      className: 'block h-10 w-36 shrink-0 bg-sidebar-primary',
+      className: 'block h-7 w-28 shrink-0 bg-sidebar-primary',
       style: {
         maskImage: 'url("./brand/wordmark.svg")',
         maskSize: 'contain',

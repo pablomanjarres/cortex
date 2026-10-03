@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-test('workspace uses the Human Rhythm wordmark with an accessible brand name', async () => {
+test('workspace uses the Cortex wordmark with an accessible brand name', async () => {
   const { CortexWordmark } = await import('../src/components/brand/CortexWordmark.tsx')
   const markup = renderToStaticMarkup(createElement(CortexWordmark))
 

@@ -12,6 +12,7 @@ const mark = fs.readFileSync(path.join(ROOT, 'public', 'brand', 'mark.svg'), 'ut
 const [markWidth, markHeight] = mark.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/).slice(1).map(Number);
 const markBody = mark.replace(/<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '').trim();
 const wordmark = fs.readFileSync(path.join(ROOT, 'public', 'brand', 'wordmark.svg'), 'utf8');
+const [wordmarkWidth, wordmarkHeight] = wordmark.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/).slice(1).map(Number);
 const wordmarkBody = wordmark.replace(/<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '').trim();
 // Rasterize the vector above its largest output size before any downsampling.
 const renderMark = mark.replace(/width="[^"]*"/, 'width="1024"').replace(/height="[^"]*"/, `height="${1024 * markHeight / markWidth}"`);
@@ -80,9 +81,16 @@ async function generate() {
   const y = (64 - height) / 2;
   const favicon = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12.8" fill="${BRAND_TEAL}"/><g transform="translate(${x} ${y}) scale(${width / markWidth})">${markBody.replaceAll('currentColor', '#FFFFFF')}</g></svg>\n`;
   fs.writeFileSync(path.join(ROOT, 'public', 'favicon.svg'), favicon);
-  const symbol = `<g transform="scale(${320 / markHeight})" fill="${BRAND_TEAL}">${markBody.replaceAll('currentColor', BRAND_TEAL)}</g>`;
-  const lettering = `<g transform="translate(421 25.5)" fill="#000000">${wordmarkBody.replaceAll('currentColor', '#000000')}</g>`;
-  const logo = background => `<svg xmlns="http://www.w3.org/2000/svg" width="1590" height="320" viewBox="0 0 1590 320">${background ? '<rect width="1590" height="320" fill="#F2F4EF"/>' : ''}${symbol}${lettering}</svg>\n`;
+  const logoHeight = 320;
+  const symbolScale = logoHeight / markHeight;
+  const letteringHeight = logoHeight * 100 / 120;
+  const letteringScale = letteringHeight / wordmarkHeight;
+  const letteringX = markWidth * symbolScale + logoHeight * 35 / 120;
+  const letteringY = (logoHeight - letteringHeight) / 2;
+  const logoWidth = letteringX + wordmarkWidth * letteringScale;
+  const symbol = `<g transform="scale(${symbolScale})" fill="${BRAND_TEAL}">${markBody.replaceAll('currentColor', BRAND_TEAL)}</g>`;
+  const lettering = `<g transform="translate(${letteringX} ${letteringY}) scale(${letteringScale})" fill="#000000">${wordmarkBody.replaceAll('currentColor', '#000000')}</g>`;
+  const logo = background => `<svg xmlns="http://www.w3.org/2000/svg" width="${logoWidth}" height="${logoHeight}" viewBox="0 0 ${logoWidth} ${logoHeight}">${background ? `<rect width="${logoWidth}" height="${logoHeight}" fill="#F2F4EF"/>` : ''}${symbol}${lettering}</svg>\n`;
   fs.writeFileSync(path.join(ROOT, 'public', 'brand', 'logo.svg'), logo(false));
   fs.writeFileSync(path.join(ROOT, '.github', 'logo.svg'), logo(true));
   if (process.platform === 'darwin') {

@@ -46,7 +46,7 @@ The [Project time API](docs/work-hours-api.md) supports timer ownership and PR a
 
 ## Brand assets
 
-The original abstract symbol, custom lettering, and combined logo live in [public/brand](public/brand). Run `npm run brand:generate` to rebuild the app, tray, favicon, and PWA icons from the symbol SVG.
+The original abstract symbol, outlined lettering, and combined logo live in [public/brand](public/brand). The Typography B lettering uses Bricolage Grotesque (weight 800, width 90, optical size 96) with custom spacing, under the included [SIL Open Font License](public/brand/Bricolage-OFL.txt). Run `npm run brand:generate` to compose the logo from the source SVGs and rebuild app, tray, favicon, and PWA icons from the symbol.
 
 ## License
 
