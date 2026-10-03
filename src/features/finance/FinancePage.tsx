@@ -236,8 +236,11 @@ export function FinancePage() {
 
   return (
     <PageShell>
-      {/* Month selector + hide toggle */}
+      {/* Budget jump, month selector, and hide toggle */}
       <div className="flex items-center gap-3">
+        <Button variant="secondary" size="sm" onClick={() => document.getElementById('budget')?.scrollIntoView({ block: 'start' })}>
+          <Columns2 />Budget
+        </Button>
         <Button
           variant={hideIncome ? 'secondary' : 'ghost'}
           size="sm"
@@ -408,7 +411,7 @@ export function FinancePage() {
       />
 
       {/* Budget Table */}
-      <WidgetCard title="Budget" description={`${filtered.length} items`} delay={0.25}>
+      <WidgetCard id="budget" title="Budget" description={`${filtered.length} items`} delay={0.25} className="scroll-mt-24">
         <div className="mb-3 flex flex-col gap-2 sm:gap-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 overflow-x-auto sm:gap-2">
