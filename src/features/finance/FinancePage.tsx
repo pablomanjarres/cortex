@@ -11,6 +11,11 @@ import { CHART_FONT_MONO, ThemedTooltip, axisProps, chartColor, chartColors, css
 import { useStore } from '@/lib/store'
 import { OneTimePayments } from './OneTimePayments'
 import { FinanceItemCell } from './FinanceItemCell'
+import { CreditCardSection } from './credit-card/CreditCardSection'
+import { CardBudgetSubtotal } from './credit-card/CardBudgetSubtotal'
+import { useCreditCard } from './credit-card/use-credit-card'
+import { useCardToday } from './credit-card/use-card-today'
+import { creditCardMonth } from '../../../electron/credit-card-model'
 import { FINANCE_CATEGORIES, financeMonth, receivedAmountFor, withReceivedAmount, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
 import {
   TrendingUp,
@@ -114,6 +119,8 @@ function CurrencyCell({ value, onChange, className }: { value: number; onChange:
 export function FinancePage() {
   const currentMonth = new Date().getMonth()
   const [data, updateData] = useStore<FinanceData>('cortex-finances', DEFAULT_DATA)
+  const card = useCreditCard()
+  const cardToday = useCardToday()
   const [selectedMonth, setSelectedMonth] = useState(() => currentMonth)
   const [filterType, setFilterType] = useState<ItemType | null>(null)
   const [compact, setCompact] = useState(window.innerWidth < 768)
@@ -178,7 +185,9 @@ export function FinancePage() {
   const setReceivedAmount = (id: string, monthIdx: number, amount: number | null) =>
     updateData((prev) => withReceivedAmount(prev, id, monthIdx, amount))
 
-  const monthlyTotals = useMemo(() => MONTHS.map((month, i) => ({ month, ...financeMonth(data, i) })), [data])
+  const cardMonths = useMemo(() => MONTHS.map((_, index) => creditCardMonth(card.state,
+    `${data.year}-${String(index + 1).padStart(2, '0')}`, cardToday)), [card.state, data.year, cardToday])
+  const monthlyTotals = useMemo(() => MONTHS.map((month, i) => ({ month, ...financeMonth(data, i, cardMonths[i]) })), [data, cardMonths])
 
   const cur = monthlyTotals[selectedMonth]
   const savingsRate = cur.income > 0 ? (cur.savings / cur.income) * 100 : 0
@@ -316,6 +325,10 @@ export function FinancePage() {
         />
         <StatTile label="Paid" value={`${balance.paidCount}/${balance.totalPayable}`} sub="bills settled this month" />
       </div>
+
+      <CreditCardSection key={`${data.year}-${selectedMonth}`} state={card.state}
+        yearMonth={`${data.year}-${String(selectedMonth + 1).padStart(2, '0')}`} today={cardToday}
+        loading={card.loading} pending={card.pending} error={card.error} onSave={card.command} />
 
       <div className="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-5">
         {/* Bar chart */}
@@ -570,6 +583,7 @@ export function FinancePage() {
                   <td></td>
                 </tr>
               )}
+              <CardBudgetSubtotal amounts={cardMonths.map((month) => month.planned)} selectedMonth={selectedMonth} compact={compact} />
               <tr className="border-t border-border/50 font-medium">
                 <td className="sticky left-0 z-10 bg-card px-4 py-2.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Net</td>
                 <td></td>
