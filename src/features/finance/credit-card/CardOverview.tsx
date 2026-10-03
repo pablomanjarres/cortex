@@ -1,6 +1,7 @@
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Chip } from '@/components/ui/chip'
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import type { CreditCardCycleSummary, CreditCardOverview, CreditCardProfile } from '../../../../electron/credit-card-types'
 import { cardDate, cardMoney } from './card-format'
 
@@ -14,10 +15,8 @@ export function CardOverview({ card, overview, onSnapshot }: {
       {overview.pending > 0 && <Chip variant="warning">Pending charges</Chip>}
     </div>
     <p className="mt-2 text-sm text-muted-foreground">{cardMoney(overview.trackedPrincipal)} tracked principal · {cardMoney(overview.pending)} pending</p>
-    <div role="progressbar" aria-label="Estimated credit utilization" aria-valuemin={0} aria-valuemax={100}
-      aria-valuenow={Math.min(100, Math.round(overview.utilization * 100))} className="mt-5 h-2 overflow-hidden rounded-full bg-secondary">
-      <div className="h-full rounded-full bg-accent" style={{ width: `${Math.max(0, Math.min(100, overview.utilization * 100))}%` }} />
-    </div>
+    <Progress value={Math.max(0, Math.min(100, overview.utilization * 100))} aria-label="Estimated credit utilization"
+      className="mt-5 [&_[data-slot=progress-track]]:h-2 [&_[data-slot=progress-track]]:bg-secondary [&_[data-slot=progress-indicator]]:bg-accent" />
     <p className="mt-2 text-xs text-muted-foreground">{Math.round(overview.utilization * 100)}% of your {cardMoney(card.limit)} limit</p>
     <dl className="mt-5 grid grid-cols-2 gap-4 text-sm">
       <div><dt className="text-muted-foreground">Estimated available</dt><dd className="mt-1 font-mono text-accent">{cardMoney(overview.estimatedAvailable)}</dd></div>
@@ -30,8 +29,8 @@ export function CardOverview({ card, overview, onSnapshot }: {
 }
 
 const statusLabels = { paid: 'Paid', overdue: 'Overdue', ready: 'Ready to pay', 'needs-funding': 'Needs funding' } as const
-export function CardReadiness({ cycle, onReserve, onPay, onStatement }: {
-  cycle: CreditCardCycleSummary | null; onReserve: () => void; onPay: () => void; onStatement: () => void
+export function CardReadiness({ cycle, minimumEstimated, onReserve, onPay, onStatement }: {
+  cycle: CreditCardCycleSummary | null; minimumEstimated?: boolean; onReserve: () => void; onPay: () => void; onStatement: () => void
 }) {
   return <WidgetCard title="Payment readiness" className="min-w-0">
     {cycle ? <>
@@ -41,7 +40,7 @@ export function CardReadiness({ cycle, onReserve, onPay, onStatement }: {
       </div>
       <p className="mt-2 text-sm font-medium text-accent">Due {cardDate(cycle.dueDate)}</p>
       <p className="mt-1 text-xs text-muted-foreground">{cycle.estimated ? 'Estimated · Confirm interest and fees' : 'Statement confirmed'} · Target {cardMoney(cycle.target)}</p>
-      {cycle.minimum !== null && <p className="mt-2 text-xs text-muted-foreground">Bank minimum {cardMoney(cycle.minimum)} · Planned installments {cardMoney(cycle.principal)}</p>}
+      {cycle.minimum !== null && <p className="mt-2 text-xs text-muted-foreground">{minimumEstimated ? 'Estimated minimum' : 'Bank minimum'} {cardMoney(cycle.minimum)} · Planned installments {cardMoney(cycle.principal)}</p>}
       <dl className="mt-5 grid grid-cols-2 gap-3 border-t border-border pt-4 text-sm">
         <div><dt className="text-muted-foreground">Set aside</dt><dd className="mt-1 font-mono">{cardMoney(cycle.reserved)}</dd></div>
         <div><dt className="text-muted-foreground">Still to prepare</dt><dd className="mt-1 font-mono">{cardMoney(cycle.fundingGap)}</dd></div>

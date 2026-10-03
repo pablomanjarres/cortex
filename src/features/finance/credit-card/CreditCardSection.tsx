@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { CreditCard, Plus, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { Modal } from '@/components/shared/Modal'
-import { creditCardCycles, creditCardMonth, creditCardOverview, creditCardSchedule } from '../../../../electron/credit-card-model'
+import { creditCardAddMonths, creditCardCycles, creditCardMonth, creditCardOverview, creditCardSchedule } from '../../../../electron/credit-card-model'
 import type { CreditCardPayment, CreditCardPurchase, CreditCardState } from '../../../../electron/credit-card-types'
 import { CardOverview, CardReadiness } from './CardOverview'
 import { PaymentRunway } from './PaymentRunway'
@@ -16,7 +17,7 @@ import { StatementForm, ReserveForm } from './CycleForms'
 import { PaymentForm } from './PaymentForm'
 import { SnapshotForm } from './SnapshotForm'
 import { ReminderSettings } from './ReminderSettings'
-import { cardDate, cardMonthLabel, shiftCardMonth } from './card-format'
+import { cardDate, cardMonthLabel } from './card-format'
 import type { SaveCardCommand } from './use-credit-card'
 
 type CardDialog = 'settings' | 'purchase' | 'statement' | 'reserve' | 'payment' | 'snapshot' | 'reminders'
@@ -29,6 +30,7 @@ export function CreditCardSection({ state, yearMonth, today, loading, pending, e
   error: string | null; onSave: SaveCardCommand
 }) {
   const [dialog, setDialog] = useState<CardDialog | null>(null)
+  const location = useLocation()
   const [purchase, setPurchase] = useState<CreditCardPurchase | undefined>()
   const [payment, setPayment] = useState<CreditCardPayment | undefined>()
   const [selectedCycle, setSelectedCycle] = useState<string | null>(null)
@@ -43,6 +45,11 @@ export function CreditCardSection({ state, yearMonth, today, loading, pending, e
   const endMonth = allCycles.filter((entry) => entry.target > 0).at(-1)?.id
   const checkpoint = allCycles.find((entry) => entry.remaining > 0 && !entry.statementConfirmed && entry.closingDate <= today)
   const close = () => setDialog(null)
+  useEffect(() => {
+    if (location.hash !== '#credit-card' || loading) return
+    const frame = requestAnimationFrame(() => document.getElementById('credit-card')?.scrollIntoView({ block: 'start' }))
+    return () => cancelAnimationFrame(frame)
+  }, [location.hash, loading])
   return <section id="credit-card" aria-labelledby="credit-card-title" className="min-w-0 space-y-4 scroll-mt-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div><h2 id="credit-card-title" className="flex items-center gap-2 text-2xl font-semibold tracking-tight"><CreditCard className="size-5 text-accent" />Credit card</h2>
@@ -65,11 +72,11 @@ export function CreditCardSection({ state, yearMonth, today, loading, pending, e
         </div>}
         <div className="grid gap-3 lg:grid-cols-2">
           <CardOverview card={state.card} overview={overview} onSnapshot={() => setDialog('snapshot')} />
-          <CardReadiness cycle={cycle.target > 0 ? cycle : null} onReserve={() => setDialog('reserve')}
+          <CardReadiness cycle={cycle.target > 0 ? cycle : null} minimumEstimated={state.cycles.find((entry) => entry.id === cycleId)?.minimumEstimated} onReserve={() => setDialog('reserve')}
             onPay={() => { setPayment(undefined); setDialog('payment') }} onStatement={() => setDialog('statement')} />
         </div>
         <PaymentRunway cycles={runway} selected={cycleId} onSelect={setSelectedCycle}
-          onShift={(offset) => setRunwayMonth(shiftCardMonth(runwayStart, offset))} endMonth={endMonth} />
+          onShift={(offset) => setRunwayMonth(creditCardAddMonths(runwayStart, offset))} endMonth={endMonth} />
         <CardLedger purchases={state.purchases} payments={state.payments} pending={pending} error={error} onSave={onSave}
           onEditPurchase={(entry) => { setPurchase(entry); setDialog('purchase') }}
           onEditPayment={(entry) => { setPayment(entry); setDialog('payment') }} />
