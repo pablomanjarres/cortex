@@ -414,7 +414,7 @@ function updateTraySystemTitle() {
   if (cachedWorkHours.active) {
     const project = cachedWorkHours.projects.find((item) => item.id === cachedWorkHours.active?.projectId)
     const label = project?.name ?? 'Work'
-    tray.setTitle(`${label.slice(0, 16)} ${workElapsedLabel(cachedWorkHours.active.startedAt)}`)
+    tray.setTitle(`${label.slice(0, 16)} ${workTimeStatusLabel(cachedWorkHours.active)}`)
     tray.setToolTip(`Cortex — tracking ${label}`)
     return
   }
@@ -424,8 +424,9 @@ function updateTraySystemTitle() {
   tray.setToolTip('Cortex')
 }
 
-function workElapsedLabel(startedAt: string): string {
-  const elapsedMs = Date.now() - Date.parse(startedAt)
+function workTimeStatusLabel(active: NonNullable<WorkHoursState['active']>): string {
+  if (active.billable === false) return 'Pending review'
+  const elapsedMs = Date.now() - Date.parse(active.startedAt)
   if (!Number.isFinite(elapsedMs)) return 'review'
   const totalMinutes = Math.floor(Math.max(0, elapsedMs) / 60000)
   return `${Math.floor(totalMinutes / 60)}h ${String(totalMinutes % 60).padStart(2, '0')}m`
@@ -538,7 +539,7 @@ function buildTrayMenu() {
     : null
   const workItems: Electron.MenuItemConstructorOptions[] = cachedWorkHours.active
     ? [
-        { label: `Tracking ${runningProject?.name ?? 'project'} · ${workElapsedLabel(cachedWorkHours.active.startedAt)}`, enabled: false },
+        { label: `Tracking ${runningProject?.name ?? 'project'} · ${workTimeStatusLabel(cachedWorkHours.active)}`, enabled: false },
         { label: 'Stop and save', click: () => { void workTimeTrayCommand({ type: 'stop' }) } },
         ...cachedWorkHours.projects
           .filter((project) => project.id !== cachedWorkHours.active?.projectId)
