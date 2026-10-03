@@ -1,4 +1,5 @@
 import type { CreditCardMonthSummary } from '../../../electron/credit-card-types'
+import { creditCardMonthDate } from '../../../electron/credit-card-dates'
 
 export type ItemType = 'Income' | 'Expense' | 'Subscription'
 
@@ -7,6 +8,7 @@ export interface FinanceItem {
   name: string
   type: ItemType
   category?: string
+  billingDay?: number
   months: number[]
   paid?: boolean[]
   paidAmounts?: number[]
@@ -29,6 +31,34 @@ export interface FinanceData {
 }
 
 export const FINANCE_CATEGORIES = ['AI', 'Infrastructure', 'Creative', 'Productivity', 'Apps', 'Food', 'Personal Care', 'Home', 'Debt', 'Health', 'Transport', 'Education', 'Entertainment', 'Other'] as const
+
+function validBillingDay(day: unknown): day is number {
+  return typeof day === 'number' && Number.isInteger(day) && day >= 1 && day <= 31
+}
+
+export function billingDateFor(item: FinanceItem, year: number, monthIndex: number): string | null {
+  if (item.type === 'Income' || !validBillingDay(item.billingDay) || !Number.isInteger(year)
+    || !Number.isInteger(monthIndex) || monthIndex < 0 || monthIndex > 11) return null
+  try {
+    return creditCardMonthDate(`${year}-${String(monthIndex + 1).padStart(2, '0')}`, item.billingDay)
+  } catch {
+    return null
+  }
+}
+
+export function withBillingDay(data: FinanceData, id: string, day: number | null): FinanceData {
+  if (day !== null && !validBillingDay(day)) throw new RangeError('Billing day must be null or a whole day from 1 to 31')
+  let changed = false
+  const items = data.items.map((item) => {
+    if (item.id !== id || item.type === 'Income') return item
+    changed = true
+    const updated = { ...item }
+    if (day === null) delete updated.billingDay
+    else updated.billingDay = day
+    return updated
+  })
+  return changed ? { ...data, items } : data
+}
 
 export function receivedAmountFor(item: FinanceItem, month: number): number | null {
   if (item.type !== 'Income') return null
