@@ -2,16 +2,51 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { WorkHoursService } from '../electron/work-hours-service.ts'
 import { type WorkHoursCommand, type WorkHoursState } from '../electron/work-hours-model.ts'
+import { billableSessions } from '../electron/work-hours-billing.ts'
 
 function ledger() {
   let state: WorkHoursState = {
     projects: [{ id: 'p', name: 'Project', currency: 'COP', ratePerHour: null }],
     active: null, sessions: [], reports: [],
   }
-  const service = new WorkHoursService({ read: async () => state, write: async (next) => { state = next } })
+  const writes: WorkHoursState[] = []
+  const service = new WorkHoursService({ read: async () => state, write: async (next) => { state = next; writes.push(structuredClone(next)) } })
   const command = (value: unknown) => service.command(value as WorkHoursCommand, '2026-10-01T20:00:00Z')
-  return { command, read: () => state, service }
+  return { command, read: () => state, service, writes }
 }
+
+test('automatic activity is persisted as nonbillable and pending review in every write', async () => {
+  const { command, read, writes } = ledger()
+  await command({ type: 'start-owned-at', id: 'automatic', projectId: 'p', startedAt: '2026-10-01T19:00:00Z' })
+  await command({ type: 'stop-owned-at', id: 'automatic', endedAt: '2026-10-01T19:10:00Z' })
+  assert.equal(read().sessions[0].billable, false)
+  assert.equal(read().sessions[0].needsReview, true)
+  assert.deepEqual(billableSessions(read().sessions), [])
+  assert.ok(writes.every((saved) => billableSessions(saved.sessions).length === 0))
+})
+
+test('manual Start and Stop still save billable work without requiring automatic review', async () => {
+  const { command, read, service } = ledger()
+  await command({ type: 'start', id: 'manual', projectId: 'p' })
+  await service.command({ type: 'stop' }, '2026-10-01T20:10:00Z')
+  assert.equal(read().sessions[0].billable, true)
+  assert.equal(read().sessions[0].needsReview, false)
+  assert.equal(billableSessions(read().sessions)[0].durationMs, 600_000)
+})
+
+test('automatic work enters billable totals only after explicit billable correction and review', async () => {
+  const { command, read } = ledger()
+  await command({ type: 'start-owned-at', id: 'automatic', projectId: 'p', startedAt: '2026-10-01T19:00:00Z' })
+  await command({ type: 'stop-owned-at', id: 'automatic', endedAt: '2026-10-01T19:10:00Z' })
+  await command({ type: 'correct-session', sessionId: 'automatic', startedAt: '2026-10-01T19:00:00Z',
+    endedAt: '2026-10-01T19:10:00Z', description: 'Reviewed client delivery', billable: true, prUrl: null })
+  await command({ type: 'stop-owned-at', id: 'automatic', endedAt: '2026-10-01T19:10:00Z' })
+  assert.deepEqual(billableSessions(read().sessions), [])
+  await command({ type: 'review-session', sessionId: 'automatic' })
+  assert.equal(billableSessions(read().sessions)[0].durationMs, 600_000)
+  assert.equal(read().sessions[0].corrections[0].before.billable, false)
+  assert.equal(read().sessions[0].corrections[0].after.billable, true)
+})
 
 test('recorded activity excludes queue time and recovery polling delay', async () => {
   const { command, read } = ledger()
@@ -71,7 +106,8 @@ test('recorded completion trims an interrupted interval after app restart with a
   await command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:10:00Z' })
   const saved = read().sessions[0]
   assert.equal(saved.durationMs, 600000)
-  assert.equal(saved.needsReview, false)
+  assert.equal(saved.needsReview, true)
+  assert.equal(saved.billable, false)
   assert.equal(saved.corrections[0].before.endedAt, '2026-10-01T20:00:00.000Z')
   assert.equal(saved.corrections[0].after.endedAt, '2026-10-01T19:10:00.000Z')
   await command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:10:00Z' })
@@ -84,7 +120,7 @@ test('verified work continuing after restart can recover until completion withou
   await service.restore('2026-10-01T19:10:00Z')
   await command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:20:00Z' })
   assert.equal(read().sessions[0].durationMs, 1200000)
-  assert.equal(read().sessions[0].needsReview, false)
+  assert.equal(read().sessions[0].needsReview, true)
 
   const other = ledger()
   await other.command({ type: 'start-owned-at', id: 'ccw-one', projectId: 'p', startedAt: '2026-10-01T19:00:00Z' })
