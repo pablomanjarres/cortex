@@ -51,7 +51,8 @@ export async function mockStores(
     if (url.pathname === '/api/credit-card/command' && request.method() === 'POST') {
       const command = request.postDataJSON() as CreditCardCommand
       try {
-        const state = applyCreditCardCommand((stores[CREDIT_CARD_KEY] ?? emptyCreditCardState()) as CreditCardState, command, new Date().toISOString())
+        const state = applyCreditCardCommand((stores[CREDIT_CARD_KEY] ?? emptyCreditCardState()) as CreditCardState, command,
+          await page.evaluate(() => new Date().toISOString()))
         stores[CREDIT_CARD_KEY] = state
         revisions.set(CREDIT_CARD_KEY, (revisions.get(CREDIT_CARD_KEY) ?? 0) + 1)
         cardCommands.push(command)
