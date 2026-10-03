@@ -160,6 +160,7 @@ test('automatic activity reaches billing only after the user approves it in Revi
   let state = applyWorkHoursCommand(emptyWorkHoursState(), { type: 'add-project', id: 'cc', name: 'ConstruCredit' }, at)
   state = applyWorkHoursCommand(state, { type: 'start-owned-at', id: 'automatic', projectId: 'cc', startedAt: '2026-10-03T10:00:00Z' }, at)
   state = applyWorkHoursCommand(state, { type: 'stop-owned-at', id: 'automatic', endedAt: '2026-10-03T10:10:00Z' }, at)
+  state = applyWorkHoursCommand(state, { type: 'start-owned-at', id: 'running-automatic', projectId: 'cc', startedAt: '2026-10-03T11:00:00Z' }, at)
   const backend = await mockStores(page, { 'cortex-project-time': state })
   await page.route('**/api/work-hours/command', async (route) => {
     state = applyWorkHoursCommand(state, route.request().postDataJSON() as WorkHoursCommand, at)
@@ -170,6 +171,8 @@ test('automatic activity reaches billing only after the user approves it in Revi
   await page.goto('/#/projects')
   const panel = page.getByRole('region', { name: 'Project time', exact: true })
   await expect(panel.getByText('0h 0m', { exact: true })).toBeVisible()
+  await expect(panel.getByText('Pending billing review. Time is excluded until approved.', { exact: true })).toBeVisible()
+  await expect(panel.getByText(/Working on/)).toHaveCount(0)
   await panel.getByRole('button', { name: 'Reports', exact: true }).click()
   await expect(page.getByRole('dialog').getByRole('checkbox', { name: /Include session from/ })).toHaveCount(0)
   await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
