@@ -18,6 +18,21 @@ const cardScreenshot = async (page: import('@playwright/test').Page, name: strin
   await page.screenshot({ path: `.private/credit-card/${name}.png`, animations: 'disabled' })
 }
 
+for (const width of [320, 1440]) {
+  test(`Budget jump skips the card workspace at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 })
+    await mockStores(page, { 'cortex-credit-card': syntheticCard(), 'cortex-finances': finance })
+    await page.goto('/#/finance')
+    const jump = page.getByRole('button', { name: 'Budget', exact: true })
+    await expect(jump).toBeInViewport()
+    await expect(page.getByRole('heading', { name: 'Budget', exact: true })).not.toBeInViewport()
+    await jump.click()
+    await expect(page.getByRole('heading', { name: 'Budget', exact: true })).toBeInViewport()
+    await expect(page.getByRole('button', { name: 'Set paid amount for Rent' })).toBeInViewport()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  })
+}
+
 test('preview writes nothing, saves known charges atomically, and preserves cross-year installments', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-10-03T15:00:00Z'))
   await page.setViewportSize({ width: 1440, height: 1000 })
