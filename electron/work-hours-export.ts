@@ -1,4 +1,5 @@
 import type { WorkEvidence, WorkReport, WorkReportRow } from './work-hours-types.js'
+import { billableSessions } from './work-hours-billing.js'
 
 function formatDuration(milliseconds: number): string {
   const hours = Math.floor(milliseconds / 3_600_000)
@@ -65,10 +66,11 @@ export function exportWorkHoursMarkdown(report: WorkReport): string {
     '| Task | Time | PR | CI | Deployment | Billing |',
     '| --- | --- | --- | --- | --- | --- |',
   ]
-  for (const row of report.rows) {
+  const rows = billableSessions(report.rows)
+  for (const row of rows) {
     const cells = [
       row.description || report.task,
-      `Worked ${formatDuration(row.durationMs)}; billable ${formatDuration(row.billable ? row.durationMs : 0)}`,
+      `Billable ${formatDuration(row.durationMs)}`,
       evidenceText(report, 'pr', row),
       evidenceText(report, 'ci', row),
       evidenceText(report, 'deployment', row),
@@ -76,16 +78,17 @@ export function exportWorkHoursMarkdown(report: WorkReport): string {
     ]
     lines.push(`| ${cells.map(markdownCell).join(' | ')} |`)
   }
-  lines.push('', `Total worked: ${formatDuration(report.totalMs)}`, `Total billable: ${formatDuration(report.billableMs)}`, `Billing: ${report.amount === null ? 'Rate not set' : formatMoney(report.amount, report.currency)}`)
+  const billableMs = rows.reduce((sum, row) => sum + row.durationMs, 0)
+  lines.push('', `Total billable: ${formatDuration(billableMs)}`, `Billing: ${report.amount === null ? 'Rate not set' : formatMoney(report.amount, report.currency)}`)
   return `${lines.join('\n')}\n`
 }
 
 export function exportWorkHoursCsv(report: WorkReport): string {
   const lines = ['Task,Time,PR,CI,Deployment,Billing']
-  for (const row of report.rows) {
+  for (const row of billableSessions(report.rows)) {
     const cells = [
       row.description || report.task,
-      `Worked ${formatDuration(row.durationMs)}; billable ${formatDuration(row.billable ? row.durationMs : 0)}`,
+      `Billable ${formatDuration(row.durationMs)}`,
       evidenceText(report, 'pr', row),
       evidenceText(report, 'ci', row),
       evidenceText(report, 'deployment', row),
