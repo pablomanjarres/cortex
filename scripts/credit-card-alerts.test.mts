@@ -236,3 +236,22 @@ test('unattended checker failures report once per day across restart and reporte
   await createCreditCardAlerts(deps).check(daytime(18))
   assert.equal(warnings.length, 2)
 })
+
+test('quiet failure reporting defers without consuming the same-day notice', async () => {
+  const f = fixture(); const attempts: string[] = []
+  const deps = { ...f.deps,
+    readLedger: async (): Promise<CreditCardState> => { throw new Error('broken ledger') },
+    onFailure: async (warning: { id: string; message: string; now: Date }) => {
+      if (warning.now.getUTCHours() < 13) return false // Before 08:00 Bogota
+      attempts.push(warning.id); return true
+    },
+  }
+  const checker = createCreditCardAlerts(deps)
+  await checker.check(daytime(17, 12))
+  assert.equal(attempts.length, 0)
+  assert.equal(f.state().lastFailureNoticeDay, undefined)
+  await checker.check(daytime(17, 14))
+  await createCreditCardAlerts(deps).check(daytime(17, 16))
+  assert.equal(attempts.length, 1)
+  assert.equal(f.state().lastFailureNoticeDay, '2026-11-17')
+})
