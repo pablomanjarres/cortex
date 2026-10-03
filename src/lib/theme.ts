@@ -3,8 +3,8 @@ export type ThemePreference = "dark" | "light"
 export const THEME_STORAGE_KEY = "cortex-ui-theme"
 
 const THEME_COLORS: Record<ThemePreference, string> = {
-  dark: "#141720",
-  light: "#F1F2F7",
+  dark: "#181C1B",
+  light: "#F2F4EF",
 }
 
 export function resolveThemePreference(value: unknown): ThemePreference {

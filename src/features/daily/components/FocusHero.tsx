@@ -56,15 +56,15 @@ export function FocusHero({
   }
 
   return (
-    <section className="relative overflow-hidden rounded-[1.75rem] border border-accent/20 bg-focus-surface p-5 text-[#140C38] shadow-card dark:text-white md:p-7">
-      <div className="absolute -right-16 -top-20 size-56 rounded-full bg-white/28 blur-3xl dark:bg-lime-200/10" />
+    <section className="relative overflow-hidden rounded-[1.75rem] border border-accent/20 bg-focus-surface p-5 text-foreground shadow-card md:p-7">
+      <div className="absolute -right-16 -top-20 size-56 rounded-full bg-accent/10 blur-3xl" />
       <div className="relative flex h-full min-h-[22rem] flex-col">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-[#5A44B1] dark:text-[#DCD4FF]">
+          <div className="flex items-center gap-2 text-sm font-semibold text-accent">
             <Target className="size-4" />
             Focus session
           </div>
-          <span className="rounded-full bg-white/45 px-3 py-1 text-xs font-semibold text-[#5A44B1] dark:bg-white/12 dark:text-[#EEE9FF]">
+          <span className="rounded-full bg-card/40 px-3 py-1 text-xs font-semibold text-foreground">
             {sessionCount} today
           </span>
         </div>
@@ -74,12 +74,12 @@ export function FocusHero({
             value={task}
             onChange={(event) => onTaskChange(event.target.value)}
             placeholder="What are you working on?"
-            className="mx-auto h-11 max-w-sm border-white/45 bg-white/45 text-center text-base font-semibold shadow-none placeholder:text-[#5D5382] dark:border-white/10 dark:bg-white/10 dark:placeholder:text-[#CBC3F3]"
+            className="mx-auto h-11 max-w-sm border-border bg-card/40 text-center text-base font-semibold text-foreground shadow-none placeholder:text-muted-foreground"
           />
           <div className="font-mono text-6xl font-semibold tabular-nums tracking-tight md:text-7xl">
             {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
           </div>
-          <p className="text-sm font-medium text-[#5D5382] dark:text-[#D8D0FF]">
+          <p className="text-sm font-medium text-muted-foreground">
             {totalMinutes > 0 ? `${formatMinutes(totalMinutes)} completed today` : 'No completed focus yet today'}
           </p>
           <div className="flex flex-wrap justify-center gap-2">
@@ -88,7 +88,7 @@ export function FocusHero({
               {primary.label}
             </Button>
             {(isRunning || isPaused) && (
-              <Button variant="secondary" size="lg" onClick={onReset} className="border-white/45 bg-white/45 dark:border-white/10 dark:bg-white/10">
+              <Button variant="secondary" size="lg" onClick={onReset} className="border-border bg-card/40 hover:bg-card/60">
                 <RotateCcw />
                 Reset
               </Button>
@@ -132,19 +132,19 @@ export function FocusHero({
                   if (event.key === 'Enter') setCustomDuration()
                 }}
                 placeholder="minutes"
-                className="h-9 bg-white/55 dark:bg-white/10"
+                className="h-9 bg-card/40"
                 autoFocus
               />
               <Button size="sm" onClick={setCustomDuration}>Set</Button>
             </div>
           )}
           {sessions.length > 0 && (
-            <div className="rounded-2xl bg-white/35 p-3 dark:bg-white/10">
-              <p className="mb-2 text-xs font-semibold text-[#5D5382] dark:text-[#D8D0FF]">Latest focus</p>
+            <div className="rounded-2xl bg-card/40 p-3">
+              <p className="mb-2 text-xs font-semibold text-muted-foreground">Latest focus</p>
               <div className="space-y-1">
                 {[...sessions].reverse().slice(0, 3).map((session) => (
                   <div key={session.id} className="flex items-center gap-2 text-xs">
-                    <span className="font-mono tabular-nums text-[#5D5382] dark:text-[#D8D0FF]">
+                    <span className="font-mono tabular-nums text-muted-foreground">
                       {new Date(session.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{session.task || 'Focus session'}</span>

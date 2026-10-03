@@ -31,7 +31,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
                       cn(
                         'relative flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-semibold transition-colors duration-150',
                         isActive
-                          ? 'bg-focus-surface text-sidebar-accent-foreground shadow-[inset_0_0_0_1px_rgba(98,74,181,0.12)]'
+                          ? 'bg-focus-surface text-sidebar-accent-foreground inset-ring inset-ring-accent/15'
                           : 'text-sidebar-muted hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
                       )
                     }

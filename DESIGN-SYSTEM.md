@@ -1,8 +1,8 @@
 # Cortex Design System
 
 This is the shared visual contract for the dark-first Cortex workspace. The app
-should feel like a clear personal command center: dark canvas, quiet ink-blue
-work surfaces, iris actions, lilac focus moments, and lime progress moments.
+should feel like a clear personal command center: graphite canvas, mineral
+work surfaces, muted teal actions, sea-glass focus surfaces, and olive progress surfaces.
 Light mode remains available as a selectable alternative. Use the existing data
 and route contracts; this document only defines shared visual language.
 
@@ -16,40 +16,40 @@ Source of truth:
 ## Tokens
 
 Dark is the default theme. `.dark` is the primary token set; `:root` is the
-selectable light alternative. Keep the lilac focus and lime progress surfaces
-visible in both modes.
+selectable light alternative. Keep focus and progress surfaces
+distinct but restrained in both modes. Text on both uses the shared foreground tokens.
 
 | Dark role | CSS var | Value |
 |---|---|---:|
-| Canvas | `--background` | `#141720` |
-| Surface | `--card` | `#202536` |
-| Primary ink | `--foreground` | `#F6F7FB` |
-| Secondary ink | `--muted-foreground` | `#C1C8D6` |
-| Iris action | `--accent` | `#B7A6FF` |
-| Lilac focus | `--focus-surface` | `#413574` |
-| Lime progress | `--progress-surface` | `#29472D` |
+| Canvas | `--background` | `#181C1B` |
+| Surface | `--card` | `#232A27` |
+| Primary ink | `--foreground` | `#EDF1EC` |
+| Secondary ink | `--muted-foreground` | `#B6C2BB` |
+| Teal action | `--accent` | `#85C7B4` |
+| Sea-glass focus | `--focus-surface` | `#263F37` |
+| Olive progress | `--progress-surface` | `#343C2C` |
 
-The Home focus hero and weekly rhythm use brighter versions of those pastels
-for their primary moments; the token surfaces remain calm elsewhere.
+Home and Student use these same focus and progress tokens, including their text,
+pills, and input treatments. Do not add brighter local overrides.
 
 | Light role | CSS var | Value | Use |
 |---|---|---:|---|
-| Canvas | `--background` | `#F1F2F7` | App and page background. |
-| Surface | `--card` | `#FFFFFF` | Cards, panels, popovers, dialogs. |
-| Primary ink | `--foreground` | `#22232B` | Body, titles, important values. |
-| Secondary ink | `--muted-foreground` | `#66707B` | Labels, descriptions, secondary metadata. |
-| Faint ink | `--foreground-faint` | `#8C95A3` | Decorative microcopy only. |
-| Iris action | `--accent` | `#624AB5` | Primary actions, selected states, focus rings, key chart series. |
-| Lilac focus | `--focus-surface` | `#DDD2FF` | Focus session hero and related emphasis surfaces. |
-| Lime progress | `--progress-surface` | `#E2F2C7` | Weekly rhythm/progress surfaces. |
+| Canvas | `--background` | `#F2F4EF` | App and page background. |
+| Surface | `--card` | `#FCFDF9` | Cards, panels, popovers, dialogs. |
+| Primary ink | `--foreground` | `#26332D` | Body, titles, important values. |
+| Secondary ink | `--muted-foreground` | `#55645B` | Labels, descriptions, secondary metadata. |
+| Faint ink | `--foreground-faint` | `#637366` | Decorative microcopy only. |
+| Teal action | `--accent` | `#246B5B` | Primary actions, selected states, focus rings, key chart series. |
+| Sea-glass focus | `--focus-surface` | `#D8E9DF` | Focus session hero and related emphasis surfaces. |
+| Olive progress | `--progress-surface` | `#E7EAD9` | Weekly rhythm/progress surfaces. |
 
 Semantic tokens remain meaning-driven:
 
 | Role | CSS var | Light value | Use |
 |---|---|---:|---|
-| Success | `--success` | `#227746` | Done, available, on track, gains. |
-| Warning | `--warning` | `#8A4D0F` | Pending, stale, at risk. |
-| Danger | `--destructive` | `#B92F2C` | Errors, overdue, destructive actions, losses. |
+| Success | `--success` | `#397447` | Done, available, on track, gains. |
+| Warning | `--warning` | `#8A5A1E` | Pending, stale, at risk. |
+| Danger | `--destructive` | `#B4423F` | Errors, overdue, destructive actions, losses. |
 
 Never rely on color alone. Pair semantic color with a word, icon, status dot, or
 direction glyph. Avoid raw Tailwind palette colors in feature code; prefer these
@@ -77,14 +77,14 @@ plain nouns that match what the user sees.
 Use the existing 8px rhythm: `gap-4` for normal grids, `gap-3` for dense groups,
 `p-5` for primary cards, and `p-4` for compact cards. Cards get their shadow from
 `.surface`; overlays and stronger panels get `--shadow-lift` through
-`.surface-strong`.
+`.surface-strong`. Primary buttons share `--shadow-action` through `shadow-action`.
 
 ## Surfaces
 
 `.surface` is the normal card/panel surface: token fill, quiet hairline, and the
 shared ambient shadow. `.surface-strong` is for dialogs, popovers, and elevated
 moments. `.liquid-glass` is a restrained translucent surface for compact chrome
-and KPI moments; it must not bring back graphite inset shine.
+and KPI moments.
 
 Use `glow-danger` and `glow-success` only as semantic accents on an owning card.
 They add a readable status outline, not a colored card fill.
@@ -97,7 +97,7 @@ Use `@/components/ui/button` for every app button.
 
 Variants:
 
-- `default`: iris primary action.
+- `default`: teal primary action.
 - `secondary`: quiet token-surface action.
 - `outline`: transparent low-emphasis action.
 - `ghost`: chrome, row tools, icon-only controls.
@@ -137,7 +137,7 @@ actual label they want visible.
 ### StatTile
 
 `StatTile` is the KPI tile. Labels are sentence case, values use tabular mono, and
-icons use the iris accent. `variant="glass"` keeps the existing optional
+icons use the teal accent. `variant="glass"` keeps the existing optional
 translucent treatment.
 
 ### PageHeader
@@ -149,8 +149,8 @@ decoration.
 ## Charts
 
 Use `src/lib/chart-theme.tsx` for chart colors and tooltip styling. The first
-series is iris, the second is lilac, the third is success green, the fourth is
-blue, and the fifth is orange. Use `axisProps()`, `gridProps()`, `chartColors()`,
+series is teal, the second is sand, the third is olive, the fourth is
+blue, and the fifth is clay. Use `axisProps()`, `gridProps()`, `chartColors()`,
 `chartColor(i)`, `cssVar()`, and `<ThemedTooltip />` instead of inline hex values.
 
 ## Loading, Empty, And Error States
@@ -166,14 +166,14 @@ Motion should explain state changes, not decorate the page. Keep transitions
 between 150ms and 250ms. Respect `prefers-reduced-motion`; the global CSS rule is
 a safety net, not permission to add unnecessary animation.
 
-Focus is global: 2px iris outline with offset. Do not remove outlines unless the
+Focus is global: 2px teal outline with offset. Do not remove outlines unless the
 replacement is equally visible. Desktop dense controls should remain at least
 28px; mobile-reachable actions should be at least 44px.
 
 ## Bans
 
 - Light-only root classes or light-only theme metadata.
-- Dark panels that collapse the approved lilac and lime surfaces into flat charcoal.
+- Local colors that bypass the shared focus and progress surface tokens.
 - Raw Tailwind palette colors for semantic UI.
 - Decorative all-caps tracking for card titles and section labels.
 - New fonts without an approved design reason.

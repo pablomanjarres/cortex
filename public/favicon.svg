@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12.8" fill="#624AB5"/><g transform="translate(10.879999999999999 11.816585365853655) scale(0.09365853658536585)"><g fill="#FFFFFF">
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="12.8" fill="#246B5B"/><g transform="translate(10.879999999999999 11.816585365853655) scale(0.09365853658536585)"><g fill="#FFFFFF">
     <rect x="0" y="133" width="250" height="165" rx="82.5"/>
     <path id="cortex-right-lobe" d="M 213 3 C 259 3 285 15 302 44 C 326 75 340 88 365 105 C 391 120 428 139 447 174 C 457 190 450 198 441 202 C 429 210 410 207 391 206 C 355 207 326 207 298 193 C 272 177 257 148 236 131 C 211 111 189 112 167 102 C 144 82 140 60 151 36 C 161 13 184 3 213 3 Z"/>
     <use href="#cortex-right-lobe" transform="translate(0 431) scale(1 -1)"/>
