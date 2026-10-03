@@ -17,75 +17,76 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
 
 /* Cortex workspace tokens. Dark is default; :root remains the light option. */
 :root {
-  --background: #F1F2F7;
-  --foreground: #22232B;
+  --background: #F2F4EF;
+  --foreground: #26332D;
 
-  --card: #FFFFFF;
-  --card-foreground: #22232B;
+  --card: #FCFDF9;
+  --card-foreground: #26332D;
 
-  --popover: #FFFFFF;
-  --popover-foreground: #22232B;
+  --popover: #FCFDF9;
+  --popover-foreground: #26332D;
 
-  --primary: #624AB5;
+  --primary: #246B5B;
   --primary-foreground: #FFFFFF;
 
-  --secondary: #E8EBF3;
-  --secondary-foreground: #22232B;
+  --secondary: #E4EAE2;
+  --secondary-foreground: #26332D;
 
-  --muted: #E8EBF3;
-  --muted-foreground: #66707B;
+  --muted: #E4EAE2;
+  --muted-foreground: #55645B;
 
-  --foreground-faint: #596474;
+  --foreground-faint: #637366;
 
-  --accent: #624AB5;
+  --accent: #246B5B;
   --accent-foreground: #FFFFFF;
-  --focus-surface: #DDD2FF;
-  --progress-surface: #E2F2C7;
+  --focus-surface: #D8E9DF;
+  --progress-surface: #E7EAD9;
 
-  --destructive: #B92F2C; --destructive-foreground: #FFFFFF;
-  --success: #227746; --success-foreground: #FFFFFF;
-  --warning: #8A4D0F; --warning-foreground: #FFFFFF;
-  --info: #256E9D;
-  --border: #DDE2EB; --input: #D6DCE8; --ring: #624AB5;
+  --destructive: #B4423F; --destructive-foreground: #FFFFFF;
+  --success: #397447; --success-foreground: #FFFFFF;
+  --warning: #8A5A1E; --warning-foreground: #FFFFFF;
+  --info: #326D92;
+  --border: #D4DDD4; --input: #BAC8BE; --ring: #246B5B;
 
   --radius: 1rem;
 
-  --shadow-card: 0 1px 2px rgba(26, 31, 44, 0.04), 0 18px 44px rgba(46, 55, 79, 0.08);
-  --shadow-lift: 0 8px 18px rgba(46, 55, 79, 0.10), 0 28px 70px rgba(46, 55, 79, 0.14);
+  --shadow-card: 0 1px 2px rgba(26, 38, 30, 0.04), 0 18px 44px rgba(38, 51, 45, 0.06);
+  --shadow-lift: 0 8px 18px rgba(38, 51, 45, 0.08), 0 28px 70px rgba(38, 51, 45, 0.12);
+  --shadow-action: 0 4px 12px color-mix(in oklab, var(--primary) 18%, transparent);
 
-  --sidebar: #F6F7FB;
-  --sidebar-foreground: #22232B;
-  --sidebar-border: #DDE2EB;
-  --sidebar-accent: #DDD2FF;
-  --sidebar-accent-foreground: #432E91;
-  --sidebar-muted: #66707B;
-  --sidebar-primary: #624AB5;
+  --sidebar: #EAEFE8;
+  --sidebar-foreground: #26332D;
+  --sidebar-border: #D4DDD4;
+  --sidebar-accent: #D8E9DF;
+  --sidebar-accent-foreground: #246B5B;
+  --sidebar-muted: #55645B;
+  --sidebar-primary: #246B5B;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-ring: #624AB5;
+  --sidebar-ring: #246B5B;
 
-  --chart-1: #624AB5; --chart-2: #B7A4F4; --chart-3: #227746; --chart-4: #5AA7F2; --chart-5: #F2994A;
+  --chart-1: #246B5B; --chart-2: #8A622D; --chart-3: #5E7538; --chart-4: #326D92; --chart-5: #A7583F;
 }
 
 .dark {
-  --background: #141720; --foreground: #F6F7FB;
-  --card: #202536; --card-foreground: #F6F7FB;
-  --popover: #202536; --popover-foreground: #F6F7FB;
-  --primary: #B7A6FF; --primary-foreground: #171226;
-  --secondary: #2B3144; --secondary-foreground: #F6F7FB;
-  --muted: #2B3144; --muted-foreground: #C1C8D6; --foreground-faint: #96A0B2;
-  --accent: #B7A6FF; --accent-foreground: #171226;
-  --focus-surface: #413574; --progress-surface: #29472D;
-  --destructive: #F27A72; --destructive-foreground: #2A0E0C;
-  --success: #62D489; --success-foreground: #0B2414;
-  --warning: #F2B35D; --warning-foreground: #2A1907;
-  --info: #82C7FF;
-  --border: #3A4257; --input: #4A536A; --ring: #B7A6FF;
+  --background: #181C1B; --foreground: #EDF1EC;
+  --card: #232A27; --card-foreground: #EDF1EC;
+  --popover: #232A27; --popover-foreground: #EDF1EC;
+  --primary: #85C7B4; --primary-foreground: #142A23;
+  --secondary: #313A35; --secondary-foreground: #EDF1EC;
+  --muted: #313A35; --muted-foreground: #B6C2BB; --foreground-faint: #92A198;
+  --accent: #85C7B4; --accent-foreground: #142A23;
+  --focus-surface: #263F37; --progress-surface: #343C2C;
+  --destructive: #ED9690; --destructive-foreground: #311615;
+  --success: #9AC783; --success-foreground: #1C2D17;
+  --warning: #DEB875; --warning-foreground: #302411;
+  --info: #91BCD3;
+  --border: #3D4943; --input: #4B5B52; --ring: #85C7B4;
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.30), 0 18px 44px rgba(0, 0, 0, 0.34);
   --shadow-lift: 0 8px 18px rgba(0, 0, 0, 0.32), 0 28px 70px rgba(0, 0, 0, 0.40);
-  --sidebar: #181C28; --sidebar-foreground: #F6F7FB; --sidebar-border: #3A4257;
-  --sidebar-accent: #413574; --sidebar-accent-foreground: #F7F4FF; --sidebar-muted: #C1C8D6;
-  --sidebar-primary: #B7A6FF; --sidebar-primary-foreground: #171226; --sidebar-ring: #B7A6FF;
-  --chart-1: #B7A6FF; --chart-2: #D4CAFF; --chart-3: #7AE19B; --chart-4: #82C7FF; --chart-5: #F2B35D;
+  --sidebar: #1D2320; --sidebar-foreground: #EDF1EC; --sidebar-border: #3D4943;
+  --sidebar-accent: #263F37; --sidebar-accent-foreground: #A7D8C7; --sidebar-muted: #B6C2BB;
+  --sidebar-primary: #85C7B4; --sidebar-primary-foreground: #142A23; --sidebar-ring: #85C7B4;
+  --chart-1: #85C7B4; --chart-2: #D8BA83; --chart-3: #A7BF8B; --chart-4: #85AFCA; --chart-5: #E5A494;
 }
 
 @theme inline {
@@ -148,6 +149,7 @@ button, [role="button"], select, [type="checkbox"], [type="radio"], summary {
   /* Shadow utilities (shadow-card / shadow-lift) backed by the :root tokens */
   --shadow-card: var(--shadow-card);
   --shadow-lift: var(--shadow-lift);
+  --shadow-action: var(--shadow-action);
 
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
