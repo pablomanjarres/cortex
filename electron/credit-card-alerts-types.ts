@@ -27,6 +27,7 @@ export interface CreditCardAlertState {
   version: 1
   lastCheckedAt: string | null
   error?: string
+  lastFailureNoticeDay?: string
   occurrences: Record<string, CreditCardAlertOccurrence>
   outcomes: CreditCardAlertOutcome[]
 }
@@ -44,6 +45,7 @@ export interface CreditCardAlertsDeps {
   readiness?(): NotificationReadiness
   now?(): Date
   url?: string
+  onFailure?(failure: { id: string; message: string }): Promise<void>
 }
 export const emptyCreditCardAlertState = (): CreditCardAlertState => ({
   version: 1, lastCheckedAt: null, occurrences: {}, outcomes: [],

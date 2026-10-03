@@ -13,7 +13,8 @@ export function readCreditCardAlertState(raw: unknown): CreditCardAlertState {
   if (raw === null || raw === undefined) return emptyCreditCardAlertState()
   const invalid = () => { throw new Error('Invalid credit card reminder state') }
   if (!record(raw) || raw.version !== 1 || (raw.lastCheckedAt !== null && !timestamp(raw.lastCheckedAt)) ||
-    !record(raw.occurrences) || !Array.isArray(raw.outcomes) || (raw.error !== undefined && !text(raw.error))) return invalid()
+    !record(raw.occurrences) || !Array.isArray(raw.outcomes) || (raw.error !== undefined && !text(raw.error)) ||
+    (raw.lastFailureNoticeDay !== undefined && !date(raw.lastFailureNoticeDay))) return invalid()
   if (Object.keys(raw.occurrences).length > 40_000 || raw.outcomes.length > 1_000) return invalid()
   for (const [key, item] of Object.entries(raw.occurrences)) {
     if (!record(item) || item.id !== key || !text(item.id) || !text(item.cycleId, 7) || !date(item.dueDate) ||

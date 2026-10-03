@@ -1,5 +1,6 @@
 import { emptyCreditCardAlertState } from './credit-card-alerts-types.js'
 import { cardReminderActions, pruneCardAlertState } from './credit-card-alerts-model.js'
+import { creditCardToday } from './credit-card-model.js'
 import { deliverCardReminder, persistCardAlertState, sendCardNotification } from './credit-card-alerts-delivery.js'
 import { incompleteCardAlert, readCreditCardAlertState } from './credit-card-alerts-state.js'
 import type { CreditCardAlertOutcome, CreditCardAlertState, CreditCardAlertStatus, CreditCardAlertsDeps } from './credit-card-alerts-types.js'
@@ -13,6 +14,7 @@ export function createCreditCardAlerts(deps: CreditCardAlertsDeps) {
   let error: string | undefined
   let remembered = emptyCreditCardAlertState()
   let interval: ReturnType<typeof setInterval> | undefined
+  let failureNoticeDay: string | undefined
   const readiness = (): NotificationReadiness => deps.readiness?.() || { native: { ready: true }, phone: { ready: true } }
   const read = async () => {
     const state = readCreditCardAlertState(await deps.readAlertState())
@@ -28,6 +30,20 @@ export function createCreditCardAlerts(deps: CreditCardAlertsDeps) {
     const operation = queue.then(work)
     queue = operation.catch(() => {})
     return operation
+  }
+  const notifyFailure = async (now: Date, message: string) => {
+    const day = creditCardToday(now)
+    if (!deps.onFailure || failureNoticeDay === day) return
+    failureNoticeDay = day
+    try {
+      const saved = readCreditCardAlertState(await deps.readAlertState())
+      if (saved.lastFailureNoticeDay === day) return
+      saved.lastFailureNoticeDay = day
+      saved.error = message
+      await deps.writeAlertState(saved)
+    } catch { /* Storage failure cannot silence its own actionable notification. */ }
+    try { await deps.onFailure({ id: `cortex-card:checker-failure:${day}`, message }) }
+    catch { /* The retained visible failure remains even if its reporter also fails. */ }
   }
   const run = async (now: Date, force: boolean, retry: boolean, liveDeps: CreditCardAlertsDeps) => {
     try {
@@ -59,6 +75,7 @@ export function createCreditCardAlerts(deps: CreditCardAlertsDeps) {
       error = cause instanceof Error && /persist/i.test(cause.message)
         ? 'Could not persist credit card reminder state. Check storage before retrying.'
         : 'Credit card reminder check failed. Open Finance to retry.'
+      await notifyFailure(now, error)
       return view(remembered)
     }
   }
@@ -80,7 +97,7 @@ export function createCreditCardAlerts(deps: CreditCardAlertsDeps) {
   }
   const test = (channel: NotificationChannel, now = deps.now?.() || new Date()): Promise<CreditCardAlertOutcome> => serialized(async () => {
     const message = { channel, id: `cortex-card:test:${channel}:${now.getTime()}`, title: 'Credit card reminder test',
-      message: 'Test from Cortex. Phone acceptance confirms the provider received this request.', url: deps.url, category: 'scheduled-alert' }
+      message: `Test from Cortex (${now.toISOString()}). Phone acceptance confirms the provider received this request.`, url: deps.url, category: 'scheduled-alert' }
     const outcome = { channel, id: message.id, title: message.title, at: now.toISOString(), ...await sendCardNotification(deps, message) }
     try {
       const state = await read(); state.outcomes.push(outcome)
