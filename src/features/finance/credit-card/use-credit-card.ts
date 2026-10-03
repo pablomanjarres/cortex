@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { readStoreWithRev, useStore } from '@/lib/store'
 import { CREDIT_CARD_KEY, type CreditCardCommand, type CreditCardCommandResult, type CreditCardState } from '../../../../electron/credit-card-types'
 import { emptyCreditCardState } from '../../../../electron/credit-card-model'
+import { cardRequest } from './card-api'
 
 export type CardMutation = CreditCardCommand extends infer Command
   ? Command extends CreditCardCommand ? Omit<Command, 'requestId'> : never : never
@@ -41,14 +42,7 @@ export function useCreditCard() {
     try {
       let result: CreditCardCommandResult
       if (window.electronAPI?.creditCard) result = await window.electronAPI.creditCard.command(payload)
-      else {
-        const response = await fetch('/api/credit-card/command', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload), signal: AbortSignal.timeout(15000),
-        })
-        result = await response.json()
-        if (!response.ok && result.ok) throw new Error('The card command could not be saved.')
-      }
+      else result = await cardRequest<CreditCardCommandResult>('command', payload)
       if (!result.ok) throw new Error(result.error)
       setCommitted(result.state)
       retry.current = null
