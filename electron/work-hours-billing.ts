@@ -1,5 +1,10 @@
 import { iso, type WorkHoursState, type WorkProject } from './work-hours-types.js'
 
+/** Pending review and nonbillable audit records never enter billing views. */
+export function billableSessions<Session extends { billable: boolean; needsReview?: boolean }>(sessions: readonly Session[]): Session[] {
+  return sessions.filter((row) => row.billable && !row.needsReview)
+}
+
 export function billingPeriod(now: string, cycleDay: number, timeZone: string): { start: string; end: string } {
   const at = Date.parse(iso(now))
   const format = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: 'numeric', day: 'numeric' })
@@ -30,8 +35,8 @@ export function chargeableWork(state: Pick<WorkHoursState, 'sessions'>, project:
   const policy = project.billing
   const consumed = new Map<string, number>()
   let currentPeriod: { start: string; end: string } | undefined
-  const rows = state.sessions.filter((row) => row.projectId === project.id && row.billable && !row.needsReview)
-    .slice().sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+  const rows = billableSessions(state.sessions).filter((row) => row.projectId === project.id)
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
   for (const row of rows) {
     if (!policy) { charges.set(row.id, row.durationMs); continue }
     let start = Date.parse(row.startedAt)
@@ -58,7 +63,7 @@ export function billingCycleSummary(state: WorkHoursState, project: WorkProject,
   const policy = project.billing ?? { includedHours: 0, cycleDay: 1, timeZone: 'America/Bogota' }
   const period = billingPeriod(now, policy.cycleDay, policy.timeZone)
   const start = Date.parse(period.start), end = Date.parse(period.end)
-  const sessions = state.sessions.filter((row) => row.projectId === project.id && row.billable && !row.needsReview)
+  const sessions = billableSessions(state.sessions).filter((row) => row.projectId === project.id)
     .flatMap((row) => {
       const from = Math.max(start, Date.parse(row.startedAt)), to = Math.min(end, Date.parse(row.endedAt))
       return to > from ? [{ ...row, startedAt: new Date(from).toISOString(), endedAt: new Date(to).toISOString(), durationMs: to - from }] : []
