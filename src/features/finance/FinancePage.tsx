@@ -12,7 +12,7 @@ import { useStore } from '@/lib/store'
 import { OneTimePayments } from './OneTimePayments'
 import { FinanceItemCell } from './FinanceItemCell'
 import { CreditCardSection } from './credit-card/CreditCardSection'
-import { CardBudgetSubtotal } from './credit-card/CardBudgetSubtotal'
+import { BudgetSubtotalRow } from './BudgetSubtotalRow'
 import { useCreditCard } from './credit-card/use-credit-card'
 import { useCardToday } from './credit-card/use-card-today'
 import { creditCardMonth } from '../../../electron/credit-card-model'
@@ -476,7 +476,6 @@ export function FinancePage() {
             <tbody>
               {groupedRows.map((group) => {
                 const groupSubtotals = MONTHS.map((_, mi) => group.items.reduce((s, it) => s + it.months[mi], 0))
-                const groupTotal = groupSubtotals.reduce((a, b) => a + b, 0)
 
                 return [
                   ...group.items.map((item, idx) => {
@@ -557,33 +556,15 @@ export function FinancePage() {
                       </tr>
                     )
                   }),
-                  <tr key={`subtotal-${group.type}`} className="border-t border-border/40">
-                    <td className="sticky left-0 z-10 bg-card px-4 py-1.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{group.type} Subtotal</td>
-                    <td></td>
-                    <td></td>
-                    {!compact && groupSubtotals.map((val, mi) => (
-                      <td key={mi} className={`py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{hideIncome && group.type === 'Income' ? '•••' : fmtCell(val)}</td>
-                    ))}
-                    {compact && <td className="bg-foreground/[0.03] py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{hideIncome && group.type === 'Income' ? '•••' : fmtCell(groupSubtotals[selectedMonth])}</td>}
-                    <td className="py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{hideIncome && group.type === 'Income' ? '•••' : fmtCell(groupTotal)}</td>
-                    <td></td>
-                  </tr>,
+                  <BudgetSubtotalRow key={`subtotal-${group.type}`} label={`${group.type} Subtotal`} amounts={groupSubtotals}
+                    selectedMonth={selectedMonth} compact={compact} concealed={hideIncome && group.type === 'Income'} formatAmount={fmtCell} />,
                 ]
               })}
               {oneTimeYearTotal > 0 && (
-                <tr className="border-t border-border/40">
-                  <td className="sticky left-0 z-10 bg-card px-4 py-1.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">One-time Subtotal</td>
-                  <td></td>
-                  <td></td>
-                  {!compact && oneTimeMonthTotals.map((amount, mi) => (
-                    <td key={mi} className={`py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''}`}>{fmtCell(amount)}</td>
-                  ))}
-                  {compact && <td className="bg-foreground/[0.03] py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{fmtCell(oneTimeMonthTotals[selectedMonth])}</td>}
-                  <td className="py-1.5 text-right font-mono text-2xs font-semibold tabular-nums text-muted-foreground">{fmtCell(oneTimeYearTotal)}</td>
-                  <td></td>
-                </tr>
+                <BudgetSubtotalRow label="One-time Subtotal" amounts={oneTimeMonthTotals} selectedMonth={selectedMonth} compact={compact} formatAmount={fmtCell} />
               )}
-              <CardBudgetSubtotal amounts={cardMonths.map((month) => month.planned)} selectedMonth={selectedMonth} compact={compact} />
+              {cardMonths.some((month) => month.planned > 0) && <BudgetSubtotalRow label="Credit card Subtotal"
+                amounts={cardMonths.map((month) => month.planned)} selectedMonth={selectedMonth} compact={compact} formatAmount={fmtCell} />}
               <tr className="border-t border-border/50 font-medium">
                 <td className="sticky left-0 z-10 bg-card px-4 py-2.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Net</td>
                 <td></td>
