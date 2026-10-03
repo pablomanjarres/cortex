@@ -12,7 +12,7 @@ import {
   type WorkSession,
 } from '../../../electron/work-hours-model'
 import { chipVariant, dateTime, downloadReport, duration, isHttpsUrl, money, prIdentity, unverifiedEvidence } from './work-hours-ui'
-import { chargeableWork } from '../../../electron/work-hours-billing'
+import { billableSessions, chargeableWork } from '../../../electron/work-hours-billing'
 
 interface WorkHoursReportPanelProps {
   project: WorkProject
@@ -41,7 +41,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
     const endDate = through ? new Date(`${through}T00:00:00`) : null
     endDate?.setDate(endDate.getDate() + 1)
     const end = endDate?.getTime() ?? Infinity
-    return sessions.filter((row) => !row.needsReview && Date.parse(row.endedAt) > start && Date.parse(row.startedAt) < end)
+    return billableSessions(sessions).filter((row) => Date.parse(row.endedAt) > start && Date.parse(row.startedAt) < end)
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
   }, [sessions, from, through])
   const selectedRows = eligible.filter((row) => selected.includes(row.id))
@@ -50,11 +50,10 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
   const chosenPr = prUrl.trim() || attachedUrls[0] || ''
   const invalidPr = Boolean(chosenPr) && !isHttpsUrl(chosenPr)
   const currentEvidence = evidence && evidenceFor === chosenPr ? evidence : unverifiedEvidence(chosenPr || null)
-  const billableMs = selectedRows.reduce((sum, row) => sum + (row.billable ? row.durationMs : 0), 0)
-  const workedMs = selectedRows.reduce((sum, row) => sum + row.durationMs, 0)
+  const billableMs = selectedRows.reduce((sum, row) => sum + row.durationMs, 0)
   const charges = chargeableWork({ sessions }, project)
   const chargeableMs = selectedRows.reduce((sum, row) => sum + (charges.get(row.id) ?? 0), 0)
-  const projectReports = reports.filter((report) => report.projectId === project.id).slice().reverse()
+  const projectReports = reports.filter((report) => report.projectId === project.id && billableSessions(report.rows).length > 0).slice().reverse()
 
   function toggle(id: string) {
     setSelected((current) => current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id])
@@ -90,7 +89,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
   }
 
   return (
-    <WidgetCard title="Client reports" description="Choose saved sessions, check delivery evidence, then save a fixed report snapshot.">
+    <WidgetCard title="Client reports" description="Choose billable sessions, check delivery evidence, then save a fixed report snapshot.">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1.5 text-sm font-medium" htmlFor="report-from">
           From
@@ -112,7 +111,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
         </div>
       </div>
       {eligible.length === 0 ? (
-        <EmptyState message="No saved sessions ready for reporting in this range." hint="Stop a timer or review an interrupted session to make it available." className="py-5" />
+        <EmptyState message="No billable sessions ready for reporting in this range." hint="Stop a timer or review an interrupted session to make it available." className="py-5" />
       ) : (
         <div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/70 p-1">
           {eligible.map((row) => (
@@ -120,7 +119,6 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
               <input type="checkbox" checked={selected.includes(row.id)} onChange={() => toggle(row.id)} aria-label={`Include session from ${dateTime(row.startedAt)}`} className="size-4 shrink-0 accent-accent" />
               <span className="min-w-0 flex-1 truncate text-sm">{row.description || 'Untitled work session'}</span>
               <span className="shrink-0 font-mono text-xs text-muted-foreground">{duration(row.durationMs)}</span>
-              {!row.billable && <Chip size="sm">Nonbillable</Chip>}
             </label>
           ))}
         </div>
@@ -155,7 +153,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
 
       <div className="mt-4 flex flex-wrap items-end justify-between gap-3 border-t border-border/70 pt-4">
         <div className="text-sm text-muted-foreground">
-          <p>Selected: <span className="font-mono text-foreground">{selectedRows.length}</span> · Worked <span className="font-mono text-foreground">{duration(workedMs)}</span> · Billable <span className="font-mono text-foreground">{duration(billableMs)}</span></p>
+          <p>Selected: <span className="font-mono text-foreground">{selectedRows.length}</span> · Billable <span className="font-mono text-foreground">{duration(billableMs)}</span></p>
           {project.billing && <p className="mt-1">Additional work after included hours: <span className="font-mono text-foreground">{duration(chargeableMs)}</span></p>}
           <p className="mt-1">Billing: <span className="font-mono text-foreground">{project.ratePerHour === null ? 'Rate not set' : money(chargeableMs / 3_600_000 * project.ratePerHour)}</span></p>
         </div>
