@@ -130,7 +130,7 @@ export type CreditCardCommand = Request & (
   | { type: 'initialize'; card: CreditCardProfile; purchases: CreditCardPurchase[];
       cycles?: CreditCardCycle[]; snapshot?: CreditCardSnapshot }
   | { type: 'configure'; card: CreditCardProfile }
-  | { type: 'purchase.save'; purchase: CreditCardPurchase }
+  | { type: 'purchase.save'; purchase: CreditCardPurchase; cycle?: CreditCardCycle }
   | { type: 'purchase.cancel'; id: string }
   | { type: 'cycle.save'; cycle: CreditCardCycle }
   | { type: 'payment.save'; payment: CreditCardPayment }
