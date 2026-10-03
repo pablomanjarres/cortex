@@ -153,3 +153,41 @@ test('project time shows only billable work while interrupted sessions remain re
   await expect(panel.getByText('4h 53m of 6h', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 })
+
+test('automatic activity reaches billing only after the user approves it in Review', async ({ page }) => {
+  const at = '2026-10-03T12:00:00Z'
+  await page.clock.setFixedTime(new Date(at))
+  let state = applyWorkHoursCommand(emptyWorkHoursState(), { type: 'add-project', id: 'cc', name: 'ConstruCredit' }, at)
+  state = applyWorkHoursCommand(state, { type: 'start-owned-at', id: 'automatic', projectId: 'cc', startedAt: '2026-10-03T10:00:00Z' }, at)
+  state = applyWorkHoursCommand(state, { type: 'stop-owned-at', id: 'automatic', endedAt: '2026-10-03T10:10:00Z' }, at)
+  const backend = await mockStores(page, { 'cortex-project-time': state })
+  await page.route('**/api/work-hours/command', async (route) => {
+    state = applyWorkHoursCommand(state, route.request().postDataJSON() as WorkHoursCommand, at)
+    backend.set('cortex-project-time', state)
+    await route.fulfill({ json: { ok: true, state } })
+  })
+
+  await page.goto('/#/projects')
+  const panel = page.getByRole('region', { name: 'Project time', exact: true })
+  await expect(panel.getByText('0h 0m', { exact: true })).toBeVisible()
+  await panel.getByRole('button', { name: 'Reports', exact: true }).click()
+  await expect(page.getByRole('dialog').getByRole('checkbox', { name: /Include session from/ })).toHaveCount(0)
+  await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click()
+
+  await panel.getByRole('button', { name: 'History', exact: true }).click()
+  await expect(page.getByRole('dialog').getByText('0h 10m', { exact: true })).toHaveCount(0)
+  await page.getByRole('dialog').getByRole('button', { name: 'Review', exact: true }).click()
+  await expect(page.getByRole('checkbox', { name: 'Billable time', exact: true })).not.toBeChecked()
+  await page.getByLabel('Work description', { exact: true }).fill('Reviewed client delivery')
+  await page.getByRole('checkbox', { name: 'Billable time', exact: true }).check()
+  await page.getByRole('button', { name: 'Save and mark reviewed', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(panel.getByText('0h 10m', { exact: true })).toBeVisible()
+  expect(state.sessions[0].billable).toBe(true)
+  expect(state.sessions[0].needsReview).toBe(false)
+  expect(state.sessions[0].corrections[0].before.billable).toBe(false)
+
+  await panel.getByRole('button', { name: 'Reports', exact: true }).click()
+  await expect(page.getByRole('dialog').getByRole('checkbox', { name: /Include session from/ })).toHaveCount(1)
+  await expect(page.getByRole('dialog').getByText('Reviewed client delivery', { exact: true })).toBeVisible()
+})
