@@ -16,6 +16,8 @@
 //  - Overdue work never pushes (the Daily widget still surfaces it) — a missed
 //    deadline can't be un-missed, and repeating the push would be nagging.
 
+import type { NotificationDelivery } from './notification-transport.js'
+
 export const DEADLINE_ALERTS_KEY = 'cortex-deadline-alerts'
 const ASSIGNMENTS_KEY = 'cortex-student-assignments'
 const COURSES_KEY = 'cortex-student-courses'
@@ -56,7 +58,7 @@ export interface DeadlineAlertDeps {
   readDataKeyParsed<T>(key: string, fallback: T): Promise<T>
   writeDataKey(key: string, data: unknown, opts: { source: 'main' }): Promise<{ ok: boolean }>
   /** Fires the push. Lives in main so this module stays free of child_process. */
-  push(opts: { title: string; message: string; priority: 0 | 1 }): void
+  push(opts: { title: string; message: string; priority: 0 | 1 }): Promise<NotificationDelivery>
 }
 
 export interface DeadlineCheckResult {
@@ -124,6 +126,7 @@ export async function runDeadlineCheck(deps: DeadlineAlertDeps, now: Date = new 
 
   const today = localDate(now)
   const sent = { ...cfg.sent }
+  const crossedKeys: string[] = []
   const due: { left: number; name: string; course: string }[] = []
   let dirty = false
 
@@ -137,7 +140,7 @@ export async function runDeadlineCheck(deps: DeadlineAlertDeps, now: Date = new 
 
     // Consume every threshold already passed, but announce once with the real
     // remaining time — so a week of downtime yields one push, not four.
-    for (const t of crossed) { sent[`${a.id}:${t}`] = now.toISOString(); dirty = true }
+    for (const t of crossed) crossedKeys.push(`${a.id}:${t}`)
     due.push({ left, name: a.name || 'Untitled', course: courseName.get(a.courseId || '') || a.courseId || '—' })
   }
 
@@ -148,23 +151,33 @@ export async function runDeadlineCheck(deps: DeadlineAlertDeps, now: Date = new 
     if (!live.has(key.slice(0, key.lastIndexOf(':')))) { delete sent[key]; dirty = true }
   }
 
+  let pushed = 0
   if (due.length > 0) {
     due.sort((x, y) => x.left - y.left || x.name.localeCompare(y.name))
-    deps.push({
+    const outcome = await deps.push({
       title: due.length === 1 ? 'Deadline' : `${due.length} deadlines`,
       message: due.map((d) => `${label(d.left)} · ${d.course} — ${d.name}`).join('\n'),
       priority: due[0].left <= 1 ? 1 : 0,
     })
+    if (outcome.status === 'Sent') {
+      for (const key of crossedKeys) sent[key] = now.toISOString()
+      dirty = true
+      pushed = due.length
+    }
   }
 
   if (dirty) await deps.writeDataKey(DEADLINE_ALERTS_KEY, { ...cfg, sent }, { source: 'main' })
-  return { scanned: assignments.length, pushed: due.length }
+  return { scanned: assignments.length, pushed }
 }
 
 /** Starts the hourly loop. Returns a stop function. */
 export function startDeadlineAlerts(deps: DeadlineAlertDeps): () => void {
+  let running = false
   const tick = () => {
+    if (running) return
+    running = true
     runDeadlineCheck(deps).catch((e) => console.error('[Cortex] deadline check failed:', e))
+      .finally(() => { running = false })
   }
   const first = setTimeout(tick, STARTUP_DELAY_MS)
   const loop = setInterval(tick, CHECK_INTERVAL_MS)
