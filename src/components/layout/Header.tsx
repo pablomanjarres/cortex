@@ -43,7 +43,7 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
         <button
           onClick={() => navigate('/library?kind=captures')}
           aria-label="Capture"
-          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_14px_32px_rgba(98,74,181,0.28)] transition-colors hover:bg-primary/90 [-webkit-app-region:no-drag]"
+          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-action transition-colors hover:bg-primary/90 [-webkit-app-region:no-drag]"
         >
           <Plus className="h-4 w-4" />
         </button>
@@ -78,7 +78,7 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
           <button
             onClick={() => navigate('/library?kind=captures')}
             aria-label="Capture"
-            className="flex h-11 items-center gap-2 rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-[0_14px_32px_rgba(98,74,181,0.28)] transition-colors hover:bg-primary/90 lg:px-5 [-webkit-app-region:no-drag]"
+            className="flex h-11 items-center gap-2 rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-action transition-colors hover:bg-primary/90 lg:px-5 [-webkit-app-region:no-drag]"
           >
             <Plus className="h-4 w-4" />
             <span className="hidden lg:inline">Capture</span>

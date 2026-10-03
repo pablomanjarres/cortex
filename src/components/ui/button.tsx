@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils"
 
 /**
  * Button — the ONLY sanctioned button primitive (hand-rolled buttons are banned).
- * default   = iris primary action
+ * default   = primary accent action
  * secondary = quiet surface-toned action
  * ghost     = bare, for icon buttons and tertiary actions
  * destructive = soft danger tint (never solid red)
@@ -18,7 +18,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(98,74,181,0.26)] hover:bg-primary/90",
+          "bg-primary text-primary-foreground shadow-action hover:bg-primary/90",
         secondary:
           "border-border bg-card text-foreground shadow-[0_1px_2px_rgba(26,31,44,0.04)] hover:bg-secondary/70 aria-expanded:bg-secondary/70",
         outline:
