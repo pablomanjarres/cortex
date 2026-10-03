@@ -59,6 +59,17 @@ function csvCell(value: string): string {
   return `"${safe.replace(/"/g, '""')}"`
 }
 
+function reportCells(report: WorkReport, row: WorkReportRow): string[] {
+  return [
+    row.description || report.task,
+    `Billable ${formatDuration(row.durationMs)}`,
+    evidenceText(report, 'pr', row),
+    evidenceText(report, 'ci', row),
+    evidenceText(report, 'deployment', row),
+    billingText(report, row.chargeableMs ?? row.durationMs),
+  ]
+}
+
 export function exportWorkHoursMarkdown(report: WorkReport): string {
   const lines = [
     `# ${markdownCell(report.task)}`,
@@ -68,14 +79,7 @@ export function exportWorkHoursMarkdown(report: WorkReport): string {
   ]
   const rows = billableSessions(report.rows)
   for (const row of rows) {
-    const cells = [
-      row.description || report.task,
-      `Billable ${formatDuration(row.durationMs)}`,
-      evidenceText(report, 'pr', row),
-      evidenceText(report, 'ci', row),
-      evidenceText(report, 'deployment', row),
-      billingText(report, row.chargeableMs ?? (row.billable ? row.durationMs : 0)),
-    ]
+    const cells = reportCells(report, row)
     lines.push(`| ${cells.map(markdownCell).join(' | ')} |`)
   }
   const billableMs = rows.reduce((sum, row) => sum + row.durationMs, 0)
@@ -86,14 +90,7 @@ export function exportWorkHoursMarkdown(report: WorkReport): string {
 export function exportWorkHoursCsv(report: WorkReport): string {
   const lines = ['Task,Time,PR,CI,Deployment,Billing']
   for (const row of billableSessions(report.rows)) {
-    const cells = [
-      row.description || report.task,
-      `Billable ${formatDuration(row.durationMs)}`,
-      evidenceText(report, 'pr', row),
-      evidenceText(report, 'ci', row),
-      evidenceText(report, 'deployment', row),
-      billingText(report, row.chargeableMs ?? (row.billable ? row.durationMs : 0)),
-    ]
+    const cells = reportCells(report, row)
     lines.push(cells.map(csvCell).join(','))
   }
   return `${lines.join('\r\n')}\r\n`
