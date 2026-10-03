@@ -1,9 +1,10 @@
 import type { CreditCardCommand, CreditCardState } from './credit-card-types.js'
 import { creditCardToday } from './credit-card-dates.js'
-import { guardPurchaseAllocationEdit, validateCreditCardAllocations } from './credit-card-payment-validation.js'
+import { guardCycleDateEdit, guardPurchaseAllocationEdit, validateCreditCardAllocations } from './credit-card-payment-validation.js'
 import { CREDIT_CARD_MAX_AUDIT, CREDIT_CARD_MAX_REQUESTS, creditCardMoney, creditCardObject,
   creditCardText, validateCreditCardState, validateCycle, validatePurchase } from './credit-card-validation.js'
 import { creditCardMonthNumber } from './credit-card-dates.js'
+import { validateCreditCardCommand } from './credit-card-command-validation.js'
 
 export function emptyCreditCardState(): CreditCardState {
   return { version: 1, card: null, purchases: [], cycles: [], payments: [], snapshots: [], reserves: {},
@@ -22,6 +23,7 @@ export function applyCreditCardCommand(state: CreditCardState, command: CreditCa
   now = new Date().toISOString()): CreditCardState {
   validateCreditCardState(state); creditCardObject(command); creditCardText(command.requestId, 'request id')
   if (state.requests.includes(command.requestId)) return state
+  validateCreditCardCommand(command)
   if (typeof now !== 'string' || now.length > 40 || !Number.isFinite(Date.parse(now))) throw new Error('Invalid command timestamp')
   const at = new Date(now).toISOString(), today = creditCardToday(new Date(at))
   const next = structuredClone(state)
@@ -55,6 +57,7 @@ export function applyCreditCardCommand(state: CreditCardState, command: CreditCa
         validateCycle(input.cycle)
         if (input.cycle.id !== input.purchase.firstDueDate.slice(0, 7)) throw new Error('Purchase charges must belong to its first cycle')
         const oldCycle = replace(next.cycles, input.cycle)
+        guardCycleDateEdit(state, next, input.cycle.id, today)
         previous = { purchase: previous, cycle: oldCycle }
       }
       replace(next.purchases, { ...input.purchase, updatedAt: at }); entityId = input.purchase.id
@@ -71,11 +74,9 @@ export function applyCreditCardCommand(state: CreditCardState, command: CreditCa
     }
     case 'cycle.save': {
       validateCycle(input.cycle)
-      const old = next.cycles.find(cycle => cycle.id === input.cycle.id)
-      if (old?.dueDate !== input.cycle.dueDate && next.payments.some(payment => payment.status === 'completed' && payment.allocations.some(allocation => allocation.cycleId === input.cycle.id))) {
-        throw new Error('Correct payment allocations before changing this cycle due date')
-      }
-      previous = replace(next.cycles, input.cycle); entityId = input.cycle.id
+      previous = replace(next.cycles, input.cycle)
+      guardCycleDateEdit(state, next, input.cycle.id, today)
+      entityId = input.cycle.id
       break
     }
     case 'payment.save':

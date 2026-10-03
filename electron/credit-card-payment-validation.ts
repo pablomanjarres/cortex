@@ -1,6 +1,13 @@
 import type { CreditCardPurchase, CreditCardState } from './credit-card-types.js'
 import { creditCardAddMonths } from './credit-card-dates.js'
-import { creditCardCycles } from './credit-card-projections.js'
+import { creditCardCycles, creditCardSchedule } from './credit-card-projections.js'
+
+export function guardCycleDateEdit(previous: CreditCardState, next: CreditCardState, cycleId: string, asOfDate: string): void {
+  if (!previous.payments.some(payment => payment.status === 'completed' && payment.allocations.some(allocation => allocation.cycleId === cycleId))) return
+  if (creditCardSchedule(previous, cycleId, 1, asOfDate)[0].dueDate !== creditCardSchedule(next, cycleId, 1, asOfDate)[0].dueDate) {
+    throw new Error('Correct payment allocations before changing this cycle due date')
+  }
+}
 
 export function purchaseCycleIds(purchase: CreditCardPurchase): Set<string> {
   return new Set(Array.from({ length: purchase.installments }, (_, index) => creditCardAddMonths(purchase.firstDueDate.slice(0, 7), index)))

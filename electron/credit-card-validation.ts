@@ -24,8 +24,12 @@ function optionalMoney(value: unknown, label: string) { if (value !== undefined)
 function optionalBoolean(value: unknown) {
   if (value !== undefined && typeof value !== 'boolean') throw new Error('Expected a boolean flag')
 }
+function fields(value: Record<string, unknown>, allowed: string[]): void {
+  if (Object.keys(value).some(key => !allowed.includes(key))) throw new Error('Unknown card record field')
+}
 export function validateCard(card: CreditCardProfile): void {
   creditCardObject(card)
+  fields(card, ['id', 'name', 'limit', 'closingDay', 'dueDay'])
   creditCardText(card.id, 'card id'); creditCardText(card.name, 'card name', 500)
   creditCardMoney(card.limit, 'credit limit', true)
   creditCardInteger(card.closingDay, 'closing day', 1, 31)
@@ -33,6 +37,7 @@ export function validateCard(card: CreditCardProfile): void {
 }
 export function validatePurchase(purchase: CreditCardPurchase): void {
   creditCardObject(purchase)
+  fields(purchase, ['id', 'name', 'amount', 'purchaseDate', 'status', 'installments', 'firstDueDate', 'updatedAt'])
   creditCardText(purchase.id, 'purchase id'); creditCardText(purchase.name, 'purchase name', 500)
   creditCardMoney(purchase.amount, 'purchase amount', true)
   creditCardInteger(purchase.installments, 'installments', 1, 120)
@@ -43,6 +48,7 @@ export function validatePurchase(purchase: CreditCardPurchase): void {
 }
 export function validateCycle(cycle: CreditCardCycle): void {
   creditCardObject(cycle); creditCardMonthNumber(cycle.id)
+  fields(cycle, ['id', 'dueDate', 'confirmedAmount', 'minimumAmount', 'minimumEstimated', 'interest', 'fees', 'chargesConfirmed', 'statementConfirmed'])
   if (cycle.dueDate !== undefined) {
     assertCreditCardDate(cycle.dueDate)
     if (!cycle.dueDate.startsWith(`${cycle.id}-`)) throw new Error('Due date must belong to cycle month')
@@ -55,10 +61,12 @@ export function validateCycle(cycle: CreditCardCycle): void {
 }
 export function validateSnapshot(snapshot: CreditCardSnapshot): void {
   creditCardObject(snapshot); creditCardText(snapshot.id, 'snapshot id'); assertCreditCardDate(snapshot.observedDate)
+  fields(snapshot, ['id', 'observedDate', 'reportedDebt', 'availableCredit', 'recordedAt'])
   creditCardMoney(snapshot.reportedDebt, 'reported debt'); creditCardMoney(snapshot.availableCredit, 'available credit')
 }
 export function validatePayment(payment: CreditCardPayment): void {
   creditCardObject(payment); creditCardText(payment.id, 'payment id')
+  fields(payment, ['id', 'amount', 'paidDate', 'status', 'allocations', 'note', 'updatedAt'])
   creditCardMoney(payment.amount, 'payment amount', true); assertCreditCardDate(payment.paidDate)
   if (!['pending', 'completed', 'voided'].includes(payment.status)) throw new Error('Invalid payment status')
   if (payment.note !== undefined) creditCardText(payment.note, 'payment note', 2000)
@@ -67,6 +75,7 @@ export function validatePayment(payment: CreditCardPayment): void {
   let total = 0
   for (const allocation of payment.allocations) {
     creditCardObject(allocation); creditCardMonthNumber(allocation.cycleId)
+    fields(allocation, ['cycleId', 'amount', 'principal', 'feesAmount'])
     if (cycles.has(allocation.cycleId)) throw new Error('Duplicate cycle allocation')
     cycles.add(allocation.cycleId)
     creditCardMoney(allocation.amount, 'allocation amount', true)
@@ -76,6 +85,7 @@ export function validatePayment(payment: CreditCardPayment): void {
     let classified = allocation.feesAmount ?? 0
     for (const principal of allocation.principal ?? []) {
       creditCardObject(principal); creditCardText(principal.purchaseId, 'purchase id')
+      fields(principal, ['purchaseId', 'amount'])
       creditCardMoney(principal.amount, 'principal amount', true)
       if (purchases.has(principal.purchaseId)) throw new Error('Duplicate principal allocation')
       purchases.add(principal.purchaseId); classified += principal.amount
@@ -87,6 +97,7 @@ export function validatePayment(payment: CreditCardPayment): void {
 }
 export function validateReminders(reminders: CreditCardReminderSettings): void {
   creditCardObject(reminders)
+  fields(reminders, ['enabled', 'channels', 'leadDays', 'quietBefore', 'quietAfter'])
   if (typeof reminders.enabled !== 'boolean') throw new Error('Invalid enabled flag')
   if (!Array.isArray(reminders.channels) || reminders.channels.length > 2 || new Set(reminders.channels).size !== reminders.channels.length || reminders.channels.some(c => !['native', 'phone'].includes(c))) throw new Error('Invalid reminder channels')
   if (!Array.isArray(reminders.leadDays) || reminders.leadDays.length > 10 || new Set(reminders.leadDays).size !== reminders.leadDays.length) throw new Error('Invalid lead days')
