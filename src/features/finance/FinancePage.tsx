@@ -11,12 +11,14 @@ import { CHART_FONT_MONO, ThemedTooltip, axisProps, chartColor, chartColors, css
 import { useStore } from '@/lib/store'
 import { OneTimePayments } from './OneTimePayments'
 import { FinanceItemCell } from './FinanceItemCell'
+import { BillingDateCell } from './BillingDateCell'
+import { CreditCardBudgetRows } from './credit-card/CreditCardBudgetRows'
 import { CreditCardSection } from './credit-card/CreditCardSection'
 import { BudgetSubtotalRow } from './BudgetSubtotalRow'
 import { useCreditCard } from './credit-card/use-credit-card'
 import { useCardToday } from './credit-card/use-card-today'
 import { creditCardMonth } from '../../../electron/credit-card-model'
-import { FINANCE_CATEGORIES, financeMonth, receivedAmountFor, withReceivedAmount, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
+import { FINANCE_CATEGORIES, billingDateFor, financeMonth, receivedAmountFor, withBillingDay, withReceivedAmount, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
 import {
   TrendingUp,
   TrendingDown,
@@ -506,6 +508,9 @@ export function FinancePage() {
                               ? () => setReceivedAmount(item.id, selectedMonth, null)
                               : undefined}
                           />
+                          {item.type !== 'Income' && <BillingDateCell name={item.name} billingDay={item.billingDay}
+                            date={billingDateFor(item, data.year, selectedMonth)}
+                            onChange={(day) => updateData((prev) => withBillingDay(prev, item.id, day))} />}
                         </td>
                         <td className="py-2">
                           <select value={item.type} onChange={(e) => setField(item.id, { type: e.target.value as ItemType })}
@@ -566,8 +571,11 @@ export function FinancePage() {
               {oneTimeYearTotal > 0 && (
                 <BudgetSubtotalRow label="One-time Subtotal" amounts={oneTimeMonthTotals} selectedMonth={selectedMonth} compact={compact} formatAmount={fmtCell} />
               )}
-              {cardMonths.some((month) => month.planned > 0) && <BudgetSubtotalRow label="Credit card Subtotal"
-                amounts={cardMonths.map((month) => month.planned)} selectedMonth={selectedMonth} compact={compact} formatAmount={fmtCell} />}
+              {cardMonths.some((month) => month.planned > 0) && <>
+                <CreditCardBudgetRows months={cardMonths} selectedMonth={selectedMonth} compact={compact} year={data.year} />
+                <BudgetSubtotalRow label="Credit card Subtotal" amounts={cardMonths.map((month) => month.planned)}
+                  selectedMonth={selectedMonth} compact={compact} formatAmount={fmtCell} />
+              </>}
               <tr className="border-t border-border/50 font-medium">
                 <td className="sticky left-0 z-10 bg-card px-4 py-2.5 font-mono text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Net</td>
                 <td></td>
