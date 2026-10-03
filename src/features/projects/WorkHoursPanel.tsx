@@ -47,7 +47,7 @@ export function WorkHoursPanel() {
   const sessions = billableSessions(state.sessions).filter((entry) => entry.projectId === projectId)
   const historySessions = [
     ...sessions,
-    ...state.sessions.filter((entry) => entry.projectId === projectId && entry.billable && entry.needsReview),
+    ...state.sessions.filter((entry) => entry.projectId === projectId && entry.needsReview),
   ].sort((a, b) => b.startedAt.localeCompare(a.startedAt))
   const active = state.active
   const isTracking = Boolean(active)
@@ -129,7 +129,9 @@ export function WorkHoursPanel() {
 
             <div aria-live="polite" className="flex flex-wrap items-center gap-2 text-sm">
               <Chip variant={active ? 'success' : 'neutral'}>{active ? 'Tracking' : 'Stopped'}</Chip>
-              {active && <span>Working on <strong>{state.projects.find((entry) => entry.id === active.projectId)?.name ?? 'Unknown project'}</strong> for <span className="font-mono tabular-nums">{elapsed(activeElapsed)}</span>. Not included until stopped.</span>}
+              {active && (active.billable === false
+                ? <span>Pending billing review. Time is excluded until approved.</span>
+                : <span>Working on <strong>{state.projects.find((entry) => entry.id === active.projectId)?.name ?? 'Unknown project'}</strong> for <span className="font-mono tabular-nums">{elapsed(activeElapsed)}</span>. Not included until stopped.</span>)}
               {active?.interrupted && <Chip variant="warning">Needs review</Chip>}
             </div>
 
