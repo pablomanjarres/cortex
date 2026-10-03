@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Tray, Menu, nativeImage, shell, clipboard, globalShortcut, Notification } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Tray, Menu, nativeImage, shell, clipboard, globalShortcut, Notification, powerMonitor } from 'electron'
 import path from 'path'
 import http from 'http'
 import os from 'os'
@@ -21,6 +21,10 @@ import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVo
 import { emptyWorkHoursState, type WorkHoursCommand, type WorkHoursState } from './work-hours-model.js'
 import { WorkHoursService } from './work-hours-service.js'
 import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
+import { createCreditCardRuntime } from './credit-card-runtime.js'
+import { handleCreditCardRequest } from './credit-card-api.js'
+import { CREDIT_CARD_KEY, CREDIT_CARD_ALERTS_KEY, type CreditCardState } from './credit-card-types.js'
+import type { CreditCardAlertState } from './credit-card-alerts-types.js'
 import { createNotificationTransport, type NotificationDelivery } from './notification-transport.js'
 import { createNativeNotificationSender } from './native-notification.js'
 
@@ -836,6 +840,20 @@ function startWebServer() {
     }
     const url = new URL(req.url!, `http://localhost:${WEB_PORT}`)
 
+    if (url.pathname.startsWith('/api/credit-card/')) {
+      let payload: unknown
+      if (req.method === 'POST') {
+        const body = await readBody(req, res)
+        if (body === null) return
+        try { payload = body ? JSON.parse(body) : {} }
+        catch { res.writeHead(400); res.end('Invalid JSON'); return }
+      }
+      const result = await handleCreditCardRequest(creditCardRuntime.api, req.method ?? 'GET', url.pathname, payload)
+      res.writeHead(result?.status ?? 404, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
+      res.end(JSON.stringify(result?.body ?? { error: 'Unknown credit card action' }))
+      return
+    }
+
     // ─── JSON API for data sync (used by browser/iPhone) ──────
     if (url.pathname === '/api/data' && req.method === 'GET') {
       const key = url.searchParams.get('key')
@@ -1644,6 +1662,7 @@ async function writeDataKey(
 ): Promise<WriteOutcome> {
   if (typeof key !== 'string' || !KEY_RE.test(key)) return { ok: false, error: 'invalid key' }
   if (key === 'cortex-project-time' && opts.source !== 'main') return { ok: false, error: 'managed key' }
+  if ((key === CREDIT_CARD_KEY || key === CREDIT_CARD_ALERTS_KEY) && opts.source !== 'main') return { ok: false, error: 'managed key' }
 
   let serialized: string
   try {
@@ -1774,6 +1793,34 @@ const workHoursService = new WorkHoursService({
   if (tray) tray.setContextMenu(buildTrayMenu())
 })
 
+async function readManagedCardKey<T>(key: string): Promise<T | null> {
+  const { text, rev } = await readDataFile(key)
+  if (text === null && rev !== null) throw new Error('Saved credit card data could not be read')
+  return text === null ? null : JSON.parse(text) as T
+}
+
+const creditCardRuntime = createCreditCardRuntime({
+  transport: notificationTransport,
+  readLedger: () => readManagedCardKey<CreditCardState>(CREDIT_CARD_KEY),
+  readAlertState: () => readManagedCardKey<CreditCardAlertState>(CREDIT_CARD_ALERTS_KEY),
+  write: (key, data) => writeDataKey(key, data, { source: 'main' }),
+  url: `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}/finance?section=credit-card`,
+  getLogin: () => ({ available: process.platform === 'darwin',
+    enabled: process.platform === 'darwin' && app.getLoginItemSettings().openAtLogin }),
+  setLogin: (enabled) => {
+    if (process.platform !== 'darwin') throw new Error('Launch at login is available on macOS')
+    app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true })
+    return { available: true, enabled: app.getLoginItemSettings().openAtLogin }
+  },
+})
+
+ipcMain.handle('credit-card:command', (_event, command: unknown) => creditCardRuntime.api.command(command))
+ipcMain.handle('credit-card:alerts', () => creditCardRuntime.api.alertStatus())
+ipcMain.handle('credit-card:test', (_event, channel: unknown) => creditCardRuntime.api.test(channel))
+ipcMain.handle('credit-card:retry', () => creditCardRuntime.api.retry())
+ipcMain.handle('credit-card:login', () => creditCardRuntime.api.getLogin())
+ipcMain.handle('credit-card:set-login', (_event, enabled: unknown) => creditCardRuntime.api.setLogin(enabled))
+
 async function runWorkHoursCommand(command: unknown): Promise<{ ok: true; state: WorkHoursState } | { ok: false; error: string }> {
   if (!command || typeof command !== 'object' || Array.isArray(command) || typeof (command as { type?: unknown }).type !== 'string') {
     return { ok: false, error: 'Invalid work-time command' }
@@ -1896,6 +1943,7 @@ ipcMain.handle('data:importAll', async (_event, json: string) => {
     let count = 0
     for (const [key, value] of Object.entries(bundle)) {
       if (key === '_meta') continue
+      if (key === CREDIT_CARD_KEY || key === CREDIT_CARD_ALERTS_KEY) continue
       if (!KEY_RE.test(key)) { console.warn(`[Cortex] importAll: skipping invalid key "${key}"`); continue }
       const result = await writeDataKey(key, value, { source: 'main' })
       if (result.ok) count++
@@ -2056,7 +2104,10 @@ app.on('ready', async () => {
     writeDataKey: (key, data, opts) => writeDataKey(key, data, opts),
     push: pushDeadlineAlert,
   })
+  creditCardRuntime.alerts.start()
+  powerMonitor.on('resume', resumeCreditCardAlerts)
 })
+function resumeCreditCardAlerts() { void creditCardRuntime.alerts.check() }
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (mainWindow === null) createWindow() })
 let quitExportDone = false
@@ -2071,6 +2122,8 @@ app.on('before-quit', (event) => {
   persistSystemHistory()
   if (autoExportInterval) clearInterval(autoExportInterval)
   if (stopDeadlineAlerts) { stopDeadlineAlerts(); stopDeadlineAlerts = null }
+  creditCardRuntime.alerts.stop()
+  powerMonitor.removeListener('resume', resumeCreditCardAlerts)
   // One final export on quit — autoExport is async now, so hold the quit
   // until it lands, then resume (guarded so the second pass falls through).
   if (!quitExportDone) {
