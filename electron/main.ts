@@ -1931,6 +1931,7 @@ ipcMain.handle('data:exportAll', async () => {
 ipcMain.handle('data:importAll', async (_event, json: string) => {
   try {
     const bundle = JSON.parse(json)
+    creditCardRuntime.validateImport(bundle)
     // Backup everything first
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
     const importBackupDir = path.join(backupDir, `pre-import-${timestamp}`)
@@ -1940,7 +1941,7 @@ ipcMain.handle('data:importAll', async (_event, json: string) => {
     }
     // Write imported data through the shared path ('main' so every window,
     // including the importer, reloads the fresh values).
-    let count = 0
+    let count = await creditCardRuntime.restore(bundle)
     for (const [key, value] of Object.entries(bundle)) {
       if (key === '_meta') continue
       if (key === CREDIT_CARD_KEY || key === CREDIT_CARD_ALERTS_KEY) continue
