@@ -187,3 +187,52 @@ test('retry backoff and live quiet clock are checked again before delivery', asy
   await checker.check()
   assert.equal(g.sent.length, 1)
 })
+
+test('explicit tests remain distinct under provider failure deduplication without a configured ledger', async () => {
+  const f = fixture(); const accepted = new Set<string>()
+  f.edit((s) => { s.card = null; s.purchases = []; s.cycles = [] })
+  f.sender(async (message) => {
+    if (accepted.has(message.message)) return { status: 'Muted' }
+    accepted.add(message.message); return { status: 'Sent' }
+  })
+  assert.equal((await f.checker.test('phone', daytime(17))).status, 'Sent')
+  assert.equal((await f.checker.test('phone', daytime(17, 15))).status, 'Sent')
+  f.sender(async () => ({ status: 'Failed', error: 'offline' }))
+  assert.equal((await f.checker.test('phone', daytime(17, 16))).status, 'Failed')
+  assert.equal((await f.checker.status()).outcomes.at(-1)?.status, 'Failed')
+})
+
+test('overdue cycles and missed statements collapse into one daily summary with fresh remaining debt', async () => {
+  const f = fixture()
+  f.edit((s) => { s.purchases[0].amount = 400; s.purchases[0].installments = 4; s.purchases[0].firstDueDate = '2026-08-24' })
+  f.sender(async (message) => {
+    if (message.channel === 'native') f.edit((s) => {
+      s.payments.push({ id: 'pay', amount: 100, paidDate: '2026-11-25', status: 'completed', allocations: [{ cycleId: '2026-08', amount: 100 }] })
+    })
+    return { status: 'Sent' }
+  })
+  await f.checker.check(daytime(25))
+  assert.equal(f.sent.length, 2)
+  assert.match(f.sent[0].message, /400.*4 cycles/)
+  assert.match(f.sent[1].message, /300.*3 cycles/)
+  await createCreditCardAlerts(f.deps).check(daytime(25, 16))
+  assert.equal(f.sent.length, 2)
+  f.edit((s) => { s.purchases[0].status = 'cancelled' })
+  await f.checker.check(daytime(25, 18))
+  assert.equal(f.sent.length, 2)
+})
+
+test('unattended checker failures report once per day across restart and reporter exceptions are contained', async () => {
+  const f = fixture(); const warnings: { id: string; message: string }[] = []
+  const deps = { ...f.deps,
+    readLedger: async (): Promise<CreditCardState> => { throw new Error('private broken ledger') },
+    onFailure: async (warning: { id: string; message: string }) => { warnings.push(warning); throw new Error('notifier down') },
+  }
+  await createCreditCardAlerts(deps).check(daytime(17))
+  await createCreditCardAlerts(deps).check(daytime(17, 16))
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0].id, /2026-11-17$/)
+  assert.ok(!warnings[0].message.includes('private'))
+  await createCreditCardAlerts(deps).check(daytime(18))
+  assert.equal(warnings.length, 2)
+})

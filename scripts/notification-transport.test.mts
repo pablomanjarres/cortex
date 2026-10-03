@@ -48,3 +48,14 @@ test('unavailable channels and native exceptions yield independent failures', as
   assert.equal((await sender.send({ ...input, channel: 'native' })).status, 'Failed')
   assert.equal(sender.readiness().phone.ready, false)
 })
+
+test('readiness probe failure remains a typed failure and cannot run the provider', async () => {
+  const sender = createNotificationTransport({
+    notifyScript: '/fake/notify.sh', phoneAvailable: () => { throw new Error('private platform error') },
+    nativeAvailable: () => true, nativeSend: () => {},
+    execFile: () => { assert.fail('failed probe must not execute') },
+  })
+  assert.equal(sender.readiness().phone.ready, false)
+  assert.equal((await sender.send(input)).status, 'Failed')
+  assert.equal((await sender.send({ ...input, channel: 'native' })).status, 'Sent')
+})
