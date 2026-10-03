@@ -8,7 +8,7 @@ import { syncClassToCalendar } from '@/lib/calendar-sync'
 import { Plus, X, Pencil, Check, Clock, MapPin } from 'lucide-react'
 
 // A recurring weekly class. Saved in the `cortex-classes` store and pushed to the
-// calendar as a purple weekly-recurring event (via syncClassToCalendar).
+// calendar as a weekly-recurring event (via syncClassToCalendar).
 export interface ClassMeeting {
   id: string
   courseId: string
@@ -200,8 +200,8 @@ export function ClassSchedule({ courses }: Props) {
       title="Class Schedule"
       description={
         classes.length
-          ? `${classes.length} weekly ${classes.length === 1 ? 'class' : 'classes'} · synced to your calendar in purple`
-          : 'Add your weekly classes — they sync to your calendar in purple'
+          ? `${classes.length} weekly ${classes.length === 1 ? 'class' : 'classes'} · synced to your calendar`
+          : 'Add your weekly classes — they sync to your calendar'
       }
       delay={0.2}
     >
