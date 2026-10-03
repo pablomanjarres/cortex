@@ -5,6 +5,7 @@ import os from 'os'
 import fs from 'fs'
 import zlib from 'zlib'
 import { randomUUID } from 'node:crypto'
+import { execFile } from 'node:child_process'
 import { fileURLToPath } from 'url'
 import { getTodayEvents, syncBirthdays, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, getEventsInRange, getCalendarEvent } from './calendar.js'
 import type { BirthdayEntry, CreateEventPayload } from './calendar.js'
@@ -20,6 +21,8 @@ import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVo
 import { emptyWorkHoursState, type WorkHoursCommand, type WorkHoursState } from './work-hours-model.js'
 import { WorkHoursService } from './work-hours-service.js'
 import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
+import { createNotificationTransport, type NotificationDelivery } from './notification-transport.js'
+import { createNativeNotificationSender } from './native-notification.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -137,6 +140,18 @@ function showAndNavigate(route: string) {
     created?.webContents.once('did-finish-load', () => created.webContents.send('navigate', route))
   }
 }
+
+const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
+const notificationTransport = createNotificationTransport({
+  notifyScript,
+  phoneAvailable: () => fs.existsSync(notifyScript),
+  nativeAvailable: () => Notification.isSupported(),
+  nativeSend: createNativeNotificationSender(
+    (message) => new Notification({ title: message.title, body: message.message }),
+    () => showAndNavigate('/finance?section=credit-card'),
+  ),
+  execFile,
+})
 
 // ─── Tray data helpers ────────────────────────────────────
 
@@ -943,23 +958,13 @@ function startWebServer() {
         data.runs = data.runs.slice(0, 100) // keep last 100
         await writeDataKey('cortex-automations', data, { source: 'http' })
 
-        // Send Pushover notification for all runs
-        try {
-          const { execFile: ef } = require('child_process')
-          const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
-          if (fs.existsSync(notifyScript)) {
-            const category = status === 'pending-approval' ? 'local-approval'
-              : status === 'error' ? 'scheduled-alert'
-              : 'scheduled-task'
-            ef(notifyScript, [
-              '-c', category,
-              '-m', `${taskName}: ${summary || (status === 'pending-approval' ? 'Needs your approval' : 'Completed')}`,
-              // Only advertise URLs the socket gate accepts (localhost + Tailscale).
-              '--url', `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}/automations`,
-              '--url-title', 'Open Cortex',
-            ], { timeout: 10000 }, () => { /* fire and forget */ })
-          }
-        } catch { /* pushover optional */ }
+        const category = status === 'pending-approval' ? 'local-approval'
+          : status === 'error' ? 'scheduled-alert' : 'scheduled-task'
+        void notificationTransport.send({
+          channel: 'phone', id: run.id, title: 'Cortex', category,
+          message: `${taskName}: ${summary || (status === 'pending-approval' ? 'Needs your approval' : 'Completed')}`,
+          url: `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}/automations`,
+        })
 
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': getAllowedOrigin(req) })
         res.end(JSON.stringify({ ok: true, id: run.id }))
@@ -1831,15 +1836,11 @@ ipcMain.handle('media:delete', async (_event, id: string) => {
 })
 
 ipcMain.handle('notify:pushover', async (_event, category: string, message: string) => {
-  try {
-    const { execFile: ef } = require('child_process')
-    const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
-    if (fs.existsSync(notifyScript)) {
-      ef(notifyScript, ['-c', category, '-m', message], { timeout: 10000 }, () => {})
-      return true
-    }
-    return false
-  } catch { return false }
+  if (typeof category !== 'string' || typeof message !== 'string') return false
+  const result = await notificationTransport.send({
+    channel: 'phone', id: `cortex:${randomUUID()}`, title: 'Cortex', category, message,
+  })
+  return result.status === 'Sent'
 })
 
 let stopDeadlineAlerts: (() => void) | null = null
@@ -1850,22 +1851,12 @@ let stopDeadlineAlerts: (() => void) | null = null
  * their defaults — leaving either one out would let `scheduled-alert` force
  * every reminder to high priority, including the week-out heads-up.
  */
-function pushDeadlineAlert({ title, message, priority }: { title: string; message: string; priority: 0 | 1 }): void {
-  try {
-    const { execFile: ef } = require('child_process')
-    const notifyScript = path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
-    if (!fs.existsSync(notifyScript)) return
-    ef(notifyScript, [
-      '-c', 'scheduled-alert',
-      '-t', title,
-      '-m', message,
-      '-p', String(priority),
-      '-s', priority === 1 ? 'climb' : 'magic',
-      // Only advertise URLs the socket gate accepts (localhost + Tailscale).
-      '--url', `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}/student`,
-      '--url-title', 'Open Cortex',
-    ], { timeout: 10000 }, () => { /* fire and forget */ })
-  } catch { /* pushover optional */ }
+function pushDeadlineAlert({ title, message, priority }: { title: string; message: string; priority: 0 | 1 }): Promise<NotificationDelivery> {
+  return notificationTransport.send({
+    channel: 'phone', id: `cortex:deadlines:${localDate()}`, category: 'scheduled-alert',
+    title, message, priority, sound: priority === 1 ? 'climb' : 'magic',
+    url: `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}/student`,
+  })
 }
 
 ipcMain.handle('data:listKeys', async () => {
