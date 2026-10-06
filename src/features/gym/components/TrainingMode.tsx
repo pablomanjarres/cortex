@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'framer-motion'
 import { localDate } from '@/lib/date-utils'
 import type { WorkoutDay, ActiveWorkoutState, WorkoutSession, ExerciseLog, SetLog } from '@/types/gym'
 import { RestTimer } from './RestTimer'
+import { haptic, notifyRestDone } from '../domain/training-feedback'
 import { ExerciseImage } from './ExerciseImage'
 import { platesPerSide } from '@/lib/exercise-media'
 import { Button } from '@/components/ui/button'
@@ -19,13 +20,6 @@ interface TrainingModeProps {
 }
 
 const WEIGHT_STEP = 2.5
-const haptic = (p: number | number[] = 12) => {
-  try {
-    navigator.vibrate?.(p)
-  } catch {
-    /* not supported */
-  }
-}
 
 export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel, previousSession }: TrainingModeProps) {
   const reduceMotion = useReducedMotion()
@@ -69,43 +63,6 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx])
 
-  // Rest-finished feedback
-  const playBeep = () => {
-    try {
-      const ctx = new AudioContext()
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.frequency.value = 880
-      gain.gain.value = 0.3
-      osc.start()
-      osc.stop(ctx.currentTime + 0.15)
-      setTimeout(() => {
-        const osc2 = ctx.createOscillator()
-        const gain2 = ctx.createGain()
-        osc2.connect(gain2)
-        gain2.connect(ctx.destination)
-        osc2.frequency.value = 1100
-        gain2.gain.value = 0.3
-        osc2.start()
-        osc2.stop(ctx.currentTime + 0.2)
-      }, 200)
-    } catch {
-      /* no audio */
-    }
-  }
-
-  const notifyRestDone = () => {
-    playBeep()
-    haptic([140, 70, 140])
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Rest Over', { body: 'Time for your next set!', silent: true })
-    }
-    if (window.electronAPI?.notify) {
-      window.electronAPI.notify.pushover('local-done', 'Rest timer done — next set!')
-    }
-  }
 
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
