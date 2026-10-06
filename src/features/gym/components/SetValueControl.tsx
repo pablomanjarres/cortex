@@ -15,8 +15,8 @@ export function SetValueControl({ value, unit, onDec, onInc, onChange }: SetValu
   const [editing, setEditing] = useState<{ value: number; text: string } | null>(null)
   const label = unit === 'kg' ? 'Weight (kg)' : 'Reps'
   return (
-    <label className="block min-w-0 flex-1">
-      <span className="mb-2 block text-sm font-medium text-muted-foreground">{label}</span>
+    <label className="block min-w-0 flex-1 rounded-lg bg-focus-surface/60 p-2 sm:p-3">
+      <span className="block text-center text-sm font-medium text-muted-foreground">{label}</span>
       <div className="flex flex-col gap-2">
         <Input type="text" inputMode={unit === 'kg' ? 'decimal' : 'numeric'} aria-label={label}
           value={editing?.value === value ? editing.text : String(value)}
@@ -29,11 +29,11 @@ export function SetValueControl({ value, unit, onDec, onInc, onChange }: SetValu
             onChange(parsed)
           }}
           onFocus={(event) => event.target.select()} onBlur={() => setEditing(null)}
-          className="h-14 min-w-0 px-1 text-center font-mono text-2xl font-medium tabular-nums"
+          className="h-20 min-w-0 border-transparent bg-transparent px-1 text-center font-mono text-4xl font-medium tabular-nums shadow-none sm:text-5xl"
         />
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" size="icon-lg" className="w-full" onClick={() => { setEditing(null); onDec() }} aria-label={`Decrease ${unit}`}><Minus /></Button>
-          <Button variant="outline" size="icon-lg" className="w-full" onClick={() => { setEditing(null); onInc() }} aria-label={`Increase ${unit}`}><Plus /></Button>
+          <Button variant="ghost" size="icon-lg" className="w-full bg-card/50 text-foreground" onClick={() => { setEditing(null); onDec() }} aria-label={`Decrease ${unit}`}><Minus /></Button>
+          <Button variant="ghost" size="icon-lg" className="w-full bg-card/50 text-foreground" onClick={() => { setEditing(null); onInc() }} aria-label={`Increase ${unit}`}><Plus /></Button>
         </div>
       </div>
     </label>
