@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { GymRestAlerts, type GymRestReceipt } from '../electron/gym-rest-alerts.ts'
+import { GymRestAlerts, gymRestUrl, sendGymRestAlert, type GymRestReceipt } from '../electron/gym-rest-alerts.ts'
 
 const resting = { startedAt: '2026-10-06T18:00:00Z', restTimerEnd: 1000, isResting: true }
 
@@ -133,4 +133,32 @@ test('an unpersisted attempt never sends an alert', async () => {
   assert.deepEqual(h.sent, [])
   assert.equal(h.jobs.size, 0)
   assert.match(h.errors.join('\n'), /store unavailable/i)
+})
+
+test('rest push waits for subprocess completion and uses its Sent acknowledgement', async () => {
+  let complete!: (output: string) => void
+  let settled = false
+  const result = sendGymRestAlert('/fake/notify.sh', 'stable-id', 'https://example.test/#/gym', async (file, args) => {
+    assert.equal(file, '/fake/notify.sh')
+    assert.deepEqual(args, ['-c', 'gym-rest', '-t', 'Rest finished', '-m', 'Time for your next set.',
+      '-s', 'cosmic', '--id', 'stable-id', '--url', 'https://example.test/#/gym', '--url-title', 'Open workout'])
+    return new Promise<string>((resolve) => { complete = resolve })
+  }).then((value) => { settled = true; return value })
+  await Promise.resolve()
+  assert.equal(settled, false)
+  complete('Sent: [gym-rest] Rest finished\n')
+  assert.equal(await result, 'sent')
+})
+
+test('subprocess Muted output does not count as delivery', async () => {
+  assert.equal(await sendGymRestAlert('/fake', 'id', undefined, async () => 'Muted: [gym-rest] policy'), 'muted')
+  await assert.rejects(sendGymRestAlert('/fake', 'id', undefined, async () => ''), /acknowledge/)
+  await assert.rejects(sendGymRestAlert('/fake', 'id', undefined, async () => { throw new Error('exit 1') }), /exit 1/)
+})
+
+test('deep links accept configured HTTPS origins and target the gym hash route', () => {
+  assert.equal(gymRestUrl('https://example.test:8445'), 'https://example.test:8445/#/gym')
+  for (const raw of [undefined, '', 'http://example.test', 'invalid', 'https://user:password@example.test']) {
+    assert.equal(gymRestUrl(raw), undefined)
+  }
 })
