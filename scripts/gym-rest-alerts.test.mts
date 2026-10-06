@@ -11,6 +11,8 @@ function harness(saved: Record<string, GymRestReceipt> = {}) {
   let result: 'sent' | 'muted' = 'sent'
   let failSend = false
   let failWrite = false
+  let failSentReceiptWrites = 0
+  let sentReceiptWrites = 0
   let sendBarrier: Promise<void> | null = null
   const jobs = new Map<number, { fire: () => Promise<void>; delay: number }>()
   const sent: string[] = []
@@ -22,6 +24,10 @@ function harness(saved: Record<string, GymRestReceipt> = {}) {
     readReceipts: async () => structuredClone(receipts),
     writeReceipts: async (next) => {
       if (failWrite) throw new Error('Store unavailable')
+      if (Object.values(next).some((receipt) => receipt.sentAt !== undefined)) {
+        sentReceiptWrites++
+        if (failSentReceiptWrites-- > 0) throw new Error('Sent receipt storage unavailable')
+      }
       receipts = structuredClone(next)
     },
     schedule: (fire, delay) => {
@@ -41,9 +47,11 @@ function harness(saved: Record<string, GymRestReceipt> = {}) {
     service, jobs, sent, errors,
     get receipts() { return receipts },
     get scheduled() { return scheduled },
+    get sentReceiptWrites() { return sentReceiptWrites },
     set result(next: 'sent' | 'muted') { result = next },
     set failSend(next: boolean) { failSend = next },
     set failWrite(next: boolean) { failWrite = next },
+    set failSentReceiptWrites(next: number) { failSentReceiptWrites = next },
     set sendBarrier(next: Promise<void> | null) { sendBarrier = next },
     commit(next: unknown) { active = next; service.update(next) },
     async fireNext() {
@@ -194,4 +202,67 @@ test('a stale callback does not lose the current timer cancellation handle', asy
   h.commit(null)
   assert.equal(h.jobs.size, 0)
   assert.equal(h.sent.length, 0)
+})
+
+test('an accepted alert retries a failed sent receipt write without sending again', async () => {
+  const h = harness()
+  h.failSentReceiptWrites = 1
+  await h.service.restore()
+  await h.fireNext()
+  assert.equal(h.sent.length, 1)
+  assert.equal(h.receipts[h.sent[0]].sentAt, undefined)
+  assert.equal(h.jobs.size, 1, 'The accepted alert schedules receipt-only recovery')
+  await h.fireNext()
+  assert.equal(h.sent.length, 1)
+  assert.equal(h.receipts[h.sent[0]].sentAt, 1000)
+  assert.equal(h.sentReceiptWrites, 2)
+  const restarted = harness(h.receipts)
+  await restarted.service.restore()
+  await restarted.fireNext()
+  assert.deepEqual(restarted.sent, [])
+})
+
+test('sent receipt recovery stops after three persistence attempts', async () => {
+  const h = harness()
+  h.failSentReceiptWrites = 3
+  await h.service.restore()
+  await h.fireNext()
+  await h.fireNext()
+  await h.fireNext()
+  assert.equal(h.sent.length, 1)
+  assert.equal(h.sentReceiptWrites, 3)
+  assert.equal(h.jobs.size, 0)
+  assert.match(h.errors.join('\n'), /receipt.*storage unavailable/i)
+})
+
+test('finishing allows sent receipt recovery while stopping cancels it', async () => {
+  const h = harness()
+  h.failSentReceiptWrites = 1
+  await h.service.restore()
+  await h.fireNext()
+  h.commit(null)
+  assert.equal(h.jobs.size, 1)
+  const queuedRetry = [...h.jobs.values()][0].fire
+  h.service.stop()
+  assert.equal(h.jobs.size, 0)
+  await queuedRetry()
+  assert.equal(h.sentReceiptWrites, 1)
+  assert.equal(h.sent.length, 1)
+})
+
+test('sent receipt recovery merges markers from a newer rest period', async () => {
+  const h = harness()
+  h.failSentReceiptWrites = 1
+  await h.service.restore()
+  await h.fireNext()
+  const retryEntry = [...h.jobs.entries()][0]
+  assert.ok(retryEntry, 'A failed sent receipt schedules persistence recovery')
+  const [retryKey, retry] = retryEntry
+  h.jobs.delete(retryKey)
+  h.commit({ ...resting, restTimerEnd: 2000 })
+  await h.fireNext()
+  await retry.fire()
+  assert.equal(h.sent.length, 2)
+  assert.equal(Object.keys(h.receipts).length, 2)
+  assert.ok(h.sent.every((id) => h.receipts[id].sentAt !== undefined))
 })
