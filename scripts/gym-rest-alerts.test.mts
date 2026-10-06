@@ -11,6 +11,7 @@ function harness(saved: Record<string, GymRestReceipt> = {}) {
   let result: 'sent' | 'muted' = 'sent'
   let failSend = false
   let failWrite = false
+  let sendBarrier: Promise<void> | null = null
   const jobs = new Map<number, { fire: () => Promise<void>; delay: number }>()
   const sent: string[] = []
   const errors: string[] = []
@@ -30,6 +31,7 @@ function harness(saved: Record<string, GymRestReceipt> = {}) {
     },
     send: async (id) => {
       sent.push(id)
+      if (sendBarrier) await sendBarrier
       if (failSend) throw new Error('Network unavailable')
       return result
     },
@@ -42,6 +44,7 @@ function harness(saved: Record<string, GymRestReceipt> = {}) {
     set result(next: 'sent' | 'muted') { result = next },
     set failSend(next: boolean) { failSend = next },
     set failWrite(next: boolean) { failWrite = next },
+    set sendBarrier(next: Promise<void> | null) { sendBarrier = next },
     commit(next: unknown) { active = next; service.update(next) },
     async fireNext() {
       const entry = jobs.entries().next().value
@@ -161,4 +164,34 @@ test('deep links accept configured HTTPS origins and target the gym hash route',
   for (const raw of [undefined, '', 'http://example.test', 'invalid', 'https://user:password@example.test']) {
     assert.equal(gymRestUrl(raw), undefined)
   }
+})
+
+test('overlapping rest deliveries serialize durable receipt changes', async () => {
+  const h = harness()
+  let release!: () => void
+  h.sendBarrier = new Promise<void>((resolve) => { release = resolve })
+  await h.service.restore()
+  const first = h.fireNext()
+  for (let tick = 0; tick < 8; tick++) await Promise.resolve()
+  assert.equal(h.sent.length, 1)
+  h.commit({ ...resting, restTimerEnd: 2000 })
+  const second = h.fireNext()
+  for (let tick = 0; tick < 8; tick++) await Promise.resolve()
+  assert.equal(h.sent.length, 1, 'The next alert waits for the previous receipt to persist')
+  release()
+  await Promise.all([first, second])
+  assert.equal(h.sent.length, 2)
+  assert.equal(Object.keys(h.receipts).length, 2)
+  assert.ok(h.sent.every((id) => h.receipts[id].sentAt !== undefined))
+})
+
+test('a stale callback does not lose the current timer cancellation handle', async () => {
+  const h = harness()
+  await h.service.restore()
+  const stale = [...h.jobs.values()][0].fire
+  h.commit({ ...resting, restTimerEnd: 2000 })
+  await stale()
+  h.commit(null)
+  assert.equal(h.jobs.size, 0)
+  assert.equal(h.sent.length, 0)
 })
