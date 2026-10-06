@@ -4,6 +4,7 @@ import { Modal } from '@/components/shared/Modal'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { WorkoutPlanEditor } from './WorkoutPlanEditor'
+import { WorkoutExerciseList } from './WorkoutExerciseList'
 import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
 import {
@@ -13,7 +14,6 @@ import {
   CheckCircle2,
   Waves,
   Square,
-  ChevronDown,
 } from 'lucide-react'
 
 interface WorkoutPlanProps {
@@ -31,13 +31,6 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
   const [swimElapsed, setSwimElapsed] = useState(0)
   const swimTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [preview, setPreview] = useState<Exercise | null>(null)
-  const [expandedEx, setExpandedEx] = useState<Set<string>>(new Set())
-  const toggleExpand = (id: string) =>
-    setExpandedEx((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
 
   useEffect(() => {
     if (swimStartedAt) {
@@ -161,48 +154,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                   onRemoveExercise={(exerciseId) => removeExercise(day.id, exerciseId)}
                 />
               ) : (
-                <div className="-mx-1 space-y-1">
-                  {day.exercises.map((ex) => {
-                    const expanded = expandedEx.has(ex.id)
-                    return (
-                      <div key={ex.id} className="rounded-md transition-colors hover:bg-muted/40">
-                        <div className="flex items-center gap-3 px-1.5 py-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setPreview(ex)}
-                            aria-label={`Preview ${ex.name}`}
-                            className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border/60 p-0"
-                          >
-                            <ExerciseImage name={ex.name} showBadge={false} className="h-14 w-14" />
-                          </Button>
-                          <button
-                            onClick={() => ex.notes && toggleExpand(ex.id)}
-                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-foreground">{ex.name}</p>
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <Chip size="sm" className="tabular-nums text-foreground">
-                                  {ex.sets}×{ex.repsRange}
-                                </Chip>
-                                {ex.startWeight && <Chip size="sm">{ex.startWeight}</Chip>}
-                              </div>
-                            </div>
-                            {ex.notes && (
-                              <ChevronDown
-                                className={`h-5 w-5 shrink-0 text-foreground-faint transition-transform ${expanded ? 'rotate-180' : ''}`}
-                              />
-                            )}
-                          </button>
-                        </div>
-                        {expanded && ex.notes && (
-                          <p className="pb-2.5 pl-[4.75rem] pr-3 text-xs leading-relaxed text-muted-foreground">{ex.notes}</p>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
+                <WorkoutExerciseList exercises={day.exercises} onPreview={setPreview} />
               )}
 
               {/* Bottom actions */}
