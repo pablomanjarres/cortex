@@ -1,9 +1,9 @@
 import { CheckCircle2 } from 'lucide-react'
 import type { WorkoutSession } from '@/types/gym'
+import { summarizeWorkoutSets } from '../domain/workout-progress'
 
 export function WorkoutSessionSummary({ session }: { session: WorkoutSession }) {
-  const completedSets = session.exercises.reduce((total, exercise) => total + exercise.sets.filter((set) => set.completed).length, 0)
-  const totalSets = session.exercises.reduce((total, exercise) => total + exercise.sets.length, 0)
+  const { completedSets, totalSets } = summarizeWorkoutSets(session.exercises)
   const isFull = session.completedFully && totalSets > 0 && completedSets === totalSets
   const isSwim = session.workoutName.trim().toUpperCase() === 'SWIM'
 

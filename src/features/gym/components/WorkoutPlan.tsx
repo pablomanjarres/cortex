@@ -5,12 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { WorkoutPlanEditor } from './WorkoutPlanEditor'
 import { WorkoutExerciseList } from './WorkoutExerciseList'
+import { WorkoutSessionSummary } from './WorkoutSessionSummary'
 import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
 import {
   Play,
   Pencil,
-  Check,
   CheckCircle2,
   Waves,
   Square,
@@ -157,85 +157,17 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                 <WorkoutExerciseList exercises={day.exercises} onPreview={setPreview} />
               )}
 
-              {/* Bottom actions */}
-              <div className="flex items-center justify-between pt-1">
-                {isCompletedToday(day.id) ? (
-                  <div className="space-y-2">
-                    {(() => {
-                      const session = getSession(day.id)
-                      if (!session) return null
-                      const completedSets = session.exercises.reduce((s, ex) => s + ex.sets.filter(set => set.completed).length, 0)
-                      const totalSets = session.exercises.reduce((s, ex) => s + ex.sets.length, 0)
-                      const totalVolume = session.exercises.reduce(
-                        (s, ex) => s + ex.sets.filter(set => set.completed).reduce((v, set) => v + set.weight * set.reps, 0), 0
-                      )
-                      const duration = session.startedAt && session.finishedAt
-                        ? Math.round((new Date(session.finishedAt).getTime() - new Date(session.startedAt).getTime()) / 60000)
-                        : null
-                      return (
-                        <div className="flex items-center gap-3 font-mono text-xs tabular-nums text-muted-foreground">
-                          <span>{completedSets}/{totalSets} sets</span>
-                          {totalVolume > 0 && <span>{Math.round(totalVolume)} kg</span>}
-                          {duration !== null && duration > 0 && <span>{duration} min</span>}
-                        </div>
-                      )
-                    })()}
-                    <div className="flex items-center gap-3">
-                      <span className="flex items-center gap-1.5 text-sm text-success">
-                        <CheckCircle2 className="h-4 w-4" />
-                        Completed today
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => {
-                          if (confirm('This will start a new session and overwrite today\'s logged workout for ' + day.name + '. Continue?')) {
-                            onStartWorkout(day.id)
-                          }
-                        }}
-                      >
-                        Redo
-                      </Button>
-                    </div>
-                  </div>
-                ) : todaySessions.length > 0 ? (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="opacity-50"
-                    onClick={() => {
-                      const done = todaySessions.map(s => s.workoutName).join(', ')
-                      if (confirm(`You already completed ${done} today. Starting ${day.name} will replace it. Continue?`)) {
-                        onStartWorkout(day.id)
-                      }
-                    }}
-                  >
-                    <Play />
-                    Start Workout
-                  </Button>
-                ) : (
-                  <Button variant="secondary" size="sm" onClick={() => onStartWorkout(day.id)}>
-                    <Play />
-                    Start Workout
-                  </Button>
-                )}
-
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => setEditingDay(editingDay === day.id ? null : day.id)}
-                >
-                  {editingDay === day.id ? (
-                    <>
-                      <Check />
-                      Done
-                    </>
-                  ) : (
-                    <>
-                      <Pencil />
-                      Edit
-                    </>
-                  )}
+              {getSession(day.id) && <WorkoutSessionSummary session={getSession(day.id)!} />}
+              <div className="flex items-center justify-between gap-3">
+                <Button size="lg" onClick={() => {
+                  if (todaySessions.length === 0 || confirm(`Starting ${day.name} will replace today’s saved workout when finished. Continue?`)) {
+                    onStartWorkout(day.id)
+                  }
+                }}>
+                  <Play /> {isCompletedToday(day.id) ? 'Redo workout' : 'Start workout'}
+                </Button>
+                <Button variant="ghost" size="lg" onClick={() => setEditingDay(editingDay === day.id ? null : day.id)}>
+                  <Pencil /> {editingDay === day.id ? 'Done' : 'Edit plan'}
                 </Button>
               </div>
             </div>
