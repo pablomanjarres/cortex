@@ -46,7 +46,7 @@ export async function mockStores(
       if (request.method() !== 'GET') return route.fulfill({ status: 405, json: { error: 'Fixture blocks external writes' } })
       return json(/calendar|scheduled-tasks|projects\/scan|media|keychain/.test(url.pathname) ? [] : {})
     }
-    if (url.origin === 'http://127.0.0.1:3479') return route.continue()
+    if (url.origin === `http://127.0.0.1:${process.env.CORTEX_E2E_PORT || '3479'}`) return route.continue()
     return route.abort()
   })
 
