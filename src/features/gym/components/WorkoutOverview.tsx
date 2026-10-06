@@ -34,7 +34,7 @@ export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView,
                 <Waves aria-hidden="true" className="absolute -right-4 top-4 size-52 text-accent/20" strokeWidth={1} />
               ) : (
                 <>
-                  <img src="/images/gym-strength-hero.webp" alt="" className="absolute inset-0 size-full object-cover object-[65%_center]" />
+                  <img src="./images/gym-strength-hero.webp" alt="" className="absolute inset-0 size-full object-cover object-[65%_center]" />
                   <div className="absolute inset-0 bg-linear-to-r from-black/60 via-black/15 to-transparent" />
                   <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/10 to-transparent" />
                 </>
