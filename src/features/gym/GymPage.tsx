@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { SectionDisclosure } from '@/components/shared/SectionDisclosure'
+import { Tabs, TabsContent } from '@/components/ui/tabs'
 import { useStore, readStore } from '@/lib/store'
 import { localDate, getWeekDates } from '@/lib/date-utils'
 import { useToday } from '@/lib/use-today'
@@ -21,6 +22,8 @@ import { MarketLog } from './components/MarketLog'
 import { WeeklyStats } from './components/WeeklyStats'
 import { HardBans } from './components/HardBans'
 import { MealPlan } from './components/MealPlan'
+import { resolveActivePlan } from './domain/active-plan'
+import { GymNavigation } from './components/GymNavigation'
 
 // Normalize stored session data: migrates old single-session format to array
 function normalizeSessions(data: unknown): WorkoutSession[] {
@@ -39,6 +42,7 @@ export function GymPage() {
 }
 
 function GymPageDay({ today }: { today: string }) {
+  const [section, setSection] = useState('training')
   const [plans, setPlans] = useStore<WorkoutDay[]>('cortex-gym-plans', DEFAULT_WORKOUT_PLANS)
   const [activeWorkout, setActiveWorkout] = useStore<ActiveWorkoutState | null>('cortex-gym-active', null)
   const [todaySessionsRaw, setTodaySessions] = useStore<WorkoutSession[] | null>(`cortex-gym-session-${today}`, null)
@@ -48,6 +52,7 @@ function GymPageDay({ today }: { today: string }) {
 
   // Normalize: handles migration from old single-session format
   const todaySessions = useMemo(() => normalizeSessions(todaySessionsRaw), [todaySessionsRaw])
+  const activePlan = useMemo(() => activeWorkout ? resolveActivePlan(activeWorkout, plans) : null, [activeWorkout, plans])
 
   // Load this week's sessions (flat list across all days)
   const [weekSessions, setWeekSessions] = useState<WorkoutSession[]>([])
@@ -141,29 +146,14 @@ function GymPageDay({ today }: { today: string }) {
 
   return (
     <PageShell>
-      <Tabs defaultValue="training">
-        <TabsList aria-label="Training sections" className="w-full max-w-full justify-start overflow-x-auto overscroll-x-contain sm:w-auto">
-          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="training">Training</TabsTrigger>
-          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="nutrition">Nutrition</TabsTrigger>
-          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="market">Market</TabsTrigger>
-          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="discipline">Discipline</TabsTrigger>
-          <TabsTrigger className="min-h-11 shrink-0 sm:min-h-8" value="analytics">Analytics</TabsTrigger>
-        </TabsList>
+      <Tabs value={section} onValueChange={value => setSection(String(value))}>
+        <GymNavigation value={section} onChange={setSection} />
 
         <TabsContent value="training">
-          <div className="[--card:var(--progress-surface)]">
-            <WeeklyStats
-              plans={plans}
-              weekSessions={weekSessions}
-              weekDates={weekDates}
-              bodyStats={bodyStats}
-            />
-          </div>
-
           {activeWorkout ? (
             <TrainingMode
               activeWorkout={activeWorkout}
-              plan={plans.find(p => p.id === activeWorkout.workoutDayId)!}
+              plan={activePlan!}
               onUpdate={(state) => setActiveWorkout(() => state)}
               onFinish={finishWorkout}
               onCancel={cancelWorkout}
@@ -175,10 +165,6 @@ function GymPageDay({ today }: { today: string }) {
               onUpdatePlans={(p) => setPlans(() => p)}
               onStartWorkout={startWorkout}
               onLogSwim={logSwim}
-              onResetSession={(dayId: string) => setTodaySessions(prev => {
-                const remaining = normalizeSessions(prev).filter(s => s.workoutDayId !== dayId)
-                return remaining.length > 0 ? remaining : null
-              })}
               todaySessions={todaySessions}
             />
           )}
@@ -193,10 +179,12 @@ function GymPageDay({ today }: { today: string }) {
             targets={targets}
             onUpdateTargets={(t) => setTargets(() => t)}
           />
-          <MealPlan
+          <SectionDisclosure title="Meal plan">
+            <MealPlan
             nutrition={nutrition}
             onUpdate={(n) => setNutrition(() => n)}
-          />
+            />
+          </SectionDisclosure>
         </TabsContent>
 
         <TabsContent value="market">
@@ -208,6 +196,9 @@ function GymPageDay({ today }: { today: string }) {
         </TabsContent>
 
         <TabsContent value="analytics">
+          <div className="mb-5 [--card:var(--progress-surface)]">
+            <WeeklyStats plans={plans} weekSessions={weekSessions} weekDates={weekDates} bodyStats={bodyStats} />
+          </div>
           <Analytics plans={plans} bodyStats={bodyStats} />
         </TabsContent>
       </Tabs>

@@ -214,6 +214,7 @@ async function backendWrite(key: string, data: unknown, baseRev: string | null):
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(baseRev !== null ? { key, data, baseRev } : { key, data }),
+        keepalive: document.visibilityState === 'hidden',
       })
       if (res.ok) {
         let rev: string | null = null
@@ -413,10 +414,24 @@ function reloadAllRegistered() {
 
 if (typeof window !== 'undefined') {
   const onVisible = () => {
-    if (document.visibilityState === 'visible') reloadAllRegistered()
+    if (document.visibilityState === 'visible') {
+      if (!isElectron() && _apiBase === null) _apiBase = undefined
+      reloadAllRegistered()
+    } else {
+      flushPendingWrites()
+    }
   }
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onVisible)
+  window.addEventListener('pagehide', flushPendingWrites)
+}
+
+function flushPendingWrites() {
+  for (const [key, state] of syncs) {
+    if (state.pending.length === 0) continue
+    if (state.timer) { clearTimeout(state.timer); state.timer = null }
+    void flushKey(key)
+  }
 }
 
 // ─── Flush pending writes before unload ────────────────────

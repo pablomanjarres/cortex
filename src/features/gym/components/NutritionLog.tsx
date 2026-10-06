@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
+import { NutritionSummary } from './NutritionSummary'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { SectionDisclosure } from '@/components/shared/SectionDisclosure'
 import type { DailyNutrition, FoodItem, BodyStats, NutritionTargets, PantryItem } from '@/types/gym'
 import { COMMON_FOODS, EMPTY_DAILY_NUTRITION } from '@/types/gym'
 import { localDate } from '@/lib/date-utils'
@@ -13,7 +14,6 @@ import {
   Plus,
   X,
   Scale,
-  Minus,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -51,20 +51,7 @@ function formatDateLabel(dateStr: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-/** Tokenized macro meter — success once the target is reached. */
-function MacroBar({ value, target, className = '' }: { value: number; target: number; className?: string }) {
-  return (
-    <div className={`h-1.5 rounded-full bg-muted/60 ${className}`}>
-      <div
-        className={`h-full rounded-full transition-all duration-500 ${value >= target ? 'bg-success' : 'bg-foreground/40'}`}
-        style={{ width: `${Math.min(100, (value / target) * 100)}%` }}
-      />
-    </div>
-  )
-}
-
 export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToday, bodyStats, onUpdateBodyStats, targets, onUpdateTargets }: NutritionLogProps) {
-  const reduceMotion = useReducedMotion()
   const [dayOffset, setDayOffset] = useState(0)
   const viewDate = useMemo(() => {
     const d = new Date()
@@ -76,11 +63,15 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
   // For non-today dates, load/save via readStore/writeStore
   const [otherDayData, setOtherDayData] = useState<DailyNutrition | null>(null)
   useEffect(() => {
-    if (isToday) { setOtherDayData(null); return }
-    readStore<DailyNutrition>(`cortex-nutrition-${viewDate}`, { ...EMPTY_DAILY_NUTRITION, date: viewDate }).then(setOtherDayData)
+    if (isToday) return
+    let active = true
+    readStore<DailyNutrition>(`cortex-nutrition-${viewDate}`, { ...EMPTY_DAILY_NUTRITION, date: viewDate }).then(value => {
+      if (active) setOtherDayData(value)
+    })
+    return () => { active = false }
   }, [viewDate, isToday])
 
-  const nutrition = isToday ? todayNutrition : (otherDayData || { ...EMPTY_DAILY_NUTRITION, date: viewDate })
+  const nutrition = isToday ? todayNutrition : (otherDayData?.date === viewDate ? otherDayData : { ...EMPTY_DAILY_NUTRITION, date: viewDate })
   const onUpdate = useCallback((n: DailyNutrition) => {
     if (isToday) { onUpdateToday(n); return }
     setOtherDayData(n)
@@ -231,7 +222,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
     <div className="mt-4 space-y-4">
       {/* Day navigation */}
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="icon-sm" onClick={() => setDayOffset(d => d - 1)} aria-label="Previous day">
+        <Button variant="ghost" size="icon-lg" onClick={() => setDayOffset(d => d - 1)} aria-label="Previous day">
           <ChevronLeft />
         </Button>
         <Button
@@ -244,7 +235,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
         </Button>
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon-lg"
           onClick={() => setDayOffset(d => Math.min(d + 1, 0))}
           disabled={dayOffset >= 0}
           aria-label="Next day"
@@ -278,7 +269,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
           </div>
           <Button
             variant="secondary"
-            size="icon-sm"
+            size="icon-lg"
             aria-label="Save targets"
             onClick={() => {
               onUpdateTargets({
@@ -313,54 +304,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
         </div>
       )}
 
-      {/* Summary bar — mobile: stacked, desktop: 3-col */}
-      <motion.div
-        initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="space-y-2 sm:grid sm:grid-cols-3 sm:gap-3 sm:space-y-0"
-      >
-        {/* Protein & Calories — side by side on mobile */}
-        <div className="grid grid-cols-2 gap-2 sm:contents">
-          <div className="surface rounded-xl p-3">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Protein</span>
-              <span className="font-mono text-xs tabular-nums text-foreground">
-                {totals.protein}g / {targets.protein}g
-              </span>
-            </div>
-            <MacroBar value={totals.protein} target={targets.protein} className="h-2 sm:h-1.5" />
-          </div>
-
-          <div className="surface rounded-xl p-3">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Calories</span>
-              <span className="font-mono text-xs tabular-nums text-foreground">
-                {totals.calories} / {targets.calories}
-              </span>
-            </div>
-            <MacroBar value={totals.calories} target={targets.calories} className="h-2 sm:h-1.5" />
-          </div>
-        </div>
-
-        {/* Water — full width on mobile */}
-        <div className="surface rounded-xl p-3">
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Water</span>
-            <span className="font-mono text-xs tabular-nums text-foreground">
-              {nutrition.waterLiters}L / {targets.water}L
-            </span>
-          </div>
-          <div className="flex items-center gap-3 sm:gap-2">
-            <Button variant="secondary" size="icon-xs" onClick={() => adjustWater(-0.25)} aria-label="Remove 0.25 liters">
-              <Minus />
-            </Button>
-            <MacroBar value={nutrition.waterLiters} target={targets.water} className="h-2 flex-1 sm:h-1.5" />
-            <Button variant="secondary" size="icon-xs" onClick={() => adjustWater(0.25)} aria-label="Add 0.25 liters">
-              <Plus />
-            </Button>
-          </div>
-        </div>
-      </motion.div>
+      <NutritionSummary protein={totals.protein} calories={totals.calories} water={nutrition.waterLiters} targets={targets} onAdjustWater={adjustWater} />
 
       {/* Meal selector tabs — mobile: 2x2 grid, desktop: row */}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-1.5">
@@ -368,27 +312,28 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
           const mealProtein = meal.foods.reduce((s, f) => s + f.protein, 0)
           const mealCals = meal.foods.reduce((s, f) => s + f.calories, 0)
           return (
-            <button
+            <Button
+              variant="secondary"
               key={meal.id}
               onClick={() => setActiveMeal(mi)}
               aria-pressed={activeMeal === mi}
-              className={`cursor-pointer rounded-md border px-3 py-3 text-left transition-colors sm:flex-1 sm:py-2 ${
+              className={`h-auto min-h-14 flex-col items-start gap-1 whitespace-normal rounded-md border px-3 py-3 text-left sm:flex-1 ${
                 activeMeal === mi
                   ? 'border-accent/40 bg-accent/10'
                   : 'border-border bg-card hover:bg-muted/40'
               }`}
             >
-              <p className={`text-sm font-medium sm:text-xs ${activeMeal === mi ? 'text-foreground' : 'text-muted-foreground'}`}>{meal.name}</p>
+              <p className={`text-sm font-medium ${activeMeal === mi ? 'text-foreground' : 'text-muted-foreground'}`}>{meal.name}</p>
               <p className="font-mono text-2xs tabular-nums text-foreground-faint">{mealProtein}g · {mealCals} kcal</p>
-            </button>
+            </Button>
           )
         })}
       </div>
 
       {/* Active meal food list */}
       <div className="surface space-y-2 rounded-xl p-4">
-        <div className="mb-1 flex items-center justify-between">
-          <h4 className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{nutrition.meals[activeMeal].name}</h4>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-base font-semibold text-foreground">{nutrition.meals[activeMeal].name}</h4>
           <span className="font-mono text-2xs tabular-nums text-muted-foreground">
             {nutrition.meals[activeMeal].foods.reduce((s, f) => s + f.protein, 0)}g protein · {nutrition.meals[activeMeal].foods.reduce((s, f) => s + f.calories, 0)} kcal
           </span>
@@ -412,7 +357,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
               <span className="font-mono tabular-nums text-muted-foreground">{food.protein}g · {food.calories}</span>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-lg"
                 onClick={() => removeFood(activeMeal, fi)}
                 aria-label={`Remove ${food.name}`}
                 className="text-muted-foreground hover:text-destructive"
@@ -431,16 +376,16 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
             variant="ghost"
             size="xs"
             onClick={() => setShowQuickAdd(!showQuickAdd)}
-            className="-ml-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground"
+            className="h-11 whitespace-normal text-left text-base text-foreground"
             aria-expanded={showQuickAdd}
           >
-            Quick Add → {nutrition.meals[activeMeal].name}
+            Add food to {nutrition.meals[activeMeal].name}
             <ChevronDown className={`transition-transform ${showQuickAdd ? 'rotate-180' : ''}`} />
           </Button>
           {showQuickAdd && (
             <Button
               variant={editingQuickAdd ? 'secondary' : 'ghost'}
-              size="icon-xs"
+              size="icon-lg"
               onClick={() => setEditingQuickAdd(!editingQuickAdd)}
               aria-label={editingQuickAdd ? 'Done editing' : 'Edit quick-add items'}
             >
@@ -454,20 +399,21 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
             <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-1.5">
               {quickFoods.map((food, i) => (
                 <div key={`${food.name}-${i}`} className="group relative">
-                  <button
+                  <Button
+                    variant="secondary"
                     onClick={() => !editingQuickAdd && addFood(activeMeal, food)}
-                    className={`w-full rounded-md border border-border bg-muted/40 px-3 py-2.5 text-left text-xs transition-colors sm:px-2.5 sm:py-1.5 ${
-                      editingQuickAdd ? 'cursor-default pr-7' : 'hover:bg-muted/70 active:bg-muted'
+                    className={`h-auto min-h-14 w-full flex-col items-start gap-1 whitespace-normal rounded-md border border-border bg-muted/40 px-3 py-3 text-left text-sm ${
+                      editingQuickAdd ? 'cursor-default pr-12' : 'hover:bg-muted/70 active:bg-muted'
                     }`}
                   >
                     <span className="text-foreground">{food.name}</span>
                     <span className="ml-1 font-mono text-2xs tabular-nums text-foreground-faint">{food.protein}g · {food.calories}</span>
-                  </button>
+                  </Button>
                   {editingQuickAdd && (
                     <Button
                       variant="destructive"
-                      size="icon-xs"
-                      className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full"
+                      size="icon-lg"
+                      className="absolute right-0 top-0 h-11 w-11"
                       onClick={() => removeQuickFood(i)}
                       aria-label={`Remove ${food.name} from quick-add`}
                     >
@@ -486,7 +432,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                     placeholder="Food name"
                     value={newFoodName}
                     onChange={(e) => setNewFoodName(e.target.value)}
-                    className="h-9 text-sm sm:h-7 sm:text-xs"
+                    className="h-11 min-w-0 text-base"
                     onKeyDown={(e) => e.key === 'Enter' && addCustomFood()}
                   />
                 </div>
@@ -495,34 +441,34 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                     placeholder="Qty"
                     value={newFoodQuantity}
                     onChange={(e) => setNewFoodQuantity(e.target.value)}
-                    className="h-9 text-sm sm:h-7 sm:text-xs"
+                    className="h-11 min-w-0 text-base"
                   />
                 </div>
               </div>
               <div className="flex gap-2 sm:contents">
-                <div className="flex-1 sm:w-16 sm:flex-none">
+                <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
                   <Input
                     type="number"
                     placeholder="Protein (g)"
                     value={newFoodProtein}
                     onChange={(e) => setNewFoodProtein(e.target.value)}
-                    className="h-9 text-sm sm:h-7 sm:text-xs"
+                    className="h-11 min-w-0 text-base"
                   />
                 </div>
-                <div className="flex-1 sm:w-16 sm:flex-none">
+                <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
                   <Input
                     type="number"
                     placeholder="Calories"
                     value={newFoodCalories}
                     onChange={(e) => setNewFoodCalories(e.target.value)}
-                    className="h-9 text-sm sm:h-7 sm:text-xs"
+                    className="h-11 min-w-0 text-base"
                     onKeyDown={(e) => e.key === 'Enter' && addCustomFood()}
                   />
                 </div>
                 <Button
                   variant="secondary"
                   size="icon"
-                  className="h-9 w-9 shrink-0 sm:h-7 sm:w-7"
+                  className="h-11 w-11 shrink-0"
                   onClick={addCustomFood}
                   aria-label="Add to meal"
                 >
@@ -531,7 +477,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                 <Button
                   variant="secondary"
                   size="icon"
-                  className="h-9 w-9 shrink-0 sm:h-7 sm:w-7"
+                  className="h-11 w-11 shrink-0"
                   onClick={saveToQuickAdd}
                   aria-label="Save to quick-add"
                 >
@@ -543,13 +489,13 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
         )}
       </div>
 
-      {/* Pantry — foods on hand (populated from grocery bills via Claude) */}
-      <WidgetCard title="Pantry" description="Foods on hand — add straight to today's snack." delay={0.05}>
+      <SectionDisclosure title="Pantry">
+      <WidgetCard title="Foods on hand" description="Add a serving to your snack." compact className="border-0 bg-transparent shadow-none">
         <div className="space-y-2">
           {pantry.length === 0 ? (
             <EmptyState
               message="Pantry's empty."
-              hint="Add a grocery bill via Claude and items land here."
+              hint="Add an item below or save a grocery receipt in Market."
               className="py-4"
             />
           ) : (
@@ -572,7 +518,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   <span className="font-mono tabular-nums text-muted-foreground">{item.protein}g P · {item.calories} kcal</span>
                   <Button
                     variant="secondary"
-                    size="icon-sm"
+                    size="icon-lg"
                     onClick={() => addPantryToToday(item)}
                     aria-label={`Add ${item.name} to today's snack`}
                   >
@@ -580,7 +526,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   </Button>
                   <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon-lg"
                     onClick={() => removePantryItem(item.id)}
                     aria-label={`Remove ${item.name} from pantry`}
                     className="text-muted-foreground hover:text-destructive"
@@ -600,7 +546,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   placeholder="Item name"
                   value={newPantryName}
                   onChange={(e) => setNewPantryName(e.target.value)}
-                  className="h-9 text-sm sm:h-7 sm:text-xs"
+                  className="h-11 min-w-0 text-base"
                   onKeyDown={(e) => e.key === 'Enter' && addPantryItem()}
                 />
               </div>
@@ -609,27 +555,27 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   placeholder="Serving"
                   value={newPantryServing}
                   onChange={(e) => setNewPantryServing(e.target.value)}
-                  className="h-9 text-sm sm:h-7 sm:text-xs"
+                  className="h-11 min-w-0 text-base"
                 />
               </div>
             </div>
             <div className="flex gap-2 sm:contents">
-              <div className="flex-1 sm:w-16 sm:flex-none">
+              <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
                 <Input
                   type="number"
                   placeholder="Protein (g)"
                   value={newPantryProtein}
                   onChange={(e) => setNewPantryProtein(e.target.value)}
-                  className="h-9 text-sm sm:h-7 sm:text-xs"
+                  className="h-11 min-w-0 text-base"
                 />
               </div>
-              <div className="flex-1 sm:w-16 sm:flex-none">
+              <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
                 <Input
                   type="number"
                   placeholder="Calories"
                   value={newPantryCalories}
                   onChange={(e) => setNewPantryCalories(e.target.value)}
-                  className="h-9 text-sm sm:h-7 sm:text-xs"
+                  className="h-11 min-w-0 text-base"
                   onKeyDown={(e) => e.key === 'Enter' && addPantryItem()}
                 />
               </div>
@@ -643,7 +589,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
               <Button
                 variant="secondary"
                 size="icon"
-                className="h-9 w-9 shrink-0 sm:h-7 sm:w-7"
+                className="h-11 w-11 shrink-0"
                 onClick={addPantryItem}
                 aria-label="Add to pantry"
               >
@@ -653,11 +599,12 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
           </div>
         </div>
       </WidgetCard>
+      </SectionDisclosure>
 
       {/* Weight logging */}
       <div className="surface rounded-xl p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             <Scale className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">Weight</span>
             {todayWeight && (
@@ -670,12 +617,12 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
               placeholder="kg"
               value={weightInput}
               onChange={(e) => setWeightInput(e.target.value)}
-              className="h-9 w-24 text-sm sm:h-7 sm:w-20 sm:text-xs"
+              className="h-11 w-24 text-base" aria-label="Body weight (kg)"
               step="0.1"
               onKeyDown={(e) => e.key === 'Enter' && logWeight()}
             />
-            <Button variant="secondary" size="sm" onClick={logWeight}>
-              Log
+            <Button variant="secondary" size="lg" onClick={logWeight}>
+              Log weight
             </Button>
           </div>
         </div>

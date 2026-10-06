@@ -44,6 +44,8 @@ Cloud billing setup is in [docs/cloud-cost-setup.md](docs/cloud-cost-setup.md). 
 
 The [Project time API](docs/work-hours-api.md) supports timer ownership and PR attachments for saved work sessions.
 
+[Phone gym setup](docs/gym-phone.md) covers HTTPS access, workout recovery, screen control, and rest notifications.
+
 ## Brand assets
 
 The original abstract symbol, custom lettering, and combined logo live in [public/brand](public/brand). Run `npm run brand:generate` to rebuild the app, tray, favicon, and PWA icons from the symbol SVG.

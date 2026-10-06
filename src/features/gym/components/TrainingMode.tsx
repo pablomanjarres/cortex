@@ -1,13 +1,18 @@
-import { useState, useEffect, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { localDate } from '@/lib/date-utils'
 import type { WorkoutDay, ActiveWorkoutState, WorkoutSession, ExerciseLog, SetLog } from '@/types/gym'
 import { RestTimer } from './RestTimer'
+import { TrainingHeader } from './TrainingHeader'
+import { haptic } from '../domain/training-feedback'
+import { useTrainingClock } from '../hooks/use-training-clock'
+import { useSetDefaults } from '../hooks/use-set-defaults'
+import { activeSetIndex, setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
+import { ExerciseNavigator } from './ExerciseNavigator'
+import { ExerciseGuide } from './ExerciseGuide'
+import { SetEntry } from './SetEntry'
+import { SetHistory } from './SetHistory'
+import { WorkoutAwakeControl } from './WorkoutAwakeControl'
 import { ExerciseImage } from './ExerciseImage'
-import { platesPerSide } from '@/lib/exercise-media'
-import { Button } from '@/components/ui/button'
-import { Chip } from '@/components/ui/chip'
-import { ChevronLeft, ChevronRight, Check, Plus, Minus, Dumbbell, Flag, X, Trash2 } from 'lucide-react'
 
 interface TrainingModeProps {
   activeWorkout: ActiveWorkoutState
@@ -18,137 +23,16 @@ interface TrainingModeProps {
   previousSession?: WorkoutSession | null
 }
 
-const WEIGHT_STEP = 2.5
-const haptic = (p: number | number[] = 12) => {
-  try {
-    navigator.vibrate?.(p)
-  } catch {
-    /* not supported */
-  }
-}
-
 export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel, previousSession }: TrainingModeProps) {
   const reduceMotion = useReducedMotion()
-  const [restTimeLeft, setRestTimeLeft] = useState(0)
-  const [confirmFinish, setConfirmFinish] = useState(false)
-  const [confirmCancel, setConfirmCancel] = useState(false)
-  const [elapsed, setElapsed] = useState('')
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const timerEndRef = useRef<number | null>(activeWorkout.restTimerEnd)
+  const { elapsed, restTimeLeft } = useTrainingClock(activeWorkout, onUpdate)
+  const markSetEdited = useSetDefaults(activeWorkout, plan, previousSession, onUpdate)
 
   const idx = activeWorkout.currentExerciseIndex
-  const currentExercise = plan.exercises[idx]
   const currentExLog = activeWorkout.exerciseLogs[idx]
-  const prevExercise = previousSession?.exercises[idx]
-
-  useEffect(() => {
-    timerEndRef.current = activeWorkout.restTimerEnd
-  }, [activeWorkout.restTimerEnd])
-
-  // Seed still-empty (0/0, not completed) sets of the current exercise with last session's
-  // values, or the plan's default weight/reps — so logging is confirm-not-type.
-  useEffect(() => {
-    const log = activeWorkout.exerciseLogs[idx]
-    const planEx = plan.exercises[idx]
-    if (!log || !planEx) return
-    const prevEx = previousSession?.exercises[idx]
-    const dw = Number(planEx.startWeight.match(/(\d+)/)?.[1] || 0)
-    const dr = Number(planEx.repsRange.match(/(\d+)/)?.[1] || 0)
-    let changed = false
-    const sets = log.sets.map((s, si) => {
-      if (s.completed || s.weight || s.reps) return s
-      const prev = prevEx?.sets[si]
-      const weight = prev?.completed ? prev.weight : dw
-      const reps = prev?.completed ? prev.reps : dr
-      if (weight !== s.weight || reps !== s.reps) changed = true
-      return { ...s, weight, reps }
-    })
-    if (changed) {
-      onUpdate({ ...activeWorkout, exerciseLogs: activeWorkout.exerciseLogs.map((ex, ei) => (ei === idx ? { ...ex, sets } : ex)) })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx])
-
-  // Rest-finished feedback
-  const playBeep = () => {
-    try {
-      const ctx = new AudioContext()
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.frequency.value = 880
-      gain.gain.value = 0.3
-      osc.start()
-      osc.stop(ctx.currentTime + 0.15)
-      setTimeout(() => {
-        const osc2 = ctx.createOscillator()
-        const gain2 = ctx.createGain()
-        osc2.connect(gain2)
-        gain2.connect(ctx.destination)
-        osc2.frequency.value = 1100
-        gain2.gain.value = 0.3
-        osc2.start()
-        osc2.stop(ctx.currentTime + 0.2)
-      }, 200)
-    } catch {
-      /* no audio */
-    }
-  }
-
-  const notifyRestDone = () => {
-    playBeep()
-    haptic([140, 70, 140])
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Rest Over', { body: 'Time for your next set!', silent: true })
-    }
-    if (window.electronAPI?.notify) {
-      window.electronAPI.notify.pushover('local-done', 'Rest timer done — next set!')
-    }
-  }
-
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
-
-  // Rest countdown (timestamp-based, survives tab switches)
-  useEffect(() => {
-    if (!activeWorkout.isResting || !timerEndRef.current) return
-    const tick = () => {
-      const remaining = Math.max(0, Math.round((timerEndRef.current! - Date.now()) / 1000))
-      setRestTimeLeft(remaining)
-      if (remaining <= 0) {
-        notifyRestDone()
-        onUpdate({ ...activeWorkout, isResting: false, restTimerEnd: null })
-      }
-    }
-    tick()
-    intervalRef.current = setInterval(tick, 1000)
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') tick()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkout.isResting, activeWorkout.restTimerEnd])
-
-  // Elapsed workout clock
-  useEffect(() => {
-    const tick = () => {
-      const diff = Date.now() - new Date(activeWorkout.startedAt).getTime()
-      const m = Math.floor(diff / 60000)
-      const s = Math.floor((diff % 60000) / 1000)
-      setElapsed(`${m}:${String(s).padStart(2, '0')}`)
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [activeWorkout.startedAt])
+  const setIndex = activeSetIndex(currentExLog?.sets || [], activeWorkout.currentSetIndex)
+  const currentExercise = plan.exercises.find((exercise) => exercise.id === currentExLog?.exerciseId)
+  const prevExercise = previousSession?.exercises.find((exercise) => exercise.exerciseId === currentExLog?.exerciseId)
 
   // ── Mutations ──────────────────────────────────────────────
   const patchSets = (mut: (sets: SetLog[]) => SetLog[], extra?: Partial<ActiveWorkoutState>) => {
@@ -157,6 +41,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   }
 
   const setValue = (si: number, field: 'weight' | 'reps', value: number) => {
+    markSetEdited(currentExLog.exerciseId, si)
     patchSets((sets) => sets.map((s, i) => (i === si ? { ...s, [field]: Math.max(0, value) } : s)))
   }
   const adjust = (si: number, field: 'weight' | 'reps', delta: number) => {
@@ -165,7 +50,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     haptic(8)
   }
 
-  const completeSet = (si: number) => {
+  const completeSet = (si: number, completedAt: number) => {
     haptic(15)
     const logs = activeWorkout.exerciseLogs.map((ex, ei) =>
       ei === idx ? { ...ex, sets: ex.sets.map((s, i) => (i === si ? { ...s, completed: true } : s)) } : ex,
@@ -189,30 +74,35 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
       exerciseLogs: logs,
       currentExerciseIndex: nextExIdx,
       currentSetIndex: Math.max(0, nextSetIdx),
-      restTimerEnd: Date.now() + activeWorkout.restDuration * 1000,
+      restTimerEnd: completedAt + activeWorkout.restDuration * 1000,
       isResting: true,
     })
   }
 
   const uncompleteSet = (si: number) => {
     haptic(8)
-    patchSets((sets) => sets.map((s, i) => (i === si ? { ...s, completed: false } : s)))
+    markSetEdited(currentExLog.exerciseId, si)
+    patchSets((sets) => sets.map((s, i) => (i === si ? { ...s, completed: false } : s)), { currentSetIndex: si })
   }
 
   const addSet = () => {
     haptic(8)
     const last = currentExLog.sets[currentExLog.sets.length - 1]
-    patchSets((sets) => [...sets, { weight: last?.weight || 0, reps: last?.reps || 0, completed: false }])
+    patchSets((sets) => [...sets, { weight: last?.weight || 0, reps: last?.reps || 0, completed: false }], { currentSetIndex: currentExLog.sets.length })
   }
   const removeSet = (si: number) => {
     if (currentExLog.sets.length <= 1) return
     haptic(8)
-    patchSets((sets) => sets.filter((_, i) => i !== si))
+    currentExLog.sets.forEach((_, index) => markSetEdited(currentExLog.exerciseId, index))
+    patchSets((sets) => sets.filter((_, i) => i !== si), {
+      currentSetIndex: setIndexAfterRemoval(setIndex, si, currentExLog.sets.filter((_, index) => index !== si)),
+    })
   }
 
   const goToExercise = (ei: number) => {
     if (ei < 0 || ei >= plan.exercises.length) return
     const log = activeWorkout.exerciseLogs[ei]
+    if (!log) return
     const firstIncomplete = log.sets.findIndex((s) => !s.completed)
     onUpdate({
       ...activeWorkout,
@@ -242,285 +132,62 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     })
   }
 
-  const totalSets = activeWorkout.exerciseLogs.reduce((s, ex) => s + ex.sets.length, 0)
-  const completedSets = activeWorkout.exerciseLogs.reduce((s, ex) => s + ex.sets.filter((set) => set.completed).length, 0)
-  const overallPct = totalSets ? Math.round((completedSets / totalSets) * 100) : 0
-  const isBarbell = /barbell|bench|squat|deadlift|press|row/i.test(currentExercise?.name || '')
+  const { totalSets, completedSets } = summarizeWorkoutSets(activeWorkout.exerciseLogs)
 
   return (
     <motion.div
       initial={reduceMotion ? false : { opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-4 space-y-4 pb-40"
+      className="space-y-4"
     >
-      {/* ── Header ── */}
-      <div className="surface rounded-xl p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-secondary">
-              <Dumbbell className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold leading-tight text-foreground">{plan.name}</h2>
-              <p className="font-mono text-2xs tabular-nums text-muted-foreground">
-                {completedSets}/{totalSets} sets · {elapsed}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {confirmCancel ? (
-              <Button variant="destructive" className="h-10" onClick={onCancel}>
-                <Trash2 />
-                Discard?
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10"
-                onClick={() => {
-                  setConfirmCancel(true)
-                  setConfirmFinish(false)
-                  setTimeout(() => setConfirmCancel(false), 3000)
-                }}
-                aria-label="Cancel workout"
-              >
-                <X className="h-5 w-5" />
-              </Button>
-            )}
-            {confirmFinish ? (
-              <Button
-                className="h-10 px-4"
-                onClick={() => finishSession(activeWorkout.exerciseLogs, completedSets === totalSets)}
-              >
-                <Flag />
-                Finish?
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                className="h-10 px-4"
-                onClick={() => {
-                  setConfirmFinish(true)
-                  setConfirmCancel(false)
-                  setTimeout(() => setConfirmFinish(false), 3000)
-                }}
-              >
-                <Flag />
-                Finish
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
-          <div className="h-full rounded-full bg-success transition-all duration-500" style={{ width: `${overallPct}%` }} />
-        </div>
-      </div>
+      <TrainingHeader
+        name={plan.name} elapsed={elapsed} completedSets={completedSets} totalSets={totalSets}
+        onFinish={() => finishSession(activeWorkout.exerciseLogs, completedSets === totalSets)}
+        onDiscard={onCancel}
+      />
 
-      {/* ── Exercise pager (tap to jump) ── */}
-      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {plan.exercises.map((ex, ei) => {
-          const log = activeWorkout.exerciseLogs[ei]
-          const done = log.sets.length > 0 && log.sets.every((s) => s.completed)
-          const isCurrent = ei === idx
-          return (
-            <Chip
-              key={ex.id}
-              selectable
-              selected={isCurrent}
-              variant={done ? 'success' : 'neutral'}
-              onClick={() => goToExercise(ei)}
-              className="shrink-0 px-3 py-2"
-            >
-              {done && <Check />}
-              <span className="max-w-[9rem] truncate">{ex.name}</span>
-            </Chip>
-          )
-        })}
-      </div>
+      <ExerciseNavigator plan={plan} logs={activeWorkout.exerciseLogs} index={idx} onSelect={goToExercise} />
 
-      {/* ── Current exercise ── */}
-      {currentExercise && (
-        <div className="surface overflow-hidden rounded-xl">
-          {/* nav + title */}
-          <div className="flex items-center gap-2 border-b border-border/60 p-3">
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-11 w-11 shrink-0"
-              onClick={() => goToExercise(idx - 1)}
-              disabled={idx === 0}
-              aria-label="Previous exercise"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-            <div className="min-w-0 flex-1 text-center">
-              <h3 className="truncate text-base font-semibold text-foreground">{currentExercise.name}</h3>
-              <p className="font-mono text-2xs tabular-nums text-muted-foreground">
-                Exercise {idx + 1}/{plan.exercises.length} · target {currentExercise.sets}×{currentExercise.repsRange}
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-11 w-11 shrink-0"
-              onClick={() => goToExercise(idx + 1)}
-              disabled={idx === plan.exercises.length - 1}
-              aria-label="Next exercise"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </Button>
-          </div>
-
-          {/* demo media */}
-          <ExerciseImage name={currentExercise.name} className="h-44 w-full sm:h-52" />
-
-          {currentExercise.notes && <p className="px-4 pt-3 text-xs text-muted-foreground">{currentExercise.notes}</p>}
-
-          {/* set rows */}
-          <div className="space-y-2.5 p-3">
-            {currentExLog.sets.map((set, si) => {
-              const prev = prevExercise?.sets[si]
-              const plates = isBarbell ? platesPerSide(set.weight) : []
-              if (set.completed) {
-                return (
-                  <button
-                    key={si}
-                    onClick={() => uncompleteSet(si)}
-                    className="flex w-full items-center gap-3 rounded-md border border-success/25 bg-success/10 px-4 py-3 text-left active:scale-[0.99]"
-                  >
-                    <Check className="h-5 w-5 shrink-0 text-success" />
-                    <span className="w-12 shrink-0 text-sm font-medium text-muted-foreground">Set {si + 1}</span>
-                    <span className="font-mono text-lg font-medium tabular-nums text-success">
-                      {set.weight}
-                      <span className="text-sm font-normal text-muted-foreground"> kg</span> × {set.reps}
-                    </span>
-                    <span className="ml-auto font-mono text-3xs uppercase tracking-wide text-foreground-faint">tap to edit</span>
-                  </button>
-                )
-              }
-              const isCurrent = si === activeWorkout.currentSetIndex
-              return (
-                <div
-                  key={si}
-                  className={`relative overflow-hidden rounded-md border px-3 py-3 ${
-                    isCurrent
-                      ? 'border-border bg-muted/40 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
-                      : 'border-border/60 bg-background/40'
-                  }`}
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">Set {si + 1}</span>
-                    {prev?.completed ? (
-                      <span className="font-mono text-2xs tabular-nums text-foreground-faint">
-                        last: {prev.weight}kg × {prev.reps}
-                      </span>
-                    ) : (
-                      currentExLog.sets.length > 1 && (
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => removeSet(si)}
-                          aria-label={`Remove set ${si + 1}`}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <X />
-                        </Button>
-                      )
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* weight stepper */}
-                    <Stepper
-                      value={set.weight}
-                      unit="kg"
-                      onDec={() => adjust(si, 'weight', -WEIGHT_STEP)}
-                      onInc={() => adjust(si, 'weight', WEIGHT_STEP)}
-                      onChange={(v) => setValue(si, 'weight', v)}
-                    />
-                    <span className="text-foreground-faint">×</span>
-                    {/* reps stepper */}
-                    <Stepper
-                      value={set.reps}
-                      unit="reps"
-                      onDec={() => adjust(si, 'reps', -1)}
-                      onInc={() => adjust(si, 'reps', 1)}
-                      onChange={(v) => setValue(si, 'reps', v)}
-                    />
-                    {/* complete */}
-                    <Button
-                      size="icon"
-                      className="ml-auto h-14 w-14 shrink-0"
-                      onClick={() => completeSet(si)}
-                      aria-label={`Complete set ${si + 1}`}
-                    >
-                      <Check className="h-7 w-7" />
-                    </Button>
-                  </div>
-                  {plates.length > 0 && (
-                    <p className="mt-2 font-mono text-2xs text-foreground-faint">
-                      plates/side: <span className="tabular-nums text-muted-foreground">{plates.join(' · ')}</span>
-                    </p>
-                  )}
+      {currentExercise && currentExLog && (
+        <article className="surface overflow-hidden rounded-xl">
+          <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="p-4 pb-0 lg:border-r lg:border-border lg:p-6">
+              <div className="flex items-start gap-3 lg:flex-col lg:gap-5">
+                <ExerciseImage name={currentExercise.name} showBadge={false} className="h-20 w-20 shrink-0 rounded-md lg:order-last lg:h-72 lg:w-full lg:rounded-xl" />
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold leading-tight tracking-tight sm:text-xl lg:text-3xl">{currentExercise.name}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{currentExercise.sets} sets × {currentExercise.repsRange} reps</p>
                 </div>
-              )
-            })}
-
-            <Button variant="outline" className="w-full text-muted-foreground" onClick={addSet}>
-              <Plus />
-              Add set
-            </Button>
+              </div>
+            </div>
+            <div className="p-4 lg:p-6">
+              {activeWorkout.isResting && (
+                <RestTimer
+                  timeLeft={restTimeLeft}
+                  totalTime={activeWorkout.restDuration}
+                  onSkip={skipRest}
+                  onAdjust={adjustRest}
+                  onChangeDuration={changeRestDuration}
+                  currentDuration={activeWorkout.restDuration}
+                />
+              )}
+              {currentExLog.sets[setIndex] && !currentExLog.sets[setIndex].completed ? (
+                <SetEntry key={`${idx}:${setIndex}`} index={setIndex} count={currentExLog.sets.length}
+                  set={currentExLog.sets[setIndex]} previous={prevExercise?.sets[setIndex]}
+                  onChange={(field, value) => setValue(setIndex, field, value)}
+                  onAdjust={(field, delta) => adjust(setIndex, field, delta)} onComplete={(completedAt) => completeSet(setIndex, completedAt)} />
+              ) : <p className="rounded-lg bg-success/10 p-4 text-sm text-success">All sets logged. Choose another exercise or edit a set below.</p>}
+            </div>
           </div>
-        </div>
+          <div className="border-t border-border px-4 pb-4 lg:px-6 lg:pb-6">
+            <SetHistory sets={currentExLog.sets} currentIndex={setIndex}
+              onEdit={uncompleteSet} onRemove={removeSet} onAdd={addSet} />
+            <div className="mt-2"><ExerciseGuide exercise={currentExercise} /></div>
+            <WorkoutAwakeControl active />
+          </div>
+        </article>
       )}
 
-      {/* ── Sticky rest bar (does not hide the set list) ── */}
-      {activeWorkout.isResting && (
-        <RestTimer
-          timeLeft={restTimeLeft}
-          totalTime={activeWorkout.restDuration}
-          onSkip={skipRest}
-          onAdjust={adjustRest}
-          onChangeDuration={changeRestDuration}
-          currentDuration={activeWorkout.restDuration}
-        />
-      )}
     </motion.div>
-  )
-}
-
-// ── Big +/- stepper with a directly-editable value (steppers handle the common case;
-// tapping the number opens the numeric keypad for a precise edit) ──
-interface StepperProps {
-  value: number
-  unit: string
-  onDec: () => void
-  onInc: () => void
-  onChange: (value: number) => void
-}
-function Stepper({ value, unit, onDec, onInc, onChange }: StepperProps) {
-  return (
-    <div className="flex items-center gap-1">
-      <Button variant="secondary" size="icon" className="h-12 w-9" onClick={onDec} aria-label={`Decrease ${unit}`}>
-        <Minus />
-      </Button>
-      <div className="flex flex-col items-center">
-        <input
-          type="text"
-          inputMode="decimal"
-          value={String(value)}
-          onChange={(e) => {
-            const n = parseFloat(e.target.value.replace(',', '.'))
-            onChange(Number.isFinite(n) ? n : 0)
-          }}
-          onFocus={(e) => e.target.select()}
-          className="w-14 bg-transparent text-center font-mono text-2xl font-medium tabular-nums text-foreground"
-        />
-        <span className="-mt-1 font-mono text-3xs uppercase tracking-wide text-foreground-faint">{unit}</span>
-      </div>
-      <Button variant="secondary" size="icon" className="h-12 w-9" onClick={onInc} aria-label={`Increase ${unit}`}>
-        <Plus />
-      </Button>
-    </div>
   )
 }

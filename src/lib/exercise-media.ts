@@ -50,15 +50,22 @@ function tokenize(s: string): string[] {
 async function loadDb(): Promise<DbEntry[]> {
   if (db) return db
   if (loadPromise) return loadPromise
-  loadPromise = fetch(`${CDN}/dist/exercises.json`)
-    .then((r) => (r.ok ? r.json() : []))
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 8000)
+  loadPromise = fetch(`${CDN}/dist/exercises.json`, { signal: controller.signal })
+    .then((r) => {
+      if (!r.ok) throw new Error('Exercise media index unavailable')
+      return r.json()
+    })
     .then((data: DbEntry[]) => {
-      db = Array.isArray(data) ? data : []
+      if (!Array.isArray(data) || data.length === 0) throw new Error('Exercise media index is empty')
+      db = data
       return db
     })
-    .catch(() => {
-      db = []
-      return db
+    .catch(() => [])
+    .finally(() => {
+      clearTimeout(timeout)
+      loadPromise = null
     })
   return loadPromise
 }
@@ -118,7 +125,7 @@ export async function findExerciseMedia(name: string): Promise<ExerciseMedia | n
       }
     }
   }
-  memo.set(key, result)
+  if (db) memo.set(key, result)
   return result
 }
 

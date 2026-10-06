@@ -4,6 +4,7 @@ import path from 'node:path'
 import test from 'node:test'
 import vm from 'node:vm'
 import ts from 'typescript'
+import { GYM_REST_RECEIPTS_KEY } from '../electron/gym-rest-alerts.ts'
 
 const source = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
 const tree = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true)
@@ -56,6 +57,8 @@ function trayHarness(
       Object.assign(records, { [key]: structuredClone(data) })
     },
     KEY_RE: /^[A-Za-z0-9._-]{1,200}$/,
+    GYM_REST_RECEIPTS_KEY,
+    gymRestAlerts: null,
     fs: { promises: { copyFile: async () => {}, mkdir: async () => {}, readdir: async () => [] } },
     backupDir: '/isolated-test-backup',
     VERSIONED_BACKUPS_KEPT: 10,
