@@ -1,4 +1,4 @@
-const CACHE = 'cortex-graphite-teal-v1'
+const CACHE = 'cortex-gym-tracking-v2'
 const API_CACHE = 'cortex-api-v1'
 
 self.addEventListener('install', (e) => {

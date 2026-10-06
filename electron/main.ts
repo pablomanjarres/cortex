@@ -15,6 +15,7 @@ import type { FounderSource } from './founder-refresher.js'
 import { startCloudCostRefresher, storeGcpCredential } from './cloud-cost-refresher.js'
 import { isPublicKeychainService } from './keychain-access.js'
 import { startDeadlineAlerts } from './deadline-alerts.js'
+import { secureWebOrigin } from './web-origin.js'
 import { shouldDeleteDailyFile } from './daily-retention.js'
 import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVoiceAnchors, vaultStats } from './integrations/mars.js'
 import { emptyWorkHoursState, type WorkHoursCommand, type WorkHoursState } from './work-hours-model.js'
@@ -820,6 +821,15 @@ function startWebServer() {
       res.writeHead(403); res.end('Forbidden'); return
     }
     const url = new URL(req.url!, `http://localhost:${WEB_PORT}`)
+    if (req.method === 'GET' && url.pathname === '/' && req.headers.accept?.includes('text/html') && !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)) {
+      const settings = await readDataKeyParsed<{ publicUrl?: string }>('cortex-web-settings', {})
+      const origin = secureWebOrigin(process.env.CORTEX_PUBLIC_URL ?? settings.publicUrl)
+      if (origin && req.headers['x-forwarded-proto'] !== 'https') {
+        res.writeHead(302, { Location: `${origin}/`, 'Cache-Control': 'no-store' })
+        res.end()
+        return
+      }
+    }
 
     // ─── JSON API for data sync (used by browser/iPhone) ──────
     if (url.pathname === '/api/data' && req.method === 'GET') {
