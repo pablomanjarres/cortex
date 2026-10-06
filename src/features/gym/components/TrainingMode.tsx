@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { localDate } from '@/lib/date-utils'
 import type { WorkoutDay, ActiveWorkoutState, WorkoutSession, ExerciseLog, SetLog } from '@/types/gym'
 import { RestTimer } from './RestTimer'
 import { haptic } from '../domain/training-feedback'
 import { useTrainingClock } from '../hooks/use-training-clock'
+import { useSetDefaults } from '../hooks/use-set-defaults'
 import { ExerciseImage } from './ExerciseImage'
 import { platesPerSide } from '@/lib/exercise-media'
 import { Button } from '@/components/ui/button'
@@ -25,37 +26,14 @@ const WEIGHT_STEP = 2.5
 export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel, previousSession }: TrainingModeProps) {
   const reduceMotion = useReducedMotion()
   const { elapsed, restTimeLeft } = useTrainingClock(activeWorkout, onUpdate)
+  const markSetEdited = useSetDefaults(activeWorkout, plan, previousSession, onUpdate)
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
 
   const idx = activeWorkout.currentExerciseIndex
   const currentExercise = plan.exercises[idx]
   const currentExLog = activeWorkout.exerciseLogs[idx]
-  const prevExercise = previousSession?.exercises[idx]
-
-  // Seed still-empty (0/0, not completed) sets of the current exercise with last session's
-  // values, or the plan's default weight/reps — so logging is confirm-not-type.
-  useEffect(() => {
-    const log = activeWorkout.exerciseLogs[idx]
-    const planEx = plan.exercises[idx]
-    if (!log || !planEx) return
-    const prevEx = previousSession?.exercises[idx]
-    const dw = Number(planEx.startWeight.match(/(\d+)/)?.[1] || 0)
-    const dr = Number(planEx.repsRange.match(/(\d+)/)?.[1] || 0)
-    let changed = false
-    const sets = log.sets.map((s, si) => {
-      if (s.completed || s.weight || s.reps) return s
-      const prev = prevEx?.sets[si]
-      const weight = prev?.completed ? prev.weight : dw
-      const reps = prev?.completed ? prev.reps : dr
-      if (weight !== s.weight || reps !== s.reps) changed = true
-      return { ...s, weight, reps }
-    })
-    if (changed) {
-      onUpdate({ ...activeWorkout, exerciseLogs: activeWorkout.exerciseLogs.map((ex, ei) => (ei === idx ? { ...ex, sets } : ex)) })
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx])
+  const prevExercise = previousSession?.exercises.find((exercise) => exercise.exerciseId === currentExLog?.exerciseId)
 
 
   // ── Mutations ──────────────────────────────────────────────
@@ -65,6 +43,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   }
 
   const setValue = (si: number, field: 'weight' | 'reps', value: number) => {
+    markSetEdited(currentExLog.exerciseId, si)
     patchSets((sets) => sets.map((s, i) => (i === si ? { ...s, [field]: Math.max(0, value) } : s)))
   }
   const adjust = (si: number, field: 'weight' | 'reps', delta: number) => {
