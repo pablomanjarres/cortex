@@ -1,0 +1,136 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { GymRestAlerts, type GymRestReceipt } from '../electron/gym-rest-alerts.ts'
+
+const resting = { startedAt: '2026-10-06T18:00:00Z', restTimerEnd: 1000, isResting: true }
+
+function harness(saved: Record<string, GymRestReceipt> = {}) {
+  let now = 0
+  let active: unknown = resting
+  let receipts = structuredClone(saved)
+  let result: 'sent' | 'muted' = 'sent'
+  let failSend = false
+  let failWrite = false
+  const jobs = new Map<number, { fire: () => Promise<void>; delay: number }>()
+  const sent: string[] = []
+  const errors: string[] = []
+  let scheduled = 0
+  const service = new GymRestAlerts({
+    now: () => now,
+    readActive: async () => active,
+    readReceipts: async () => structuredClone(receipts),
+    writeReceipts: async (next) => {
+      if (failWrite) throw new Error('Store unavailable')
+      receipts = structuredClone(next)
+    },
+    schedule: (fire, delay) => {
+      const key = ++scheduled
+      jobs.set(key, { fire, delay })
+      return () => { jobs.delete(key) }
+    },
+    send: async (id) => {
+      sent.push(id)
+      if (failSend) throw new Error('Network unavailable')
+      return result
+    },
+    log: (message) => errors.push(message),
+  })
+  return {
+    service, jobs, sent, errors,
+    get receipts() { return receipts },
+    get scheduled() { return scheduled },
+    set result(next: 'sent' | 'muted') { result = next },
+    set failSend(next: boolean) { failSend = next },
+    set failWrite(next: boolean) { failWrite = next },
+    commit(next: unknown) { active = next; service.update(next) },
+    async fireNext() {
+      const entry = jobs.entries().next().value
+      assert.ok(entry, 'A server-owned alert is scheduled')
+      const [key, job] = entry
+      jobs.delete(key)
+      now += job.delay
+      await job.fire()
+    },
+  }
+}
+
+test('restoring a saved rest schedules and delivers without a renderer', async () => {
+  const h = harness()
+  await h.service.restore()
+  assert.equal(h.jobs.size, 1)
+  await h.fireNext()
+  assert.equal(h.sent.length, 1)
+  assert.equal(h.receipts[h.sent[0]].sentAt, 1000)
+})
+
+test('editing sets with the same deadline keeps one timer', async () => {
+  const h = harness()
+  await h.service.restore()
+  h.commit({ ...resting, exerciseLogs: [{ sets: [{ weight: 20 }] }] })
+  assert.equal(h.scheduled, 1)
+  await h.fireNext()
+  assert.equal(h.sent.length, 1)
+  h.commit(resting)
+  assert.equal(h.jobs.size, 0)
+})
+
+test('skip and finish cancel pending alerts', async () => {
+  for (const next of [null, { ...resting, isResting: false, restTimerEnd: null }]) {
+    const h = harness()
+    await h.service.restore()
+    h.commit(next)
+    assert.equal(h.jobs.size, 0)
+    assert.equal(h.sent.length, 0)
+  }
+})
+
+test('a changed deadline replaces the pending timer', async () => {
+  const h = harness()
+  await h.service.restore()
+  h.commit({ ...resting, restTimerEnd: 2000 })
+  assert.equal(h.jobs.size, 1)
+  await h.fireNext()
+  assert.equal(h.sent.length, 1)
+  assert.equal(h.receipts[h.sent[0]].sentAt, 2000)
+})
+
+test('a persisted delivery receipt suppresses an overdue alert after restart', async () => {
+  const original = harness()
+  await original.service.restore()
+  await original.fireNext()
+  const restarted = harness(original.receipts)
+  await restarted.service.restore()
+  await restarted.fireNext()
+  assert.deepEqual(restarted.sent, [])
+})
+
+test('failed delivery retries three times with a stable provider id', async () => {
+  const h = harness()
+  h.failSend = true
+  await h.service.restore()
+  for (let attempt = 0; attempt < 3; attempt++) await h.fireNext()
+  assert.equal(h.sent.length, 3)
+  assert.equal(new Set(h.sent).size, 1)
+  assert.equal(h.jobs.size, 0)
+  assert.equal(h.receipts[h.sent[0]].attempts, 3)
+  assert.equal(h.receipts[h.sent[0]].sentAt, undefined)
+})
+
+test('Muted output is logged as a delivery failure and never recorded as sent', async () => {
+  const h = harness()
+  h.result = 'muted'
+  await h.service.restore()
+  for (let attempt = 0; attempt < 3; attempt++) await h.fireNext()
+  assert.equal(h.receipts[h.sent[0]].sentAt, undefined)
+  assert.match(h.errors.join('\n'), /muted/i)
+})
+
+test('an unpersisted attempt never sends an alert', async () => {
+  const h = harness()
+  h.failWrite = true
+  await h.service.restore()
+  for (let attempt = 0; attempt < 3; attempt++) await h.fireNext()
+  assert.deepEqual(h.sent, [])
+  assert.equal(h.jobs.size, 0)
+  assert.match(h.errors.join('\n'), /store unavailable/i)
+})
