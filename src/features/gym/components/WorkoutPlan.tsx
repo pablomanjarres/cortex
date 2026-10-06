@@ -9,6 +9,7 @@ import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
 import { useSwimTimer } from '../domain/use-swim-timer'
 import { getScheduledWorkout, isSwimWorkout } from '../domain/workout-plan'
+import { WorkoutAwakeControl } from './WorkoutAwakeControl'
 
 interface WorkoutPlanProps {
   plans: WorkoutDay[]
@@ -88,6 +89,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
       swimElapsed={swimTimer.elapsed}
       onStopSwim={stopSwimTimer}
     />
+    {swimTimer.swim && <WorkoutAwakeControl active />}
 
     <Modal
       open={detailsOpen}

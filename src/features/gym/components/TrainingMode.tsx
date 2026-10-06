@@ -11,6 +11,7 @@ import { ExerciseNavigator } from './ExerciseNavigator'
 import { ExerciseGuide } from './ExerciseGuide'
 import { SetEntry } from './SetEntry'
 import { SetHistory } from './SetHistory'
+import { WorkoutAwakeControl } from './WorkoutAwakeControl'
 
 interface TrainingModeProps {
   activeWorkout: ActiveWorkoutState
@@ -176,6 +177,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
             ) : <p className="rounded-lg bg-success/10 p-4 text-sm text-success">All sets logged. Choose another exercise or edit a set below.</p>}
             <SetHistory sets={currentExLog.sets} currentIndex={setIndex}
               onEdit={uncompleteSet} onRemove={removeSet} onAdd={addSet} />
+            <WorkoutAwakeControl active />
           </div>
         </div>
       )}
