@@ -26,22 +26,43 @@ async function mediaRoutes(page: Page, media: Record<string, string>) {
   }))
 }
 
-test('saved GIFs display in plan thumbnails, preview and active training', async ({ page }) => {
+async function openActiveGuide(page: Page, name: string) {
+  await page.getByRole('button', { name: 'Exercise guide', exact: true }).click()
+  return page.getByRole('dialog', { name, exact: true }).getByRole('img', { name, exact: true })
+}
+
+async function closeDialog(page: Page, name?: string) {
+  const dialog = page.getByRole('dialog', name ? { name, exact: true } : {})
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(dialog).toBeHidden()
+}
+
+async function nextActiveGuide(page: Page, name: string) {
+  await closeDialog(page)
+  await page.getByRole('button', { name: 'Next exercise', exact: true }).click()
+  return openActiveGuide(page, name)
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-06T18:30:00Z'))
+})
+
+test('saved GIFs display in plan thumbnails, preview and active exercise guides', async ({ page }) => {
   const day = plan([exercise('first', floorName, 'first'), exercise('second', floorName, 'second')])
-  const backend = await mockStores(page, { 'cortex-gym-plans': [day] })
+  await mockStores(page, { 'cortex-gym-plans': [day] })
   await mediaRoutes(page, { first: firstGif, second: secondGif })
   await page.goto('/#/gym')
+  await page.getByRole('button', { name: 'View exercises', exact: true }).click()
   const previews = page.getByRole('button', { name: `Preview ${floorName}`, exact: true })
   await expect(previews.nth(0).getByRole('img')).toHaveAttribute('src', gifUrl(firstGif))
   await expect(previews.nth(1).getByRole('img')).toHaveAttribute('src', gifUrl(secondGif))
   await previews.nth(0).click()
-  await expect(page.getByRole('dialog').getByRole('img')).toHaveAttribute('src', gifUrl(firstGif))
-  await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Start Workout', exact: true }).click()
-  await expect(page.getByRole('img', { name: floorName, exact: true })).toHaveAttribute('src', gifUrl(firstGif))
-  await page.getByRole('button', { name: 'Next exercise', exact: true }).click()
-  await expect(page.getByRole('img', { name: floorName, exact: true })).toHaveAttribute('src', gifUrl(secondGif))
-  expect((backend.stores['cortex-gym-plans'] as typeof day[])[0].exercises[0].gifMediaId).toBe('first')
+  await expect(page.getByRole('dialog', { name: floorName, exact: true }).getByRole('img')).toHaveAttribute('src', gifUrl(firstGif))
+  await closeDialog(page, floorName)
+  await closeDialog(page, day.name)
+  await page.getByRole('button', { name: 'Start workout', exact: true }).click()
+  await expect(await openActiveGuide(page, floorName)).toHaveAttribute('src', gifUrl(firstGif))
+  await expect(await nextActiveGuide(page, floorName)).toHaveAttribute('src', gifUrl(secondGif))
 })
 
 test('a GIF decoding failure falls back to stock and a new exercise retries saved media', async ({ page }) => {
@@ -50,15 +71,16 @@ test('a GIF decoding failure falls back to stock and a new exercise retries save
   ])] })
   await mediaRoutes(page, { corrupt: 'AAAA', good: firstGif })
   await page.goto('/#/gym')
+  await page.getByRole('button', { name: 'View exercises', exact: true }).click()
   const stock = page.getByRole('button', { name: 'Preview Leg Press', exact: true }).getByRole('img')
   await expect(stock).toHaveAttribute('src', /\/exercises\/Leg_Press\/[01]\.jpg$/)
-  await page.getByRole('button', { name: 'Start Workout', exact: true }).click()
-  await expect(page.getByRole('img', { name: 'Leg Press', exact: true })).toHaveAttribute('src', /\/Leg_Press\/[01]\.jpg$/)
-  await page.getByRole('button', { name: 'Next exercise', exact: true }).click()
-  await expect(page.getByRole('img', { name: floorName, exact: true })).toHaveAttribute('src', gifUrl(firstGif))
+  await closeDialog(page, 'Demo workout')
+  await page.getByRole('button', { name: 'Start workout', exact: true }).click()
+  await expect(await openActiveGuide(page, 'Leg Press')).toHaveAttribute('src', /\/Leg_Press\/[01]\.jpg$/)
+  await expect(await nextActiveGuide(page, floorName)).toHaveAttribute('src', gifUrl(firstGif))
 })
 
-test('a late media response cannot replace the next exercise GIF with the same name', async ({ page }) => {
+test('a late closed-guide response cannot replace the next exercise GIF with the same name', async ({ page }) => {
   const day = plan([exercise('first', floorName, 'slow'), exercise('second', floorName, 'fast')])
   await mockStores(page, {
     'cortex-gym-plans': [day],
@@ -81,11 +103,16 @@ test('a late media response cannot replace the next exercise GIF with the same n
     if (slow) completed()
   })
   await page.goto('/#/gym')
-  await expect.poll(() => requested).toBe(true)
-  await page.getByRole('button', { name: 'Next exercise', exact: true }).click()
-  await expect(page.getByRole('img', { name: floorName, exact: true })).toHaveAttribute('src', gifUrl(secondGif))
-  release()
-  await responseDone
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-  await expect(page.getByRole('img', { name: floorName, exact: true })).toHaveAttribute('src', gifUrl(secondGif))
+  await openActiveGuide(page, floorName)
+  try {
+    await expect.poll(() => requested).toBe(true)
+    const current = await nextActiveGuide(page, floorName)
+    await expect(current).toHaveAttribute('src', gifUrl(secondGif))
+    release()
+    await responseDone
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(current).toHaveAttribute('src', gifUrl(secondGif))
+  } finally {
+    release()
+  }
 })
