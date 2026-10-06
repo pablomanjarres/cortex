@@ -9,9 +9,10 @@ import { useSetDefaults } from '../hooks/use-set-defaults'
 import { setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
 import { ExerciseNavigator } from './ExerciseNavigator'
 import { ExerciseGuide } from './ExerciseGuide'
+import { SetValueControl } from './SetValueControl'
 import { platesPerSide } from '@/lib/exercise-media'
 import { Button } from '@/components/ui/button'
-import { Check, Plus, Minus, X } from 'lucide-react'
+import { Check, Plus, X } from 'lucide-react'
 
 interface TrainingModeProps {
   activeWorkout: ActiveWorkoutState
@@ -215,7 +216,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
                   </div>
                   <div className="flex items-center gap-2">
                     {/* weight stepper */}
-                    <Stepper
+                    <SetValueControl
                       value={set.weight}
                       unit="kg"
                       onDec={() => adjust(si, 'weight', -WEIGHT_STEP)}
@@ -224,7 +225,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
                     />
                     <span className="text-foreground-faint">×</span>
                     {/* reps stepper */}
-                    <Stepper
+                    <SetValueControl
                       value={set.reps}
                       unit="reps"
                       onDec={() => adjust(si, 'reps', -1)}
@@ -273,38 +274,3 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   )
 }
 
-// ── Big +/- stepper with a directly-editable value (steppers handle the common case;
-// tapping the number opens the numeric keypad for a precise edit) ──
-interface StepperProps {
-  value: number
-  unit: string
-  onDec: () => void
-  onInc: () => void
-  onChange: (value: number) => void
-}
-function Stepper({ value, unit, onDec, onInc, onChange }: StepperProps) {
-  return (
-    <div className="flex items-center gap-1">
-      <Button variant="secondary" size="icon" className="h-12 w-9" onClick={onDec} aria-label={`Decrease ${unit}`}>
-        <Minus />
-      </Button>
-      <div className="flex flex-col items-center">
-        <input
-          type="text"
-          inputMode="decimal"
-          value={String(value)}
-          onChange={(e) => {
-            const n = parseFloat(e.target.value.replace(',', '.'))
-            onChange(Number.isFinite(n) ? n : 0)
-          }}
-          onFocus={(e) => e.target.select()}
-          className="w-14 bg-transparent text-center font-mono text-2xl font-medium tabular-nums text-foreground"
-        />
-        <span className="-mt-1 font-mono text-3xs uppercase tracking-wide text-foreground-faint">{unit}</span>
-      </div>
-      <Button variant="secondary" size="icon" className="h-12 w-9" onClick={onInc} aria-label={`Increase ${unit}`}>
-        <Plus />
-      </Button>
-    </div>
-  )
-}
