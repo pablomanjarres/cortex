@@ -6,7 +6,7 @@ import { TrainingHeader } from './TrainingHeader'
 import { haptic } from '../domain/training-feedback'
 import { useTrainingClock } from '../hooks/use-training-clock'
 import { useSetDefaults } from '../hooks/use-set-defaults'
-import { setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
+import { activeSetIndex, setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
 import { ExerciseNavigator } from './ExerciseNavigator'
 import { ExerciseGuide } from './ExerciseGuide'
 import { SetEntry } from './SetEntry'
@@ -28,6 +28,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
 
   const idx = activeWorkout.currentExerciseIndex
   const currentExLog = activeWorkout.exerciseLogs[idx]
+  const setIndex = activeSetIndex(currentExLog?.sets || [], activeWorkout.currentSetIndex)
   const currentExercise = plan.exercises.find((exercise) => exercise.id === currentExLog?.exerciseId)
   const prevExercise = previousSession?.exercises.find((exercise) => exercise.exerciseId === currentExLog?.exerciseId)
 
@@ -92,7 +93,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     haptic(8)
     currentExLog.sets.forEach((_, index) => markSetEdited(currentExLog.exerciseId, index))
     patchSets((sets) => sets.filter((_, i) => i !== si), {
-      currentSetIndex: setIndexAfterRemoval(activeWorkout.currentSetIndex, si, currentExLog.sets.length - 1),
+      currentSetIndex: setIndexAfterRemoval(setIndex, si, currentExLog.sets.filter((_, index) => index !== si)),
     })
   }
 
@@ -167,13 +168,13 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
                 currentDuration={activeWorkout.restDuration}
               />
             )}
-            {currentExLog.sets[activeWorkout.currentSetIndex] && !currentExLog.sets[activeWorkout.currentSetIndex].completed ? (
-              <SetEntry key={`${idx}:${activeWorkout.currentSetIndex}`} index={activeWorkout.currentSetIndex} count={currentExLog.sets.length}
-                set={currentExLog.sets[activeWorkout.currentSetIndex]} previous={prevExercise?.sets[activeWorkout.currentSetIndex]}
-                onChange={(field, value) => setValue(activeWorkout.currentSetIndex, field, value)}
-                onAdjust={(field, delta) => adjust(activeWorkout.currentSetIndex, field, delta)} onComplete={(completedAt) => completeSet(activeWorkout.currentSetIndex, completedAt)} />
+            {currentExLog.sets[setIndex] && !currentExLog.sets[setIndex].completed ? (
+              <SetEntry key={`${idx}:${setIndex}`} index={setIndex} count={currentExLog.sets.length}
+                set={currentExLog.sets[setIndex]} previous={prevExercise?.sets[setIndex]}
+                onChange={(field, value) => setValue(setIndex, field, value)}
+                onAdjust={(field, delta) => adjust(setIndex, field, delta)} onComplete={(completedAt) => completeSet(setIndex, completedAt)} />
             ) : <p className="rounded-lg bg-success/10 p-4 text-sm text-success">All sets logged. Choose another exercise or edit a set below.</p>}
-            <SetHistory sets={currentExLog.sets} currentIndex={activeWorkout.currentSetIndex}
+            <SetHistory sets={currentExLog.sets} currentIndex={setIndex}
               onEdit={uncompleteSet} onRemove={removeSet} onAdd={addSet} />
           </div>
         </div>

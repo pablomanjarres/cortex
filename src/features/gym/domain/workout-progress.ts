@@ -1,4 +1,4 @@
-import type { ExerciseLog } from '@/types/gym'
+import type { ExerciseLog, SetLog } from '@/types/gym'
 
 export function summarizeWorkoutSets(logs: ExerciseLog[]) {
   return logs.reduce((summary, exercise) => ({
@@ -7,6 +7,13 @@ export function summarizeWorkoutSets(logs: ExerciseLog[]) {
   }), { totalSets: 0, completedSets: 0 })
 }
 
-export function setIndexAfterRemoval(currentIndex: number, removedIndex: number, remainingCount: number) {
-  return Math.max(0, Math.min(remainingCount - 1, currentIndex > removedIndex ? currentIndex - 1 : currentIndex))
+export function activeSetIndex(sets: SetLog[], preferredIndex: number) {
+  const index = Math.max(0, Math.min(sets.length - 1, preferredIndex))
+  if (sets[index] && !sets[index].completed) return index
+  const incomplete = sets.findIndex((set) => !set.completed)
+  return incomplete === -1 ? index : incomplete
+}
+
+export function setIndexAfterRemoval(currentIndex: number, removedIndex: number, remainingSets: SetLog[]) {
+  return activeSetIndex(remainingSets, currentIndex > removedIndex ? currentIndex - 1 : currentIndex)
 }
