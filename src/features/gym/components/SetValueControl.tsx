@@ -17,8 +17,7 @@ export function SetValueControl({ value, unit, onDec, onInc, onChange }: SetValu
   return (
     <label className="block min-w-0 flex-1">
       <span className="mb-2 block text-sm font-medium text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="icon-lg" className="h-14 w-11 shrink-0" onClick={() => { setEditing(null); onDec() }} aria-label={`Decrease ${unit}`}><Minus /></Button>
+      <div className="flex flex-col gap-2">
         <Input type="text" inputMode={unit === 'kg' ? 'decimal' : 'numeric'} aria-label={label}
           value={editing?.value === value ? editing.text : String(value)}
           onChange={(event) => {
@@ -30,9 +29,12 @@ export function SetValueControl({ value, unit, onDec, onInc, onChange }: SetValu
             onChange(parsed)
           }}
           onFocus={(event) => event.target.select()} onBlur={() => setEditing(null)}
-          className="h-16 min-w-0 px-1 text-center font-mono text-3xl font-medium tabular-nums"
+          className="h-14 min-w-0 px-1 text-center font-mono text-2xl font-medium tabular-nums"
         />
-        <Button variant="outline" size="icon-lg" className="h-14 w-11 shrink-0" onClick={() => { setEditing(null); onInc() }} aria-label={`Increase ${unit}`}><Plus /></Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="outline" size="icon-lg" className="w-full" onClick={() => { setEditing(null); onDec() }} aria-label={`Decrease ${unit}`}><Minus /></Button>
+          <Button variant="outline" size="icon-lg" className="w-full" onClick={() => { setEditing(null); onInc() }} aria-label={`Increase ${unit}`}><Plus /></Button>
+        </div>
       </div>
     </label>
   )
