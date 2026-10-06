@@ -10,7 +10,7 @@ interface SetEntryProps {
   previous?: SetLog
   onChange: (field: 'weight' | 'reps', value: number) => void
   onAdjust: (field: 'weight' | 'reps', delta: number) => void
-  onComplete: () => void
+  onComplete: (completedAt: number) => void
 }
 
 export function SetEntry({ index, count, set, previous, onChange, onAdjust, onComplete }: SetEntryProps) {
@@ -24,7 +24,7 @@ export function SetEntry({ index, count, set, previous, onChange, onAdjust, onCo
         <SetValueControl value={set.weight} unit="kg" onDec={() => onAdjust('weight', -2.5)} onInc={() => onAdjust('weight', 2.5)} onChange={(value) => onChange('weight', value)} />
         <SetValueControl value={set.reps} unit="reps" onDec={() => onAdjust('reps', -1)} onInc={() => onAdjust('reps', 1)} onChange={(value) => onChange('reps', value)} />
       </div>
-      <Button className="mt-3 h-14 w-full text-base" onClick={onComplete}><Check />Log set</Button>
+      <Button className="mt-3 h-14 w-full text-base" onClick={() => onComplete(Date.now())}><Check />Log set</Button>
     </section>
   )
 }

@@ -21,7 +21,6 @@ interface TrainingModeProps {
   previousSession?: WorkoutSession | null
 }
 
-
 export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel, previousSession }: TrainingModeProps) {
   const reduceMotion = useReducedMotion()
   const { elapsed, restTimeLeft } = useTrainingClock(activeWorkout, onUpdate)
@@ -31,7 +30,6 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   const currentExLog = activeWorkout.exerciseLogs[idx]
   const currentExercise = plan.exercises.find((exercise) => exercise.id === currentExLog?.exerciseId)
   const prevExercise = previousSession?.exercises.find((exercise) => exercise.exerciseId === currentExLog?.exerciseId)
-
 
   // ── Mutations ──────────────────────────────────────────────
   const patchSets = (mut: (sets: SetLog[]) => SetLog[], extra?: Partial<ActiveWorkoutState>) => {
@@ -49,7 +47,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     haptic(8)
   }
 
-  const completeSet = (si: number) => {
+  const completeSet = (si: number, completedAt: number) => {
     haptic(15)
     const logs = activeWorkout.exerciseLogs.map((ex, ei) =>
       ei === idx ? { ...ex, sets: ex.sets.map((s, i) => (i === si ? { ...s, completed: true } : s)) } : ex,
@@ -73,7 +71,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
       exerciseLogs: logs,
       currentExerciseIndex: nextExIdx,
       currentSetIndex: Math.max(0, nextSetIdx),
-      restTimerEnd: Date.now() + activeWorkout.restDuration * 1000,
+      restTimerEnd: completedAt + activeWorkout.restDuration * 1000,
       isResting: true,
     })
   }
@@ -159,21 +157,21 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
           </div>
 
           <div className="p-4 pt-1 sm:p-6 sm:pt-2">
-      {activeWorkout.isResting && (
-        <RestTimer
-          timeLeft={restTimeLeft}
-          totalTime={activeWorkout.restDuration}
-          onSkip={skipRest}
-          onAdjust={adjustRest}
-          onChangeDuration={changeRestDuration}
-          currentDuration={activeWorkout.restDuration}
-        />
-      )}
+            {activeWorkout.isResting && (
+              <RestTimer
+                timeLeft={restTimeLeft}
+                totalTime={activeWorkout.restDuration}
+                onSkip={skipRest}
+                onAdjust={adjustRest}
+                onChangeDuration={changeRestDuration}
+                currentDuration={activeWorkout.restDuration}
+              />
+            )}
             {currentExLog.sets[activeWorkout.currentSetIndex] && !currentExLog.sets[activeWorkout.currentSetIndex].completed ? (
               <SetEntry key={`${idx}:${activeWorkout.currentSetIndex}`} index={activeWorkout.currentSetIndex} count={currentExLog.sets.length}
                 set={currentExLog.sets[activeWorkout.currentSetIndex]} previous={prevExercise?.sets[activeWorkout.currentSetIndex]}
                 onChange={(field, value) => setValue(activeWorkout.currentSetIndex, field, value)}
-                onAdjust={(field, delta) => adjust(activeWorkout.currentSetIndex, field, delta)} onComplete={() => completeSet(activeWorkout.currentSetIndex)} />
+                onAdjust={(field, delta) => adjust(activeWorkout.currentSetIndex, field, delta)} onComplete={(completedAt) => completeSet(activeWorkout.currentSetIndex, completedAt)} />
             ) : <p className="rounded-lg bg-success/10 p-4 text-sm text-success">All sets logged. Choose another exercise or edit a set below.</p>}
             <SetHistory sets={currentExLog.sets} currentIndex={activeWorkout.currentSetIndex}
               onEdit={uncompleteSet} onRemove={removeSet} onAdd={addSet} />
@@ -181,8 +179,6 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
         </div>
       )}
 
-
     </motion.div>
   )
 }
-
