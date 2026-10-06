@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
+import { NutritionSummary } from './NutritionSummary'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
@@ -13,7 +13,6 @@ import {
   Plus,
   X,
   Scale,
-  Minus,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -51,20 +50,7 @@ function formatDateLabel(dateStr: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-/** Tokenized macro meter — success once the target is reached. */
-function MacroBar({ value, target, className = '' }: { value: number; target: number; className?: string }) {
-  return (
-    <div className={`h-1.5 rounded-full bg-muted/60 ${className}`}>
-      <div
-        className={`h-full rounded-full transition-all duration-500 ${value >= target ? 'bg-success' : 'bg-foreground/40'}`}
-        style={{ width: `${Math.min(100, (value / target) * 100)}%` }}
-      />
-    </div>
-  )
-}
-
 export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToday, bodyStats, onUpdateBodyStats, targets, onUpdateTargets }: NutritionLogProps) {
-  const reduceMotion = useReducedMotion()
   const [dayOffset, setDayOffset] = useState(0)
   const viewDate = useMemo(() => {
     const d = new Date()
@@ -313,54 +299,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
         </div>
       )}
 
-      {/* Summary bar — mobile: stacked, desktop: 3-col */}
-      <motion.div
-        initial={reduceMotion ? false : { opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="space-y-2 sm:grid sm:grid-cols-3 sm:gap-3 sm:space-y-0"
-      >
-        {/* Protein & Calories — side by side on mobile */}
-        <div className="grid grid-cols-2 gap-2 sm:contents">
-          <div className="surface rounded-xl p-3">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Protein</span>
-              <span className="font-mono text-xs tabular-nums text-foreground">
-                {totals.protein}g / {targets.protein}g
-              </span>
-            </div>
-            <MacroBar value={totals.protein} target={targets.protein} className="h-2 sm:h-1.5" />
-          </div>
-
-          <div className="surface rounded-xl p-3">
-            <div className="mb-1.5 flex items-center justify-between">
-              <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Calories</span>
-              <span className="font-mono text-xs tabular-nums text-foreground">
-                {totals.calories} / {targets.calories}
-              </span>
-            </div>
-            <MacroBar value={totals.calories} target={targets.calories} className="h-2 sm:h-1.5" />
-          </div>
-        </div>
-
-        {/* Water — full width on mobile */}
-        <div className="surface rounded-xl p-3">
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Water</span>
-            <span className="font-mono text-xs tabular-nums text-foreground">
-              {nutrition.waterLiters}L / {targets.water}L
-            </span>
-          </div>
-          <div className="flex items-center gap-3 sm:gap-2">
-            <Button variant="secondary" size="icon-xs" onClick={() => adjustWater(-0.25)} aria-label="Remove 0.25 liters">
-              <Minus />
-            </Button>
-            <MacroBar value={nutrition.waterLiters} target={targets.water} className="h-2 flex-1 sm:h-1.5" />
-            <Button variant="secondary" size="icon-xs" onClick={() => adjustWater(0.25)} aria-label="Add 0.25 liters">
-              <Plus />
-            </Button>
-          </div>
-        </div>
-      </motion.div>
+      <NutritionSummary protein={totals.protein} calories={totals.calories} water={nutrition.waterLiters} targets={targets} onAdjustWater={adjustWater} />
 
       {/* Meal selector tabs — mobile: 2x2 grid, desktop: row */}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-1.5">
