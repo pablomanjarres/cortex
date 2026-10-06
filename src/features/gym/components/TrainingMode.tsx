@@ -150,7 +150,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
       {currentExercise && currentExLog && (
         <div className="surface rounded-xl">
           <div className="p-5 pb-2 sm:p-6 sm:pb-3">
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Exercise {idx + 1} of {activeWorkout.exerciseLogs.length}</p>
+            <p className="text-sm font-medium text-muted-foreground">Exercise {idx + 1} of {activeWorkout.exerciseLogs.length}</p>
             <h3 className="mt-2 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">{currentExercise.name}</h3>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">{currentExercise.sets} sets · {currentExercise.repsRange} reps</p>
@@ -159,6 +159,16 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
           </div>
 
           <div className="p-4 pt-1 sm:p-6 sm:pt-2">
+      {activeWorkout.isResting && (
+        <RestTimer
+          timeLeft={restTimeLeft}
+          totalTime={activeWorkout.restDuration}
+          onSkip={skipRest}
+          onAdjust={adjustRest}
+          onChangeDuration={changeRestDuration}
+          currentDuration={activeWorkout.restDuration}
+        />
+      )}
             {currentExLog.sets[activeWorkout.currentSetIndex] && !currentExLog.sets[activeWorkout.currentSetIndex].completed ? (
               <SetEntry key={`${idx}:${activeWorkout.currentSetIndex}`} index={activeWorkout.currentSetIndex} count={currentExLog.sets.length}
                 set={currentExLog.sets[activeWorkout.currentSetIndex]} previous={prevExercise?.sets[activeWorkout.currentSetIndex]}
@@ -171,17 +181,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
         </div>
       )}
 
-      {/* ── Sticky rest bar (does not hide the set list) ── */}
-      {activeWorkout.isResting && (
-        <RestTimer
-          timeLeft={restTimeLeft}
-          totalTime={activeWorkout.restDuration}
-          onSkip={skipRest}
-          onAdjust={adjustRest}
-          onChangeDuration={changeRestDuration}
-          currentDuration={activeWorkout.restDuration}
-        />
-      )}
+
     </motion.div>
   )
 }
