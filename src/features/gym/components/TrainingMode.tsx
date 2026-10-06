@@ -6,6 +6,7 @@ import { TrainingHeader } from './TrainingHeader'
 import { haptic } from '../domain/training-feedback'
 import { useTrainingClock } from '../hooks/use-training-clock'
 import { useSetDefaults } from '../hooks/use-set-defaults'
+import { setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
 import { ExerciseImage } from './ExerciseImage'
 import { platesPerSide } from '@/lib/exercise-media'
 import { Button } from '@/components/ui/button'
@@ -81,7 +82,8 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
 
   const uncompleteSet = (si: number) => {
     haptic(8)
-    patchSets((sets) => sets.map((s, i) => (i === si ? { ...s, completed: false } : s)))
+    markSetEdited(currentExLog.exerciseId, si)
+    patchSets((sets) => sets.map((s, i) => (i === si ? { ...s, completed: false } : s)), { currentSetIndex: si })
   }
 
   const addSet = () => {
@@ -92,12 +94,16 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   const removeSet = (si: number) => {
     if (currentExLog.sets.length <= 1) return
     haptic(8)
-    patchSets((sets) => sets.filter((_, i) => i !== si))
+    currentExLog.sets.forEach((_, index) => markSetEdited(currentExLog.exerciseId, index))
+    patchSets((sets) => sets.filter((_, i) => i !== si), {
+      currentSetIndex: setIndexAfterRemoval(activeWorkout.currentSetIndex, si, currentExLog.sets.length - 1),
+    })
   }
 
   const goToExercise = (ei: number) => {
     if (ei < 0 || ei >= plan.exercises.length) return
     const log = activeWorkout.exerciseLogs[ei]
+    if (!log) return
     const firstIncomplete = log.sets.findIndex((s) => !s.completed)
     onUpdate({
       ...activeWorkout,
@@ -127,8 +133,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     })
   }
 
-  const totalSets = activeWorkout.exerciseLogs.reduce((s, ex) => s + ex.sets.length, 0)
-  const completedSets = activeWorkout.exerciseLogs.reduce((s, ex) => s + ex.sets.filter((set) => set.completed).length, 0)
+  const { totalSets, completedSets } = summarizeWorkoutSets(activeWorkout.exerciseLogs)
   const isBarbell = /barbell|bench|squat|deadlift|press|row/i.test(currentExercise?.name || '')
 
   return (
