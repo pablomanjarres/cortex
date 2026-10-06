@@ -41,6 +41,6 @@ Cortex uses the existing notification script at `~/Projects/pushover/bin/notify.
 
 The script receives the category, title, message, sound, a stable notification ID, and the configured HTTPS gym link. Cortex waits for a successful exit and `Sent:` acknowledgement. `Muted:` output or an error is a delivery failure, with at most three attempts per rest period. Provider acceptance does not confirm that the phone displayed or sounded the alert.
 
-Skipping rest, finishing, or discarding cancels a pending alert. Delivery receipts prevent repeating a confirmed alert after reload or app restart. Foreground sound remains available in the workout page.
+Skipping rest, finishing, or discarding cancels a pending alert. Persisted delivery receipts prevent repeating a confirmed alert after reload or app restart. Failed receipt writes retry separately without sending the alert again. Foreground sound remains available in the workout page.
 
 The shared store in `src/lib/store.ts` owns saving and refresh. `electron/gym-rest-alerts.ts` owns scheduling, delivery, and receipts. `src/features/gym/hooks/use-workout-wake-lock.ts` owns screen control.
