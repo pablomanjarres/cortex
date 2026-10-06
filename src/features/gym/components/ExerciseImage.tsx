@@ -14,32 +14,29 @@ interface ExerciseImageProps {
 }
 
 export function ExerciseImage(props: ExerciseImageProps) {
-  return <ExerciseImageResource key={props.name.trim().toLowerCase()} {...props} />
+  return <ExerciseImageResource key={JSON.stringify([props.name, props.gifMediaId])} {...props} />
 }
 
-/** Static movement thumbnail, with optional start/end animation for exercise guides. */
+/** Static movement thumbnail, with optional animation for exercise guides. */
 function ExerciseImageResource({ name, gifMediaId, className = '', showBadge = true, animated = false }: ExerciseImageProps) {
   const reduceMotion = useReducedMotion()
   const [media, setMedia] = useState<ExerciseMedia | null | undefined>(undefined) // undefined = loading
   const [frame, setFrame] = useState(0)
   const [failed, setFailed] = useState(false)
-  const [failedGif, setFailedGif] = useState<{ name: string; id?: string } | null>(null)
-  const skipGif = failedGif?.name === name && failedGif.id === gifMediaId
-
-  useEffect(() => setFailedGif(null), [name, gifMediaId])
+  const [failedGif, setFailedGif] = useState(false)
 
   useEffect(() => {
     let alive = true
-    setMedia(undefined)
-    setFailed(false)
-    setFrame(0)
-    findExerciseMedia(name, skipGif ? undefined : gifMediaId).then((m) => {
-      if (alive) setMedia(m)
+    findExerciseMedia(name, failedGif ? undefined : gifMediaId).then((m) => {
+      if (alive) {
+        setFrame(0)
+        setMedia(m)
+      }
     })
     return () => {
       alive = false
     }
-  }, [name, gifMediaId, skipGif])
+  }, [name, gifMediaId, failedGif])
 
   useEffect(() => {
     if (!animated || reduceMotion || !media || media.images.length < 2) return
@@ -66,7 +63,10 @@ function ExerciseImageResource({ name, gifMediaId, className = '', showBadge = t
         alt={name}
         loading="lazy"
         onError={() => {
-          if (media.gifMediaId) setFailedGif({ name, id: gifMediaId })
+          if (media.gifMediaId) {
+            setMedia(undefined)
+            setFailedGif(true)
+          }
           else setFailed(true)
         }}
         className="h-full w-full object-contain"
