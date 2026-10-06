@@ -7,11 +7,11 @@ import { haptic } from '../domain/training-feedback'
 import { useTrainingClock } from '../hooks/use-training-clock'
 import { useSetDefaults } from '../hooks/use-set-defaults'
 import { setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
-import { ExerciseImage } from './ExerciseImage'
+import { ExerciseNavigator } from './ExerciseNavigator'
+import { ExerciseGuide } from './ExerciseGuide'
 import { platesPerSide } from '@/lib/exercise-media'
 import { Button } from '@/components/ui/button'
-import { Chip } from '@/components/ui/chip'
-import { ChevronLeft, ChevronRight, Check, Plus, Minus, X } from 'lucide-react'
+import { Check, Plus, Minus, X } from 'lucide-react'
 
 interface TrainingModeProps {
   activeWorkout: ActiveWorkoutState
@@ -30,8 +30,8 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   const markSetEdited = useSetDefaults(activeWorkout, plan, previousSession, onUpdate)
 
   const idx = activeWorkout.currentExerciseIndex
-  const currentExercise = plan.exercises[idx]
   const currentExLog = activeWorkout.exerciseLogs[idx]
+  const currentExercise = plan.exercises.find((exercise) => exercise.id === currentExLog?.exerciseId)
   const prevExercise = previousSession?.exercises.find((exercise) => exercise.exerciseId === currentExLog?.exerciseId)
 
 
@@ -140,7 +140,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     <motion.div
       initial={reduceMotion ? false : { opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-4 space-y-4 pb-40"
+      className="space-y-4"
     >
       <TrainingHeader
         name={plan.name} elapsed={elapsed} completedSets={completedSets} totalSets={totalSets}
@@ -148,65 +148,18 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
         onDiscard={onCancel}
       />
 
-      {/* ── Exercise pager (tap to jump) ── */}
-      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {plan.exercises.map((ex, ei) => {
-          const log = activeWorkout.exerciseLogs[ei]
-          const done = log.sets.length > 0 && log.sets.every((s) => s.completed)
-          const isCurrent = ei === idx
-          return (
-            <Chip
-              key={ex.id}
-              selectable
-              selected={isCurrent}
-              variant={done ? 'success' : 'neutral'}
-              onClick={() => goToExercise(ei)}
-              className="shrink-0 px-3 py-2"
-            >
-              {done && <Check />}
-              <span className="max-w-[9rem] truncate">{ex.name}</span>
-            </Chip>
-          )
-        })}
-      </div>
+      <ExerciseNavigator plan={plan} logs={activeWorkout.exerciseLogs} index={idx} onSelect={goToExercise} />
 
-      {/* ── Current exercise ── */}
-      {currentExercise && (
-        <div className="surface overflow-hidden rounded-xl">
-          {/* nav + title */}
-          <div className="flex items-center gap-2 border-b border-border/60 p-3">
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-11 w-11 shrink-0"
-              onClick={() => goToExercise(idx - 1)}
-              disabled={idx === 0}
-              aria-label="Previous exercise"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
-            <div className="min-w-0 flex-1 text-center">
-              <h3 className="truncate text-base font-semibold text-foreground">{currentExercise.name}</h3>
-              <p className="font-mono text-2xs tabular-nums text-muted-foreground">
-                Exercise {idx + 1}/{plan.exercises.length} · target {currentExercise.sets}×{currentExercise.repsRange}
-              </p>
+      {currentExercise && currentExLog && (
+        <div className="surface rounded-xl">
+          <div className="p-5 pb-2 sm:p-6 sm:pb-3">
+            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Exercise {idx + 1} of {activeWorkout.exerciseLogs.length}</p>
+            <h3 className="mt-2 text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">{currentExercise.name}</h3>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">{currentExercise.sets} sets · {currentExercise.repsRange} reps</p>
+              <ExerciseGuide exercise={currentExercise} />
             </div>
-            <Button
-              variant="secondary"
-              size="icon"
-              className="h-11 w-11 shrink-0"
-              onClick={() => goToExercise(idx + 1)}
-              disabled={idx === plan.exercises.length - 1}
-              aria-label="Next exercise"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </Button>
           </div>
-
-          {/* demo media */}
-          <ExerciseImage name={currentExercise.name} className="h-44 w-full sm:h-52" />
-
-          {currentExercise.notes && <p className="px-4 pt-3 text-xs text-muted-foreground">{currentExercise.notes}</p>}
 
           {/* set rows */}
           <div className="space-y-2.5 p-3">
