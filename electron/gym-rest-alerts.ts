@@ -1,8 +1,35 @@
 import { createHash } from 'node:crypto'
+import { execFile } from 'node:child_process'
+import { secureWebOrigin } from './web-origin.js'
 
 export const GYM_REST_RECEIPTS_KEY = 'cortex-gym-rest-alerts'
 const MAX_ATTEMPTS = 3
 const MAX_RECEIPTS = 128
+
+type NotifyRunner = (file: string, args: string[]) => Promise<string>
+
+export function gymRestUrl(raw: unknown): string | undefined {
+  const origin = secureWebOrigin(raw)
+  return origin ? `${origin}/#/gym` : undefined
+}
+
+function runNotify(file: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { timeout: 45_000, maxBuffer: 64 * 1024, encoding: 'utf8' }, (error, stdout) => {
+      if (error) reject(new Error(`Notification command failed (${error.killed ? 'timeout' : error.code ?? 'unknown exit'})`))
+      else resolve(stdout)
+    })
+  })
+}
+
+export async function sendGymRestAlert(script: string, id: string, url?: string, run: NotifyRunner = runNotify): Promise<'sent' | 'muted'> {
+  const args = ['-c', 'gym-rest', '-t', 'Rest finished', '-m', 'Time for your next set.', '-s', 'cosmic', '--id', id]
+  if (url) args.push('--url', url, '--url-title', 'Open workout')
+  const output = await run(script, args)
+  if (/^Muted:/m.test(output)) return 'muted'
+  if (/^Sent:/m.test(output)) return 'sent'
+  throw new Error('Notification command did not acknowledge delivery')
+}
 
 export interface GymRestReceipt {
   attempts: number
