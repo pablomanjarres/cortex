@@ -21,6 +21,7 @@ import { readJournalDay, readJournalToday, writeJournalLine, searchVault, readVo
 import { emptyWorkHoursState, type WorkHoursCommand, type WorkHoursState } from './work-hours-model.js'
 import { WorkHoursService } from './work-hours-service.js'
 import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
+import { GymRestAlerts, GYM_REST_RECEIPTS_KEY, gymRestUrl, sendGymRestAlert } from './gym-rest-alerts.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -33,6 +34,7 @@ function localDate(d: Date = new Date()): string {
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let webServer: http.Server | null = null
+let gymRestAlerts: GymRestAlerts | null = null
 let currentStats = { tasks: '0/0', habits: '0/0', score: '—' }
 
 // Web server port — overridable via CORTEX_PORT (int, default 3456).
@@ -1648,7 +1650,9 @@ async function writeDataKey(
   opts: { baseRev?: string | number | null; source: DataChangeSource },
 ): Promise<WriteOutcome> {
   if (typeof key !== 'string' || !KEY_RE.test(key)) return { ok: false, error: 'invalid key' }
-  if (key === 'cortex-project-time' && opts.source !== 'main') return { ok: false, error: 'managed key' }
+  if ((key === 'cortex-project-time' || key === GYM_REST_RECEIPTS_KEY) && opts.source !== 'main') {
+    return { ok: false, error: 'managed key' }
+  }
 
   let serialized: string
   try {
@@ -1739,6 +1743,7 @@ async function writeDataKey(
         try { await refreshTrayHabits() } catch (e) { console.error('[Cortex] tray habit refresh failed:', e) }
       }
       broadcastDataChanged(key, opts.source, rev)
+      if (key === 'cortex-gym-active') gymRestAlerts?.update(JSON.parse(committed))
       // A stale writer may have sent held-habit edits. Tell it what actually
       // landed so its optimistic cache does not keep showing rejected edits.
       return { ok: true, rev, ...(committed !== serialized ? { data: JSON.parse(committed) } : {}) }
@@ -2034,6 +2039,29 @@ app.on('ready', async () => {
     dialog.showErrorBox('Project time unavailable', 'Cortex could not read the saved work timer. Check the app log before tracking more time.')
   }
 
+  gymRestAlerts = new GymRestAlerts({
+    now: Date.now,
+    schedule: (fire, delay) => {
+      const timer = setTimeout(() => { void fire() }, delay)
+      return () => clearTimeout(timer)
+    },
+    readActive: () => readDataKeyParsed('cortex-gym-active', null),
+    readReceipts: () => readDataKeyParsed(GYM_REST_RECEIPTS_KEY, {}),
+    writeReceipts: async (receipts) => {
+      const result = await writeDataKey(GYM_REST_RECEIPTS_KEY, receipts, { source: 'main' })
+      if (!result.ok) throw new Error('Could not persist gym rest delivery receipt')
+    },
+    send: async (id) => {
+      const settings = await readDataKeyParsed<{ publicUrl?: string }>('cortex-web-settings', {})
+      const url = gymRestUrl(process.env.CORTEX_PUBLIC_URL) ?? gymRestUrl(settings?.publicUrl)
+      return sendGymRestAlert(path.join(os.homedir(), 'Projects', 'pushover', 'bin', 'notify.sh'), id, url)
+    },
+    log: (message) => console.error(`[Cortex] ${message}`),
+  })
+  try { await gymRestAlerts.restore() } catch (error) {
+    console.error('[Cortex] Could not restore gym rest alerts:', error)
+  }
+
   createWindow()
   createTray()
   startWebServer() // Auto-start web server for iPhone/browser access
@@ -2090,6 +2118,8 @@ app.on('before-quit', (event) => {
   persistSystemHistory()
   if (autoExportInterval) clearInterval(autoExportInterval)
   if (stopDeadlineAlerts) { stopDeadlineAlerts(); stopDeadlineAlerts = null }
+  gymRestAlerts?.stop()
+  gymRestAlerts = null
   // One final export on quit — autoExport is async now, so hold the quit
   // until it lands, then resume (guarded so the second pass falls through).
   if (!quitExportDone) {
