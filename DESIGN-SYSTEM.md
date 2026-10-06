@@ -127,6 +127,20 @@ Neutral chips are the default for categories. `accent` means selected/active.
 
 ## Shared Panels
 
+### Gym
+
+Gym uses the shared graphite, teal, typography, and controls. Its layout follows
+the training workflow: a compact day selector, one photographic workout hero,
+then the actual exercise plan with movement thumbnails. Avoid large empty tinted
+dashboard panels. On desktop, the hero and exercise plan sit side by side; on a
+phone, the Start workout action stays in the first screen and exercises follow.
+
+Active training pairs the current movement with one clear set entry. Exercise
+media has more space on desktop and becomes a compact thumbnail on phones so
+weight, reps, and Log set remain close together. Rest feedback lives with those
+controls. Timers and counts use tabular numerals; details and editing open on
+demand. Use the line tab variant for the Gym section navigation.
+
 ### WidgetCard
 
 `WidgetCard` is the standard dashboard card. It preserves the existing props:
