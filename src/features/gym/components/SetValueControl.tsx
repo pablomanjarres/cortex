@@ -29,7 +29,7 @@ export function SetValueControl({ value, unit, onDec, onInc, onChange }: SetValu
             onChange(parsed)
           }}
           onFocus={(event) => event.target.select()} onBlur={() => setEditing(null)}
-          className="h-20 min-w-0 border-transparent bg-transparent px-1 text-center font-mono text-4xl font-medium tabular-nums shadow-none sm:text-5xl"
+          className="h-20 min-w-0 border-transparent bg-transparent px-1 text-center font-mono text-3xl font-medium tabular-nums shadow-none min-[375px]:text-4xl sm:text-5xl"
         />
         <div className="grid grid-cols-2 gap-2">
           <Button variant="ghost" size="icon-lg" className="w-full bg-card/50 text-foreground" onClick={() => { setEditing(null); onDec() }} aria-label={`Decrease ${unit}`}><Minus /></Button>

@@ -13,9 +13,9 @@ interface SetHistoryProps {
 export function SetHistory({ sets, currentIndex, onEdit, onRemove, onAdd }: SetHistoryProps) {
   const completed = sets.filter((set) => set.completed).length
   return (
-    <details className="mt-4 rounded-lg border border-border">
-      <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
-        <span>All sets</span><span className="text-muted-foreground">{completed}/{sets.length} logged · View</span>
+    <details className="mt-2 border-b border-border">
+      <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-3 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+        <span>All sets</span><span className="text-muted-foreground"><span className="tabular-nums">{completed}/{sets.length}</span> logged · View</span>
       </summary>
       <ol className="divide-y divide-border border-t border-border">
         {sets.map((set, index) => (
