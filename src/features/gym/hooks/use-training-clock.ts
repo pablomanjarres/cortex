@@ -11,12 +11,6 @@ export function useTrainingClock(workout: ActiveWorkoutState, onUpdate: (state: 
   })
 
   useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
-
-  useEffect(() => {
     if (!workout.isResting || workout.restTimerEnd === null) return
     const end = workout.restTimerEnd
     let finished = false

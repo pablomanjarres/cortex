@@ -38,8 +38,4 @@ export const notifyRestDone = () => {
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification('Rest Over', { body: 'Time for your next set!', silent: true })
   }
-  if (window.electronAPI?.notify) {
-    window.electronAPI.notify.pushover('local-done', 'Rest timer done — next set!')
-  }
 }
-
