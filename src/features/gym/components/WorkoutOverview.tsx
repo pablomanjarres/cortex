@@ -21,8 +21,8 @@ export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView,
   const scheduledToday = isWorkoutScheduledToday(selectedDay)
 
   return (
-    <div className="space-y-5">
-      <section className="rounded-[1.75rem] border border-accent/20 bg-focus-surface p-5 text-foreground shadow-card sm:p-7">
+    <div className="space-y-5 xl:grid xl:grid-cols-5 xl:gap-5 xl:space-y-0">
+      <section className="min-w-0 rounded-[1.75rem] border border-accent/20 bg-focus-surface p-5 text-foreground shadow-card sm:p-7 xl:col-span-3">
         <div className="flex items-center gap-2 text-sm font-semibold text-accent">
           {isSwim ? <Waves className="size-4" /> : <Dumbbell className="size-4" />}
           {swimElapsed !== null ? 'Swim in progress' : scheduledToday ? 'Today’s workout' : 'Your workout'}
@@ -59,7 +59,7 @@ export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView,
         {session && <div className="mt-5"><WorkoutSessionSummary session={session} /></div>}
       </section>
 
-      <section aria-label="Workout plans" className="rounded-2xl border border-border bg-card p-4 sm:p-5">
+      <section aria-label="Workout plans" className="min-w-0 rounded-2xl border border-border bg-card p-4 sm:p-5 xl:col-span-2">
         <h3 className="mb-3 text-base font-semibold">Choose a workout</h3>
         <div className="space-y-1">
           {plans.map((day) => (
