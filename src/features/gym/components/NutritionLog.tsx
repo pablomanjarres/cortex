@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { SectionDisclosure } from '@/components/shared/SectionDisclosure'
 import type { DailyNutrition, FoodItem, BodyStats, NutritionTargets, PantryItem } from '@/types/gym'
 import { COMMON_FOODS, EMPTY_DAILY_NUTRITION } from '@/types/gym'
 import { localDate } from '@/lib/date-utils'
@@ -482,13 +483,13 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
         )}
       </div>
 
-      {/* Pantry — foods on hand (populated from grocery bills via Claude) */}
-      <WidgetCard title="Pantry" description="Foods on hand — add straight to today's snack." delay={0.05}>
+      <SectionDisclosure title="Pantry">
+      <WidgetCard title="Foods on hand" description="Add a serving to your snack." compact className="border-0 bg-transparent shadow-none">
         <div className="space-y-2">
           {pantry.length === 0 ? (
             <EmptyState
               message="Pantry's empty."
-              hint="Add a grocery bill via Claude and items land here."
+              hint="Add an item below or save a grocery receipt in Market."
               className="py-4"
             />
           ) : (
@@ -592,6 +593,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
           </div>
         </div>
       </WidgetCard>
+      </SectionDisclosure>
 
       {/* Weight logging */}
       <div className="surface rounded-xl p-4">

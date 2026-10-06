@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
+import { SectionDisclosure } from '@/components/shared/SectionDisclosure'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useStore, readStore } from '@/lib/store'
 import { localDate, getWeekDates } from '@/lib/date-utils'
@@ -151,15 +152,6 @@ function GymPageDay({ today }: { today: string }) {
         </TabsList>
 
         <TabsContent value="training">
-          <div className="[--card:var(--progress-surface)]">
-            <WeeklyStats
-              plans={plans}
-              weekSessions={weekSessions}
-              weekDates={weekDates}
-              bodyStats={bodyStats}
-            />
-          </div>
-
           {activeWorkout ? (
             <TrainingMode
               activeWorkout={activeWorkout}
@@ -193,10 +185,12 @@ function GymPageDay({ today }: { today: string }) {
             targets={targets}
             onUpdateTargets={(t) => setTargets(() => t)}
           />
-          <MealPlan
+          <SectionDisclosure title="Meal plan">
+            <MealPlan
             nutrition={nutrition}
             onUpdate={(n) => setNutrition(() => n)}
-          />
+            />
+          </SectionDisclosure>
         </TabsContent>
 
         <TabsContent value="market">
@@ -208,6 +202,9 @@ function GymPageDay({ today }: { today: string }) {
         </TabsContent>
 
         <TabsContent value="analytics">
+          <div className="mb-5 [--card:var(--progress-surface)]">
+            <WeeklyStats plans={plans} weekSessions={weekSessions} weekDates={weekDates} bodyStats={bodyStats} />
+          </div>
           <Analytics plans={plans} bodyStats={bodyStats} />
         </TabsContent>
       </Tabs>
