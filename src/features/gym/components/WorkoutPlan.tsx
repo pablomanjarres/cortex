@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { Modal } from '@/components/shared/Modal'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
@@ -7,7 +7,7 @@ import { WorkoutExerciseList } from './WorkoutExerciseList'
 import { WorkoutOverview } from './WorkoutOverview'
 import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
-
+import { useSwimTimer } from '../domain/use-swim-timer'
 
 interface WorkoutPlanProps {
   plans: WorkoutDay[]
@@ -25,35 +25,21 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
     const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
     return (plans.find((day) => day.dayOfWeek.trim().toLowerCase() === weekday) ?? plans[0])?.id
   })
-  const selectedDay = plans.find((day) => day.id === selectedId) ?? plans[0]
+  const swimTimer = useSwimTimer()
+  const selectedDay = plans.find((day) => day.id === swimTimer.swim?.workoutDayId) ?? plans.find((day) => day.id === selectedId) ?? plans[0]
   const latestSession = todaySessions.at(-1)
-  const [swimStartedAt, setSwimStartedAt] = useState<number | null>(null)
-  const [swimElapsed, setSwimElapsed] = useState(0)
-  const swimTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [preview, setPreview] = useState<Exercise | null>(null)
+  const [pendingStart, setPendingStart] = useState<WorkoutDay | null>(null)
 
-  useEffect(() => {
-    if (swimStartedAt) {
-      swimTimerRef.current = setInterval(() => {
-        setSwimElapsed(Math.floor((Date.now() - swimStartedAt) / 1000))
-      }, 1000)
-    }
-    return () => {
-      if (swimTimerRef.current) clearInterval(swimTimerRef.current)
-    }
-  }, [swimStartedAt])
-
-  const startSwimTimer = () => {
-    setSwimStartedAt(Date.now())
-    setSwimElapsed(0)
+  const beginWorkout = (day: WorkoutDay) => {
+    if (day.name.trim().toUpperCase() === 'SWIM') swimTimer.start(day.id)
+    else onStartWorkout(day.id)
+    setPendingStart(null)
   }
 
-  const stopSwimTimer = (dayId: string) => {
-    const durationMinutes = Math.max(1, Math.round(swimElapsed / 60))
-    onLogSwim(dayId, durationMinutes)
-    setSwimStartedAt(null)
-    setSwimElapsed(0)
-    if (swimTimerRef.current) clearInterval(swimTimerRef.current)
+  const stopSwimTimer = () => {
+    const result = swimTimer.stop()
+    if (result) onLogSwim(result.workoutDayId, result.duration)
   }
 
   const updateExercise = (dayId: string, exerciseId: string, updates: Partial<Exercise>) => {
@@ -98,16 +84,12 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
       plans={plans}
       selectedDay={selectedDay}
       onSelect={setSelectedId}
-      onStart={() => {
-        if (latestSession && !confirm(`Starting ${selectedDay.name} will replace today’s saved workout when finished. Continue?`)) return
-        if (selectedDay.name.trim().toUpperCase() === 'SWIM') startSwimTimer()
-        else onStartWorkout(selectedDay.id)
-      }}
+      onStart={() => latestSession ? setPendingStart(selectedDay) : beginWorkout(selectedDay)}
       onView={() => setDetailsOpen(true)}
       onEdit={() => setEditingDay(selectedDay.id)}
       session={latestSession}
-      swimElapsed={swimStartedAt === null ? null : swimElapsed}
-      onStopSwim={() => stopSwimTimer(selectedDay.id)}
+      swimElapsed={swimTimer.elapsed}
+      onStopSwim={stopSwimTimer}
     />
 
     <Modal
@@ -143,6 +125,24 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
         onAddExercise={() => addExercise(selectedDay.id)}
         onRemoveExercise={(exerciseId) => removeExercise(selectedDay.id, exerciseId)}
       />
+    </Modal>
+
+    <Modal
+      open={pendingStart !== null}
+      onOpenChange={(open) => !open && setPendingStart(null)}
+      title={latestSession?.workoutDayId === pendingStart?.id ? 'Redo workout?' : 'Replace today’s workout?'}
+      description={`Today’s saved ${latestSession?.workoutName ?? 'workout'} will be replaced when you finish ${pendingStart?.name ?? 'this workout'}.`}
+      className="[&_[data-slot=dialog-close]]:size-11"
+      footer={(
+        <>
+          <Button variant="secondary" size="lg" className="min-h-12" onClick={() => setPendingStart(null)}>Keep saved workout</Button>
+          <Button size="lg" className="min-h-12" onClick={() => pendingStart && beginWorkout(pendingStart)}>
+            {pendingStart?.name.trim().toUpperCase() === 'SWIM' ? 'Start swim' : 'Start workout'}
+          </Button>
+        </>
+      )}
+    >
+      <p className="text-sm text-muted-foreground">Your saved workout stays until the new one is logged.</p>
     </Modal>
 
     <Modal
