@@ -3,13 +3,11 @@ import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Modal } from '@/components/shared/Modal'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { Input } from '@/components/ui/input'
+import { WorkoutPlanEditor } from './WorkoutPlanEditor'
 import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
 import {
   Play,
-  Plus,
-  Trash2,
   Pencil,
   Check,
   CheckCircle2,
@@ -154,103 +152,14 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
           ) : (
             /* Weight training card */
             <div className="space-y-3">
-              {/* Day metadata editing */}
-              {editingDay === day.id && (
-                <div className="space-y-1.5 border-b border-border/60 pb-2">
-                  <div className="flex items-center gap-2">
-                    <label className="w-12 shrink-0 text-2xs text-muted-foreground">Name</label>
-                    <Input
-                      value={day.name}
-                      onChange={(e) => updateDay(day.id, { name: e.target.value })}
-                      className="h-7 flex-1 text-xs font-medium"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className="w-12 shrink-0 text-2xs text-muted-foreground">Day</label>
-                    <Input
-                      value={day.dayOfWeek}
-                      onChange={(e) => updateDay(day.id, { dayOfWeek: e.target.value })}
-                      className="h-7 w-28 text-xs"
-                    />
-                    <label className="w-10 shrink-0 text-2xs text-muted-foreground">Time</label>
-                    <Input
-                      value={day.time}
-                      onChange={(e) => updateDay(day.id, { time: e.target.value })}
-                      className="h-7 flex-1 text-xs"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Exercises */}
               {editingDay === day.id ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">
-                        <th className="pb-1.5 pr-2 text-left font-medium">Exercise</th>
-                        <th className="w-16 pb-1.5 pr-2 text-left font-medium">Sets</th>
-                        <th className="w-20 pb-1.5 pr-2 text-left font-medium">Weight</th>
-                        <th className="w-8 pb-1.5"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {day.exercises.map((ex) => (
-                        <tr key={ex.id} className="group border-t border-border/60">
-                          <td className="py-1.5 pr-2">
-                            <div>
-                              <Input
-                                value={ex.name}
-                                onChange={(e) => updateExercise(day.id, ex.id, { name: e.target.value })}
-                                className="h-7 text-xs"
-                              />
-                              <Input
-                                value={ex.notes}
-                                onChange={(e) => updateExercise(day.id, ex.id, { notes: e.target.value })}
-                                placeholder="Notes..."
-                                className="mt-1 h-6 text-2xs text-muted-foreground"
-                              />
-                            </div>
-                          </td>
-                          <td className="py-1.5 pr-2 text-muted-foreground">
-                            <div className="flex items-center gap-1">
-                              <Input
-                                type="number"
-                                value={ex.sets}
-                                onChange={(e) => updateExercise(day.id, ex.id, { sets: Number(e.target.value) })}
-                                className="h-7 w-12 text-xs tabular-nums"
-                              />
-                              <span className="text-foreground-faint">x</span>
-                              <Input
-                                value={ex.repsRange}
-                                onChange={(e) => updateExercise(day.id, ex.id, { repsRange: e.target.value })}
-                                className="h-7 w-16 text-xs"
-                              />
-                            </div>
-                          </td>
-                          <td className="py-1.5 pr-2">
-                            <Input
-                              value={ex.startWeight}
-                              onChange={(e) => updateExercise(day.id, ex.id, { startWeight: e.target.value })}
-                              className="h-7 text-xs"
-                            />
-                          </td>
-                          <td className="py-1.5">
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => removeExercise(day.id, ex.id)}
-                              aria-label={`Remove ${ex.name}`}
-                              className="text-muted-foreground hover:text-destructive"
-                            >
-                              <Trash2 />
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <WorkoutPlanEditor
+                  day={day}
+                  onUpdateDay={(updates) => updateDay(day.id, updates)}
+                  onUpdateExercise={(exerciseId, updates) => updateExercise(day.id, exerciseId, updates)}
+                  onAddExercise={() => addExercise(day.id)}
+                  onRemoveExercise={(exerciseId) => removeExercise(day.id, exerciseId)}
+                />
               ) : (
                 <div className="-mx-1 space-y-1">
                   {day.exercises.map((ex) => {
@@ -293,16 +202,6 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, o
                       </div>
                     )
                   })}
-                </div>
-              )}
-
-              {/* Edit mode actions */}
-              {editingDay === day.id && (
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="xs" onClick={() => addExercise(day.id)}>
-                    <Plus />
-                    Add exercise
-                  </Button>
                 </div>
               )}
 
