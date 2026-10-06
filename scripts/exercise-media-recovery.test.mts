@@ -15,7 +15,12 @@ const entries = [
 
 function harness(fetch: typeof globalThis.fetch) {
   const exports: { findExerciseMedia?: (name: string) => Promise<ExerciseMedia | null> } = {}
-  vm.runInNewContext(javascript, { exports, fetch, AbortController, setTimeout, clearTimeout })
+  vm.runInNewContext(javascript, { exports, fetch, AbortController, setTimeout, clearTimeout,
+    require: (id: string) => {
+      assert.equal(id, './media')
+      return { loadFile: () => { throw new Error('Stock lookups must not read saved media') } }
+    },
+  })
   assert.ok(exports.findExerciseMedia)
   return exports.findExerciseMedia
 }
