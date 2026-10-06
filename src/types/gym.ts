@@ -22,6 +22,7 @@ export interface Exercise {
   repsRange: string        // "8-10", "15", "10/leg"
   startWeight: string      // "12-14 kg each"
   notes: string
+  gifMediaId?: string      // saved GIF in the shared media store
 }
 
 export interface WorkoutDay {

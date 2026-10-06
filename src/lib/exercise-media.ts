@@ -3,6 +3,8 @@
 // movement) which we cycle for a pseudo-GIF. Matching is fuzzy on the exercise name so the
 // user's free-text plan names ("DB Lateral Raises", "Barbell Row (Pendlay)") resolve.
 
+import { loadFile } from './media'
+
 const CDN = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main'
 
 export interface ExerciseMedia {
@@ -11,6 +13,7 @@ export interface ExerciseMedia {
   primaryMuscles: string[]
   equipment?: string
   level?: string
+  gifMediaId?: string
 }
 
 interface DbEntry {
@@ -100,8 +103,14 @@ function bestMatch(entries: DbEntry[], name: string): { entry: DbEntry; score: n
   return best && bestScore >= 0.3 ? { entry: best, score: bestScore } : null
 }
 
-/** Best fuzzy match for a free-text exercise name → demo media, or null if none is confident. */
-export async function findExerciseMedia(name: string): Promise<ExerciseMedia | null> {
+/** Prefer a saved GIF; otherwise use a confident stock demonstration match. */
+export async function findExerciseMedia(name: string, gifMediaId?: string): Promise<ExerciseMedia | null> {
+  if (gifMediaId) {
+    try {
+      const gif = await loadFile(gifMediaId, 'image/gif')
+      if (gif) return { name, images: [gif], primaryMuscles: [], gifMediaId }
+    } catch { /* fall back to the stock demonstration */ }
+  }
   const key = name.trim().toLowerCase()
   if (memo.has(key)) return memo.get(key)!
   const entries = await loadDb()
