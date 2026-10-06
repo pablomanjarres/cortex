@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { RouteErrorBoundary } from '@/components/shared/RouteErrorBoundary'
 import { StoreToast } from '@/components/shared/StoreToast'
+import { RouteMemory, RouteResume } from '@/components/shared/RouteResume'
 
 // Route-level code splitting: each page loads on first visit.
 const DailyPage = lazy(() => import('@/features/daily/DailyPage').then((m) => ({ default: m.DailyPage })))
@@ -42,9 +43,10 @@ function page(name: string, node: ReactNode) {
 export function App() {
   return (
     <>
+      <RouteMemory />
       <Routes>
         <Route element={<DashboardLayout />}>
-          <Route index element={<Navigate to="/daily" replace />} />
+          <Route index element={<RouteResume />} />
           <Route path="daily" element={page('Daily', <DailyPage />)} />
           <Route path="calendar" element={page('Calendar', <CalendarPage />)} />
           <Route path="habits" element={page('Habits', <HabitsSection />)} />
@@ -68,6 +70,7 @@ export function App() {
           <Route path="courses" element={<Navigate to="/library" replace />} />
           <Route path="captures" element={<Navigate to="/library" replace />} />
           <Route path="thoughts" element={<Navigate to="/library" replace />} />
+          <Route path="*" element={<Navigate to="/daily" replace />} />
         </Route>
       </Routes>
       <StoreToast />
