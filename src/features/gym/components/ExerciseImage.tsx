@@ -12,27 +12,28 @@ interface ExerciseImageProps {
 }
 
 /** Plays a saved GIF or cycles stock frames; falls back to a placeholder on miss/error. */
-export function ExerciseImage({ name, gifMediaId, className = '', showBadge = true }: ExerciseImageProps) {
+export function ExerciseImage(props: ExerciseImageProps) {
+  return <ExerciseImageContent key={JSON.stringify([props.name, props.gifMediaId])} {...props} />
+}
+
+function ExerciseImageContent({ name, gifMediaId, className = '', showBadge = true }: ExerciseImageProps) {
   const [media, setMedia] = useState<ExerciseMedia | null | undefined>(undefined) // undefined = loading
   const [frame, setFrame] = useState(0)
   const [failed, setFailed] = useState(false)
-  const [failedGif, setFailedGif] = useState<{ name: string; id?: string } | null>(null)
-  const skipGif = failedGif?.name === name && failedGif.id === gifMediaId
-
-  useEffect(() => setFailedGif(null), [name, gifMediaId])
+  const [failedGif, setFailedGif] = useState(false)
 
   useEffect(() => {
     let alive = true
-    setMedia(undefined)
-    setFailed(false)
-    setFrame(0)
-    findExerciseMedia(name, skipGif ? undefined : gifMediaId).then((m) => {
-      if (alive) setMedia(m)
+    findExerciseMedia(name, failedGif ? undefined : gifMediaId).then((m) => {
+      if (alive) {
+        setFrame(0)
+        setMedia(m)
+      }
     })
     return () => {
       alive = false
     }
-  }, [name, gifMediaId, skipGif])
+  }, [name, gifMediaId, failedGif])
 
   useEffect(() => {
     if (!media || media.images.length < 2) return
@@ -59,7 +60,10 @@ export function ExerciseImage({ name, gifMediaId, className = '', showBadge = tr
         alt={name}
         loading="lazy"
         onError={() => {
-          if (media.gifMediaId) setFailedGif({ name, id: gifMediaId })
+          if (media.gifMediaId) {
+            setMedia(undefined)
+            setFailedGif(true)
+          }
           else setFailed(true)
         }}
         className="h-full w-full object-contain"
