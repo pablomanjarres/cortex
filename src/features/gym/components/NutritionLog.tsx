@@ -63,11 +63,15 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
   // For non-today dates, load/save via readStore/writeStore
   const [otherDayData, setOtherDayData] = useState<DailyNutrition | null>(null)
   useEffect(() => {
-    if (isToday) { setOtherDayData(null); return }
-    readStore<DailyNutrition>(`cortex-nutrition-${viewDate}`, { ...EMPTY_DAILY_NUTRITION, date: viewDate }).then(setOtherDayData)
+    if (isToday) return
+    let active = true
+    readStore<DailyNutrition>(`cortex-nutrition-${viewDate}`, { ...EMPTY_DAILY_NUTRITION, date: viewDate }).then(value => {
+      if (active) setOtherDayData(value)
+    })
+    return () => { active = false }
   }, [viewDate, isToday])
 
-  const nutrition = isToday ? todayNutrition : (otherDayData || { ...EMPTY_DAILY_NUTRITION, date: viewDate })
+  const nutrition = isToday ? todayNutrition : (otherDayData?.date === viewDate ? otherDayData : { ...EMPTY_DAILY_NUTRITION, date: viewDate })
   const onUpdate = useCallback((n: DailyNutrition) => {
     if (isToday) { onUpdateToday(n); return }
     setOtherDayData(n)
