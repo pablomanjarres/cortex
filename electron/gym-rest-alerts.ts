@@ -69,6 +69,7 @@ export class GymRestAlerts {
   private cancel: (() => void) | null = null
   private readonly attempts = new Map<string, number>()
   private readonly delivered = new Set<string>()
+  private deliveryQueue: Promise<void> = Promise.resolve()
   private stopped = false
 
   constructor(private readonly deps: GymRestAlertDeps) {}
@@ -88,7 +89,11 @@ export class GymRestAlerts {
   }
 
   private schedule(rest: NonNullable<ReturnType<typeof restDeadline>>, delay: number): void {
-    this.cancel = this.deps.schedule(() => this.deliver(rest), Math.min(delay, 2_147_483_647))
+    this.cancel = this.deps.schedule(() => {
+      const delivery = this.deliveryQueue.then(() => this.deliver(rest))
+      this.deliveryQueue = delivery.catch(() => undefined)
+      return delivery
+    }, Math.min(delay, 2_147_483_647))
   }
 
   private isCurrent(id: string): boolean {
@@ -96,8 +101,8 @@ export class GymRestAlerts {
   }
 
   private async deliver(rest: NonNullable<ReturnType<typeof restDeadline>>): Promise<void> {
-    this.cancel = null
     if (!this.isCurrent(rest.id) || this.delivered.has(rest.id)) return
+    this.cancel = null
     const localAttempt = (this.attempts.get(rest.id) ?? 0) + 1
     this.attempts.set(rest.id, localAttempt)
     if (this.attempts.size > MAX_RECEIPTS) this.attempts.delete(this.attempts.keys().next().value!)
