@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 
 interface ExerciseImageProps {
   name: string
+  gifMediaId?: string
   className?: string
   showBadge?: boolean // muscle/equipment overlay — off for small thumbnails
   animated?: boolean
@@ -17,21 +18,28 @@ export function ExerciseImage(props: ExerciseImageProps) {
 }
 
 /** Static movement thumbnail, with optional start/end animation for exercise guides. */
-function ExerciseImageResource({ name, className = '', showBadge = true, animated = false }: ExerciseImageProps) {
+function ExerciseImageResource({ name, gifMediaId, className = '', showBadge = true, animated = false }: ExerciseImageProps) {
   const reduceMotion = useReducedMotion()
   const [media, setMedia] = useState<ExerciseMedia | null | undefined>(undefined) // undefined = loading
   const [frame, setFrame] = useState(0)
   const [failed, setFailed] = useState(false)
+  const [failedGif, setFailedGif] = useState<{ name: string; id?: string } | null>(null)
+  const skipGif = failedGif?.name === name && failedGif.id === gifMediaId
+
+  useEffect(() => setFailedGif(null), [name, gifMediaId])
 
   useEffect(() => {
     let alive = true
-    findExerciseMedia(name).then((m) => {
+    setMedia(undefined)
+    setFailed(false)
+    setFrame(0)
+    findExerciseMedia(name, skipGif ? undefined : gifMediaId).then((m) => {
       if (alive) setMedia(m)
     })
     return () => {
       alive = false
     }
-  }, [name])
+  }, [name, gifMediaId, skipGif])
 
   useEffect(() => {
     if (!animated || reduceMotion || !media || media.images.length < 2) return
@@ -57,7 +65,10 @@ function ExerciseImageResource({ name, className = '', showBadge = true, animate
         src={media.images[frame]}
         alt={name}
         loading="lazy"
-        onError={() => setFailed(true)}
+        onError={() => {
+          if (media.gifMediaId) setFailedGif({ name, id: gifMediaId })
+          else setFailed(true)
+        }}
         className="h-full w-full object-contain"
       />
       {showBadge && media.primaryMuscles?.[0] && (
