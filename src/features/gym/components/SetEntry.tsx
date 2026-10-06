@@ -15,7 +15,7 @@ interface SetEntryProps {
 
 export function SetEntry({ index, count, set, previous, onChange, onAdjust, onComplete }: SetEntryProps) {
   return (
-    <section aria-label={`Current set ${index + 1}`} className="rounded-xl border border-accent/20 bg-accent/[0.04] p-3 sm:p-5">
+    <section aria-label={`Current set ${index + 1}`} className="rounded-xl border border-accent/20 bg-focus-surface p-3 sm:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h4 className="text-lg font-semibold">Set {index + 1} <span className="font-normal text-muted-foreground">of {count}</span></h4>
         {previous?.completed && <p className="text-sm text-muted-foreground">Last time: {previous.weight} kg × {previous.reps}</p>}
