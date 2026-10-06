@@ -35,7 +35,4 @@ const playBeep = () => {
 export const notifyRestDone = () => {
   playBeep()
   haptic([140, 70, 140])
-  if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification('Rest Over', { body: 'Time for your next set!', silent: true })
-  }
 }
