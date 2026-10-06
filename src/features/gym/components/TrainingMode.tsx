@@ -153,7 +153,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
           <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <div className="p-4 pb-0 lg:border-r lg:border-border lg:p-6">
               <div className="flex items-start gap-3 lg:flex-col lg:gap-5">
-                <ExerciseImage name={currentExercise.name} showBadge={false} className="h-20 w-20 shrink-0 rounded-md lg:order-last lg:h-72 lg:w-full lg:rounded-xl" />
+                <ExerciseImage name={currentExercise.name} gifMediaId={currentExercise.gifMediaId} showBadge={false} className="h-20 w-20 shrink-0 rounded-md lg:order-last lg:h-72 lg:w-full lg:rounded-xl" />
                 <div className="min-w-0">
                   <h3 className="text-lg font-semibold leading-tight tracking-tight sm:text-xl lg:text-3xl">{currentExercise.name}</h3>
                   <p className="mt-2 text-sm text-muted-foreground">{currentExercise.sets} sets × {currentExercise.repsRange} reps</p>

@@ -1,12 +1,15 @@
 import { defineConfig } from '@playwright/test'
 
+const testPort = process.env.CORTEX_E2E_PORT || '3479'
+const testOrigin = `http://127.0.0.1:${testPort}`
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   workers: 2,
   reporter: 'list',
   use: {
-    baseURL: 'http://127.0.0.1:3479',
+    baseURL: testOrigin,
     browserName: 'chromium',
     channel: 'chrome',
     headless: true,
@@ -15,8 +18,8 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 3479 --strictPort',
-    url: 'http://127.0.0.1:3479',
+    command: `npm run dev -- --host 127.0.0.1 --port ${testPort} --strictPort`,
+    url: testOrigin,
     reuseExistingServer: !process.env.CI,
   },
 })
