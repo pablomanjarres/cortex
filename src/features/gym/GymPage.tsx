@@ -22,6 +22,7 @@ import { MarketLog } from './components/MarketLog'
 import { WeeklyStats } from './components/WeeklyStats'
 import { HardBans } from './components/HardBans'
 import { MealPlan } from './components/MealPlan'
+import { resolveActivePlan } from './domain/active-plan'
 
 // Normalize stored session data: migrates old single-session format to array
 function normalizeSessions(data: unknown): WorkoutSession[] {
@@ -49,6 +50,7 @@ function GymPageDay({ today }: { today: string }) {
 
   // Normalize: handles migration from old single-session format
   const todaySessions = useMemo(() => normalizeSessions(todaySessionsRaw), [todaySessionsRaw])
+  const activePlan = useMemo(() => activeWorkout ? resolveActivePlan(activeWorkout, plans) : null, [activeWorkout, plans])
 
   // Load this week's sessions (flat list across all days)
   const [weekSessions, setWeekSessions] = useState<WorkoutSession[]>([])
@@ -155,7 +157,7 @@ function GymPageDay({ today }: { today: string }) {
           {activeWorkout ? (
             <TrainingMode
               activeWorkout={activeWorkout}
-              plan={plans.find(p => p.id === activeWorkout.workoutDayId)!}
+              plan={activePlan!}
               onUpdate={(state) => setActiveWorkout(() => state)}
               onFinish={finishWorkout}
               onCancel={cancelWorkout}
