@@ -27,7 +27,7 @@ The value must be an HTTPS origin. It can include a port, but cannot contain cre
 
 Choose a workout and tap **Start workout**. Enter weight and reps, then tap **Log set**. Plan edits, active sets, rest deadlines, and swimming start times save through the shared data store. Reopening the page restores the data that reached the Mac; timers recalculate from their stored timestamps.
 
-The page refreshes its records when it becomes visible again. If **Save failed** appears, restore the connection and verify the latest set after reopening. Pending edits can be lost if the browser closes before they reach the Mac.
+Reopening fetches the current page before using the saved offline copy, so app updates do not keep an outdated page shell. The page refreshes its records when it becomes visible again. If **Save failed** appears, restore the connection and verify the latest set after reopening. Pending edits can be lost if the browser closes before they reach the Mac.
 
 **Finish workout** saves a full or partial session. **Discard** removes the active workout. The latest logged workout is kept for each day. Starting a replacement requires confirmation and preserves the previous record until the new workout is logged.
 
