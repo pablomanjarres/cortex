@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { localDate } from '@/lib/date-utils'
 import type { WorkoutDay, ActiveWorkoutState, WorkoutSession, ExerciseLog, SetLog } from '@/types/gym'
 import { RestTimer } from './RestTimer'
-import { haptic, notifyRestDone } from '../domain/training-feedback'
+import { haptic } from '../domain/training-feedback'
+import { useTrainingClock } from '../hooks/use-training-clock'
 import { ExerciseImage } from './ExerciseImage'
 import { platesPerSide } from '@/lib/exercise-media'
 import { Button } from '@/components/ui/button'
@@ -23,21 +24,14 @@ const WEIGHT_STEP = 2.5
 
 export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel, previousSession }: TrainingModeProps) {
   const reduceMotion = useReducedMotion()
-  const [restTimeLeft, setRestTimeLeft] = useState(0)
+  const { elapsed, restTimeLeft } = useTrainingClock(activeWorkout, onUpdate)
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
-  const [elapsed, setElapsed] = useState('')
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const timerEndRef = useRef<number | null>(activeWorkout.restTimerEnd)
 
   const idx = activeWorkout.currentExerciseIndex
   const currentExercise = plan.exercises[idx]
   const currentExLog = activeWorkout.exerciseLogs[idx]
   const prevExercise = previousSession?.exercises[idx]
-
-  useEffect(() => {
-    timerEndRef.current = activeWorkout.restTimerEnd
-  }, [activeWorkout.restTimerEnd])
 
   // Seed still-empty (0/0, not completed) sets of the current exercise with last session's
   // values, or the plan's default weight/reps — so logging is confirm-not-type.
@@ -63,49 +57,6 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx])
 
-
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
-
-  // Rest countdown (timestamp-based, survives tab switches)
-  useEffect(() => {
-    if (!activeWorkout.isResting || !timerEndRef.current) return
-    const tick = () => {
-      const remaining = Math.max(0, Math.round((timerEndRef.current! - Date.now()) / 1000))
-      setRestTimeLeft(remaining)
-      if (remaining <= 0) {
-        notifyRestDone()
-        onUpdate({ ...activeWorkout, isResting: false, restTimerEnd: null })
-      }
-    }
-    tick()
-    intervalRef.current = setInterval(tick, 1000)
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') tick()
-    }
-    document.addEventListener('visibilitychange', onVisibility)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-      document.removeEventListener('visibilitychange', onVisibility)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkout.isResting, activeWorkout.restTimerEnd])
-
-  // Elapsed workout clock
-  useEffect(() => {
-    const tick = () => {
-      const diff = Date.now() - new Date(activeWorkout.startedAt).getTime()
-      const m = Math.floor(diff / 60000)
-      const s = Math.floor((diff % 60000) / 1000)
-      setElapsed(`${m}:${String(s).padStart(2, '0')}`)
-    }
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [activeWorkout.startedAt])
 
   // ── Mutations ──────────────────────────────────────────────
   const patchSets = (mut: (sets: SetLog[]) => SetLog[], extra?: Partial<ActiveWorkoutState>) => {
