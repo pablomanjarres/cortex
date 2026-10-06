@@ -29,18 +29,18 @@ export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView,
       <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <div className="min-w-0 space-y-4 lg:sticky lg:top-6">
           <section className="surface overflow-hidden rounded-xl">
-            <div className="relative flex h-56 flex-col justify-end overflow-hidden bg-focus-surface p-5 sm:p-6 lg:h-72">
+            <div className={`relative flex h-56 flex-col justify-end overflow-hidden bg-focus-surface p-5 sm:p-6 lg:h-72 ${isSwim ? '' : 'text-white'}`}>
               {isSwim ? (
                 <Waves aria-hidden="true" className="absolute -right-4 top-4 size-52 text-accent/20" strokeWidth={1} />
               ) : (
                 <>
                   <img src="/images/gym-strength-hero.webp" alt="" className="absolute inset-0 size-full object-cover object-[65%_center]" />
-                  <div className="absolute inset-0 bg-linear-to-r from-card/95 via-card/50 to-card/10" />
-                  <div className="absolute inset-0 bg-linear-to-t from-card/90 via-card/10 to-transparent" />
+                  <div className="absolute inset-0 bg-linear-to-r from-black/60 via-black/15 to-transparent" />
+                  <div className="absolute inset-0 bg-linear-to-t from-black/85 via-black/10 to-transparent" />
                 </>
               )}
               <div className="relative">
-                <p className="mb-3 flex items-center gap-2 text-xs font-semibold text-accent">
+                <p className={`mb-3 flex w-fit items-center gap-2 text-xs font-semibold ${isSwim ? 'text-accent' : 'rounded-full bg-black/45 px-2.5 py-1.5 text-white'}`}>
                   {isSwim ? <Waves className="size-4" /> : <Dumbbell className="size-4" />}
                   {swimElapsed !== null ? 'Swim in progress' : scheduledToday ? 'Today’s workout' : 'Your workout'}
                 </p>
