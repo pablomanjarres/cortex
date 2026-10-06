@@ -21,7 +21,7 @@ export function WorkoutExerciseList({ exercises, onPreview }: {
           aria-label={`Preview ${exercise.name}`}
           className="h-auto min-h-20 w-full justify-start gap-3 rounded-xl px-2 py-3 text-left whitespace-normal"
         >
-          <ExerciseImage name={exercise.name} showBadge={false} className="h-14 w-14 shrink-0 rounded-xl" />
+          <ExerciseImage name={exercise.name} gifMediaId={exercise.gifMediaId} showBadge={false} className="h-14 w-14 shrink-0 rounded-xl" />
           <span className="min-w-0 flex-1">
             <span className="block text-base font-semibold text-foreground">{exercise.name}</span>
             <span className="mt-1 block text-sm font-normal text-muted-foreground">

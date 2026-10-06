@@ -6,28 +6,33 @@ import { cn } from '@/lib/utils'
 
 interface ExerciseImageProps {
   name: string
+  gifMediaId?: string
   className?: string
   showBadge?: boolean // muscle/equipment overlay — off for small thumbnails
 }
 
-/** Cycles the DB's start/end frames for a pseudo-GIF; falls back to a placeholder on miss/error. */
-export function ExerciseImage({ name, className = '', showBadge = true }: ExerciseImageProps) {
+/** Plays a saved GIF or cycles stock frames; falls back to a placeholder on miss/error. */
+export function ExerciseImage({ name, gifMediaId, className = '', showBadge = true }: ExerciseImageProps) {
   const [media, setMedia] = useState<ExerciseMedia | null | undefined>(undefined) // undefined = loading
   const [frame, setFrame] = useState(0)
   const [failed, setFailed] = useState(false)
+  const [failedGif, setFailedGif] = useState<{ name: string; id?: string } | null>(null)
+  const skipGif = failedGif?.name === name && failedGif.id === gifMediaId
+
+  useEffect(() => setFailedGif(null), [name, gifMediaId])
 
   useEffect(() => {
     let alive = true
     setMedia(undefined)
     setFailed(false)
     setFrame(0)
-    findExerciseMedia(name).then((m) => {
+    findExerciseMedia(name, skipGif ? undefined : gifMediaId).then((m) => {
       if (alive) setMedia(m)
     })
     return () => {
       alive = false
     }
-  }, [name])
+  }, [name, gifMediaId, skipGif])
 
   useEffect(() => {
     if (!media || media.images.length < 2) return
@@ -53,7 +58,10 @@ export function ExerciseImage({ name, className = '', showBadge = true }: Exerci
         src={media.images[frame]}
         alt={name}
         loading="lazy"
-        onError={() => setFailed(true)}
+        onError={() => {
+          if (media.gifMediaId) setFailedGif({ name, id: gifMediaId })
+          else setFailed(true)
+        }}
         className="h-full w-full object-contain"
       />
       {showBadge && media.primaryMuscles?.[0] && (
