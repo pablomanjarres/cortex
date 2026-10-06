@@ -1,8 +1,8 @@
-import { useState } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { localDate } from '@/lib/date-utils'
 import type { WorkoutDay, ActiveWorkoutState, WorkoutSession, ExerciseLog, SetLog } from '@/types/gym'
 import { RestTimer } from './RestTimer'
+import { TrainingHeader } from './TrainingHeader'
 import { haptic } from '../domain/training-feedback'
 import { useTrainingClock } from '../hooks/use-training-clock'
 import { useSetDefaults } from '../hooks/use-set-defaults'
@@ -10,7 +10,7 @@ import { ExerciseImage } from './ExerciseImage'
 import { platesPerSide } from '@/lib/exercise-media'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { ChevronLeft, ChevronRight, Check, Plus, Minus, Dumbbell, Flag, X, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Check, Plus, Minus, X } from 'lucide-react'
 
 interface TrainingModeProps {
   activeWorkout: ActiveWorkoutState
@@ -27,8 +27,6 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   const reduceMotion = useReducedMotion()
   const { elapsed, restTimeLeft } = useTrainingClock(activeWorkout, onUpdate)
   const markSetEdited = useSetDefaults(activeWorkout, plan, previousSession, onUpdate)
-  const [confirmFinish, setConfirmFinish] = useState(false)
-  const [confirmCancel, setConfirmCancel] = useState(false)
 
   const idx = activeWorkout.currentExerciseIndex
   const currentExercise = plan.exercises[idx]
@@ -131,7 +129,6 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
 
   const totalSets = activeWorkout.exerciseLogs.reduce((s, ex) => s + ex.sets.length, 0)
   const completedSets = activeWorkout.exerciseLogs.reduce((s, ex) => s + ex.sets.filter((set) => set.completed).length, 0)
-  const overallPct = totalSets ? Math.round((completedSets / totalSets) * 100) : 0
   const isBarbell = /barbell|bench|squat|deadlift|press|row/i.test(currentExercise?.name || '')
 
   return (
@@ -140,69 +137,11 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
       animate={{ opacity: 1, y: 0 }}
       className="mt-4 space-y-4 pb-40"
     >
-      {/* ── Header ── */}
-      <div className="surface rounded-xl p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-md bg-secondary">
-              <Dumbbell className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold leading-tight text-foreground">{plan.name}</h2>
-              <p className="font-mono text-2xs tabular-nums text-muted-foreground">
-                {completedSets}/{totalSets} sets · {elapsed}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {confirmCancel ? (
-              <Button variant="destructive" className="h-10" onClick={onCancel}>
-                <Trash2 />
-                Discard?
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10"
-                onClick={() => {
-                  setConfirmCancel(true)
-                  setConfirmFinish(false)
-                  setTimeout(() => setConfirmCancel(false), 3000)
-                }}
-                aria-label="Cancel workout"
-              >
-                <X className="h-5 w-5" />
-              </Button>
-            )}
-            {confirmFinish ? (
-              <Button
-                className="h-10 px-4"
-                onClick={() => finishSession(activeWorkout.exerciseLogs, completedSets === totalSets)}
-              >
-                <Flag />
-                Finish?
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                className="h-10 px-4"
-                onClick={() => {
-                  setConfirmFinish(true)
-                  setConfirmCancel(false)
-                  setTimeout(() => setConfirmFinish(false), 3000)
-                }}
-              >
-                <Flag />
-                Finish
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted/60">
-          <div className="h-full rounded-full bg-success transition-all duration-500" style={{ width: `${overallPct}%` }} />
-        </div>
-      </div>
+      <TrainingHeader
+        name={plan.name} elapsed={elapsed} completedSets={completedSets} totalSets={totalSets}
+        onFinish={() => finishSession(activeWorkout.exerciseLogs, completedSets === totalSets)}
+        onDiscard={onCancel}
+      />
 
       {/* ── Exercise pager (tap to jump) ── */}
       <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
