@@ -33,7 +33,7 @@ export function ExerciseNavigator({ plan, logs, index, onSelect }: ExerciseNavig
               <Button key={log.exerciseId} variant={index === exerciseIndex ? 'accent-outline' : 'ghost'}
                 className="h-auto min-h-16 w-full justify-start gap-3 whitespace-normal rounded-none px-2 py-3 text-left"
                 onClick={() => { onSelect(exerciseIndex); setOpen(false) }} aria-current={index === exerciseIndex ? 'step' : undefined}>
-                <ExerciseImage name={exercise?.name || log.exerciseName} className="h-12 w-12 shrink-0 rounded-md" showBadge={false} />
+                <ExerciseImage name={exercise?.name || log.exerciseName} gifMediaId={exercise?.gifMediaId} className="h-12 w-12 shrink-0 rounded-md" showBadge={false} />
                 <span className="min-w-0 flex-1">{exercise?.name || log.exerciseName}</span>
                 {completed === log.sets.length && completed > 0 && <Check className="text-success" />}
                 <span className="text-xs text-muted-foreground">{completed}/{log.sets.length}</span>

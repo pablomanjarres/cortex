@@ -9,7 +9,7 @@ const CDN = 'https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main'
 
 export interface ExerciseMedia {
   name: string
-  images: string[] // full CDN urls, in movement order
+  images: string[] // URLs in movement order; saved GIFs use one data URL
   primaryMuscles: string[]
   equipment?: string
   level?: string

@@ -24,6 +24,8 @@ function ExerciseImageResource({ name, gifMediaId, className = '', showBadge = t
   const [frame, setFrame] = useState(0)
   const [failed, setFailed] = useState(false)
   const [failedGif, setFailedGif] = useState(false)
+  const [staticGif, setStaticGif] = useState<string | null>(null)
+  const playAnimation = animated && !reduceMotion
 
   useEffect(() => {
     let alive = true
@@ -39,10 +41,10 @@ function ExerciseImageResource({ name, gifMediaId, className = '', showBadge = t
   }, [name, gifMediaId, failedGif])
 
   useEffect(() => {
-    if (!animated || reduceMotion || !media || media.images.length < 2) return
+    if (!playAnimation || !media || media.images.length < 2) return
     const id = setInterval(() => setFrame((f) => (f + 1) % media.images.length), 1200)
     return () => clearInterval(id)
-  }, [media, animated, reduceMotion])
+  }, [media, playAnimation])
 
   if (media === undefined) {
     return <Skeleton className={cn('rounded-xl', className)} />
@@ -56,19 +58,36 @@ function ExerciseImageResource({ name, gifMediaId, className = '', showBadge = t
     )
   }
 
+  const failMedia = () => {
+    if (media.gifMediaId) {
+      setMedia(undefined)
+      setFailedGif(true)
+    } else setFailed(true)
+  }
+  const freezeGif = Boolean(media.gifMediaId) && !playAnimation
+
   return (
     <div className={cn('relative overflow-hidden rounded-xl bg-white', className)}>
       <img
-        src={media.images[frame]}
+        src={freezeGif && staticGif ? staticGif : media.images[playAnimation ? frame : 0]}
         alt={name}
         loading="lazy"
-        onError={() => {
-          if (media.gifMediaId) {
-            setMedia(undefined)
-            setFailedGif(true)
+        onLoad={(event) => {
+          if (!freezeGif || staticGif) return
+          try {
+            const image = event.currentTarget
+            const canvas = document.createElement('canvas')
+            canvas.width = image.naturalWidth
+            canvas.height = image.naturalHeight
+            const context = canvas.getContext('2d')
+            if (!context) throw new Error('Image frame unavailable')
+            context.drawImage(image, 0, 0)
+            setStaticGif(canvas.toDataURL('image/png'))
+          } catch {
+            failMedia()
           }
-          else setFailed(true)
         }}
+        onError={failMedia}
         className="h-full w-full object-contain"
       />
       {showBadge && media.primaryMuscles?.[0] && (
