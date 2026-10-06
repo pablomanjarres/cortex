@@ -169,10 +169,6 @@ function GymPageDay({ today }: { today: string }) {
               onUpdatePlans={(p) => setPlans(() => p)}
               onStartWorkout={startWorkout}
               onLogSwim={logSwim}
-              onResetSession={(dayId: string) => setTodaySessions(prev => {
-                const remaining = normalizeSessions(prev).filter(s => s.workoutDayId !== dayId)
-                return remaining.length > 0 ? remaining : null
-              })}
               todaySessions={todaySessions}
             />
           )}
