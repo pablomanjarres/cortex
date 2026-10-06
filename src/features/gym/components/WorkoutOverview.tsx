@@ -28,7 +28,7 @@ export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView,
       <WorkoutWeekSelector plans={plans} selectedId={selectedDay.id} onSelect={onSelect} disabled={swimElapsed !== null} />
       <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <div className="min-w-0 space-y-4 lg:sticky lg:top-6">
-          <section className="surface overflow-hidden">
+          <section className="surface overflow-hidden rounded-xl">
             <div className="relative flex h-56 flex-col justify-end overflow-hidden bg-focus-surface p-5 sm:p-6 lg:h-72">
               {isSwim ? (
                 <Waves aria-hidden="true" className="absolute -right-4 top-4 size-52 text-accent/20" strokeWidth={1} />
@@ -71,7 +71,7 @@ export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView,
           </section>
           {session && <WorkoutSessionSummary session={session} />}
         </div>
-        <section className="surface min-w-0 p-4 sm:p-5" aria-label={isSwim ? 'Swim session' : 'Exercise plan'}>
+        <section className="surface min-w-0 rounded-xl p-4 sm:p-5" aria-label={isSwim ? 'Swim session' : 'Exercise plan'}>
           <div className="mb-2 flex items-center justify-between gap-2">
             <h3 className="text-base font-semibold">{isSwim ? 'Swim session' : 'Exercise plan'}</h3>
             <Button variant="ghost" size="lg" className="min-h-11 px-2" onClick={onEdit} disabled={swimElapsed !== null}>
