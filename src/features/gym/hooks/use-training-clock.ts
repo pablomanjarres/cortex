@@ -18,7 +18,7 @@ export function useTrainingClock(workout: ActiveWorkoutState, onUpdate: (state: 
       if (finished) return
       const remaining = Math.max(0, Math.ceil((end - Date.now()) / 1000))
       setRestTimeLeft(remaining)
-      if (remaining === 0) {
+      if (remaining === 0 && document.visibilityState === 'visible') {
         finished = true
         expireRest()
       }
