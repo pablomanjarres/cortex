@@ -35,6 +35,7 @@ test('pagehide flushes an edit before the debounce timer can run', async ({ page
   await page.getByRole('textbox', { name: 'Weight (kg)', exact: true }).fill('19.5')
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')))
   await expect.poll(() => (backend.stores['cortex-gym-active'] as typeof savedWorkout).exerciseLogs[0].sets[1].weight).toBe(19.5)
+  await page.clock.resume()
   await page.reload()
   await expect(page.getByRole('textbox', { name: 'Weight (kg)', exact: true })).toHaveValue('19.5')
 })

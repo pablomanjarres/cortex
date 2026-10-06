@@ -11,6 +11,7 @@ const plans = [
 ]
 
 async function setup(page: Parameters<typeof mockStores>[0], extra: Record<string, unknown> = {}) {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.clock.install({ time: new Date('2026-10-06T18:00:00Z') })
   const backend = await mockStores(page, { 'cortex-gym-plans': plans, ...extra })
   await page.goto('/#/gym')
