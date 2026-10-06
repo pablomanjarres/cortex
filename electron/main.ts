@@ -1262,10 +1262,16 @@ function startWebServer() {
 
     // ─── Static file serving ──────────────────────────────────
     let filePath = path.join(distPath, url.pathname === '/' ? '/index.html' : url.pathname)
-    if (!fs.existsSync(filePath)) filePath = path.join(distPath, 'index.html')
+    if (!fs.existsSync(filePath)) {
+      if (path.extname(url.pathname)) { res.writeHead(404); res.end('Not found'); return }
+      filePath = path.join(distPath, 'index.html')
+    }
     const ext = path.extname(filePath)
     try {
-      res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'application/octet-stream' })
+      res.writeHead(200, {
+        'Content-Type': mimeTypes[ext] || 'application/octet-stream',
+        ...(ext === '.html' || path.basename(filePath) === 'sw.js' ? { 'Cache-Control': 'no-cache' } : {}),
+      })
       res.end(fs.readFileSync(filePath))
     } catch { res.writeHead(404); res.end('Not found') }
   })
