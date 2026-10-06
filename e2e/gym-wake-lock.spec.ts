@@ -41,12 +41,13 @@ async function setup(page: Page, mode: Mode = 'supported', swim = false) {
     }
     ;(window as unknown as { __wake: typeof state }).__wake = state
   }, { mode })
-  await mockStores(page, {
+  const backend = await mockStores(page, {
     'cortex-gym-plans': [{ id: 'day', name: swim ? 'SWIM' : 'Upper body', dayOfWeek: 'Tuesday', time: '1 PM',
       exercises: swim ? [] : [{ id: 'press', name: 'Press', sets: 2, repsRange: '8-12', startWeight: '20 kg', notes: '' }] }],
   })
   await page.goto('/#/gym')
   await page.getByRole('button', { name: swim ? 'Start swim' : 'Start workout', exact: true }).click()
+  return backend
 }
 
 const held = (page: Page) => page.evaluate('window.__wake.held()')
@@ -78,6 +79,21 @@ test('returning to a visible workout reacquires screen control', async ({ page }
   await page.evaluate("window.__wake.setVisibility('visible')")
   await expect.poll(() => held(page)).toBe(1)
   await expect(page.getByText('Screen stays on', { exact: true })).toBeVisible()
+})
+
+test('a hidden page retains the rest deadline for the server until returning', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-10-06T18:00:00Z') })
+  const backend = await setup(page)
+  await page.getByRole('button', { name: 'Log set', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Skip rest', exact: true })).toBeVisible()
+  await page.evaluate("window.__wake.setVisibility('hidden')")
+  await page.clock.fastForward('02:00')
+  await expect(page.getByRole('button', { name: 'Skip rest', exact: true })).toBeVisible()
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')))
+  await expect.poll(() => (backend.stores['cortex-gym-active'] as { isResting: boolean }).isResting).toBe(true)
+  await page.evaluate("window.__wake.setVisibility('visible')")
+  await expect(page.getByRole('button', { name: 'Skip rest', exact: true })).toHaveCount(0)
+  await expect.poll(() => (backend.stores['cortex-gym-active'] as { isResting: boolean }).isResting).toBe(false)
 })
 
 test('a device release is reported and can be retried', async ({ page }) => {
