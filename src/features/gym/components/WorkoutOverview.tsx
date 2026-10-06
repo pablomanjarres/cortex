@@ -2,6 +2,7 @@ import { Check, Dumbbell, List, Pencil, Play, Square, Waves } from 'lucide-react
 import { Button } from '@/components/ui/button'
 import type { WorkoutDay, WorkoutSession } from '@/types/gym'
 import { WorkoutSessionSummary } from './WorkoutSessionSummary'
+import { isSwimWorkout, isWorkoutScheduledToday } from '../domain/workout-plan'
 
 export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView, onEdit, session, swimElapsed, onStopSwim }: {
   plans: WorkoutDay[]
@@ -14,11 +15,10 @@ export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView,
   swimElapsed: number | null
   onStopSwim: () => void
 }) {
-  const isSwim = selectedDay.name.trim().toUpperCase() === 'SWIM'
+  const isSwim = isSwimWorkout(selectedDay.name)
   const isRedo = session?.workoutDayId === selectedDay.id
   const totalSets = selectedDay.exercises.reduce((total, exercise) => total + exercise.sets, 0)
-  const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' })
-  const scheduledToday = selectedDay.dayOfWeek.trim().toLowerCase() === weekday.toLowerCase()
+  const scheduledToday = isWorkoutScheduledToday(selectedDay)
 
   return (
     <div className="space-y-5">
@@ -27,7 +27,7 @@ export function WorkoutOverview({ plans, selectedDay, onSelect, onStart, onView,
           {isSwim ? <Waves className="size-4" /> : <Dumbbell className="size-4" />}
           {swimElapsed !== null ? 'Swim in progress' : scheduledToday ? 'Today’s workout' : 'Your workout'}
         </div>
-        <h2 className="mt-6 break-words font-serif text-4xl italic sm:text-5xl">{selectedDay.name}</h2>
+        <h2 className="mt-6 break-words text-3xl font-semibold tracking-tight sm:text-4xl">{selectedDay.name}</h2>
         <p className="mt-2 text-sm text-muted-foreground">{selectedDay.dayOfWeek} · {selectedDay.time}</p>
         {swimElapsed !== null ? (
           <p className="mt-5 font-mono text-5xl font-semibold tabular-nums" aria-label="Swim time">

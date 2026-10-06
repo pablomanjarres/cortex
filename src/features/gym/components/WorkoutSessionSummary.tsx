@@ -1,11 +1,12 @@
 import { CheckCircle2 } from 'lucide-react'
 import type { WorkoutSession } from '@/types/gym'
 import { summarizeWorkoutSets } from '../domain/workout-progress'
+import { isSwimWorkout } from '../domain/workout-plan'
 
 export function WorkoutSessionSummary({ session }: { session: WorkoutSession }) {
   const { completedSets, totalSets } = summarizeWorkoutSets(session.exercises)
   const isFull = session.completedFully && totalSets > 0 && completedSets === totalSets
-  const isSwim = session.workoutName.trim().toUpperCase() === 'SWIM'
+  const isSwim = isSwimWorkout(session.workoutName)
 
   return (
     <div className="rounded-2xl border border-border/60 bg-card/50 p-4">

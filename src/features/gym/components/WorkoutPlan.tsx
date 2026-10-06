@@ -8,31 +8,28 @@ import { WorkoutOverview } from './WorkoutOverview'
 import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
 import { useSwimTimer } from '../domain/use-swim-timer'
+import { getScheduledWorkout, isSwimWorkout } from '../domain/workout-plan'
 
 interface WorkoutPlanProps {
   plans: WorkoutDay[]
   onUpdatePlans: (plans: WorkoutDay[]) => void
   onStartWorkout: (dayId: string) => void
   onLogSwim: (dayId: string, duration: number) => void
-  onResetSession: (dayId: string) => void
   todaySessions: WorkoutSession[]
 }
 
 export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, todaySessions }: WorkoutPlanProps) {
   const [editingDay, setEditingDay] = useState<string | null>(null)
   const [detailsOpen, setDetailsOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState(() => {
-    const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
-    return (plans.find((day) => day.dayOfWeek.trim().toLowerCase() === weekday) ?? plans[0])?.id
-  })
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const swimTimer = useSwimTimer()
-  const selectedDay = plans.find((day) => day.id === swimTimer.swim?.workoutDayId) ?? plans.find((day) => day.id === selectedId) ?? plans[0]
+  const selectedDay = plans.find((day) => day.id === swimTimer.swim?.workoutDayId) ?? plans.find((day) => day.id === selectedId) ?? getScheduledWorkout(plans)
   const latestSession = todaySessions.at(-1)
   const [preview, setPreview] = useState<Exercise | null>(null)
   const [pendingStart, setPendingStart] = useState<WorkoutDay | null>(null)
 
   const beginWorkout = (day: WorkoutDay) => {
-    if (day.name.trim().toUpperCase() === 'SWIM') swimTimer.start(day.id)
+    if (isSwimWorkout(day.name)) swimTimer.start(day.id)
     else onStartWorkout(day.id)
     setPendingStart(null)
   }
@@ -96,11 +93,11 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
       open={detailsOpen}
       onOpenChange={setDetailsOpen}
       title={selectedDay.name}
-      description={selectedDay.name.trim().toUpperCase() === 'SWIM' ? 'Swim plan' : 'Tap an exercise to view its movement and notes.'}
+      description={isSwimWorkout(selectedDay.name) ? 'Swim plan' : 'Tap an exercise to view its movement and notes.'}
       size="lg"
       className="max-h-[calc(100dvh-2rem)] overflow-y-auto [&_[data-slot=dialog-close]]:size-11"
     >
-      {selectedDay.name.trim().toUpperCase() === 'SWIM' ? (
+      {isSwimWorkout(selectedDay.name) ? (
         <ol className="list-inside list-decimal space-y-4 py-2 text-base">
           <li>Warm up with 4 lengths.</li>
           <li>Swim continuously for 20 minutes.</li>
@@ -137,7 +134,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
         <>
           <Button variant="secondary" size="lg" className="min-h-12" onClick={() => setPendingStart(null)}>Keep saved workout</Button>
           <Button size="lg" className="min-h-12" onClick={() => pendingStart && beginWorkout(pendingStart)}>
-            {pendingStart?.name.trim().toUpperCase() === 'SWIM' ? 'Start swim' : 'Start workout'}
+            {isSwimWorkout(pendingStart?.name ?? '') ? 'Start swim' : 'Start workout'}
           </Button>
         </>
       )}
