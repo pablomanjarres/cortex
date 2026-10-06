@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Dumbbell } from 'lucide-react'
+import { useReducedMotion } from 'framer-motion'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { findExerciseMedia, type ExerciseMedia } from '@/lib/exercise-media'
 import { cn } from '@/lib/utils'
@@ -8,19 +9,22 @@ interface ExerciseImageProps {
   name: string
   className?: string
   showBadge?: boolean // muscle/equipment overlay — off for small thumbnails
+  animated?: boolean
 }
 
-/** Cycles the DB's start/end frames for a pseudo-GIF; falls back to a placeholder on miss/error. */
-export function ExerciseImage({ name, className = '', showBadge = true }: ExerciseImageProps) {
+export function ExerciseImage(props: ExerciseImageProps) {
+  return <ExerciseImageResource key={props.name.trim().toLowerCase()} {...props} />
+}
+
+/** Static movement thumbnail, with optional start/end animation for exercise guides. */
+function ExerciseImageResource({ name, className = '', showBadge = true, animated = false }: ExerciseImageProps) {
+  const reduceMotion = useReducedMotion()
   const [media, setMedia] = useState<ExerciseMedia | null | undefined>(undefined) // undefined = loading
   const [frame, setFrame] = useState(0)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     let alive = true
-    setMedia(undefined)
-    setFailed(false)
-    setFrame(0)
     findExerciseMedia(name).then((m) => {
       if (alive) setMedia(m)
     })
@@ -30,10 +34,10 @@ export function ExerciseImage({ name, className = '', showBadge = true }: Exerci
   }, [name])
 
   useEffect(() => {
-    if (!media || media.images.length < 2) return
+    if (!animated || reduceMotion || !media || media.images.length < 2) return
     const id = setInterval(() => setFrame((f) => (f + 1) % media.images.length), 1200)
     return () => clearInterval(id)
-  }, [media])
+  }, [media, animated, reduceMotion])
 
   if (media === undefined) {
     return <Skeleton className={cn('rounded-xl', className)} />
@@ -41,7 +45,7 @@ export function ExerciseImage({ name, className = '', showBadge = true }: Exerci
 
   if (!media || failed) {
     return (
-      <div className={cn('flex items-center justify-center rounded-xl bg-secondary', className)}>
+      <div role="img" aria-label={`${name}: image unavailable`} className={cn('flex items-center justify-center rounded-xl bg-secondary', className)}>
         <Dumbbell className="h-8 w-8 text-foreground-faint" />
       </div>
     )
