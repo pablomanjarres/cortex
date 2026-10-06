@@ -9,10 +9,9 @@ import { useSetDefaults } from '../hooks/use-set-defaults'
 import { setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
 import { ExerciseNavigator } from './ExerciseNavigator'
 import { ExerciseGuide } from './ExerciseGuide'
-import { SetValueControl } from './SetValueControl'
-import { platesPerSide } from '@/lib/exercise-media'
+import { SetEntry } from './SetEntry'
 import { Button } from '@/components/ui/button'
-import { Check, Plus, X } from 'lucide-react'
+import { Check, Plus } from 'lucide-react'
 
 interface TrainingModeProps {
   activeWorkout: ActiveWorkoutState
@@ -23,7 +22,6 @@ interface TrainingModeProps {
   previousSession?: WorkoutSession | null
 }
 
-const WEIGHT_STEP = 2.5
 
 export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel, previousSession }: TrainingModeProps) {
   const reduceMotion = useReducedMotion()
@@ -135,7 +133,6 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   }
 
   const { totalSets, completedSets } = summarizeWorkoutSets(activeWorkout.exerciseLogs)
-  const isBarbell = /barbell|bench|squat|deadlift|press|row/i.test(currentExercise?.name || '')
 
   return (
     <motion.div
@@ -166,7 +163,6 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
           <div className="space-y-2.5 p-3">
             {currentExLog.sets.map((set, si) => {
               const prev = prevExercise?.sets[si]
-              const plates = isBarbell ? platesPerSide(set.weight) : []
               if (set.completed) {
                 return (
                   <button
@@ -184,71 +180,13 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
                   </button>
                 )
               }
-              const isCurrent = si === activeWorkout.currentSetIndex
-              return (
-                <div
-                  key={si}
-                  className={`relative overflow-hidden rounded-md border px-3 py-3 ${
-                    isCurrent
-                      ? 'border-border bg-muted/40 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
-                      : 'border-border/60 bg-background/40'
-                  }`}
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground">Set {si + 1}</span>
-                    {prev?.completed ? (
-                      <span className="font-mono text-2xs tabular-nums text-foreground-faint">
-                        last: {prev.weight}kg × {prev.reps}
-                      </span>
-                    ) : (
-                      currentExLog.sets.length > 1 && (
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => removeSet(si)}
-                          aria-label={`Remove set ${si + 1}`}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <X />
-                        </Button>
-                      )
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* weight stepper */}
-                    <SetValueControl
-                      value={set.weight}
-                      unit="kg"
-                      onDec={() => adjust(si, 'weight', -WEIGHT_STEP)}
-                      onInc={() => adjust(si, 'weight', WEIGHT_STEP)}
-                      onChange={(v) => setValue(si, 'weight', v)}
-                    />
-                    <span className="text-foreground-faint">×</span>
-                    {/* reps stepper */}
-                    <SetValueControl
-                      value={set.reps}
-                      unit="reps"
-                      onDec={() => adjust(si, 'reps', -1)}
-                      onInc={() => adjust(si, 'reps', 1)}
-                      onChange={(v) => setValue(si, 'reps', v)}
-                    />
-                    {/* complete */}
-                    <Button
-                      size="icon"
-                      className="ml-auto h-14 w-14 shrink-0"
-                      onClick={() => completeSet(si)}
-                      aria-label={`Complete set ${si + 1}`}
-                    >
-                      <Check className="h-7 w-7" />
-                    </Button>
-                  </div>
-                  {plates.length > 0 && (
-                    <p className="mt-2 font-mono text-2xs text-foreground-faint">
-                      plates/side: <span className="tabular-nums text-muted-foreground">{plates.join(' · ')}</span>
-                    </p>
-                  )}
-                </div>
+              if (si !== activeWorkout.currentSetIndex) return (
+                <Button key={si} variant="outline" className="h-auto min-h-12 w-full justify-between px-4 py-3" onClick={() => onUpdate({ ...activeWorkout, currentSetIndex: si })}>
+                  <span>Set {si + 1}</span><span className="text-muted-foreground">{set.weight} kg × {set.reps}</span>
+                </Button>
               )
+              return <SetEntry key={si} index={si} count={currentExLog.sets.length} set={set} previous={prev}
+                onChange={(field, value) => setValue(si, field, value)} onAdjust={(field, delta) => adjust(si, field, delta)} onComplete={() => completeSet(si)} />
             })}
 
             <Button variant="outline" className="w-full text-muted-foreground" onClick={addSet}>
