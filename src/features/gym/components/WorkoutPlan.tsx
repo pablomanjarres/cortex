@@ -85,6 +85,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
       onStart={() => latestSession ? setPendingStart(selectedDay) : beginWorkout(selectedDay)}
       onView={() => setDetailsOpen(true)}
       onEdit={() => setEditingDay(selectedDay.id)}
+      onPreview={setPreview}
       session={latestSession}
       swimElapsed={swimTimer.elapsed}
       onStopSwim={stopSwimTimer}
@@ -153,7 +154,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
     >
       {preview && (
         <div>
-          <ExerciseImage name={preview.name} className="h-64 w-full" />
+          <ExerciseImage name={preview.name} animated className="h-64 w-full" />
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <Chip size="sm" className="tabular-nums text-foreground">
               {preview.sets}×{preview.repsRange}
