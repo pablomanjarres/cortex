@@ -10,8 +10,7 @@ import { setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-pr
 import { ExerciseNavigator } from './ExerciseNavigator'
 import { ExerciseGuide } from './ExerciseGuide'
 import { SetEntry } from './SetEntry'
-import { Button } from '@/components/ui/button'
-import { Check, Plus } from 'lucide-react'
+import { SetHistory } from './SetHistory'
 
 interface TrainingModeProps {
   activeWorkout: ActiveWorkoutState
@@ -88,7 +87,7 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
   const addSet = () => {
     haptic(8)
     const last = currentExLog.sets[currentExLog.sets.length - 1]
-    patchSets((sets) => [...sets, { weight: last?.weight || 0, reps: last?.reps || 0, completed: false }])
+    patchSets((sets) => [...sets, { weight: last?.weight || 0, reps: last?.reps || 0, completed: false }], { currentSetIndex: currentExLog.sets.length })
   }
   const removeSet = (si: number) => {
     if (currentExLog.sets.length <= 1) return
@@ -159,40 +158,15 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
             </div>
           </div>
 
-          {/* set rows */}
-          <div className="space-y-2.5 p-3">
-            {currentExLog.sets.map((set, si) => {
-              const prev = prevExercise?.sets[si]
-              if (set.completed) {
-                return (
-                  <button
-                    key={si}
-                    onClick={() => uncompleteSet(si)}
-                    className="flex w-full items-center gap-3 rounded-md border border-success/25 bg-success/10 px-4 py-3 text-left active:scale-[0.99]"
-                  >
-                    <Check className="h-5 w-5 shrink-0 text-success" />
-                    <span className="w-12 shrink-0 text-sm font-medium text-muted-foreground">Set {si + 1}</span>
-                    <span className="font-mono text-lg font-medium tabular-nums text-success">
-                      {set.weight}
-                      <span className="text-sm font-normal text-muted-foreground"> kg</span> × {set.reps}
-                    </span>
-                    <span className="ml-auto font-mono text-3xs uppercase tracking-wide text-foreground-faint">tap to edit</span>
-                  </button>
-                )
-              }
-              if (si !== activeWorkout.currentSetIndex) return (
-                <Button key={si} variant="outline" className="h-auto min-h-12 w-full justify-between px-4 py-3" onClick={() => onUpdate({ ...activeWorkout, currentSetIndex: si })}>
-                  <span>Set {si + 1}</span><span className="text-muted-foreground">{set.weight} kg × {set.reps}</span>
-                </Button>
-              )
-              return <SetEntry key={si} index={si} count={currentExLog.sets.length} set={set} previous={prev}
-                onChange={(field, value) => setValue(si, field, value)} onAdjust={(field, delta) => adjust(si, field, delta)} onComplete={() => completeSet(si)} />
-            })}
-
-            <Button variant="outline" className="w-full text-muted-foreground" onClick={addSet}>
-              <Plus />
-              Add set
-            </Button>
+          <div className="p-4 pt-1 sm:p-6 sm:pt-2">
+            {currentExLog.sets[activeWorkout.currentSetIndex] && !currentExLog.sets[activeWorkout.currentSetIndex].completed ? (
+              <SetEntry key={`${idx}:${activeWorkout.currentSetIndex}`} index={activeWorkout.currentSetIndex} count={currentExLog.sets.length}
+                set={currentExLog.sets[activeWorkout.currentSetIndex]} previous={prevExercise?.sets[activeWorkout.currentSetIndex]}
+                onChange={(field, value) => setValue(activeWorkout.currentSetIndex, field, value)}
+                onAdjust={(field, delta) => adjust(activeWorkout.currentSetIndex, field, delta)} onComplete={() => completeSet(activeWorkout.currentSetIndex)} />
+            ) : <p className="rounded-lg bg-success/10 p-4 text-sm text-success">All sets logged. Choose another exercise or edit a set below.</p>}
+            <SetHistory sets={currentExLog.sets} currentIndex={activeWorkout.currentSetIndex}
+              onEdit={uncompleteSet} onRemove={removeSet} onAdd={addSet} />
           </div>
         </div>
       )}
