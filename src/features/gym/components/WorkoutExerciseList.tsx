@@ -1,36 +1,43 @@
 import { ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import type { Exercise } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
 
-export function WorkoutExerciseList({ exercises, onPreview }: {
+export function WorkoutExerciseList({ exercises, onPreview, variant = 'detail' }: {
   exercises: Exercise[]
   onPreview: (exercise: Exercise) => void
+  variant?: 'overview' | 'detail'
 }) {
   if (exercises.length === 0) {
     return <p className="py-4 text-sm text-muted-foreground">No exercises yet. Add them in Edit plan.</p>
   }
 
   return (
-    <div className="divide-y divide-border/60">
-      {exercises.map((exercise) => (
+    <ol className="divide-y divide-border/60">
+      {exercises.map((exercise, index) => (
+        <li key={exercise.id}>
         <Button
-          key={exercise.id}
           variant="ghost"
           onClick={() => onPreview(exercise)}
           aria-label={`Preview ${exercise.name}`}
-          className="h-auto min-h-20 w-full justify-start gap-3 rounded-xl px-2 py-3 text-left whitespace-normal"
+          className="h-auto min-h-24 w-full justify-start gap-2 rounded-lg px-0 py-3 text-left whitespace-normal sm:gap-3 sm:px-1"
         >
-          <ExerciseImage name={exercise.name} showBadge={false} className="h-14 w-14 shrink-0 rounded-xl" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-base font-semibold text-foreground">{exercise.name}</span>
-            <span className="mt-1 block text-sm font-normal text-muted-foreground">
-              {exercise.sets} sets of {exercise.repsRange}{exercise.startWeight ? ` · ${exercise.startWeight}` : ''}
-            </span>
+          <span aria-hidden="true" className="w-5 shrink-0 self-start pt-1 font-mono text-xs font-normal text-muted-foreground">
+            {String(index + 1).padStart(2, '0')}
           </span>
-          <ChevronRight className="text-muted-foreground" />
+          <ExerciseImage name={exercise.name} showBadge={false} className={cn('size-14 shrink-0 rounded-lg', variant === 'overview' ? 'sm:size-20' : 'sm:size-24')} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold leading-snug text-foreground sm:text-base">{exercise.name}</span>
+            <span className="mt-1 block text-sm font-normal text-muted-foreground">
+              {exercise.sets} sets · {exercise.repsRange} reps
+            </span>
+            {exercise.startWeight && <span className="mt-1 block text-xs font-normal text-muted-foreground">Starting at {exercise.startWeight}</span>}
+          </span>
+          <ChevronRight className="size-4 text-muted-foreground" />
         </Button>
+        </li>
       ))}
-    </div>
+    </ol>
   )
 }
