@@ -1,13 +1,16 @@
 import { getWeekDates, localDate } from '@/lib/date-utils'
 import type { WorkoutDay } from '@/types/gym'
+import { isWorkoutScheduledToday } from './workout-plan'
 
 export function workoutWeek(plans: WorkoutDay[], today = new Date()) {
   const dates = getWeekDates(localDate(today))
-  const weekdays = dates.map((date) => new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' }))
-  const days = dates.flatMap((date, index) => {
-    const scheduled = plans.filter((plan) => plan.dayOfWeek.trim().toLowerCase() === weekdays[index].toLowerCase())
-    return (scheduled.length ? scheduled : [null]).map((plan) => ({ date: date as string | null, weekday: weekdays[index], plan }))
+  const days = dates.flatMap((date) => {
+    const localDay = new Date(`${date}T12:00:00`)
+    const weekday = localDay.toLocaleDateString('en-US', { weekday: 'long' })
+    const scheduled = plans.filter((plan) => isWorkoutScheduledToday(plan, localDay))
+    return (scheduled.length ? scheduled : [null]).map((plan) => ({ date: date as string | null, weekday, plan }))
   })
-  const custom = plans.filter((plan) => !weekdays.some((weekday) => weekday.toLowerCase() === plan.dayOfWeek.trim().toLowerCase()))
+  const scheduledIds = new Set(days.flatMap((day) => day.plan ? [day.plan.id] : []))
+  const custom = plans.filter((plan) => !scheduledIds.has(plan.id))
   return [...days, ...custom.map((plan) => ({ date: null, weekday: plan.dayOfWeek, plan }))]
 }
