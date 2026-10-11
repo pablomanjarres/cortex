@@ -40,6 +40,9 @@ function parseGeneration(raw: unknown): ResearchGeneration[] {
   if (new Set(generations.map(item => item.platform)).size !== generations.length) fail('duplicate generation platforms')
   return generations
 }
+function isInvalidGenerationReceipt(receipt: ResearchGeneration | undefined): boolean {
+  return receipt?.status === 'error' && receipt.windowKey === 'receipt-invalid' && receipt.error === 'research_generation_receipt_invalid'
+}
 
 export function parseBriefDraft(raw: unknown): ResearchBriefDraft {
   const row = record(raw, 'brief')
@@ -233,7 +236,11 @@ export class FounderResearchService {
       }
       state.events = [...events.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
       const generations = new Map((state.sync.generation ?? []).map(item => [item.platform, item]))
-      for (const receipt of generation) { const prior = generations.get(receipt.platform); if (!prior || receipt.observedAt >= prior.observedAt) generations.set(receipt.platform, receipt) }
+      for (const receipt of generation) {
+        const prior = generations.get(receipt.platform)
+        const diagnostic = isInvalidGenerationReceipt(prior) || isInvalidGenerationReceipt(receipt)
+        if (diagnostic ? freshSnapshot : !prior || receipt.observedAt >= prior.observedAt) generations.set(receipt.platform, receipt)
+      }
       if (freshSnapshot) state.sync = { ...sync, lastSuccessfulSyncAt: sync.lastSuccessfulSyncAt ?? state.sync.lastSuccessfulSyncAt }
       if (generations.size) state.sync.generation = [...generations.values()]
       const next = parseResearchState(state)
