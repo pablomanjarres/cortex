@@ -7,7 +7,7 @@ import { once } from 'node:events'
 import path from 'node:path'
 import vm from 'node:vm'
 import ts from 'typescript'
-import { FounderResearchService, ResearchValidationError, ResearchConflictError, createResearchState, computeBriefHash, parseResearchState, researchArchiveFiles, researchView, type ResearchEvent, type ResearchState } from '../electron/founder-research.ts'
+import { FounderResearchService, ResearchValidationError, ResearchConflictError, createResearchState, computeBriefHash, parseResearchState, researchArchiveFiles, researchView, type ResearchEvent, type ResearchGeneration, type ResearchState } from '../electron/founder-research.ts'
 import { isLoopbackAddress } from '../electron/noelle-crm.ts'
 import * as noelleCrm from '../electron/noelle-crm.ts'
 import type { NoelleCrmSnapshot } from '../electron/noelle-crm.ts'
@@ -280,6 +280,62 @@ test('generation health receipts are bounded, merge by platform observation, and
   await h.service.import({ ...snapshot([], '2026-10-11T15:02:00.000Z'), status: { lastAttemptAt: '2026-10-11T15:02:00.000Z', generation: [{ ...generation, observedAt: '2026-10-11T15:02:00.000Z', status: 'error', error: 'brief_unavailable' }] } })
   assert.equal((await h.service.read()).sync.generation![0].error, 'brief_unavailable')
   assert.throws(() => h.service.import({ ...snapshot([]), status: { lastAttemptAt: now, generation: [{ ...generation, sent: 1 }] } }), /generation receipt/)
+})
+
+function generationReceipt(overrides: Partial<ResearchGeneration> = {}): ResearchGeneration {
+  return { schemaVersion: 1, campaignId: 'small-software', purpose: 'research_invitation', platform: 'x', observedAt: '2026-10-11T12:20:00.000Z', status: 'success', windowKey: 'fixture-window', eligible: 2, staged: 1, pending: 1, sent: 0, ...overrides }
+}
+function generationSnapshot(receipt: ResearchGeneration, syncedAt: string) {
+  return { ...snapshot([], syncedAt), status: { lastAttemptAt: syncedAt, lastSuccessfulSyncAt: syncedAt, generation: [receipt] } }
+}
+
+test('a fresh corrected receipt clears an invalid-export diagnostic without changing the actual generation time or notes', async () => {
+  const h = harness()
+  await h.service.action({ type: 'save_note', scope: 'campaign', text: 'Keep the exact research annotation.' })
+  const invalid = generationReceipt({ observedAt: '2026-10-11T20:24:00.000Z', status: 'error', windowKey: 'receipt-invalid', error: 'research_generation_receipt_invalid' })
+  await h.service.import(generationSnapshot(invalid, '2026-10-11T20:24:00.000Z'))
+  const corrected = generationReceipt()
+  await h.service.import(generationSnapshot(corrected, '2026-10-11T20:29:00.000Z'))
+  const view = await h.service.read()
+  assert.deepEqual(view.sync.generation, [corrected])
+  assert.equal(view.sync.syncedAt, '2026-10-11T20:29:00.000Z')
+  assert.equal(view.notes.campaign.text, 'Keep the exact research annotation.')
+})
+
+test('a stale invalid-export diagnostic cannot poison a corrected platform or add a stale platform warning', async () => {
+  const h = harness()
+  const corrected = generationReceipt()
+  await h.service.import(generationSnapshot(corrected, '2026-10-11T20:29:00.000Z'))
+  const invalid = generationReceipt({ observedAt: '2026-10-11T20:24:00.000Z', status: 'error', windowKey: 'receipt-invalid', error: 'research_generation_receipt_invalid' })
+  await h.service.import(generationSnapshot(invalid, '2026-10-11T20:24:00.000Z'))
+  await h.service.import(generationSnapshot({ ...invalid, platform: 'linkedin' }, '2026-10-11T20:24:00.000Z'))
+  assert.deepEqual((await h.service.read()).sync.generation, [corrected])
+})
+
+test('a fresh invalid-export diagnostic remains visible even when its generation timestamp is older', async () => {
+  const h = harness()
+  await h.service.import(generationSnapshot(generationReceipt({ observedAt: '2026-10-11T20:29:00.000Z' }), '2026-10-11T20:29:00.000Z'))
+  const invalid = generationReceipt({ status: 'error', windowKey: 'receipt-invalid', error: 'research_generation_receipt_invalid' })
+  await h.service.import(generationSnapshot(invalid, '2026-10-11T20:30:00.000Z'))
+  assert.deepEqual((await h.service.read()).sync.generation, [invalid])
+})
+
+test('genuine generation receipts keep observation ordering rather than export diagnostic ordering', async () => {
+  for (const overrides of [
+    { status: 'error' as const, error: 'brief_unavailable' },
+    { status: 'error' as const, windowKey: 'receipt-invalid', error: 'brief_unavailable' },
+    { status: 'error' as const, error: 'research_generation_receipt_invalid' },
+    { status: 'success' as const, windowKey: 'receipt-invalid', error: 'research_generation_receipt_invalid' },
+  ]) {
+    const h = harness()
+    const newer = generationReceipt({ observedAt: '2026-10-11T20:22:00.000Z', ...overrides })
+    await h.service.import(generationSnapshot(newer, '2026-10-11T20:24:00.000Z'))
+    await h.service.import(generationSnapshot(generationReceipt(), '2026-10-11T20:29:00.000Z'))
+    assert.deepEqual((await h.service.read()).sync.generation, [newer])
+    const latest = generationReceipt({ observedAt: '2026-10-11T20:28:00.000Z' })
+    await h.service.import(generationSnapshot(latest, '2026-10-11T20:25:00.000Z'))
+    assert.deepEqual((await h.service.read()).sync.generation, [latest])
+  }
 })
 
 test('Markdown notes stay separate from exact conversations and source-backed findings link to decisions', async () => {
