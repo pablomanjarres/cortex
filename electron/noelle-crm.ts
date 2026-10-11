@@ -44,6 +44,11 @@ export interface NoelleCrmSnapshot {
   pagination?: { hasMore: boolean; nextCursor: string | null }
 }
 
+export interface NoelleCrmStoredSnapshot extends NoelleCrmSnapshot {
+  /** Last complete export applied to eligibility, retained across newer partial pages. */
+  lastCompleteSyncAt?: string
+}
+
 export class NoelleCrmValidationError extends Error {}
 
 function invalid(field: string): never {
@@ -83,9 +88,10 @@ function platformUrl(raw: unknown, platform: NoelleCrmContact['platform'], field
   } catch { return invalid(field) }
 }
 
-/** The import boundary requires verified send dates and preserves source text verbatim. */
-export function parseNoelleCrmSnapshot(raw: unknown): NoelleCrmSnapshot {
+function parseSnapshot(raw: unknown, stored: boolean): NoelleCrmSnapshot {
   const input = record(raw, 'snapshot')
+  const messagesPerConversation = stored ? 100_000 : 10_000
+  const maximumTotalMessages = stored ? 1_000_000 : 100_000
   if (input.schemaVersion !== 1 || input.source !== 'noelle') invalid('schemaVersion/source')
   const syncedAt = timestamp(input.syncedAt, 'syncedAt')!
   const status = record(input.status, 'status')
@@ -120,8 +126,8 @@ export function parseNoelleCrmSnapshot(raw: unknown): NoelleCrmSnapshot {
           ...(value.reason !== undefined ? { reason: value.reason === null ? null : text(value.reason, 'history reason', 2_000) } : {}),
         }
       }
-      const messages = collection(conversation.messages, 'messages', 10_000).map((rawMessage) => {
-        if (++totalMessages > 100_000) invalid('total messages')
+      const messages = collection(conversation.messages, stored ? `stored messages per conversation limit (${messagesPerConversation})` : 'messages', messagesPerConversation).map((rawMessage) => {
+        if (++totalMessages > maximumTotalMessages) invalid(stored ? `stored total messages limit (${maximumTotalMessages})` : 'total messages')
         const message = record(rawMessage, 'message')
         if (message.direction !== 'inbound' && message.direction !== 'outbound') invalid('direction')
         return {
@@ -166,6 +172,21 @@ export function parseNoelleCrmSnapshot(raw: unknown): NoelleCrmSnapshot {
   }
 }
 
+/** The import boundary requires verified send dates and preserves source text verbatim. */
+export function parseNoelleCrmSnapshot(raw: unknown): NoelleCrmSnapshot {
+  return parseSnapshot(raw, false)
+}
+
+/** Saved history may accumulate across bounded import pages without losing exact messages. */
+export function parseStoredNoelleCrmSnapshot(raw: unknown): NoelleCrmStoredSnapshot {
+  const snapshot = parseSnapshot(raw, true)
+  const input = record(raw, 'snapshot')
+  if (input.lastCompleteSyncAt === undefined) return snapshot
+  const lastCompleteSyncAt = timestamp(input.lastCompleteSyncAt, 'lastCompleteSyncAt')!
+  if (lastCompleteSyncAt > snapshot.syncedAt) invalid('lastCompleteSyncAt')
+  return { ...snapshot, lastCompleteSyncAt }
+}
+
 function mergeMessages(current: NoelleCrmMessage[], incoming: NoelleCrmMessage[]): NoelleCrmMessage[] {
   const messages = new Map(current.map((message) => [message.id, message]))
   const externalIds = new Map(current.filter((message) => message.externalId).map((message) => [message.externalId!, message.id]))
@@ -180,18 +201,26 @@ function mergeMessages(current: NoelleCrmMessage[], incoming: NoelleCrmMessage[]
   return [...messages.values()].sort((a, b) => (a.sentAt ?? a.observedAt).localeCompare(b.sentAt ?? b.observedAt) || a.id.localeCompare(b.id))
 }
 
+function isCompleteSnapshot(snapshot: NoelleCrmSnapshot): boolean {
+  return snapshot.pagination?.hasMore === false && snapshot.pagination.nextCursor === null &&
+    !!snapshot.status.lastSuccessfulSyncAt && !snapshot.status.error
+}
+
 /** Complete exports own contact eligibility; partial observations preserve saved history. */
-export function mergeNoelleCrmSnapshot(current: NoelleCrmSnapshot | null, incoming: NoelleCrmSnapshot): NoelleCrmSnapshot {
-  const fresh = !current || incoming.syncedAt >= current.syncedAt
-  const authoritative = (!current || incoming.syncedAt > current.syncedAt) &&
-    incoming.pagination?.hasMore === false && incoming.pagination.nextCursor === null &&
-    !!incoming.status.lastSuccessfulSyncAt && !incoming.status.error
+export function mergeNoelleCrmSnapshot(current: NoelleCrmStoredSnapshot | null, incoming: NoelleCrmSnapshot): NoelleCrmStoredSnapshot {
+  const lastCompleteSyncAt = current?.lastCompleteSyncAt ?? (current && isCompleteSnapshot(current) ? current.syncedAt : null)
+  const completedPage = incoming.pagination?.hasMore === true && incoming.syncedAt === lastCompleteSyncAt
+  const fresh = !current || incoming.syncedAt >= current.syncedAt && !completedPage
+  const completesCurrentPages = current?.pagination?.hasMore === true && incoming.syncedAt === current.syncedAt
+  const authoritative = isCompleteSnapshot(incoming) && (!lastCompleteSyncAt || incoming.syncedAt > lastCompleteSyncAt) &&
+    (!current || incoming.syncedAt > current.syncedAt || completesCurrentPages)
   const eligible = new Set(incoming.contacts.map((contact) => `${contact.platform}:${contact.id}`))
   const retained = (current?.contacts ?? []).filter((contact) => !authoritative || eligible.has(`${contact.platform}:${contact.id}`))
   const contacts = new Map(retained.map((contact) => [`${contact.platform}:${contact.id}`, contact]))
   for (const contact of incoming.contacts) {
     const key = `${contact.platform}:${contact.id}`
     const previous = contacts.get(key)
+    if (!previous && lastCompleteSyncAt && incoming.syncedAt <= lastCompleteSyncAt) continue
     const conversations = new Map((previous?.conversations ?? []).map((conversation) => [conversation.id, conversation]))
     for (const conversation of contact.conversations) {
       const prior = conversations.get(conversation.id)
@@ -213,9 +242,11 @@ export function mergeNoelleCrmSnapshot(current: NoelleCrmSnapshot | null, incomi
   const latestStatus = current && !fresh ? current.status : incoming.status
   const lastSuccessfulSyncAt = [current?.status.lastSuccessfulSyncAt, incoming.status.lastSuccessfulSyncAt]
     .filter((value): value is string => !!value).sort().at(-1) ?? null
+  const nextCompleteSyncAt = authoritative ? incoming.syncedAt : lastCompleteSyncAt
   return {
     schemaVersion: 1, source: 'noelle', syncedAt: current && !fresh ? current.syncedAt : incoming.syncedAt,
     contacts: [...contacts.values()],
+    ...(nextCompleteSyncAt ? { lastCompleteSyncAt: nextCompleteSyncAt } : {}),
     status: { ...latestStatus, lastSuccessfulSyncAt },
     ...((fresh ? incoming.pagination : current?.pagination)
       ? { pagination: fresh ? incoming.pagination : current?.pagination } : {}),
@@ -228,14 +259,14 @@ export function isLoopbackAddress(address: string): boolean {
 
 export class NoelleCrmService {
   private queue: Promise<unknown> = Promise.resolve()
-  private deps: { read(): Promise<NoelleCrmSnapshot | null>; write(snapshot: NoelleCrmSnapshot): Promise<void> }
-  constructor(deps: { read(): Promise<NoelleCrmSnapshot | null>; write(snapshot: NoelleCrmSnapshot): Promise<void> }) { this.deps = deps }
+  private deps: { read(): Promise<NoelleCrmStoredSnapshot | null>; write(snapshot: NoelleCrmStoredSnapshot): Promise<void> }
+  constructor(deps: { read(): Promise<NoelleCrmStoredSnapshot | null>; write(snapshot: NoelleCrmStoredSnapshot): Promise<void> }) { this.deps = deps }
 
   async import(raw: unknown): Promise<{ ok: true; contacts: number; conversations: number; messages: number; syncedAt: string }> {
     const incoming = parseNoelleCrmSnapshot(raw)
     const run = async () => {
       const current = await this.deps.read()
-      const next = mergeNoelleCrmSnapshot(current, incoming)
+      const next = parseStoredNoelleCrmSnapshot(mergeNoelleCrmSnapshot(current, incoming))
       if (JSON.stringify(next) !== JSON.stringify(current)) await this.deps.write(next)
       let conversations = 0
       let messages = 0

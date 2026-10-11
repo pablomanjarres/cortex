@@ -22,7 +22,7 @@ import { emptyWorkHoursState, type WorkHoursCommand, type WorkHoursState } from 
 import { WorkHoursService } from './work-hours-service.js'
 import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
 import { GymRestAlerts, GYM_REST_RECEIPTS_KEY, gymRestUrl, sendGymRestAlert } from './gym-rest-alerts.js'
-import { NOELLE_CRM_KEY, NoelleCrmService, NoelleCrmValidationError, isLoopbackAddress, parseNoelleCrmSnapshot } from './noelle-crm.js'
+import { NOELLE_CRM_KEY, NoelleCrmService, NoelleCrmValidationError, isLoopbackAddress, parseStoredNoelleCrmSnapshot } from './noelle-crm.js'
 import { FOUNDER_RESEARCH_KEY, FounderResearchService, ResearchValidationError, ResearchConflictError, parseResearchState, researchArchiveFiles } from './founder-research.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -1831,11 +1831,7 @@ async function readDataKeyParsed<T>(key: string, fallback: T): Promise<T> {
 }
 
 const noelleCrmService = new NoelleCrmService({
-  read: async () => {
-    const { text, rev } = await readDataFile(NOELLE_CRM_KEY)
-    if (text === null && rev !== null) throw new Error('Saved conversation history could not be read')
-    return text === null ? null : parseNoelleCrmSnapshot(JSON.parse(text))
-  },
+  read: readResearchCrm,
   write: async (snapshot) => {
     const result = await writeDataKey(NOELLE_CRM_KEY, snapshot, { source: 'main' })
     if (!result.ok) throw new Error('Conversation history could not be saved')
@@ -1845,7 +1841,7 @@ const noelleCrmService = new NoelleCrmService({
 async function readResearchCrm() {
   const { text, rev } = await readDataFile(NOELLE_CRM_KEY)
   if (text === null && rev !== null) throw new Error('Saved conversation history could not be read')
-  return text === null ? null : parseNoelleCrmSnapshot(JSON.parse(text))
+  return text === null ? null : parseStoredNoelleCrmSnapshot(JSON.parse(text))
 }
 
 const founderResearchService = new FounderResearchService({
