@@ -22,6 +22,8 @@ import { emptyWorkHoursState, type WorkHoursCommand, type WorkHoursState } from 
 import { WorkHoursService } from './work-hours-service.js'
 import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
 import { GymRestAlerts, GYM_REST_RECEIPTS_KEY, gymRestUrl, sendGymRestAlert } from './gym-rest-alerts.js'
+import { NOELLE_CRM_KEY, NoelleCrmService, NoelleCrmValidationError, isLoopbackAddress, parseNoelleCrmSnapshot } from './noelle-crm.js'
+import { FOUNDER_RESEARCH_KEY, FounderResearchService, ResearchValidationError, ResearchConflictError, parseResearchState, researchArchiveFiles } from './founder-research.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -831,6 +833,67 @@ function startWebServer() {
         res.end()
         return
       }
+    }
+
+    if (url.pathname === '/api/noelle-crm/import' && req.method === 'POST') {
+      if (!isLoopbackAddress(remote)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Conversation imports require a local connection' }))
+        return
+      }
+      const body = await readBody(req, res)
+      if (body === null) return
+      let snapshot: unknown
+      try { snapshot = JSON.parse(body) } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid JSON' }))
+        return
+      }
+      try {
+        const result = await noelleCrmService.import(snapshot)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(result))
+      } catch (error) {
+        const validation = error instanceof NoelleCrmValidationError
+        res.writeHead(validation ? 400 : 500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: validation ? error.message : 'Conversation history could not be saved' }))
+        if (!validation) console.error('[Cortex] Noelle conversation import failed')
+      }
+      return
+    }
+
+    if (url.pathname.startsWith('/api/founder-research')) {
+      const json = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)) }
+      try {
+        if (req.method === 'GET' && url.pathname === '/api/founder-research') {
+          json(200, await founderResearchService.read())
+        } else if (req.method === 'GET' && url.pathname === '/api/founder-research/brief') {
+          if ((url.searchParams.get('campaignId') ?? 'small-software') !== 'small-software') { json(404, { error: 'Research campaign not found' }); return }
+          const view = await founderResearchService.read(), brief = view.campaign.revisions.at(-1)
+          json(brief ? 200 : 404, brief ?? { error: 'Research brief is not published', campaignId: view.campaign.id })
+        } else if (req.method === 'GET' && url.pathname === '/api/founder-research/export') {
+          const file = url.searchParams.get('file') ?? 'notes.md'
+          const view = await founderResearchService.read()
+          const state = parseResearchState(view)
+          const files = researchArchiveFiles(state, await readResearchCrm())
+          if (!Object.hasOwn(files, file)) { json(404, { error: 'Research export not found' }); return }
+          res.writeHead(200, { 'Content-Type': file.endsWith('.json') ? 'application/json' : file.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="${file}"`, 'Cache-Control': 'no-store' })
+          res.end(files[file])
+        } else if (req.method === 'POST' && ['/api/founder-research/action', '/api/founder-research/import'].includes(url.pathname)) {
+          const importing = url.pathname.endsWith('/import')
+          if (importing && !isLoopbackAddress(remote)) { json(403, { error: 'Research imports require a local connection' }); return }
+          const body = await readBody(req, res)
+          if (body === null) return
+          let input: unknown
+          try { input = JSON.parse(body) } catch { json(400, { error: 'Invalid JSON' }); return }
+          json(200, importing ? await founderResearchService.import(input) : await founderResearchService.action(input))
+        } else json(404, { error: 'Research route not found' })
+      } catch (error) {
+        const validation = error instanceof ResearchValidationError, conflict = error instanceof ResearchConflictError
+        json(validation ? 400 : conflict ? 409 : 500, { error: validation || conflict ? error.message : 'Research data could not be saved or read' })
+        if (!validation && !conflict) console.error('[Cortex] Founder research operation failed')
+      }
+      return
     }
 
     // ─── JSON API for data sync (used by browser/iPhone) ──────
@@ -1656,7 +1719,7 @@ async function writeDataKey(
   opts: { baseRev?: string | number | null; source: DataChangeSource },
 ): Promise<WriteOutcome> {
   if (typeof key !== 'string' || !KEY_RE.test(key)) return { ok: false, error: 'invalid key' }
-  if ((key === 'cortex-project-time' || key === GYM_REST_RECEIPTS_KEY) && opts.source !== 'main') {
+  if ((key === 'cortex-project-time' || key === GYM_REST_RECEIPTS_KEY || key === NOELLE_CRM_KEY || key === FOUNDER_RESEARCH_KEY) && opts.source !== 'main') {
     return { ok: false, error: 'managed key' }
   }
 
@@ -1766,6 +1829,49 @@ async function readDataKeyParsed<T>(key: string, fallback: T): Promise<T> {
   if (text === null) return fallback
   try { return JSON.parse(text) as T } catch { return fallback }
 }
+
+const noelleCrmService = new NoelleCrmService({
+  read: async () => {
+    const { text, rev } = await readDataFile(NOELLE_CRM_KEY)
+    if (text === null && rev !== null) throw new Error('Saved conversation history could not be read')
+    return text === null ? null : parseNoelleCrmSnapshot(JSON.parse(text))
+  },
+  write: async (snapshot) => {
+    const result = await writeDataKey(NOELLE_CRM_KEY, snapshot, { source: 'main' })
+    if (!result.ok) throw new Error('Conversation history could not be saved')
+  },
+})
+
+async function readResearchCrm() {
+  const { text, rev } = await readDataFile(NOELLE_CRM_KEY)
+  if (text === null && rev !== null) throw new Error('Saved conversation history could not be read')
+  return text === null ? null : parseNoelleCrmSnapshot(JSON.parse(text))
+}
+
+const founderResearchService = new FounderResearchService({
+  read: async () => {
+    const { text, rev } = await readDataFile(FOUNDER_RESEARCH_KEY)
+    if (text === null && rev !== null) throw new Error('Saved research could not be read')
+    return text === null ? null : parseResearchState(JSON.parse(text))
+  },
+  readCrm: readResearchCrm,
+  write: async (state) => {
+    const result = await writeDataKey(FOUNDER_RESEARCH_KEY, state, { source: 'main' })
+    if (!result.ok) throw new Error('Research data could not be saved')
+    const directory = path.join(dataDir, 'founder-research', state.campaign.id)
+    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 })
+    await fs.promises.chmod(directory, 0o700)
+    for (const [name, contents] of Object.entries(researchArchiveFiles(state, await readResearchCrm()))) {
+      const file = path.join(directory, name), temporary = `${file}.tmp`
+      await fs.promises.writeFile(temporary, contents, { mode: 0o600 })
+      await fs.promises.chmod(temporary, 0o600)
+      await fs.promises.rename(temporary, file)
+    }
+  },
+})
+
+ipcMain.handle('founder-research:read', async () => founderResearchService.read())
+ipcMain.handle('founder-research:action', async (_event, action: unknown) => founderResearchService.action(action))
 
 const workHoursService = new WorkHoursService({
   read: async () => {

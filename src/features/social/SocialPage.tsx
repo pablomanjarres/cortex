@@ -44,6 +44,19 @@ interface Contact {
 
 const DEFAULT_CONTACTS: Contact[] = []
 
+function withContactDefaults(contact: Partial<Contact> & Pick<Contact, 'id' | 'name'>): Contact {
+  const savedFields = Object.fromEntries(Object.entries(contact).filter(([, value]) => value != null))
+  return {
+    title: '', nickname: '', followUp: false, birthday: '', phone: '',
+    lastContact: '', interval: 0, email: '', socialProfiles: '', address: '',
+    ...savedFields,
+    id: contact.id,
+    name: contact.name,
+    categories: Array.isArray(contact.categories) ? contact.categories : [],
+    fields: Array.isArray(contact.fields) ? contact.fields : [],
+  } as Contact
+}
+
 import { useStore } from '@/lib/store'
 import { syncBirthdayToCalendar } from '@/lib/calendar-sync'
 
@@ -86,7 +99,8 @@ const thBtnCls = 'flex cursor-pointer items-center gap-1 transition-colors hover
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function SocialPage() {
-  const [contacts, updateContacts] = useStore<Contact[]>('cortex-contacts', DEFAULT_CONTACTS)
+  const [savedContacts, updateContacts] = useStore<Contact[]>('cortex-contacts', DEFAULT_CONTACTS)
+  const contacts = useMemo(() => savedContacts.map(withContactDefaults), [savedContacts])
   const [search, setSearch] = useState('')
   const [filterCat, setFilterCat] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('name')
@@ -135,7 +149,7 @@ export function SocialPage() {
     if (expanded === id) setExpanded(null)
   }
   const addContact = () => {
-    const c: Contact = { id: `c-${Date.now()}`, name: 'New Contact', title: '', nickname: '', categories: [], fields: [], followUp: false, birthday: '', phone: '', lastContact: '', interval: 0, email: '', socialProfiles: '', address: '' }
+    const c = withContactDefaults({ id: `c-${Date.now()}`, name: 'New Contact' })
     update((p) => [c, ...p]); setExpanded(c.id)
   }
 
