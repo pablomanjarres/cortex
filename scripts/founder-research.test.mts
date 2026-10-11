@@ -9,6 +9,7 @@ import vm from 'node:vm'
 import ts from 'typescript'
 import { FounderResearchService, ResearchValidationError, ResearchConflictError, createResearchState, computeBriefHash, parseResearchState, researchArchiveFiles, researchView, type ResearchEvent, type ResearchState } from '../electron/founder-research.ts'
 import { isLoopbackAddress } from '../electron/noelle-crm.ts'
+import * as noelleCrm from '../electron/noelle-crm.ts'
 import type { NoelleCrmSnapshot } from '../electron/noelle-crm.ts'
 
 const now = '2026-10-11T15:00:00.000Z'
@@ -100,6 +101,42 @@ test('a sent flag requires exact native CRM proof and does not enroll historical
   assert.equal((await h.service.read()).events[0].verifiedSent, false)
   const inbound = receipt(sent.body); inbound.contacts[0].conversations[0].messages[0].direction = 'inbound'; h.crm(inbound)
   assert.equal((await h.service.read()).events[0].verifiedSent, false)
+})
+
+test('the saved CRM reader preserves large Founder conversations without restoring revoked sent evidence', async () => {
+  const source = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
+  const tree = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true)
+  const declaration = tree.statements.find((item): item is ts.FunctionDeclaration => ts.isFunctionDeclaration(item) && item.name?.text === 'readResearchCrm')
+  assert.ok(declaration)
+  let stored: string | null = null
+  const context = vm.createContext({ ...noelleCrm, readDataFile: async () => ({ text: stored, rev: stored === null ? null : 'fixture-revision' }) })
+  const javascript = ts.transpileModule(declaration.getText(tree), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
+  vm.runInContext(`${javascript}\nglobalThis.readCrm = readResearchCrm;`, context)
+  const readCrm = context.readCrm as () => Promise<NoelleCrmSnapshot | null>
+  const crmService = new noelleCrm.NoelleCrmService({ read: readCrm, write: async next => { stored = JSON.stringify(next) } })
+  const h = harness(); await h.service.action({ type: 'publish' })
+  const sent = event(h.state(), { status: 'sent', nativeExternalId: 'native-1', crmContactId: 'contact-1', conversationId: 'thread-1', sentAt: now })
+  await h.service.import(snapshot([sent]))
+  const researchService = new FounderResearchService({ read: async () => h.state(), readCrm, write: async () => {} })
+  const initial = receipt(sent.body)
+  const outbound = initial.contacts[0].conversations[0].messages[0]
+  initial.contacts[0].conversations[0].messages.push(...Array.from({ length: 9_999 }, (_, i) => ({ id: `reply-${i}`, direction: 'inbound' as const, body: `  Exact reply ${i}.\n`, sentAt: null, observedAt: now })))
+  await crmService.import(initial)
+  const next = receipt(sent.body)
+  next.syncedAt = '2026-10-11T16:00:00.000Z'
+  next.contacts[0].conversations[0].messages = [{ id: 'reply-9999', direction: 'inbound', body: '  Exact reply 9999.\n', sentAt: null, observedAt: next.syncedAt }]
+  await crmService.import(next)
+  const view = await researchService.read()
+  assert.equal(view.events[0].verifiedSent, true)
+  assert.equal(view.crmContacts[0].conversations[0].messages.length, 10_001)
+  assert.equal(view.crmContacts[0].conversations[0].messages.find(message => message.id === outbound.id)?.body, sent.body)
+  assert.equal(view.sources.find(item => item.id === 'crm:x:thread-1:reply-9999')?.preview, '  Exact reply 9999.\n')
+  const revoked = { ...next, syncedAt: '2026-10-11T18:00:00.000Z', contacts: [], pagination: { hasMore: false, nextCursor: null }, status: { lastAttemptAt: '2026-10-11T18:00:00.000Z', lastSuccessfulSyncAt: '2026-10-11T18:00:00.000Z' } }
+  await crmService.import(revoked)
+  await crmService.import(initial)
+  const final = await researchService.read()
+  assert.equal(final.events[0].verifiedSent, false)
+  assert.equal(final.crmContacts.length, 0)
 })
 
 test('verified sends retain their original brief after a new version is published', async () => {

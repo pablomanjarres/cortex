@@ -6,6 +6,7 @@ import { once } from 'node:events'
 import path from 'node:path'
 import vm from 'node:vm'
 import ts from 'typescript'
+import * as noelleCrm from '../electron/noelle-crm.ts'
 import {
   NoelleCrmService,
   NoelleCrmValidationError,
@@ -36,6 +37,36 @@ function snapshot(): NoelleCrmSnapshot {
     }],
     status: { lastAttemptAt: observedAt, lastSuccessfulSyncAt: observedAt },
   }
+}
+
+function storedService(initial: NoelleCrmSnapshot | null = null) {
+  const source = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
+  const tree = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true)
+  const declaration = tree.statements.find(statement => ts.isVariableStatement(statement) &&
+    statement.declarationList.declarations.some(item => item.name.getText(tree) === 'noelleCrmService'))
+  assert.ok(declaration)
+  const reader = tree.statements.find((item): item is ts.FunctionDeclaration => ts.isFunctionDeclaration(item) && item.name?.text === 'readResearchCrm')
+  assert.ok(reader)
+  let stored = initial === null ? null : JSON.stringify(initial)
+  const context = vm.createContext({
+    ...noelleCrm,
+    readDataFile: async () => ({ text: stored, rev: stored === null ? null : 'fixture-revision' }),
+    writeDataKey: async (_key: string, next: NoelleCrmSnapshot) => { stored = JSON.stringify(next); return { ok: true } },
+  })
+  const javascript = ts.transpileModule(`${reader.getText(tree)}\n${declaration.getText(tree)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
+  vm.runInContext(`${javascript}\nglobalThis.service = noelleCrmService;`, context)
+  return { service: context.service as NoelleCrmService, stored: () => stored }
+}
+
+function completeSnapshot(syncedAt: string, contacts = snapshot().contacts): NoelleCrmSnapshot {
+  return { ...snapshot(), syncedAt, contacts, pagination: { hasMore: false, nextCursor: null }, status: { lastAttemptAt: syncedAt, lastSuccessfulSyncAt: syncedAt } }
+}
+
+function historySnapshot(count: number): NoelleCrmSnapshot {
+  const input = snapshot()
+  const message = input.contacts[0].conversations[0].messages[0]
+  input.contacts[0].conversations[0].messages = Array.from({ length: count }, (_, i) => ({ ...message, id: `history-${i}`, body: `  Exact history ${i}.\n` }))
+  return input
 }
 
 test('a verified sent contact is accepted without altering its message text', () => {
@@ -216,6 +247,97 @@ test('failed, partial, stale, and same-time exports cannot remove missing recipi
     next.pagination = { hasMore: kind === 'partial', nextCursor: kind === 'partial' ? 'next-contact' : null }
     assert.equal(mergeNoelleCrmSnapshot(prior, parseNoelleCrmSnapshot(next)).contacts.length, 1, kind)
   }
+})
+
+test('a late complete export cannot restore contacts revoked before a newer partial page', async () => {
+  const h = storedService()
+  await h.service.import(completeSnapshot('2026-10-11T13:00:00.000Z'))
+  await h.service.import(completeSnapshot('2026-10-11T15:00:00.000Z', []))
+  const partial = completeSnapshot('2026-10-11T16:00:00.000Z', [])
+  partial.pagination = { hasMore: true, nextCursor: 'next-contact' }
+  await h.service.import(partial)
+  assert.equal((await h.service.import(completeSnapshot('2026-10-11T14:00:00.000Z'))).contacts, 0)
+  assert.equal(JSON.parse(h.stored()!).contacts.length, 0)
+  assert.equal((await h.service.import(completeSnapshot('2026-10-11T17:00:00.000Z'))).contacts, 1)
+})
+
+test('late observations still add exact history to contacts that remain eligible', async () => {
+  const h = storedService()
+  await h.service.import(completeSnapshot('2026-10-11T15:00:00.000Z'))
+  const late = completeSnapshot('2026-10-11T14:00:00.000Z')
+  late.contacts[0].conversations[0].messages = [{ id: 'older-reply', direction: 'inbound', body: '  Previously unseen older reply.\n', sentAt: null, observedAt: late.syncedAt }]
+  assert.equal((await h.service.import(late)).messages, 2)
+  assert.equal(JSON.parse(h.stored()!).contacts[0].conversations[0].messages[1].body, '  Previously unseen older reply.\n')
+})
+
+test('saved history beyond a single import page stays readable and can be revoked and repaired', async () => {
+  const h = storedService()
+  await h.service.import(historySnapshot(10_000))
+  const next = completeSnapshot('2026-10-11T15:00:00.000Z')
+  next.contacts[0].conversations[0].messages = [{ id: 'history-10000', externalId: 'native-10000', direction: 'inbound', body: '  Exact history 10000.\n', sentAt: null, observedAt: next.syncedAt }]
+  assert.equal((await h.service.import(next)).messages, 10_001)
+  assert.equal((await h.service.import(next)).messages, 10_001)
+  const messages = JSON.parse(h.stored()!).contacts[0].conversations[0].messages
+  assert.equal(messages.find((message: { id: string }) => message.id === 'history-9999').body, '  Exact history 9999.\n')
+  assert.equal(messages.find((message: { id: string }) => message.id === 'history-10000').externalId, 'native-10000')
+  assert.equal((await h.service.import(completeSnapshot('2026-10-11T16:00:00.000Z', []))).contacts, 0)
+  assert.equal((await h.service.import(completeSnapshot('2026-10-11T17:00:00.000Z'))).messages, 1)
+})
+
+test('merging beyond the stored thread limit rejects without changing saved history', async () => {
+  const h = storedService(historySnapshot(100_000))
+  const before = h.stored()
+  const overflow = completeSnapshot('2026-10-11T15:00:00.000Z')
+  overflow.contacts[0].conversations[0].messages = [{ id: 'overflow', direction: 'inbound', body: 'One more exact message.', sentAt: null, observedAt: overflow.syncedAt }]
+  await assert.rejects(h.service.import(overflow), /stored messages per conversation limit \(100000\)/)
+  assert.equal(h.stored(), before)
+  const repair = completeSnapshot('2026-10-11T16:00:00.000Z')
+  repair.contacts[0].conversations[0].messages = [{ id: 'history-99999', direction: 'outbound', body: '  Corrected exact final message.\n', sentAt: observedAt, observedAt: repair.syncedAt }]
+  assert.equal((await h.service.import(repair)).messages, 100_000)
+  assert.equal(JSON.parse(h.stored()!).contacts[0].conversations[0].messages.find((message: { id: string }) => message.id === 'history-99999').body, '  Corrected exact final message.\n')
+})
+
+test('the stored total-message limit prevents an oversized merge from replacing readable history', async () => {
+  const initial = historySnapshot(100_000)
+  const conversation = initial.contacts[0].conversations[0]
+  initial.contacts[0].conversations = Array.from({ length: 10 }, (_, i) => ({ ...conversation, id: `thread-${i}`, messages: conversation.messages }))
+  let saved = initial
+  const service = new NoelleCrmService({ read: async () => saved, write: async next => { saved = next } })
+  const overflow = completeSnapshot('2026-10-11T15:00:00.000Z')
+  overflow.contacts[0].conversations[0].id = 'thread-overflow'
+  await assert.rejects(service.import(overflow), /stored total messages limit \(1000000\)/)
+  assert.equal(saved, initial)
+  const readable = noelleCrm.parseStoredNoelleCrmSnapshot(saved)
+  assert.equal(readable.contacts[0].conversations.reduce((sum, thread) => sum + thread.messages.length, 0), 1_000_000)
+})
+
+test('wire pages keep their original bounds and cannot supply saved eligibility metadata', async () => {
+  assert.throws(() => parseNoelleCrmSnapshot(historySnapshot(10_001)), /messages/)
+  const h = storedService()
+  await h.service.import({ ...completeSnapshot('2026-10-11T15:00:00.000Z'), lastCompleteSyncAt: '2027-10-11T15:00:00.000Z' })
+  assert.equal((await h.service.import(completeSnapshot('2026-10-11T16:00:00.000Z', []))).contacts, 0)
+})
+
+test('the final manifest at a paged export timestamp applies eligibility once without losing page history', async () => {
+  const h = storedService()
+  const retained = snapshot().contacts[0]
+  const removed = { ...snapshot().contacts[0], id: 'revoked-contact' }
+  await h.service.import(completeSnapshot('2026-10-11T13:00:00.000Z', [retained, removed]))
+  const page = completeSnapshot('2026-10-11T15:00:00.000Z')
+  page.pagination = { hasMore: true, nextCursor: 'more-history' }
+  page.status = { lastAttemptAt: page.syncedAt }
+  page.contacts[0].conversations[0].messages = [{ id: 'page-reply', direction: 'inbound', body: '  Exact paged reply.\n', sentAt: null, observedAt: page.syncedAt }]
+  assert.equal((await h.service.import(page)).contacts, 2)
+  const final = completeSnapshot(page.syncedAt)
+  final.contacts[0].conversations[0].messages = []
+  assert.equal((await h.service.import(final)).contacts, 1)
+  assert.equal((await h.service.import(final)).messages, 2)
+  const delayedPage = { ...page, contacts: [removed] }
+  assert.equal((await h.service.import(delayedPage)).contacts, 1)
+  const saved = JSON.parse(h.stored()!)
+  assert.equal(saved.pagination.hasMore, false)
+  const messages = saved.contacts[0].conversations[0].messages
+  assert.equal(messages.find((message: { id: string }) => message.id === 'page-reply').body, '  Exact paged reply.\n')
 })
 
 async function importApi(remoteAddress?: string) {
