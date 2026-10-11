@@ -10,7 +10,7 @@ const DailyPage = lazy(() => import('@/features/daily/DailyPage').then((m) => ({
 const CalendarPage = lazy(() => import('@/features/calendar/CalendarPage').then((m) => ({ default: m.CalendarPage })))
 const HabitsSection = lazy(() => import('@/features/habits/HabitsSection').then((m) => ({ default: m.HabitsSection })))
 const GoalsPage = lazy(() => import('@/features/goals/GoalsPage').then((m) => ({ default: m.GoalsPage })))
-const FounderPage = lazy(() => import('@/features/founder/FounderPage').then((m) => ({ default: m.FounderPage })))
+const FounderSection = lazy(() => import('@/features/founder/FounderSection').then((m) => ({ default: m.FounderSection })))
 const CloudCostsPage = lazy(() => import('@/features/cloud-costs/CloudCostsPage').then((m) => ({ default: m.CloudCostsPage })))
 const StudentSection = lazy(() => import('@/features/student/StudentSection').then((m) => ({ default: m.StudentSection })))
 const FinancePage = lazy(() => import('@/features/finance/FinancePage').then((m) => ({ default: m.FinancePage })))
@@ -53,7 +53,7 @@ export function App() {
           <Route path="goals" element={page('Goals', <GoalsPage />)} />
           <Route path="system" element={page('System', <SystemPage />)} />
           <Route path="automations" element={page('Automations', <AutomationsPage />)} />
-          <Route path="founder" element={page('Founder', <FounderPage />)} />
+          <Route path="founder" element={page('Founder', <FounderSection />)} />
           <Route path="cloud-costs" element={page('Cloud Spend', <CloudCostsPage />)} />
           <Route path="student" element={page('Student', <StudentSection />)} />
           <Route path="projects" element={page('Projects', <ProjectsPage />)} />

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
+import { NoelleCrmPanel } from './noelle-crm-panel'
 import {
   Search,
   Plus,
@@ -188,6 +189,7 @@ export function CrmPage() {
 
   return (
     <PageShell>
+      <NoelleCrmPanel />
       {/* Org switcher */}
       <div className="flex flex-wrap items-center gap-2">
         {data.orgs.map((org) => (

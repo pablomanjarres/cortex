@@ -5,6 +5,8 @@ import test from 'node:test'
 import vm from 'node:vm'
 import ts from 'typescript'
 import { GYM_REST_RECEIPTS_KEY } from '../electron/gym-rest-alerts.ts'
+import { NOELLE_CRM_KEY } from '../electron/noelle-crm.ts'
+import { FOUNDER_RESEARCH_KEY } from '../electron/founder-research.ts'
 
 const source = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
 const tree = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true)
@@ -58,6 +60,8 @@ function trayHarness(
     },
     KEY_RE: /^[A-Za-z0-9._-]{1,200}$/,
     GYM_REST_RECEIPTS_KEY,
+    NOELLE_CRM_KEY,
+    FOUNDER_RESEARCH_KEY,
     gymRestAlerts: null,
     fs: { promises: { copyFile: async () => {}, mkdir: async () => {}, readdir: async () => [] } },
     backupDir: '/isolated-test-backup',
@@ -86,6 +90,21 @@ function trayHarness(
   }
   return { records, writes, harness, menuUpdates: () => menuUpdates }
 }
+
+test('generic HTTP and IPC writes cannot overwrite imported Noelle conversation history', async () => {
+  const { harness, writes } = trayHarness([])
+  for (const source of ['http', 'ipc']) {
+    const result = await harness.writeDataKey(NOELLE_CRM_KEY, { contacts: [] }, { source })
+    assert.equal(result.ok, false)
+  }
+  assert.equal(writes.length, 0)
+})
+
+test('generic HTTP and IPC writes cannot replace published research or its annotations', async () => {
+  const { harness, writes } = trayHarness([])
+  for (const source of ['http', 'ipc']) assert.equal((await harness.writeDataKey(FOUNDER_RESEARCH_KEY, {}, { source })).ok, false)
+  assert.equal(writes.length, 0)
+})
 
 test('tray refresh drops newly archived habits without waiting for its five-minute poll', async () => {
   const { records, harness, menuUpdates } = trayHarness([

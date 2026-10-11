@@ -45,6 +45,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     /** Per-source { configured, ok, fetchedAt, consecutiveFailures }. */
     status: () => ipcRenderer.invoke('founder:status'),
   },
+  founderResearch: {
+    read: () => ipcRenderer.invoke('founder-research:read'),
+    action: (action: unknown) => ipcRenderer.invoke('founder-research:action', action),
+  },
 
   cloudCosts: {
     refresh: (settings?: { awsProfile: string; gcpBillingTable: string; gcpQueryProject: string; monthlyBudgetUsd: number }) =>
