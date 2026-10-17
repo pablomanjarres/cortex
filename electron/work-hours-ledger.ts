@@ -90,6 +90,33 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
         active: { id: sessionId, projectId: command.projectId, startedAt: at, interrupted: false },
       }
     }
+    case 'start-owned-at': {
+      const startedAt = iso(command.startedAt)
+      const sessionId = id(command.id)
+      project(state, command.projectId)
+      if (Date.parse(startedAt) > Date.parse(at)) throw new Error('Recorded start cannot be in the future')
+      const existing = state.active?.id === sessionId ? state.active : state.sessions.find((entry) => entry.id === sessionId)
+      if (existing) {
+        if (existing.projectId !== command.projectId || existing.startedAt !== startedAt) throw new Error('Recorded start conflicts with existing session')
+        return state
+      }
+      return applyWorkHoursCommand(state, { type: 'start', id: sessionId, projectId: command.projectId }, startedAt)
+    }
+    case 'stop-owned-at': {
+      const sessionId = id(command.id)
+      const endedAt = iso(command.endedAt)
+      if (Date.parse(endedAt) > Date.parse(at)) throw new Error('Recorded stop cannot be in the future')
+      const saved = state.sessions.find((entry) => entry.id === sessionId)
+      if (saved?.needsReview) {
+        if (Date.parse(endedAt) < Date.parse(saved.startedAt)) throw new Error('Stop time precedes start time')
+        const start = Date.parse(saved.startedAt), end = Date.parse(endedAt)
+        if (state.sessions.some((entry) => entry.id !== sessionId && overlaps(start, end, Date.parse(entry.startedAt), Date.parse(entry.endedAt)))) throw new Error('Recorded stop overlaps another session')
+        if (state.active && overlaps(start, end, Date.parse(state.active.startedAt), Date.parse(at))) throw new Error('Recorded stop overlaps active work')
+        const corrected = saveCorrection(state, saved, { ...currentValues(saved), endedAt }, at, Date.parse(endedAt) - Date.parse(saved.startedAt))
+        return { ...corrected, sessions: corrected.sessions.map((entry) => entry.id === sessionId ? { ...entry, needsReview: false } : entry) }
+      }
+      return applyWorkHoursCommand(state, { type: 'stop-owned', id: sessionId }, endedAt)
+    }
     case 'switch': {
       const active = state.active
       if (!active) throw new Error('No active work to switch')
