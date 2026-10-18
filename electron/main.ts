@@ -865,8 +865,6 @@ function startWebServer() {
       return
     }
 
-    if (await handleKnowledgeRequest(req, res, url, remote, knowledgeHttpDeps)) return
-
     if (url.pathname.startsWith('/api/founder-research')) {
       const json = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)) }
       try {
@@ -900,6 +898,8 @@ function startWebServer() {
       }
       return
     }
+
+    if (await handleKnowledgeRequest(req, res, url, remote, knowledgeHttpDeps)) return
 
     // ─── JSON API for data sync (used by browser/iPhone) ──────
     if (url.pathname === '/api/data' && req.method === 'GET') {
