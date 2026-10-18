@@ -52,6 +52,11 @@ test('frontmatter round-trips the property shapes Obsidian writes', () => {
   assert.deepEqual(parseNote('no frontmatter').properties, {})
 })
 
+test('frontmatter preserves string types that YAML could infer and empty lists', () => {
+  const values = { exponent: '1e3', hex: '0x10', infinity: '.inf', nullLike: 'NULL', emptyList: [] }
+  assert.deepEqual(parseNote(composeNote(values, 'body')).properties, values)
+})
+
 test('vault discovery puts the configured Eightfold vault first, then the registry, then the registered Mars vault', () => {
   const fx = fixture()
   const vaults = fx.service.vaults()
@@ -178,4 +183,45 @@ test('updates require the current revision, keep id immutable and refuse generat
   assert.throws(() => fx.service.updateNote({ path: 'Nested.md', baseRevision: nested.revision, properties: { status: 'x' } }), /cannot be edited safely/)
   fx.service.updateNote({ path: 'Nested.md', baseRevision: nested.revision, body: 'new' })
   assert.equal(fs.readFileSync(path.join(fx.eightfold, 'Nested.md'), 'utf8'), '---\nmeta:\n  deep: 1\n---\n\nnew\n')
+})
+
+test('body-only updates preserve YAML properties and comments exactly', (t) => {
+  const fx = fixture()
+  t.after(() => fs.rmSync(fx.dir, { recursive: true, force: true }))
+  const frontmatter = '---\nid: yaml-note\ntags: [one, two] # keep tags\nowner: {team: growth}\nstatus: active # keep this comment\n---\n'
+  const file = path.join(fx.eightfold, 'Yaml.md')
+  fs.writeFileSync(file, `${frontmatter}\nold\n`)
+  const note = fx.service.read({ path: 'Yaml.md' })
+
+  fx.service.updateNote({ path: 'Yaml.md', baseRevision: note.revision, body: 'new' })
+
+  assert.equal(fs.readFileSync(file, 'utf8'), `${frontmatter}\nnew\n`)
+})
+
+test('property updates refuse nested YAML rather than flattening its values', (t) => {
+  const fx = fixture()
+  t.after(() => fs.rmSync(fx.dir, { recursive: true, force: true }))
+  const raw = '---\nid: nested-yaml-note\nowner: {team: growth}\n---\n\nold\n'
+  const file = path.join(fx.eightfold, 'Nested yaml.md')
+  fs.writeFileSync(file, raw)
+  const note = fx.service.read({ path: 'Nested yaml.md' })
+
+  assert.throws(() => fx.service.updateNote({ path: 'Nested yaml.md', baseRevision: note.revision, properties: { status: 'active' } }),
+    (error: unknown) => error instanceof VaultError && error.status === 409)
+  assert.equal(fs.readFileSync(file, 'utf8'), raw)
+})
+
+test('generated flags with YAML inline comments still prevent writes', (t) => {
+  const fx = fixture()
+  t.after(() => fs.rmSync(fx.dir, { recursive: true, force: true }))
+  for (const [index, flag] of ['generated: true # runtime-owned', 'cortex_generated: TRUE # runtime-owned', '"generated": true # runtime-owned'].entries()) {
+    const rel = `Generated ${index}.md`, raw = `---\nid: generated-${index}\n${flag}\n---\n\noriginal\n`
+    const file = path.join(fx.eightfold, rel)
+    fs.writeFileSync(file, raw)
+    const note = fx.service.read({ path: rel })
+
+    assert.throws(() => fx.service.updateNote({ path: rel, baseRevision: note.revision, body: 'replacement' }),
+      (error: unknown) => error instanceof VaultError && error.status === 403, flag)
+    assert.equal(fs.readFileSync(file, 'utf8'), raw)
+  }
 })

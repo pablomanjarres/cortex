@@ -1,7 +1,7 @@
-// Minimal Obsidian property (YAML frontmatter) reader/writer. Supports the
-// flat scalar and list properties Obsidian's Properties UI produces. Anything
-// richer is reported as `complex` so callers can refuse to re-serialize it and
-// keep the original block byte-for-byte instead.
+// Obsidian YAML frontmatter. Only flat scalar/list properties may be edited;
+// richer metadata stays read-only. Body-only saves preserve the source block.
+
+import { parseDocument, stringify } from 'yaml'
 
 export type PropertyValue = string | number | boolean | null | PropertyValue[]
 export type Properties = Record<string, PropertyValue>
@@ -16,25 +16,7 @@ export interface ParsedNote {
 }
 
 const FENCE = /^---\r?\n/
-const KEY_LINE = /^([^\s:#-][^:]*?):(?:[ \t]+(.*))?$/
-const LIST_ITEM = /^[ \t]+-[ \t]*(.*)$/
-
-function scalar(raw: string): PropertyValue {
-  const value = raw.trim()
-  if (value === '' || value === '~' || value === 'null') return null
-  if (value === 'true') return true
-  if (value === 'false') return false
-  if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value)
-  if (value.startsWith('"') || value.startsWith('[')) {
-    try {
-      const parsed: unknown = JSON.parse(value)
-      if (typeof parsed === 'string') return parsed
-      if (Array.isArray(parsed) && parsed.every(item => item === null || ['string', 'number', 'boolean'].includes(typeof item))) return parsed as PropertyValue[]
-    } catch { /* fall through to a plain string */ }
-  }
-  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) return value.slice(1, -1).replaceAll("''", "'")
-  return value
-}
+const PROPERTY_NAME = /^[^\s:#-][^:\r\n]*$/
 
 export function parseNote(raw: string): ParsedNote {
   if (!FENCE.test(raw)) return { properties: {}, body: raw, rawFrontmatter: '', complex: false }
@@ -45,50 +27,29 @@ export function parseNote(raw: string): ParsedNote {
   if (!match) return { properties: {}, body: raw, rawFrontmatter: '', complex: false }
   const block = raw.slice(start, match.index)
   const rawFrontmatter = raw.slice(0, match.index + match[0].length)
-  const properties: Properties = {}
-  let complex = false
-  let listKey: string | null = null
-  for (const line of block.split(/\r?\n/)) {
-    if (!line.trim() || line.trimStart().startsWith('#')) continue
-    const item = line.match(LIST_ITEM)
-    if (item && listKey) {
-      const current = properties[listKey]
-      properties[listKey] = [...(Array.isArray(current) ? current : []), scalar(item[1])]
-      continue
-    }
-    const key = line.match(KEY_LINE)
-    if (!key) { complex = true; listKey = null; continue }
-    const name = key[1].trim()
-    // `key:` alone is an empty property until list items follow it.
-    listKey = key[2] === undefined || key[2].trim() === '' ? name : null
-    properties[name] = listKey ? null : scalar(key[2])
+  const document = parseDocument(block, { schema: 'core', prettyErrors: false })
+  const entries: [string, PropertyValue][] = []
+  let complex = document.errors.length > 0 || document.warnings.length > 0
+  try {
+    const parsed: unknown = document.toJS({ mapAsMap: true, maxAliasCount: 100 })
+    if (parsed instanceof Map) {
+      for (const [name, value] of parsed) {
+        if (typeof name !== 'string' || !PROPERTY_NAME.test(name) || !isPropertyValue(value)) { complex = true; continue }
+        entries.push([name, value])
+      }
+    } else if (parsed !== null) complex = true
+  } catch {
+    complex = true
   }
+  const properties: Properties = Object.fromEntries(entries)
   return { properties, body: raw.slice(rawFrontmatter.length), rawFrontmatter, complex }
 }
 
-const PLAIN = /^[A-Za-z0-9_][A-Za-z0-9_ ./:+@-]*$/
-function formatScalar(value: PropertyValue): string {
-  if (value === null) return ''
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-  if (typeof value !== 'string') return JSON.stringify(value)
-  const plain = PLAIN.test(value) && !value.endsWith(' ') && !value.includes(': ') && !/^(?:true|false|null|yes|no|on|off|~|-?\d+(?:\.\d+)?)$/i.test(value)
-  return plain ? value : JSON.stringify(value)
-}
-
 export function serializeProperties(properties: Properties): string {
-  const lines = ['---']
-  for (const [name, value] of Object.entries(properties)) {
-    if (!/^[^\s:#-][^:\r\n]*$/.test(name)) throw new Error(`Invalid property name: ${name}`)
-    if (Array.isArray(value)) {
-      lines.push(`${name}:`)
-      for (const item of value) lines.push(`  - ${formatScalar(item)}`)
-    } else {
-      const formatted = formatScalar(value)
-      lines.push(formatted ? `${name}: ${formatted}` : `${name}:`)
-    }
+  for (const name of Object.keys(properties)) {
+    if (!PROPERTY_NAME.test(name)) throw new Error(`Invalid property name: ${name}`)
   }
-  lines.push('---', '')
-  return lines.join('\n')
+  return `---\n${stringify(properties, { lineWidth: 0 })}---\n`
 }
 
 /** Frontmatter + a blank line + body. `bodyOf` inverts this exactly. */
