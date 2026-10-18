@@ -5,7 +5,7 @@
 
 import type http from 'node:http'
 import { readKnowledgeHealth } from './health.js'
-import { parseCortexRef, cortexRecordUrl } from './refs.js'
+import { parseCortexRef, cortexRecordUrl, type KnowledgeLinkResult } from './refs.js'
 import { buildKnowledgeSummary, type SummaryInputs } from './summary.js'
 import { VaultError, obsidianSearchUri, type KnowledgeVaultService } from './vault.js'
 
@@ -24,13 +24,13 @@ const list = (value: string | null) => value ? value.split(',').map(item => item
 const int = (value: string | null) => value === null || value === '' ? undefined : Number.parseInt(value, 10)
 
 /** Resolve a Cortex record reference to vault notes, the Obsidian URI to open, and the Cortex URL. */
-export function resolveKnowledgeLink(vault: KnowledgeVaultService, ref: string, origin: string) {
+export function resolveKnowledgeLink(vault: KnowledgeVaultService, ref: string, origin: string): KnowledgeLinkResult {
   const parsed = parseCortexRef(ref)
   if (!parsed) throw new VaultError(400, 'A valid Cortex record reference is required.')
   const primary = vault.primary()
-  if (!primary) return { ref, available: false as const, notes: [], uri: null, cortexUrl: cortexRecordUrl(origin, ref) }
+  if (!primary) return { ref, available: false, notes: [], uri: null, cortexUrl: cortexRecordUrl(origin, ref) }
   const notes = parsed.kind === 'home' ? [vault.homeNote()].filter(note => note !== null) : vault.notesForRef(ref, { limit: 10 })
-  return { ref, available: true as const, vault: primary.name, notes, uri: notes[0]?.uri ?? obsidianSearchUri(primary.name, parsed.kind === 'home' ? 'Home' : ref), cortexUrl: cortexRecordUrl(origin, ref) }
+  return { ref, available: true, vault: primary.name, notes, uri: notes[0]?.uri ?? obsidianSearchUri(primary.name, parsed.kind === 'home' ? 'Home' : ref), cortexUrl: cortexRecordUrl(origin, ref) }
 }
 
 export async function handleKnowledgeRequest(req: http.IncomingMessage, res: http.ServerResponse, url: URL, remote: string, deps: KnowledgeHttpDeps): Promise<boolean> {

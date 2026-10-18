@@ -8,6 +8,9 @@
 export const CORTEX_REF_KINDS = ['home', 'venture', 'project', 'goal', 'crm', 'noelle', 'contact', 'research'] as const
 export type CortexRefKind = typeof CORTEX_REF_KINDS[number]
 export interface CortexRef { kind: CortexRefKind; id: string }
+export interface KnowledgeNoteLink { vault: string; vaultId: string; id: string | null; path: string; title: string; uri: string }
+/** Resolution of a record reference: its linked vault notes, the obsidian:// URI to open, and its Cortex URL. */
+export interface KnowledgeLinkResult { ref: string; available: boolean; vault?: string; notes: KnowledgeNoteLink[]; uri: string | null; cortexUrl: string | null }
 
 const ID = /^[A-Za-z0-9._:@-]{1,200}$/
 
