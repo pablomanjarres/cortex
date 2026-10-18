@@ -21,9 +21,10 @@ export interface ProtectionCheck {
 const MIN = 60
 const HOUR = 60 * MIN
 const DAY = 24 * HOUR
-const LOCAL_SNAPSHOT_STALE = 26 * HOUR
-const CLOUD_CHECKPOINT_STALE = 48 * HOUR
-const INTEGRITY_STALE = 8 * DAY
+const LOCAL_SNAPSHOT_STALE = 2 * HOUR
+const CLOUD_CHECKPOINT_STALE = 6 * HOUR
+const QUICK_CHECK_STALE = 9 * DAY
+const FULL_CHECK_STALE = 35 * DAY
 const RESTORE_STALE = 35 * DAY
 
 // ── Defensive readers: the report is runtime-owned JSON ─────────────────────
@@ -39,6 +40,10 @@ export const iso = (v: unknown): string | null => {
 }
 const hasError = (section: Obj | null) => section != null && section.error != null && section.error !== ''
 const ageOf = (at: string | null, now: Date) => (at ? Math.max(0, (now.getTime() - Date.parse(at)) / 1000) : null)
+export const syncObservationCurrent = (sync: Obj | null, now: Date): boolean => {
+  const age = ageOf(iso(sync?.updated_at), now)
+  return age != null && age <= 10 * MIN
+}
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 /** Relative time for a reported age; "Not reported" when the runtime is silent. */
@@ -54,7 +59,7 @@ const notReported = (id: string, group: CheckGroup, label: string): ProtectionCh
 export function macSync(sync: Obj | null): ProtectionCheck {
   if (!sync) return notReported('mac', 'Sync', 'Mac')
   const at = iso(sync.updated_at)
-  if (hasError(sync) || bool(sync.available) === false) {
+  if (bool(sync.available) === false) {
     return { id: 'mac', group: 'Sync', label: 'Mac', tone: 'danger', status: 'Unavailable', detail: 'The Mac sync service is not responding.', at }
   }
   const pending = num(sync.mac_needs_items)
@@ -139,12 +144,15 @@ export function cloudCheckpoint(cloud: Obj | null, now: Date): ProtectionCheck {
 
 export function integrityCheck(integrity: Obj | null, now: Date): ProtectionCheck {
   if (!integrity) return notReported('integrity', 'Evidence', 'Integrity')
-  const at = iso(integrity.last_full_check)
+  const full = iso(integrity.last_full_check)
+  const at = iso(integrity.last_quick_check) ?? full
   if (hasError(integrity)) return { id: 'integrity', group: 'Evidence', label: 'Integrity', tone: 'danger', status: 'Failed', detail: 'The last integrity check found a problem.', at }
-  if (!at) return { id: 'integrity', group: 'Evidence', label: 'Integrity', tone: 'unknown', status: 'Never checked', detail: 'No full integrity check recorded.', at }
-  const age = ageOf(at, now) ?? 0
-  if (age > INTEGRITY_STALE) return { id: 'integrity', group: 'Evidence', label: 'Integrity', tone: 'warning', status: 'Overdue', detail: `Last full check ${formatAge(age)}.`, at }
-  return { id: 'integrity', group: 'Evidence', label: 'Integrity', tone: 'ok', status: 'Passed', detail: 'Full check of the backup repository passed.', at }
+  if (!at || !full) return { id: 'integrity', group: 'Evidence', label: 'Integrity', tone: 'unknown', status: 'Not proven', detail: 'Weekly and full integrity checks have not both been recorded.', at }
+  const quickAge = ageOf(at, now) ?? 0
+  const fullAge = ageOf(full, now) ?? 0
+  const detail = `Weekly check ${formatAge(quickAge)}; full read ${formatAge(fullAge)}.`
+  if (quickAge > QUICK_CHECK_STALE || fullAge > FULL_CHECK_STALE) return { id: 'integrity', group: 'Evidence', label: 'Integrity', tone: 'warning', status: 'Overdue', detail, at }
+  return { id: 'integrity', group: 'Evidence', label: 'Integrity', tone: 'ok', status: 'Passed', detail, at }
 }
 
 export function restoreCheck(restore: Obj | null, now: Date): ProtectionCheck {
