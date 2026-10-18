@@ -108,7 +108,7 @@ test('summary is curated: references, aggregates and timestamps, never contact d
 
   const summary = buildKnowledgeSummary({
     now: new Date('2026-10-18T12:00:00Z'), origin: 'http://localhost:3456', timeZone: 'America/Bogota', vault: { name: 'Eightfold', homeUri: null },
-    projectMeta: { 'Old Thing': { displayName: 'Old', status: 'archived', priority: 9 }, cortex: { displayName: 'Cortex', status: 'active', priority: 1, notes: 'private project notes' } },
+    projectMeta: { 'Old Thing': { displayName: 'Old', status: 'archived', priority: 9 }, cortex: { displayName: 'Cortex', status: 'active', priority: 1, notes: 'private project notes' }, media: { status: 'active', priority: 5 }, unranked: { status: 'active' } },
     goals: [{ id: 'g1', title: 'Ship', status: 'active', milestones: [{ done: true }, { done: false }], detail: 'private why' }, { id: 'g2', title: 'Done', status: 'done' }],
     calendar: { events: [{ title: 'Later', startDate: '2026-10-20T10:00:00Z', notes: 'private' }, { title: 'Soon', startDate: '2026-10-19T10:00:00Z', isAllDay: true }], from: '2026-10-18', to: '2026-10-25' },
     finances: { year: 2026, items: [{ type: 'Income', name: 'Salary', months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1000, 0, 0] }, { type: 'Expense', months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 300, 0, 0] }, { type: 'Subscription', months: [0, 0, 0, 0, 0, 0, 0, 0, 0, 50, 0, 0] }] },
@@ -118,7 +118,7 @@ test('summary is curated: references, aggregates and timestamps, never contact d
     founderHistory: [{ date: '2026-10-17', commits: 3, deploys: 1 }, { date: '2026-10-18', commits: 5, deploys: 2, mrr: 10, users: 4 }],
     research: { campaign: { id: 'small-software', revisions: [{ version: 2, hash: 'a'.repeat(64), publishedAt: '2026-10-01T00:00:00.000Z' }] }, events: [{ verifiedSent: true, body: 'invitation text' }, { verifiedSent: false }], findings: [{}], decisions: [], sync: { lastSuccessfulSyncAt: '2026-10-18T10:00:00.000Z' } },
   })
-  assert.deepEqual(summary.projects.items.map(item => item.ref), ['project:cortex', 'project:old-thing'])
+  assert.deepEqual(summary.projects.items.map(item => item.ref), ['project:cortex', 'project:media', 'project:unranked', 'project:old-thing'])
   assert.equal(summary.projects.items[0].cortexUrl, 'http://localhost:3456/#/projects?project=cortex')
   assert.deepEqual(summary.goals.items, [{ ref: 'goal:g1', title: 'Ship', area: null, period: null, targetDate: null, progress: 50, cortexUrl: 'http://localhost:3456/#/goals?record=goal%3Ag1' }])
   assert.deepEqual((summary.calendar as { upcoming: { title: string }[] }).upcoming.map(event => event.title), ['Soon', 'Later'])
