@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
@@ -8,6 +8,9 @@ import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
 import { useStore } from '@/lib/store'
 import { NoelleCrmPanel } from './noelle-crm-panel'
+import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
+import { recordRefs } from '@/lib/knowledge'
+import { useRecordParam } from '@/lib/use-url-param'
 import {
   Search,
   Plus,
@@ -105,6 +108,15 @@ export function CrmPage() {
   const contacts = activeOrg?.contacts || []
 
   const setActiveOrg = (id: string) => updateData((p) => ({ ...p, activeOrg: id }))
+
+  // `?record=crm:<id>` opens that contact, switching to its org when needed.
+  const recordId = useRecordParam('crm')
+  const recordOrg = recordId ? data.orgs.find((o) => o.contacts.some((c) => c.id === recordId))?.id ?? null : null
+  const [openedRecord, setOpenedRecord] = useState<string | null>(null)
+  if (recordId && recordOrg && recordId !== openedRecord) { setOpenedRecord(recordId); setExpanded(recordId) }
+  useEffect(() => {
+    if (recordOrg) updateData((p) => (p.activeOrg === recordOrg ? p : { ...p, activeOrg: recordOrg }))
+  }, [recordOrg, updateData])
 
   const updateContacts = (fn: (prev: CrmContact[]) => CrmContact[]) =>
     updateData((p) => ({
@@ -312,6 +324,7 @@ export function CrmPage() {
                 <div><label className={labelCls}>Tags (comma-separated)</label>
                   <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className={lineInputCls} placeholder="vip, priority..." />
                 </div>
+                <KnowledgeLink cortexRef={recordRefs.crm(c.id)} />
                 <Button variant="destructive" size="sm" className="w-full" onClick={() => deleteContact(c.id)}>
                   <Trash2 /> Delete contact
                 </Button>
@@ -394,7 +407,8 @@ export function CrmPage() {
                             <label className={labelCls}>Tags (comma-separated)</label>
                             <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className={lineInputCls} placeholder="vip, priority, follow-up..." />
                           </div>
-                          <div className="flex items-end justify-end pt-2 lg:col-span-3">
+                          <div className="flex items-end justify-end gap-2 pt-2 lg:col-span-3">
+                            <KnowledgeLink cortexRef={recordRefs.crm(c.id)} />
                             <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
                               <Trash2 /> Delete contact
                             </Button>

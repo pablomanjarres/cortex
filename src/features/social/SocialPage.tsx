@@ -59,6 +59,9 @@ function withContactDefaults(contact: Partial<Contact> & Pick<Contact, 'id' | 'n
 
 import { useStore } from '@/lib/store'
 import { syncBirthdayToCalendar } from '@/lib/calendar-sync'
+import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
+import { recordRefs } from '@/lib/knowledge'
+import { useRecordParam } from '@/lib/use-url-param'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,6 +111,10 @@ export function SocialPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+  // `?record=contact:<id>` opens that contact once per link.
+  const recordId = useRecordParam('contact')
+  const [openedRecord, setOpenedRecord] = useState<string | null>(null)
+  if (recordId && recordId !== openedRecord) { setOpenedRecord(recordId); setExpanded(recordId) }
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000)
@@ -332,6 +339,7 @@ export function SocialPage() {
                     return <Chip key={f} size="sm" selectable selected={on} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}>{f}</Chip>
                   })}
                 </div>
+                <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
                 <Button variant="destructive" size="sm" className="w-full" onClick={() => deleteContact(c.id)}>
                   <Trash2 /> Delete contact
                 </Button>
@@ -408,7 +416,8 @@ export function SocialPage() {
                                 {ALL_FIELDS.map((f) => { const on = c.fields.includes(f); return <Chip key={f} size="sm" selectable selected={on} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}>{f}</Chip> })}
                               </div>
                             </div>
-                            <div className="flex items-end justify-end pt-2 lg:col-span-3">
+                            <div className="flex items-end justify-end gap-2 pt-2 lg:col-span-3">
+                              <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
                               <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
                                 <Trash2 /> Delete contact
                               </Button>
