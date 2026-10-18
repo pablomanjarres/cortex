@@ -9,8 +9,9 @@ Cortex reads and writes the Eightfold Obsidian vault through one service, `elect
 | Startup narrative: venture, project, CRM and context notes, dashboards, templates | Vault | Notes link to Cortex records with the `cortex_refs` property. |
 | Research notes, findings and decisions (after migration) | Vault, `Research/<campaign>/` | Without the vault, or before migration, Cortex keeps them. |
 | Published research brief revisions and hashes, outreach events, meetings, sync receipts | Cortex | Noelle reads the published brief from Cortex. |
-| Habits, goals, calendar, finance, manual CRM, Noelle DM history and other operational records | Cortex | The vault receives a curated summary only. |
-| `System/` and `Templates/` | Vault runtime | Cortex never writes them. Notes with `generated: true` are never rewritten. |
+| Habits, goals, calendar, finance, manual CRM, Noelle DM history and other operational records | Cortex | Daily and Founder own current activity. No operational summaries are written to the vault. |
+| Sync and backup protection | Cortex System | Reads the runtime's health report outside the vault. The runtime does not write vault content. |
+| `System/` and `Templates/` | Vault setup | Cortex never writes them. Notes with `generated: true` are never rewritten. |
 
 `electron/knowledge/refs.ts` is the only mapping between Cortex records and Cortex screens. Record references look like `kind:id`:
 
@@ -71,6 +72,8 @@ All routes sit behind the app's localhost and Tailscale gate. Write routes also 
 - `founder` (latest daily metrics, seven-day commits and deploys, research brief version/hash, event, verified-send, finding and decision counts).
 
 It contains no contact details, message bodies, notes or raw store contents.
+
+This endpoint remains available to API clients. It is not mirrored into Obsidian. The System page's protection panel reads the health endpoint through one bounded polling hook; its view model evaluates freshness per observation and backup cadence.
 
 ## MCP tools
 
