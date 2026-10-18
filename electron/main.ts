@@ -1893,7 +1893,7 @@ const knowledgeHttpDeps = {
   vault: knowledgeVault,
   isLoopback: isLoopbackAddress,
   readBody,
-  origin: () => `http://localhost:${WEB_PORT}`,
+  origin: () => `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}`,
   summaryInputs: knowledgeSummaryInputs,
   migrateResearch: (dryRun: boolean) => founderResearchService.exclusive(async () => {
     const state = await researchStore.read()
@@ -1918,7 +1918,7 @@ async function knowledgeSummaryInputs() {
 }
 
 ipcMain.handle('knowledge:open', async (_event, ref: unknown) => {
-  const link = resolveKnowledgeLink(knowledgeVault, String(ref), `http://localhost:${WEB_PORT}`)
+  const link = resolveKnowledgeLink(knowledgeVault, String(ref), knowledgeHttpDeps.origin())
   if (link.uri) await shell.openExternal(link.uri)
   return link
 })
