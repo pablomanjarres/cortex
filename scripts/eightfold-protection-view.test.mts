@@ -33,7 +33,7 @@ test('an offline Windows PC with a backlog and conflicts needs attention', () =>
   })), NOW)
   assert.equal(view.state, 'attention')
   assert.equal(check(view, 'windows').status, 'Offline')
-  assert.equal(check(view, 'windows').detail, 'Last seen 3 h ago.')
+  assert.equal(check(view, 'windows').detail, 'Last seen 3h ago.')
   assert.equal(check(view, 'mac').status, 'Syncing')
   assert.equal(check(view, 'conflicts').status, '2 conflicts')
   assert.equal(check(view, 'conflicts').tone, 'danger')
@@ -52,7 +52,7 @@ test('a pending cloud upload keeps the last verified checkpoint separate from th
   assert.equal(check(view, 'local').at, '2026-10-18T08:00:00.000Z')
   assert.equal(check(view, 'cloud').status, 'Pending')
   assert.equal(check(view, 'cloud').at, '2026-10-17T07:25:23.000Z')
-  assert.match(check(view, 'cloud').detail, /Waiting since 10 min ago\. Last verified checkpoint 1 d ago\./)
+  assert.match(check(view, 'cloud').detail, /Waiting since 10m ago\. Last verified checkpoint 1d ago\./)
 })
 
 test('an errored cloud upload is reported as failed, not verified', () => {
@@ -82,7 +82,7 @@ test('a stale report never reads as protected', () => {
   assert.equal(view.state, 'stale')
   assert.equal(view.headline, 'Report is stale')
   assert.ok(view.checks.every((c) => c.tone !== 'ok'))
-  assert.match(view.note, /31 min ago/)
+  assert.match(view.note, /31m ago/)
 })
 
 test('silent sections are unknown rather than fine', () => {
