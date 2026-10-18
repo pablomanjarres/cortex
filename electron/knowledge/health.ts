@@ -4,13 +4,12 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import type { KnowledgeHealth } from './health-contract.js'
 
 export const DEFAULT_HEALTH_FILE = path.join(os.homedir(), 'Library', 'Application Support', 'Eightfold', 'health.json')
 const MAX_BYTES = 256 * 1024
 
-export type KnowledgeHealth =
-  | { status: 'ok'; readAt: string; modifiedAt: string; ageSeconds: number; health: Record<string, unknown> }
-  | { status: 'missing' | 'invalid'; readAt: string; error: string }
+export type { KnowledgeHealth } from './health-contract.js'
 
 export function readKnowledgeHealth(file = DEFAULT_HEALTH_FILE, now = new Date()): KnowledgeHealth {
   const readAt = now.toISOString()
