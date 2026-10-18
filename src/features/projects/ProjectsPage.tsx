@@ -11,6 +11,7 @@ import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
 import { recordRefs } from '@/lib/knowledge'
 import { useUrlParam } from '@/lib/use-url-param'
 import { projectRefId } from '../../../electron/knowledge/refs'
+import { projectPriorityRank } from '../../../electron/project-priority'
 import {
   RefreshCw,
   Search,
@@ -176,8 +177,8 @@ export function ProjectsPage() {
         return true
       })
       .sort((a, b) => {
-        const pa = meta[a.name]?.priority ?? 99
-        const pb = meta[b.name]?.priority ?? 99
+        const pa = projectPriorityRank(meta[a.name]?.priority)
+        const pb = projectPriorityRank(meta[b.name]?.priority)
         return pa - pb
       })
   }, [projects, meta, typeFilter, statusFilter, search])
