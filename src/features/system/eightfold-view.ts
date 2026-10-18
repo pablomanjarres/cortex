@@ -1,7 +1,7 @@
 import type { KnowledgeHealth } from './eightfold-health'
 import {
   cloudCheckpoint, conflictsCheck, formatAge, integrityCheck, iso, localSnapshot, macSync, num, obj,
-  plural, recoveryCheck, restoreCheck, str, windowsSync, type ProtectionCheck,
+  plural, recoveryCheck, restoreCheck, str, syncObservationCurrent, windowsSync, type ProtectionCheck,
 } from './eightfold-checks'
 
 export { type CheckGroup, type ProtectionCheck, type Tone } from './eightfold-checks'
@@ -53,8 +53,9 @@ export function buildProtectionView(response: KnowledgeHealth | null, now = new 
 
   const h = response.health
   const sync = obj(h.sync)
+  const currentSync = syncObservationCurrent(sync, now)
   const cloud = obj(h.backup_cloud)
-  const checks = [
+  const checks: ProtectionCheck[] = [
     macSync(sync),
     windowsSync(sync, now),
     conflictsCheck(sync),
@@ -63,7 +64,10 @@ export function buildProtectionView(response: KnowledgeHealth | null, now = new 
     integrityCheck(obj(h.integrity), now),
     restoreCheck(obj(h.restore), now),
     recoveryCheck(obj(h.recovery)),
-  ]
+  ].map(c => !currentSync && c.group === 'Sync' ? {
+    ...c, tone: 'unknown' as const, status: 'Unknown',
+    detail: 'A fresh sync observation is needed to confirm connection and pending changes.',
+  } : c)
   const ageSeconds = num(response.ageSeconds)
   const stale = ageSeconds == null || ageSeconds > REPORT_STALE_SECONDS
   const runtimeErrors = Array.isArray(h.errors) ? h.errors.length : 0
@@ -93,11 +97,13 @@ export function buildProtectionView(response: KnowledgeHealth | null, now = new 
     note,
     reportAt: iso(response.modifiedAt),
     reportAgeSeconds: ageSeconds,
-    macPending: num(sync?.mac_needs_items),
-    windowsPending: num(win?.pending_items),
-    conflicts: num(sync?.conflicts),
+    macPending: currentSync && !stale ? num(sync?.mac_needs_items) : null,
+    windowsPending: currentSync && !stale ? num(win?.pending_items) : null,
+    conflicts: currentSync && !stale ? num(sync?.conflicts) : null,
     cloudCheckpointAt: iso(cloud?.verified_checkpoint_time),
     // A stale report proves nothing is currently fine.
-    checks: stale ? checks.map((c) => (c.tone === 'ok' ? { ...c, tone: 'unknown' as const } : c)) : checks,
+    checks: stale ? checks.map((c) => (c.tone === 'ok' ? {
+      ...c, tone: 'unknown' as const, status: 'Unknown', detail: `Previous result: ${c.status}. The report needs a fresh observation.`,
+    } : c)) : checks,
   }
 }
