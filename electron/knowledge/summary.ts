@@ -3,6 +3,7 @@
 // no raw store mirrors, no message bodies, no contact details.
 
 import { cortexRecordUrl, refs } from './refs.js'
+import { projectPriorityRank } from '../project-priority.js'
 
 export interface SummaryInputs {
   now: Date
@@ -45,8 +46,8 @@ export function buildKnowledgeSummary(input: SummaryInputs) {
     const meta = obj(raw), ref = safe(() => refs.project(name))
     if (!meta || !ref) return []
     const status = str(meta.status, 20) ?? 'unknown'
-    return [{ ref, name: str(meta.displayName) ?? name, status, priority: num(meta.priority), tagline: str(meta.tagline, 240), cortexUrl: url(ref) }]
-  }).sort((a, b) => (projectStatusRank[a.status] ?? 3) - (projectStatusRank[b.status] ?? 3) || b.priority - a.priority || a.name.localeCompare(b.name))
+    return [{ ref, name: str(meta.displayName) ?? name, status, priority: projectPriorityRank(meta.priority), tagline: str(meta.tagline, 240), cortexUrl: url(ref) }]
+  }).sort((a, b) => (projectStatusRank[a.status] ?? 3) - (projectStatusRank[b.status] ?? 3) || a.priority - b.priority || a.name.localeCompare(b.name))
 
   const goals = (arr(input.goals).map(obj).filter(Boolean) as Record<string, unknown>[]).filter(goal => typeof goal.id === 'string' && safe(() => refs.goal(String(goal.id))))
   const activeGoals = goals.filter(goal => goal.status === 'active')
