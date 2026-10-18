@@ -333,4 +333,70 @@ export class KnowledgeVaultService {
     return home ? this.ref(vault, home.path, home.id) : null
   }
 
+  // ─── Notes for adapters (primary vault) ─────────────────
+
+  /** Full notes under a folder of the primary vault, optionally filtered by `type`. */
+  readNotes(folder: string, type?: string): { ref: NoteRef; properties: Properties; body: string; revision: string; complex: boolean }[] {
+    const vault = this.writableVault()
+    const { notes, truncated } = this.noteHeads(vault, folder)
+    if (truncated) throw new VaultError(413, `Too many files under "${folder}".`)
+    const out = []
+    for (const head of notes) {
+      if (type && head.type !== type) continue
+      const { full } = this.existing(vault, head.path)
+      if (fs.statSync(full).size > MAX_READ_BYTES) continue
+      const raw = fs.readFileSync(full, 'utf8'), parsed = parseNote(raw)
+      out.push({ ref: this.ref(vault, head.path, head.id), properties: parsed.properties, body: bodyOf(parsed), revision: revisionOf(raw), complex: parsed.complex })
+    }
+    return out
+  }
+
+  // ─── Writes ─────────────────────────────────────────────
+
+  capture(opts: { title: string; body?: string; folder?: string; properties?: Record<string, unknown>; vault?: string }): NoteRef & { revision: string } {
+    const vault = this.writableVault(opts.vault)
+    const title = sanitizeTitle(opts.title)
+    const body = typeof opts.body === 'string' ? opts.body : ''
+    const folder = (opts.folder ?? 'Inbox').replaceAll('\\', '/').replace(/^\/+|\/+$/g, '')
+    const extra = cleanProperties(opts.properties)
+    const now = this.now().toISOString()
+    const properties: Properties = { id: typeof extra.id === 'string' && /^[A-Za-z0-9._:-]{3,120}$/.test(extra.id) ? extra.id : `note-${randomUUID()}`, type: 'note', ...withoutKeys(extra, ['id', 'created', 'updated']), created: now, updated: now }
+    if (this.noteHeads(vault).notes.some(note => note.id === properties.id)) throw new VaultError(409, `A note with id "${properties.id}" already exists.`)
+    const content = composeNote(properties, body)
+    for (let attempt = 1; attempt <= 50; attempt++) {
+      const name = attempt === 1 ? `${title}.md` : `${title} ${attempt}.md`
+      const target = this.writeTarget(vault, folder ? `${folder}/${name}` : name)
+      if (createExclusive(target.full, content)) return { ...this.ref(vault, target.rel, String(properties.id)), revision: revisionOf(content) }
+    }
+    throw new VaultError(409, 'Could not find a free file name for this note.')
+  }
+
+  /** Create a note at an exact path. Fails if the path exists. */
+  createAt(rel: string, properties: Properties, body: string): NoteRef & { revision: string } {
+    const vault = this.writableVault()
+    const target = this.writeTarget(vault, rel)
+    const content = composeNote(properties, body)
+    if (!createExclusive(target.full, content)) throw new VaultError(409, `A file already exists at "${target.rel}".`)
+    return { ...this.ref(vault, target.rel, typeof properties.id === 'string' ? properties.id : null), revision: revisionOf(content) }
+  }
+
+  updateNote(opts: { path?: string; id?: string; baseRevision: string; body?: string; properties?: Record<string, unknown>; vault?: string }): NoteRef & { revision: string } {
+    const vault = this.writableVault(opts.vault)
+    if (typeof opts.baseRevision !== 'string' || !/^[a-f0-9]{64}$/.test(opts.baseRevision)) throw new VaultError(400, 'baseRevision from a previous read is required.')
+    if (opts.body === undefined && opts.properties === undefined) throw new VaultError(400, 'Nothing to update.')
+    if (opts.body !== undefined && typeof opts.body !== 'string') throw new VaultError(400, 'body must be text.')
+    const rel = this.locate(vault, opts)
+    const { rel: clean } = this.existing(vault, rel)
+    const target = this.writeTarget(vault, clean)
+    const raw = fs.readFileSync(target.full, 'utf8')
+    const current = revisionOf(raw)
+    if (current !== opts.baseRevision) throw new VaultError(409, 'The note changed since it was read.', { revision: current })
+    const parsed = parseNote(raw)
+    if (isGenerated(parsed)) throw new VaultError(403, 'This note is generated and protected.')
+    const next = rewrite(parsed, { body: opts.body, properties: opts.properties === undefined ? undefined : cleanProperties(opts.properties, true), now: this.now().toISOString() })
+    replaceAtomic(target.full, next, current)
+    const id = parseNote(next).properties.id
+    return { ...this.ref(vault, target.rel, typeof id === 'string' && id ? id : null), revision: revisionOf(next) }
+  }
 }
+
