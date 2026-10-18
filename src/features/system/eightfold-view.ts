@@ -4,7 +4,7 @@ import {
   plural, recoveryCheck, restoreCheck, str, windowsSync, type ProtectionCheck,
 } from './eightfold-checks'
 
-export { formatAge, type CheckGroup, type ProtectionCheck, type Tone } from './eightfold-checks'
+export { type CheckGroup, type ProtectionCheck, type Tone } from './eightfold-checks'
 
 // Turns the runtime's health report into what the System page shows, and
 // refuses to call anything protected when the report is old, absent, or

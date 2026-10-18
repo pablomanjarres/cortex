@@ -7,8 +7,9 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
+import { timeAgo } from '@/lib/date-utils'
 import { useKnowledgeHealth } from './useKnowledgeHealth'
-import { formatAge, type CheckGroup, type ProtectionCheck, type ProtectionState, type Tone } from './eightfold-view'
+import { type CheckGroup, type ProtectionCheck, type ProtectionState, type Tone } from './eightfold-view'
 
 const TONE_CHIP: Record<Tone, 'success' | 'warning' | 'danger' | 'neutral'> = {
   ok: 'success', warning: 'warning', danger: 'danger', unknown: 'neutral',
@@ -18,12 +19,11 @@ const STATE_TONE: Record<ProtectionState, Tone> = {
 }
 const GROUPS: CheckGroup[] = ['Sync', 'Backups', 'Evidence']
 
-const ageSince = (at: string | null) => (at ? (Date.now() - Date.parse(at)) / 1000 : null)
 const countText = (n: number | null) => (n == null ? '—' : String(n))
 
 function When({ at, prefix = '' }: { at: string | null; prefix?: string }) {
   if (!at) return null
-  return <time dateTime={at} title={new Date(at).toLocaleString()}>{prefix}{formatAge(ageSince(at))}</time>
+  return <time dateTime={at} title={new Date(at).toLocaleString()}>{prefix}{timeAgo(at)}</time>
 }
 
 function CheckRow({ check }: { check: ProtectionCheck }) {
@@ -95,7 +95,7 @@ export function EightfoldProtection({ delay = 0 }: { delay?: number }) {
             <StatTile
               label="Verified cloud checkpoint"
               icon={<CloudUpload />}
-              value={view.cloudCheckpointAt ? formatAge(ageSince(view.cloudCheckpointAt)) : '—'}
+              value={view.cloudCheckpointAt ? timeAgo(view.cloudCheckpointAt) : '—'}
               sub={view.cloudCheckpointAt ? new Date(view.cloudCheckpointAt).toLocaleString() : 'None verified yet'}
             />
           </div>

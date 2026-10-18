@@ -2,6 +2,8 @@
 // runtime's health report. The runtime owns the statuses; these only read
 // them, and report a check as unknown when the runtime is silent about it.
 
+import { formatElapsed } from '../../lib/date-utils'
+
 export type Tone = 'ok' | 'warning' | 'danger' | 'unknown'
 export type CheckGroup = 'Sync' | 'Backups' | 'Evidence'
 
@@ -39,13 +41,9 @@ const hasError = (section: Obj | null) => section != null && section.error != nu
 const ageOf = (at: string | null, now: Date) => (at ? Math.max(0, (now.getTime() - Date.parse(at)) / 1000) : null)
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
-/** "just now", "12 min ago", "3 h ago", "4 d ago". */
+/** Relative time for a reported age; "Not reported" when the runtime is silent. */
 export function formatAge(seconds: number | null): string {
-  if (seconds == null) return 'Not reported'
-  if (seconds < MIN) return 'just now'
-  if (seconds < HOUR) return `${Math.floor(seconds / MIN)} min ago`
-  if (seconds < DAY) return `${Math.floor(seconds / HOUR)} h ago`
-  return `${Math.floor(seconds / DAY)} d ago`
+  return seconds == null ? 'Not reported' : formatElapsed(seconds)
 }
 
 const notReported = (id: string, group: CheckGroup, label: string): ProtectionCheck =>
