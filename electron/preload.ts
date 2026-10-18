@@ -65,6 +65,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     scan: () => ipcRenderer.invoke('projects:scan'),
   },
 
+  knowledge: {
+    /** Open the vault note linked to a Cortex record reference (or a vault search for it) in Obsidian. */
+    open: (ref: string) => ipcRenderer.invoke('knowledge:open', ref),
+  },
+
   workHours: {
     command: (command: unknown) => ipcRenderer.invoke('work-hours:command', command),
     evidence: (prUrl: string) => ipcRenderer.invoke('work-hours:evidence', prUrl),
