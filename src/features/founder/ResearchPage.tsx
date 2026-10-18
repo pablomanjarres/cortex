@@ -12,8 +12,13 @@ import { researchApi, researchExportUrl } from './research-api'
 import { ResearchBrief } from './research-brief'
 import { ResearchOutreach } from './research-outreach'
 import { ResearchEvidence } from './research-evidence'
+import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
+import { recordRefs } from '@/lib/knowledge'
+import { useUrlParam } from '@/lib/use-url-param'
 import type { ResearchAction, ResearchState, ResearchView } from '../../../electron/founder-research-model'
 import type { NoelleCrmSnapshot } from '../../../electron/noelle-crm'
+
+const RESEARCH_VIEWS = ['brief', 'outreach', 'evidence'] as const
 
 export function ResearchPage() {
   const api = useMemo(() => researchApi(), [])
@@ -23,7 +28,7 @@ export function ResearchPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [receipt, setReceipt] = useState('')
-  const [tab, setTab] = useState('brief')
+  const [tab, setTab] = useUrlParam('view', 'brief', RESEARCH_VIEWS)
   const [sourceId, setSourceId] = useState<string | undefined>(undefined)
   const requestVersion = useRef(0)
   const load = useCallback(async () => {
@@ -53,7 +58,7 @@ export function ResearchPage() {
     <PageShell>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-2"><div className="flex flex-wrap items-center gap-3"><h2 className="text-2xl font-semibold tracking-tight">{view.campaign.draft.title}</h2><Chip variant={published ? 'success' : 'warning'}>{published ? `Brief v${published.version}` : 'Draft brief'}</Chip></div><p className="max-w-3xl text-sm text-muted-foreground">{view.campaign.draft.audience} Learn what happens when they deploy and share them.</p></div>
-        <Button variant="secondary" disabled={busy} onClick={load}>Refresh research</Button>
+        <div className="flex flex-wrap items-center gap-2"><KnowledgeLink cortexRef={recordRefs.research(view.campaign.id)} label="Research notes in Eightfold" /><Button variant="secondary" disabled={busy} onClick={load}>Refresh research</Button></div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Staged requests" value={view.events.filter(event => !event.verifiedSent && !event.superseded).length} sub="Send has not been verified" />
@@ -63,7 +68,7 @@ export function ResearchPage() {
       </div>
       {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
       {view.sync.error && <p role="alert" className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning">{view.sync.error} Saved research is retained.</p>}
-      <Tabs value={tab} onValueChange={value => setTab(String(value))}>
+      <Tabs value={tab} onValueChange={value => setTab(value as typeof tab)}>
         <TabsList variant="line" aria-label="Research views"><TabsTrigger value="brief">Brief</TabsTrigger><TabsTrigger value="outreach">Outreach</TabsTrigger><TabsTrigger value="evidence">Evidence</TabsTrigger></TabsList>
         <TabsContent value="brief" className="pt-3"><ResearchBrief view={view} busy={busy} act={act} /></TabsContent>
         <TabsContent value="outreach" className="pt-3"><ResearchOutreach view={view} busy={busy} act={act} onUseSource={id => { setSourceId(id); setTab('evidence') }} /></TabsContent>
