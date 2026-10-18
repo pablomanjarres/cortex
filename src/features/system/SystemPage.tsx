@@ -8,6 +8,7 @@ import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-rea
 import { HostHistory } from './HostHistory'
 import { selectPrimaryDisk } from './mac-stats'
 import { API_BASE } from './api-base'
+import { EightfoldProtection } from './EightfoldProtection'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
 
@@ -373,6 +374,7 @@ export function SystemPage() {
         Live Mac metrics · polled every 2s · history sampled every 5s · powered by Glances
       </p>
       <HostCard host={MAC} delay={0} />
+      <EightfoldProtection delay={0.05} />
     </PageShell>
   )
 }
