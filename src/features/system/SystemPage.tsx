@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
 import { selectPrimaryDisk } from './mac-stats'
+import { API_BASE } from './api-base'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
 
@@ -32,13 +33,6 @@ interface HostSpec {
   path: string
   noteIfDown: string
 }
-
-// In Electron prod, the renderer is loaded from file:// — relative /api URLs
-// don't resolve to the local web server, so fall back to localhost:3456.
-// In browser/PWA over Tailscale, same-origin relative paths work directly.
-const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 'file:')
-  ? 'http://127.0.0.1:3456'
-  : ''
 
 const MAC: HostSpec = {
   key: 'mac', label: 'Mac mini', path: '/api/system/mac', noteIfDown: 'glances launchd service not running',

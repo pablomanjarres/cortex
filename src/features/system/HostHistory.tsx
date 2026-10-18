@@ -5,6 +5,7 @@ import { Chip } from '@/components/ui/chip'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ThemedTooltip, axisProps, chartColors, cssVar } from '@/lib/chart-theme'
+import { API_BASE } from './api-base'
 
 type HostKey = 'mac'
 type WindowKey = '15m' | '1h' | '6h' | '24h' | '3d' | '7d'
@@ -38,10 +39,6 @@ const WINDOWS: { key: WindowKey; label: string; ms: number }[] = [
   { key: '3d',  label: '3d',  ms: 3 * 24 * 3600 * 1000 },
   { key: '7d',  label: '7d',  ms: 7 * 24 * 3600 * 1000 },
 ]
-
-const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 'file:')
-  ? 'http://127.0.0.1:3456'
-  : ''
 
 function fmtTime(t: number, windowMs: number): string {
   const d = new Date(t)
