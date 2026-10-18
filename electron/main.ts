@@ -23,7 +23,10 @@ import { WorkHoursService } from './work-hours-service.js'
 import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
 import { GymRestAlerts, GYM_REST_RECEIPTS_KEY, gymRestUrl, sendGymRestAlert } from './gym-rest-alerts.js'
 import { NOELLE_CRM_KEY, NoelleCrmService, NoelleCrmValidationError, isLoopbackAddress, parseStoredNoelleCrmSnapshot } from './noelle-crm.js'
-import { FOUNDER_RESEARCH_KEY, FounderResearchService, ResearchValidationError, ResearchConflictError, parseResearchState, researchArchiveFiles } from './founder-research.js'
+import { FOUNDER_RESEARCH_KEY, FounderResearchService, ResearchValidationError, ResearchConflictError, parseResearchState, researchArchiveFiles, type ResearchState } from './founder-research.js'
+import { KnowledgeVaultService } from './knowledge/vault.js'
+import { ResearchNarrativeStore, vaultBackedResearch } from './knowledge/research-narrative.js'
+import { handleKnowledgeRequest, resolveKnowledgeLink } from './knowledge/http.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -861,6 +864,8 @@ function startWebServer() {
       }
       return
     }
+
+    if (await handleKnowledgeRequest(req, res, url, remote, knowledgeHttpDeps)) return
 
     if (url.pathname.startsWith('/api/founder-research')) {
       const json = (status: number, value: unknown) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)) }
@@ -1844,26 +1849,78 @@ async function readResearchCrm() {
   return text === null ? null : parseStoredNoelleCrmSnapshot(JSON.parse(text))
 }
 
-const founderResearchService = new FounderResearchService({
+// ─── Knowledge vault (Obsidian) ─────────────────────────────
+// One vault service for HTTP, MCP and research narrative. CORTEX_VAULT_ROOT
+// (absolute) overrides the default ~/Knowledge/Eightfold primary vault.
+const knowledgeVault = new KnowledgeVaultService({
+  configuredRoot: process.env.CORTEX_VAULT_ROOT && path.isAbsolute(process.env.CORTEX_VAULT_ROOT) ? process.env.CORTEX_VAULT_ROOT : undefined,
+})
+const researchNarrative = new ResearchNarrativeStore(knowledgeVault)
+
+// Stored research state (operational authority). Narrative fields are routed
+// to the vault by vaultBackedResearch once a campaign has been migrated.
+const researchStore = {
   read: async () => {
     const { text, rev } = await readDataFile(FOUNDER_RESEARCH_KEY)
     if (text === null && rev !== null) throw new Error('Saved research could not be read')
     return text === null ? null : parseResearchState(JSON.parse(text))
   },
-  readCrm: readResearchCrm,
-  write: async (state) => {
+  write: async (state: ResearchState) => {
     const result = await writeDataKey(FOUNDER_RESEARCH_KEY, state, { source: 'main' })
     if (!result.ok) throw new Error('Research data could not be saved')
-    const directory = path.join(dataDir, 'founder-research', state.campaign.id)
-    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 })
-    await fs.promises.chmod(directory, 0o700)
-    for (const [name, contents] of Object.entries(researchArchiveFiles(state, await readResearchCrm()))) {
-      const file = path.join(directory, name), temporary = `${file}.tmp`
-      await fs.promises.writeFile(temporary, contents, { mode: 0o600 })
-      await fs.promises.chmod(temporary, 0o600)
-      await fs.promises.rename(temporary, file)
-    }
   },
+}
+
+const founderResearchService = new FounderResearchService({
+  ...vaultBackedResearch(researchStore, researchNarrative, { afterWrite: writeResearchArchive }),
+  readCrm: readResearchCrm,
+})
+
+/** Local archive mirror of the merged research view (narrative from wherever it is authoritative). */
+async function writeResearchArchive(state: ResearchState): Promise<void> {
+  const directory = path.join(dataDir, 'founder-research', state.campaign.id)
+  await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 })
+  await fs.promises.chmod(directory, 0o700)
+  for (const [name, contents] of Object.entries(researchArchiveFiles(state, await readResearchCrm()))) {
+    const file = path.join(directory, name), temporary = `${file}.tmp`
+    await fs.promises.writeFile(temporary, contents, { mode: 0o600 })
+    await fs.promises.chmod(temporary, 0o600)
+    await fs.promises.rename(temporary, file)
+  }
+}
+
+const knowledgeHttpDeps = {
+  vault: knowledgeVault,
+  isLoopback: isLoopbackAddress,
+  readBody,
+  origin: () => `http://localhost:${WEB_PORT}`,
+  summaryInputs: knowledgeSummaryInputs,
+  migrateResearch: (dryRun: boolean) => founderResearchService.exclusive(async () => {
+    const state = await researchStore.read()
+    if (!state) return { dryRun, migrated: false, reason: 'No saved research campaign yet' }
+    return researchNarrative.migrate(state, { dryRun, now: new Date().toISOString() })
+  }),
+}
+
+/** Bounded inputs for GET /api/knowledge/summary; see knowledge/summary.ts for what is exposed. */
+async function knowledgeSummaryInputs() {
+  const from = localDate(), to = localDate(new Date(Date.now() + 7 * 86400000))
+  let calendar: { events: unknown; from: string; to: string } | { error: string }
+  try { calendar = { events: await getEventsInRange(from, to), from, to } } catch { calendar = { error: 'Calendar is unavailable' } }
+  let research: unknown = null
+  try { research = await founderResearchService.read() } catch { research = null }
+  const [projectMeta, goals, finances, crm, contacts, founderHistory] = await Promise.all(
+    ['cortex-project-meta', 'cortex-goals', 'cortex-finances', 'cortex-crm', 'cortex-contacts', 'cortex-founder-history'].map(key => readDataKeyParsed<unknown>(key, null)),
+  )
+  let noelleCrm: unknown = null
+  try { noelleCrm = await readResearchCrm() } catch { noelleCrm = null }
+  return { projectMeta, goals, calendar, finances, crm, contacts, noelleCrm, founderHistory, research }
+}
+
+ipcMain.handle('knowledge:open', async (_event, ref: unknown) => {
+  const link = resolveKnowledgeLink(knowledgeVault, String(ref), `http://localhost:${WEB_PORT}`)
+  if (link.uri) await shell.openExternal(link.uri)
+  return link
 })
 
 ipcMain.handle('founder-research:read', async () => founderResearchService.read())
