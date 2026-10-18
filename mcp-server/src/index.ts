@@ -1391,6 +1391,97 @@ server.tool(
 );
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GROUP 10c: Obsidian vaults (shared Cortex vault service)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function knowledgeQuery(params: Record<string, string | number | boolean | string[] | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) continue;
+    query.set(key, Array.isArray(value) ? value.join(",") : String(value));
+  }
+  const text = query.toString();
+  return text ? `?${text}` : "";
+}
+
+const vaultIdArg = z.string().optional().describe("Vault id or name from obsidian_list_vaults; defaults to the primary Eightfold vault");
+const pageArgs = {
+  limit: z.number().optional().describe("Page size, default 50, max 200"),
+  cursor: z.string().optional().describe("Cursor from a previous page"),
+};
+
+server.tool(
+  "obsidian_list_vaults",
+  "List Obsidian vaults: the primary Eightfold vault (writable), vaults in Obsidian's registry and the legacy Mars vault, with ids, paths and bounded file counts. Use this first when working from notes or Canvas maps.",
+  {},
+  async () => run(() => cortexGet("/api/knowledge/vaults"))
+);
+
+server.tool(
+  "obsidian_list_files",
+  "List files in a vault without note bodies. Paths are vault-relative; hidden and config folders are excluded; attachments are metadata only. Markdown entries include an obsidian:// URI.",
+  {
+    vault_id: vaultIdArg,
+    query: z.string().optional().describe("Case-insensitive filename filter"),
+    extensions: z.array(z.string()).optional().describe("Optional extensions such as ['md','canvas','base']"),
+    folder: z.string().optional().describe("Optional vault-relative folder to list"),
+    ...pageArgs,
+  },
+  async ({ vault_id, query, extensions, folder, limit, cursor }) => run(() => cortexGet(`/api/knowledge/files${knowledgeQuery({ vault: vault_id, query, extensions, folder, limit, cursor })}`))
+);
+
+server.tool(
+  "obsidian_search",
+  "Search filenames, Markdown/text/Base bodies and Canvas text/group cards. Returns bounded snippets with paths and line or node refs.",
+  {
+    query: z.string().describe("Search text"),
+    vault_id: vaultIdArg,
+    extensions: z.array(z.string()).optional().describe("Optional extensions to search, e.g. ['md','canvas']"),
+    ...pageArgs,
+  },
+  async ({ query, vault_id, extensions, limit, cursor }) => run(() => cortexGet(`/api/knowledge/search${knowledgeQuery({ q: query, vault: vault_id, extensions, limit, cursor })}`))
+);
+
+server.tool(
+  "obsidian_read",
+  "Read one Markdown/text/Base/Canvas file by vault-relative path or by note id (the id property; survives renames). Text is paged by lines and returns properties, the note reference with its obsidian:// URI and the revision needed by obsidian_update_note. Canvas returns nodes with geometry, file links, group labels and connected edges.",
+  {
+    path: z.string().optional().describe("Vault-relative path from obsidian_list_files or obsidian_search"),
+    id: z.string().optional().describe("Note id property; use instead of path"),
+    vault_id: vaultIdArg,
+    ...pageArgs,
+    offset: z.number().optional().describe("Line/node offset; cursor is preferred when continuing a page"),
+    include_text: z.boolean().optional().describe("For Canvas files, include text node bodies when true"),
+  },
+  async ({ path, id, vault_id, limit, cursor, offset, include_text }) => run(() => cortexGet(`/api/knowledge/read${knowledgeQuery({ path, id, vault: vault_id, limit, cursor, offset, includeText: include_text })}`))
+);
+
+server.tool(
+  "obsidian_capture",
+  "Create a new Markdown note in the primary vault (default folder Inbox) with a stable id and created/updated properties. Never overwrites: a taken name gets a numeric suffix. Use cortex_refs (e.g. ['project:cortex','crm:<id>']) to link it to Cortex records. Generated folders (System, Templates) are refused.",
+  {
+    title: z.string().describe("Note title; becomes the file name"),
+    body: z.string().optional().describe("Markdown body"),
+    folder: z.string().optional().describe("Vault-relative folder, default 'Inbox'"),
+    properties: z.record(z.union([z.string(), z.number(), z.boolean(), z.array(z.union([z.string(), z.number(), z.boolean()]))])).optional().describe("Extra properties such as type, venture, projects, area, status, cortex_refs"),
+  },
+  async ({ title, body, folder, properties }) => run(() => cortexPost("/api/knowledge/capture", { title, body, folder, properties }))
+);
+
+server.tool(
+  "obsidian_update_note",
+  "Update a Markdown note in the primary vault. Requires base_revision from obsidian_read; a changed note returns a conflict with the current revision instead of overwriting. Replace the body and/or merge properties (null removes one); id and created cannot change; generated notes are refused.",
+  {
+    path: z.string().optional().describe("Vault-relative path"),
+    id: z.string().optional().describe("Note id property; use instead of path"),
+    base_revision: z.string().describe("revision returned by obsidian_read"),
+    body: z.string().optional().describe("New Markdown body (frontmatter excluded)"),
+    properties: z.record(z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.union([z.string(), z.number(), z.boolean()]))])).optional().describe("Properties to set; null removes a property"),
+  },
+  async ({ path, id, base_revision, body, properties }) => run(() => cortexPost("/api/knowledge/update", { path, id, baseRevision: base_revision, body, properties }))
+);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP 11: Projects
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -2703,7 +2794,7 @@ if (httpMode) {
       await transport.handleRequest(req, res);
     } else if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, tools: 78 })); // keep in sync with server.tool() count
+      res.end(JSON.stringify({ ok: true, tools: 86 })); // keep in sync with server.tool() count
     } else {
       res.writeHead(404); res.end("Not found");
     }
