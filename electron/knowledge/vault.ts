@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { bodyOf, composeNote, parseNote, type Properties, type PropertyValue } from './frontmatter.js'
 import { DEFAULT_REGISTRY_PATHS, DEFAULT_VAULT_ROOT, isDir, obsidianUri, readRegistry, resolveMarsRoot } from './vault-discovery.js'
-import { MAX_WRITE_BYTES, VaultError, cleanProperties, createExclusive, isGenerated, parseCanvas, replaceAtomic, revisionOf, rewrite, sanitizeTitle, withoutKeys } from './vault-files.js'
+import { VaultError, cleanProperties, createExclusive, isGenerated, parseCanvas, replaceAtomic, revisionOf, rewrite, sanitizeTitle, withoutKeys } from './vault-files.js'
 
 export { DEFAULT_REGISTRY_PATHS, DEFAULT_VAULT_ROOT, obsidianSearchUri, obsidianUri, resolveMarsRoot } from './vault-discovery.js'
 export { VaultError, revisionOf, type CanvasEdge, type CanvasNode } from './vault-files.js'
@@ -234,7 +234,8 @@ export class KnowledgeVaultService {
     const vault = this.pick(opts.vault)
     const query = opts.query?.trim().toLowerCase()
     const exts = extensionsOf(opts.extensions)
-    let { files, truncated } = this.walk(vault, opts.folder)
+    const walked = this.walk(vault, opts.folder), truncated = walked.truncated
+    let files = walked.files
     if (query) files = files.filter(file => file.path.toLowerCase().includes(query))
     if (exts?.length) files = files.filter(file => exts.includes(path.extname(file.path).toLowerCase()))
     const start = offsetOf(opts.cursor), limit = limitOf(opts.limit)
