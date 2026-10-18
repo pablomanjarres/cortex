@@ -143,6 +143,7 @@ async function run<T>(fn: () => Promise<T>): Promise<ToolResult> {
 
 // ─── Server ──────────────────────────────────────────────
 
+function createMcpServer(): McpServer {
 const server = new McpServer(
   {
     name: "cortex",
@@ -2757,6 +2758,9 @@ server.tool(
   })
 );
 
+  return server;
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Start
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2792,7 +2796,6 @@ const httpMode = process.argv.includes("--http");
 
 if (httpMode) {
   const PORT = parseInt(process.env.PORT || "3457");
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   const httpServer = createServer(async (req, res) => {
     // IP gate first: reject anything that isn't localhost or the tailnet.
     const remote = req.socket.remoteAddress ?? "";
@@ -2812,7 +2815,22 @@ if (httpMode) {
     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
 
     if (req.url === "/mcp" || req.url === "/") {
-      await transport.handleRequest(req, res);
+      // Stateless transports and their protocol server belong to one request.
+      const server = createMcpServer();
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      res.once("close", () => {
+        void server.close().catch((error) => console.error("MCP request cleanup failed:", error));
+      });
+      try {
+        await server.connect(transport);
+        await transport.handleRequest(req, res);
+      } catch (error) {
+        console.error("MCP HTTP request failed:", error);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null }));
+        } else if (!res.writableEnded) res.end();
+      }
     } else if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, tools: 86 })); // keep in sync with server.tool() count
@@ -2820,13 +2838,13 @@ if (httpMode) {
       res.writeHead(404); res.end("Not found");
     }
   });
-  await server.connect(transport);
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.error(`Cortex MCP server (HTTP) listening on 0.0.0.0:${PORT}`);
     console.error(`  Local:     http://localhost:${PORT}/mcp`);
     console.error(`  Tailscale: http://100.85.207.62:${PORT}/mcp`);
   });
 } else {
+  const server = createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
