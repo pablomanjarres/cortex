@@ -59,9 +59,9 @@ export function rewrite(parsed: ParsedNote, change: { body?: string; properties?
   const body = change.body ?? bodyOf(parsed)
   if (Buffer.byteLength(body) > MAX_WRITE_BYTES) throw new VaultError(413, 'The note body is too large.')
   if (!parsed.rawFrontmatter) return change.properties ? composeNote(mergeProperties({}, change.properties, change.now), body) : `${body}\n`
+  if (change.properties === undefined) return `${parsed.rawFrontmatter}\n${body}\n`
   if (parsed.complex) {
-    if (change.properties) throw new VaultError(409, 'This note has properties that cannot be edited safely here; edit them in Obsidian.')
-    return `${parsed.rawFrontmatter}\n${body}\n`
+    throw new VaultError(409, 'This note has properties that cannot be edited safely here; edit them in Obsidian.')
   }
   return composeNote(mergeProperties(parsed.properties, change.properties ?? {}, change.now), body)
 }
