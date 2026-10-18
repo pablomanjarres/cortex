@@ -7,6 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { useStore } from '@/lib/store'
 import { WorkHoursPanel } from './WorkHoursPanel'
+import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
+import { recordRefs } from '@/lib/knowledge'
+import { useUrlParam } from '@/lib/use-url-param'
+import { projectRefId } from '../../../electron/knowledge/refs'
 import {
   RefreshCw,
   Search,
@@ -140,6 +144,15 @@ export function ProjectsPage() {
     setProjects(cachedProjects.data)
   }, [cachedProjects])
 
+  // `?project=<ref id>` (see projectRefId) expands that project and scrolls to it.
+  const [linkedProject] = useUrlParam('project', '')
+  const linkedMatch = linkedProject ? projects.find((p) => projectRefId(p.name) === linkedProject) : undefined
+  const [openedProject, setOpenedProject] = useState<string | null>(null)
+  if (linkedMatch && linkedProject !== openedProject) { setOpenedProject(linkedProject); setExpanded((prev) => new Set(prev).add(linkedMatch.name)) }
+  useEffect(() => {
+    if (openedProject) requestAnimationFrame(() => document.getElementById(`project-${openedProject}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  }, [openedProject])
+
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
@@ -245,7 +258,7 @@ export function ProjectsPage() {
               const stCfg = m ? statusConfig[m.status] : null
 
               return (
-                <div key={project.name} className="surface rounded-xl transition-colors hover:bg-secondary/20">
+                <div key={project.name} id={`project-${projectRefId(project.name)}`} className="surface rounded-xl transition-colors hover:bg-secondary/20">
                   {/* Card header */}
                   <button
                     onClick={() => toggleExpand(project.name)}
@@ -322,6 +335,7 @@ export function ProjectsPage() {
                   {/* Expanded details */}
                   {isExpanded && (
                     <div className="ml-8 space-y-3 border-t border-border/60 px-4 pb-4 pt-3">
+                      <KnowledgeLink cortexRef={recordRefs.project(project.name)} />
                       {/* Why it exists */}
                       {m?.why && (
                         <div className="rounded-md bg-secondary/30 px-3 py-2.5">

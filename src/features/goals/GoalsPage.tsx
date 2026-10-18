@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRecordParam } from '@/lib/use-url-param'
 import { useStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import { PageShell } from '@/components/shared/PageShell'
@@ -93,6 +94,11 @@ export function GoalsPage() {
   const setGoals = (fn: (prev: Goal[]) => Goal[]) => updateGoals(fn)
 
   const [view, setView] = useState<View>('area')
+  // `?record=goal:<id>` (from vault notes and the knowledge summary) highlights that goal.
+  const linkedGoal = useRecordParam('goal')
+  useEffect(() => {
+    if (linkedGoal) requestAnimationFrame(() => document.getElementById(`goal-${linkedGoal}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  }, [linkedGoal])
   const [showArchived, setShowArchived] = useState(false)
 
   // Add-goal form
@@ -294,7 +300,7 @@ export function GoalsPage() {
     }
 
     return (
-      <div key={g.id} className={`group surface rounded-xl p-4 transition-opacity ${g.status === 'archived' ? 'opacity-50' : ''}`}>
+      <div key={g.id} id={`goal-${g.id}`} className={`group surface rounded-xl p-4 transition-opacity ${g.status === 'archived' ? 'opacity-50' : ''} ${linkedGoal === g.id ? 'ring-1 ring-accent/40' : ''}`}>
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <Button
