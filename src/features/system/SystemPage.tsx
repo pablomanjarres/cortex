@@ -6,7 +6,7 @@ import { StatTile } from '@/components/shared/StatTile'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
-import { selectPrimaryDisk } from './mac-stats'
+import { selectPrimaryDisk } from '../../../electron/mac-stats'
 import { API_BASE } from './api-base'
 import { EightfoldProtection } from './EightfoldProtection'
 
