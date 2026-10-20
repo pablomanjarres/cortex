@@ -33,6 +33,7 @@ import { blackoutOriginAllowed } from './screen-blackout-contract.js'
 import { KnowledgeVaultService } from './knowledge/vault.js'
 import { ResearchNarrativeStore, vaultBackedResearch } from './knowledge/research-narrative.js'
 import { handleKnowledgeRequest, resolveKnowledgeLink } from './knowledge/http.js'
+import { selectPrimaryDisk, type MacDisk } from './mac-stats.js'
 
 interface StoredAutomationRun {
   id: string
@@ -92,7 +93,7 @@ let cachedWorkHours: WorkHoursState = emptyWorkHoursState()
 interface HostStats {
   cpu: number; mem: number; memUsed: number; memTotal: number
   swap: number; load1: number; cores: number; uptime: string
-  rootFsPct?: number; rootFsUsed?: number; rootFsSize?: number
+  rootFsPct?: number; rootFsUsed?: number; rootFsSize?: number; diskMount?: string
   rxBps?: number; txBps?: number
 }
 let cachedMacStats: HostStats | null = null
@@ -225,8 +226,8 @@ async function fetchHostStats(host: string): Promise<HostStats> {
   if (swR && swR.ok) {
     try { const s = await swR.json(); swap = s?.percent ?? 0 } catch { /* ignore */ }
   }
-  const fsList = fsR.ok ? (await fsR.json()) as Array<{ mnt_point: string; percent: number; used: number; size: number }> : []
-  const root = fsList.find((f) => f.mnt_point === '/')
+  const fsList = fsR.ok ? (await fsR.json()) as MacDisk[] : []
+  const root = selectPrimaryDisk(fsList)
   let rxBps: number | undefined
   let txBps: number | undefined
   if (netR && netR.ok) {
@@ -254,6 +255,7 @@ async function fetchHostStats(host: string): Promise<HostStats> {
     load1: load.min1 ?? 0,
     cores: load.cpucore ?? 1,
     uptime,
+    diskMount: root?.mnt_point,
     rootFsPct: root?.percent,
     rootFsUsed: root?.used,
     rootFsSize: root?.size,
@@ -544,7 +546,7 @@ function buildHostStatsItems(label: string, s: HostStats | null, err: string | n
   )
   if (s.swap > 0) items.push({ label: `· Swap ${s.swap.toFixed(1)}%`, enabled: false })
   if (s.rootFsPct != null && s.rootFsSize != null && s.rootFsUsed != null) {
-    items.push({ label: `· Disk /  ${s.rootFsPct.toFixed(1)}%  ${fmtBytesShort(s.rootFsUsed)} / ${fmtBytesShort(s.rootFsSize)}`, enabled: false })
+    items.push({ label: `· Disk ${s.diskMount === '/System/Volumes/Data' ? 'Data' : (s.diskMount ?? '/')}  ${s.rootFsPct.toFixed(1)}%  ${fmtBytesShort(s.rootFsUsed)} / ${fmtBytesShort(s.rootFsSize)}`, enabled: false })
   }
   if (s.uptime) items.push({ label: `· Uptime ${s.uptime}`, enabled: false })
   return items

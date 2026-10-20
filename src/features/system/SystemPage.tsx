@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
 import { ScreenBlackout } from './ScreenBlackout'
-import { selectPrimaryDisk } from './mac-stats'
+import { selectPrimaryDisk } from '../../../electron/mac-stats'
 import { systemApiUrl, usePolledJson, type HostKey } from './system-api'
 import { EightfoldProtection } from './EightfoldProtection'
 
