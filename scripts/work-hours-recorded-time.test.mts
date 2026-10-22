@@ -170,3 +170,15 @@ test('a late recorded interval closed by restart or manual Stop still ends befor
     assert.equal(read().sessions.find((row) => row.id === 'late')?.endedAt, '2026-10-01T18:00:00.000Z', close.type)
   }
 })
+
+test('a later recorded stop extends a pending interval only up to the next saved session', async () => {
+  const { command, read } = ledger()
+  await command({ type: 'start-owned-at', id: 'pending', projectId: 'p', startedAt: '2026-10-01T17:00:00Z' })
+  await command({ type: 'stop-owned-at', id: 'pending', endedAt: '2026-10-01T17:10:00Z' })
+  await command({ type: 'start-owned-at', id: 'next', projectId: 'p', startedAt: '2026-10-01T17:30:00Z' })
+  await command({ type: 'stop-owned-at', id: 'next', endedAt: '2026-10-01T17:40:00Z' })
+  await command({ type: 'stop-owned-at', id: 'pending', endedAt: '2026-10-01T18:00:00Z' })
+  const pending = read().sessions.find((row) => row.id === 'pending')
+  assert.equal(pending?.endedAt, '2026-10-01T17:30:00.000Z')
+  assert.equal(pending?.durationMs, 1_800_000)
+})
