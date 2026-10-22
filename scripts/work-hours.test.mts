@@ -6,10 +6,10 @@ import {
   emptyWorkHoursState,
   exportWorkHoursCsv,
   exportWorkHoursMarkdown,
-  workHoursTotals,
   type WorkEvidence,
   type WorkHoursState,
 } from '../electron/work-hours-model.ts'
+import { billableSessions } from '../electron/work-hours-billing.ts'
 
 const noEvidence: WorkEvidence = {
   pr: { status: 'Not verified', number: null, title: null, url: null, source: null, commit: null, checkedAt: null },
@@ -102,19 +102,12 @@ test('corrections reject reversed times, preserve original values, and recompute
   assert.equal(state.sessions[0].corrections.length, 0)
 })
 
-test('local day and month totals split a session at Bogotá midnight', () => {
-  const state = session(withProject(), 's1', 'construcredit', '2026-09-01T04:30:00Z', '2026-09-01T05:30:00Z')
-  assert.deepEqual(workHoursTotals(state, 'construcredit', '2026-09-01T05:30:00Z', 'America/Bogota'), {
-    todayMs: 1_800_000, monthMs: 1_800_000, totalMs: 3_600_000,
-  })
-})
-
 test('restart closes the active interval for review and blocks it from reports', () => {
   let state = applyWorkHoursCommand(withProject(), { type: 'start', id: 's1', projectId: 'construcredit' }, '2026-09-01T10:00:00Z')
   state = applyWorkHoursCommand(state, { type: 'mark-interrupted' }, '2026-09-02T10:00:00Z')
   assert.equal(state.active, null)
   assert.equal(state.sessions[0].needsReview, true)
-  assert.equal(workHoursTotals(state, 'construcredit', '2026-09-02T10:00:00Z', 'UTC').totalMs, 0)
+  assert.deepEqual(billableSessions(state.sessions), [])
   assert.throws(() => createWorkHoursReport(state, { id: 'r1', projectId: 'construcredit', sessionIds: ['s1'], task: 'Delivery' }, noEvidence, '2026-09-02T10:00:00Z'), /review/i)
   state = applyWorkHoursCommand(state, { type: 'review-session', sessionId: 's1' }, '2026-09-02T11:00:00Z')
   assert.equal(state.sessions[0].needsReview, false)
@@ -135,6 +128,29 @@ test('report includes selected sessions, bills exact milliseconds, and snapshots
   state = applyWorkHoursCommand(state, { type: 'set-rate', projectId: 'construcredit', ratePerHour: 200_000 }, '2026-09-01T15:00:00Z')
   state = applyWorkHoursCommand(state, { type: 'correct-session', sessionId: 's1', startedAt: '2026-09-01T10:00:00Z', endedAt: '2026-09-01T10:30:00Z', description: 'Changed later', billable: true, prUrl: null }, '2026-09-01T16:00:00Z')
   assert.deepEqual(state.reports[0], report)
+})
+
+test('client exports hide internal rows and elapsed totals from legacy report snapshots', () => {
+  let state = withProject()
+  state = applyWorkHoursCommand(state, { type: 'set-rate', projectId: 'construcredit', ratePerHour: 100_000 }, '2026-09-01T09:00:00Z')
+  state = session(state, 'client', 'construcredit', '2026-09-01T10:00:00Z', '2026-09-01T11:00:01Z')
+  state = session(state, 'internal', 'construcredit', '2026-09-01T12:00:00Z', '2026-09-01T12:30:00Z')
+  state = applyWorkHoursCommand(state, {
+    type: 'correct-session', sessionId: 'internal', startedAt: '2026-09-01T12:00:00Z',
+    endedAt: '2026-09-01T12:30:00Z', description: 'Internal planning', billable: false, prUrl: null,
+  }, '2026-09-01T13:00:00Z')
+  const report = createWorkHoursReport(state, {
+    id: 'legacy', projectId: 'construcredit', sessionIds: ['client', 'internal'], task: 'Client delivery',
+  }, noEvidence, '2026-09-01T14:00:00Z')
+  const before = structuredClone(report)
+
+  for (const exported of [exportWorkHoursMarkdown(report), exportWorkHoursCsv(report)]) {
+    assert.doesNotMatch(exported, /Internal planning|Worked|1h 30m/i)
+    assert.match(exported, /Billable 1h 0m 1s/i)
+    assert.match(exported, /COP 100,027\.78/)
+  }
+  assert.match(exportWorkHoursMarkdown(report), /Total billable: 1h 0m 1s/)
+  assert.deepEqual(report, before)
 })
 
 test('unset rate produces no amount, and missing evidence remains unverified', () => {

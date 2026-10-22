@@ -56,9 +56,9 @@ export function WorkSessionEditor({ session, busy, saveError, onClose, onSave }:
     <Modal
       open
       onOpenChange={(open) => { if (!open && !busy) onClose() }}
-      title={session.needsReview ? 'Review interrupted session' : 'Edit session'}
+      title={session.needsReview ? session.billable ? 'Review interrupted session' : 'Review work session' : 'Edit session'}
       description={session.needsReview
-        ? 'Confirm the actual stop time before this session can enter a report.'
+        ? 'Confirm the actual interval and whether this work is billable.'
         : 'Corrections keep the original values in the private ledger.'}
       size="lg"
     >

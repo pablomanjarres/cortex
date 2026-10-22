@@ -3,6 +3,7 @@ export interface WorkProject {
   name: string
   ratePerHour: number | null
   currency: 'COP'
+  billing?: { includedHours: number; cycleDay: number; timeZone: string }
 }
 
 export interface ActiveWork {
@@ -10,6 +11,8 @@ export interface ActiveWork {
   projectId: string
   startedAt: string
   interrupted: boolean
+  /** Automatic activity is unbilled until explicitly reviewed. Legacy/manual timers omit this flag. */
+  billable?: boolean
 }
 
 export interface WorkSessionValues {
@@ -63,6 +66,7 @@ export interface ReportSelection {
 export interface WorkReportRow extends WorkSessionValues {
   id: string
   durationMs: number
+  chargeableMs?: number
 }
 
 export interface WorkReport {
@@ -74,6 +78,7 @@ export interface WorkReport {
   rows: WorkReportRow[]
   totalMs: number
   billableMs: number
+  chargeableMs?: number
   ratePerHour: number | null
   currency: 'COP'
   amount: number | null
@@ -91,10 +96,13 @@ export type WorkHoursCommand =
   | { type: 'add-project'; id: string; name: string }
   | { type: 'rename-project'; projectId: string; name: string }
   | { type: 'set-rate'; projectId: string; ratePerHour: number | null }
+  | { type: 'set-billing-policy'; projectId: string; includedHours: number; cycleDay: number; timeZone: string }
   | { type: 'start'; id: string; projectId: string }
+  | { type: 'start-owned-at'; id: string; projectId: string; startedAt: string }
   | { type: 'switch'; id: string; projectId: string }
   | { type: 'stop' }
   | { type: 'stop-owned'; id: string }
+  | { type: 'stop-owned-at'; id: string; endedAt: string }
   | { type: 'attach-deliverable'; id: string; prUrl: string; description: string }
   | { type: 'correct-session'; sessionId: string; startedAt: string; endedAt: string; description: string; billable: boolean; prUrl: string | null }
   | { type: 'review-session'; sessionId: string }

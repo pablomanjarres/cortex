@@ -14,7 +14,7 @@ interface WorkSessionHistoryProps {
 
 export function WorkSessionHistory({ sessions, busy, onToggleBillable, onEdit }: WorkSessionHistoryProps) {
   return (
-    <WidgetCard title="Session history" description="Correct dates, describe the work, and mark time as billable or nonbillable.">
+    <WidgetCard title="Session history" description="Review saved work and correct billable sessions.">
       {sessions.length === 0 ? (
         <EmptyState message="No saved sessions yet." hint="Press Start, then Stop to save an interval." className="py-5" />
       ) : (
@@ -23,9 +23,9 @@ export function WorkSessionHistory({ sessions, busy, onToggleBillable, onEdit }:
             <div key={session.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 p-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-mono text-sm tabular-nums">{duration(session.durationMs)}</p>
+                  {!session.needsReview && <p className="font-mono text-sm tabular-nums">{duration(session.durationMs)}</p>}
                   <Chip size="sm" variant={session.needsReview ? 'warning' : session.billable ? 'success' : 'neutral'}>
-                    {session.needsReview ? 'Interrupted · review required' : session.billable ? 'Billable' : 'Nonbillable'}
+                    {session.needsReview ? 'Pending · review required' : session.billable ? 'Billable' : 'Nonbillable'}
                   </Chip>
                   {session.corrections.length > 0 && <Chip size="sm">Corrected</Chip>}
                 </div>
