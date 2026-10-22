@@ -126,7 +126,8 @@ test('verified work continuing after restart can recover until completion withou
   await other.command({ type: 'start-owned-at', id: 'ccw-one', projectId: 'p', startedAt: '2026-10-01T19:00:00Z' })
   await other.service.restore('2026-10-01T19:10:00Z')
   await other.service.command({ type: 'start', id: 'manual', projectId: 'p' }, '2026-10-01T19:11:00Z')
-  await assert.rejects(other.command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:20:00Z' }), /overlaps/)
+  await other.command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:20:00Z' })
+  assert.equal(other.read().sessions[0].endedAt, '2026-10-01T19:11:00.000Z')
   assert.equal(other.read().active?.id, 'manual')
 })
 
