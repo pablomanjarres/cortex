@@ -1,5 +1,5 @@
 import { type WorkEvidence, type WorkEvidenceFact, type WorkHoursState, type WorkReport, type WorkReportRow, type ReportSelection, iso, id, project, currentValues } from './work-hours-types.js'
-import { billingPeriod, chargeableWork } from './work-hours-billing.js'
+import { chargeableWork } from './work-hours-billing.js'
 
 function copyEvidence(evidence: WorkEvidence): WorkEvidence {
   const fact = <Status extends string>(value: WorkEvidenceFact<Status>): WorkEvidenceFact<Status> => ({
@@ -67,45 +67,4 @@ export function createWorkHoursReport(state: WorkHoursState, selection: ReportSe
     amount: selectedProject.ratePerHour === null ? null : chargeableMs / 3_600_000 * selectedProject.ratePerHour,
     evidence: copyEvidence(evidence),
   }
-}
-
-export function workHoursTotals(state: WorkHoursState, projectId: string, now: string, timeZone: string): { todayMs: number; monthMs: number; totalMs: number } {
-  const selectedProject = project(state, projectId)
-  const nowMs = Date.parse(iso(now))
-  const formatter = new Intl.DateTimeFormat('en-US', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })
-  const localKey = (milliseconds: number, period: 'day' | 'month'): string => {
-    const parts = formatter.formatToParts(milliseconds)
-    const value = (name: string): string => parts.find((part) => part.type === name)?.value ?? ''
-    const month = `${value('year')}-${value('month')}`
-    return period === 'month' ? month : `${month}-${value('day')}`
-  }
-  const boundary = (period: 'day' | 'month'): number => {
-    const key = localKey(nowMs, period)
-    let before = nowMs - (period === 'day' ? 2 : 35) * 86_400_000
-    let atOrAfter = nowMs
-    while (before + 1 < atOrAfter) {
-      const middle = Math.floor((before + atOrAfter) / 2)
-      if (localKey(middle, period) === key) atOrAfter = middle
-      else before = middle
-    }
-    return atOrAfter
-  }
-  const todayStart = boundary('day')
-  const monthStart = selectedProject.billing ? Date.parse(billingPeriod(now, selectedProject.billing.cycleDay, selectedProject.billing.timeZone).start) : boundary('month')
-  let todayMs = 0
-  let monthMs = 0
-  let totalMs = 0
-  const add = (startedAt: string, endedAt: string): void => {
-    const start = Date.parse(startedAt)
-    const end = Math.min(Date.parse(endedAt), nowMs)
-    if (end <= start) return
-    totalMs += end - start
-    todayMs += Math.max(0, end - Math.max(start, todayStart))
-    monthMs += Math.max(0, end - Math.max(start, monthStart))
-  }
-  for (const row of state.sessions) {
-    if (row.projectId === projectId && !row.needsReview) add(row.startedAt, row.endedAt)
-  }
-  if (state.active?.projectId === projectId && !state.active.interrupted) add(state.active.startedAt, new Date(nowMs).toISOString())
-  return { todayMs, monthMs, totalMs }
 }
