@@ -159,3 +159,14 @@ test('a recorded start inside saved work is rejected', async () => {
   await command({ type: 'stop-owned-at', id: 'saved', endedAt: '2026-10-01T18:30:00Z' })
   await assert.rejects(command({ type: 'start-owned-at', id: 'inside', projectId: 'p', startedAt: '2026-10-01T18:10:00Z' }), /overlaps a saved session/)
 })
+
+test('a late recorded interval closed by restart or manual Stop still ends before saved work', async () => {
+  for (const close of [{ type: 'mark-interrupted' }, { type: 'stop' }] as const) {
+    const { command, read } = ledger()
+    await command({ type: 'start-owned-at', id: 'saved', projectId: 'p', startedAt: '2026-10-01T18:00:00Z' })
+    await command({ type: 'stop-owned-at', id: 'saved', endedAt: '2026-10-01T18:30:00Z' })
+    await command({ type: 'start-owned-at', id: 'late', projectId: 'p', startedAt: '2026-10-01T17:45:00Z' })
+    await command(close)
+    assert.equal(read().sessions.find((row) => row.id === 'late')?.endedAt, '2026-10-01T18:00:00.000Z', close.type)
+  }
+})
