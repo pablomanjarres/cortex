@@ -18,6 +18,16 @@ function completed(active: ActiveWork, endedAt: string, needsReview = false): Wo
   }
 }
 
+/** Close the active interval, ending a late recorded interval where saved work begins so sessions never overlap. */
+function closeActive(state: WorkHoursState, active: ActiveWork, endedAt: string, needsReview = false): WorkSession {
+  const start = Date.parse(active.startedAt), end = Date.parse(endedAt)
+  const nextSaved = state.sessions.reduce((next, entry) => {
+    const savedStart = Date.parse(entry.startedAt)
+    return savedStart >= start && savedStart < next ? savedStart : next
+  }, end)
+  return completed(active, nextSaved < end ? new Date(nextSaved).toISOString() : endedAt, needsReview)
+}
+
 function availableSessionId(state: WorkHoursState, value: string): string {
   const sessionId = id(value)
   if (state.active?.id === sessionId || state.sessions.some((entry) => entry.id === sessionId)) {
@@ -100,8 +110,11 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
         if (existing.projectId !== command.projectId || existing.startedAt !== startedAt) throw new Error('Recorded start conflicts with existing session')
         return state
       }
-      const started = applyWorkHoursCommand(state, { type: 'start', id: sessionId, projectId: command.projectId }, startedAt)
-      return { ...started, active: { ...started.active!, billable: false } }
+      if (state.active) throw new Error('Work is already active; use Switch or Stop')
+      // Recorded intervals can arrive after later work was saved; they may fill earlier gaps.
+      const startMs = Date.parse(startedAt)
+      if (state.sessions.some((entry) => Date.parse(entry.startedAt) <= startMs && startMs < Date.parse(entry.endedAt))) throw new Error('Start time overlaps a saved session')
+      return { ...state, active: { id: sessionId, projectId: command.projectId, startedAt, interrupted: false, billable: false } }
     }
     case 'stop-owned-at': {
       const sessionId = id(command.id)
@@ -127,14 +140,14 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
       return {
         ...state,
         active: { id: sessionId, projectId: command.projectId, startedAt: at, interrupted: false },
-        sessions: [...state.sessions, completed(active, at, active.interrupted)],
+        sessions: [...state.sessions, closeActive(state, active, at, active.interrupted)],
       }
     }
     case 'stop':
     case 'stop-owned':
       if (command.type === 'stop-owned' && state.active?.id !== id(command.id)) return state
       if (!state.active) return state
-      return { ...state, active: null, sessions: [...state.sessions, completed(state.active, at, state.active.interrupted)] }
+      return { ...state, active: null, sessions: [...state.sessions, closeActive(state, state.active, at, state.active.interrupted)] }
     case 'attach-deliverable': {
       const sessionId = id(command.id)
       const row = state.sessions.find((entry) => entry.id === sessionId)
@@ -200,7 +213,7 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
       return {
         ...state,
         active: null,
-        sessions: [...state.sessions, completed(state.active, new Date(Math.max(Date.parse(at), Date.parse(state.active.startedAt))).toISOString(), true)],
+        sessions: [...state.sessions, closeActive(state, state.active, new Date(Math.max(Date.parse(at), Date.parse(state.active.startedAt))).toISOString(), true)],
       }
     case 'finalize-report': {
       if (state.reports.some((entry) => entry.id === command.id)) throw new Error('Report ID already exists')
