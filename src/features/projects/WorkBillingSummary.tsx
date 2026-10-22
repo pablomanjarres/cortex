@@ -1,11 +1,18 @@
+import { useMemo } from 'react'
 import { StatTile } from '@/components/shared/StatTile'
 import { billingCycleSummary, chargeableWork } from '../../../electron/work-hours-billing'
 import type { WorkHoursState, WorkProject } from '../../../electron/work-hours-model'
 import { copAmount, duration, includedTimeDisplay } from './work-hours-ui'
 
 export function WorkBillingSummary({ state, project, now }: { state: WorkHoursState; project: WorkProject; now: string }) {
-  if (!project.billing) {
-    const savedMs = [...chargeableWork(state, project).values()].reduce((sum, value) => sum + value, 0)
+  // Saved sessions change rarely; the panel re-renders every second while tracking.
+  const minute = now.slice(0, 16)
+  const totals = useMemo(() => project.billing
+    ? { cycle: billingCycleSummary(state, project, `${minute}:00.000Z`), savedMs: 0 }
+    : { cycle: null, savedMs: [...chargeableWork(state, project).values()].reduce((sum, value) => sum + value, 0) },
+  [state, project, minute])
+  if (!project.billing || !totals.cycle) {
+    const { savedMs } = totals
     return (
       <div className="grid gap-3 lg:grid-cols-2">
         <StatTile label="Saved billable time" value={duration(Math.round(savedMs / 60_000) * 60_000)} sub="All saved sessions marked billable. Running time is separate." className="p-4" />
@@ -13,7 +20,7 @@ export function WorkBillingSummary({ state, project, now }: { state: WorkHoursSt
       </div>
     )
   }
-  const cycle = billingCycleSummary(state, project, now)
+  const { cycle } = totals
   const date = new Intl.DateTimeFormat('en-US', { timeZone: project.billing.timeZone, month: 'short', day: 'numeric' })
   const display = includedTimeDisplay(cycle.qualifyingMs, project.billing.includedHours)
   const additional = cycle.chargeableMs < 60_000
