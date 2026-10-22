@@ -126,7 +126,8 @@ test('verified work continuing after restart can recover until completion withou
   await other.command({ type: 'start-owned-at', id: 'ccw-one', projectId: 'p', startedAt: '2026-10-01T19:00:00Z' })
   await other.service.restore('2026-10-01T19:10:00Z')
   await other.service.command({ type: 'start', id: 'manual', projectId: 'p' }, '2026-10-01T19:11:00Z')
-  await assert.rejects(other.command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:20:00Z' }), /overlaps/)
+  await other.command({ type: 'stop-owned-at', id: 'ccw-one', endedAt: '2026-10-01T19:20:00Z' })
+  assert.equal(other.read().sessions[0].endedAt, '2026-10-01T19:11:00.000Z')
   assert.equal(other.read().active?.id, 'manual')
 })
 
@@ -169,4 +170,16 @@ test('a late recorded interval closed by restart or manual Stop still ends befor
     await command(close)
     assert.equal(read().sessions.find((row) => row.id === 'late')?.endedAt, '2026-10-01T18:00:00.000Z', close.type)
   }
+})
+
+test('a later recorded stop extends a pending interval only up to the next saved session', async () => {
+  const { command, read } = ledger()
+  await command({ type: 'start-owned-at', id: 'pending', projectId: 'p', startedAt: '2026-10-01T17:00:00Z' })
+  await command({ type: 'stop-owned-at', id: 'pending', endedAt: '2026-10-01T17:10:00Z' })
+  await command({ type: 'start-owned-at', id: 'next', projectId: 'p', startedAt: '2026-10-01T17:30:00Z' })
+  await command({ type: 'stop-owned-at', id: 'next', endedAt: '2026-10-01T17:40:00Z' })
+  await command({ type: 'stop-owned-at', id: 'pending', endedAt: '2026-10-01T18:00:00Z' })
+  const pending = read().sessions.find((row) => row.id === 'pending')
+  assert.equal(pending?.endedAt, '2026-10-01T17:30:00.000Z')
+  assert.equal(pending?.durationMs, 1_800_000)
 })

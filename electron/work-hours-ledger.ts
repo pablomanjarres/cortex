@@ -18,13 +18,17 @@ function completed(active: ActiveWork, endedAt: string, needsReview = false): Wo
   }
 }
 
+/** Where the first saved or active work after `start` begins, ignoring one session. */
+function nextWorkStart(state: WorkHoursState, start: number, end: number, ignoreId?: string): number {
+  const starts = [...state.sessions.filter((entry) => entry.id !== ignoreId), ...(state.active ? [state.active] : [])]
+    .map((entry) => Date.parse(entry.startedAt))
+  return starts.reduce((next, other) => other >= start && other < next ? other : next, end)
+}
+
 /** Close the active interval, ending a late recorded interval where saved work begins so sessions never overlap. */
 function closeActive(state: WorkHoursState, active: ActiveWork, endedAt: string, needsReview = false): WorkSession {
-  const start = Date.parse(active.startedAt), end = Date.parse(endedAt)
-  const nextSaved = state.sessions.reduce((next, entry) => {
-    const savedStart = Date.parse(entry.startedAt)
-    return savedStart >= start && savedStart < next ? savedStart : next
-  }, end)
+  const end = Date.parse(endedAt)
+  const nextSaved = nextWorkStart({ ...state, active: null }, Date.parse(active.startedAt), end)
   return completed(active, nextSaved < end ? new Date(nextSaved).toISOString() : endedAt, needsReview)
 }
 
@@ -123,11 +127,10 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
       const saved = state.sessions.find((entry) => entry.id === sessionId)
       if (saved?.needsReview) {
         if (Date.parse(endedAt) < Date.parse(saved.startedAt)) throw new Error('Stop time precedes start time')
-        const start = Date.parse(saved.startedAt), end = Date.parse(endedAt)
-        if (state.sessions.some((entry) => entry.id !== sessionId && overlaps(start, end, Date.parse(entry.startedAt), Date.parse(entry.endedAt)))) throw new Error('Recorded stop overlaps another session')
-        if (state.active && overlaps(start, end, Date.parse(state.active.startedAt), Date.parse(at))) throw new Error('Recorded stop overlaps active work')
-        const corrected = saveCorrection(state, saved, { ...currentValues(saved), endedAt }, at, Date.parse(endedAt) - Date.parse(saved.startedAt))
-        return corrected
+        // A later stop extends pending work only up to the next saved or active work.
+        const start = Date.parse(saved.startedAt)
+        const end = nextWorkStart(state, start, Date.parse(endedAt), sessionId)
+        return saveCorrection(state, saved, { ...currentValues(saved), endedAt: new Date(end).toISOString() }, at, end - start)
       }
       return applyWorkHoursCommand(state, { type: 'stop-owned', id: sessionId }, endedAt)
     }
