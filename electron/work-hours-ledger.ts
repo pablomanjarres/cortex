@@ -100,8 +100,11 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
         if (existing.projectId !== command.projectId || existing.startedAt !== startedAt) throw new Error('Recorded start conflicts with existing session')
         return state
       }
-      const started = applyWorkHoursCommand(state, { type: 'start', id: sessionId, projectId: command.projectId }, startedAt)
-      return { ...started, active: { ...started.active!, billable: false } }
+      if (state.active) throw new Error('Work is already active; use Switch or Stop')
+      // Recorded intervals can arrive after later work was saved; they may fill earlier gaps.
+      const startMs = Date.parse(startedAt)
+      if (state.sessions.some((entry) => Date.parse(entry.startedAt) <= startMs && startMs < Date.parse(entry.endedAt))) throw new Error('Start time overlaps a saved session')
+      return { ...state, active: { id: availableSessionId(state, sessionId), projectId: command.projectId, startedAt, interrupted: false, billable: false } }
     }
     case 'stop-owned-at': {
       const sessionId = id(command.id)
@@ -116,7 +119,11 @@ export function applyWorkHoursCommand(state: WorkHoursState, command: WorkHoursC
         const corrected = saveCorrection(state, saved, { ...currentValues(saved), endedAt }, at, Date.parse(endedAt) - Date.parse(saved.startedAt))
         return corrected
       }
-      return applyWorkHoursCommand(state, { type: 'stop-owned', id: sessionId }, endedAt)
+      // A late interval ends where already saved work begins, so sessions never overlap.
+      const activeStart = state.active?.id === sessionId ? Date.parse(state.active.startedAt) : NaN
+      const nextSaved = Math.min(...state.sessions.map((entry) => Date.parse(entry.startedAt))
+        .filter((start) => start >= activeStart && start < Date.parse(endedAt)))
+      return applyWorkHoursCommand(state, { type: 'stop-owned', id: sessionId }, Number.isFinite(nextSaved) ? new Date(nextSaved).toISOString() : endedAt)
     }
     case 'switch': {
       const active = state.active
