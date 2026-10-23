@@ -25,7 +25,7 @@ test('a CRM record link opens the CRM tab, switches to its org, expands it and r
   const requested = await mockKnowledge(page, false)
   await page.goto('/#/social?tab=crm&record=crm%3Acrm-2')
   await expect(page.getByRole('tab', { name: 'CRM', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByPlaceholder('Notes about this contact...')).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Notes', exact: true })).toBeVisible()
   await expect.poll(() => (backend.stores['cortex-crm'] as typeof crm).activeOrg).toBe('second')
   await page.getByRole('button', { name: 'Open in Eightfold', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'The Eightfold vault is not available on this device.' })).toBeVisible()
