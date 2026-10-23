@@ -16,6 +16,9 @@ test('notes formatting can be reached and used with the keyboard', async ({ page
   await bold.press('Enter')
   await expect(editor).toHaveValue('**hello**')
   await expect.poll(() => (backend.stores['cortex-captures'] as { content: string }[])[0].content).toBe('**hello**')
+  await bold.focus()
+  await page.getByRole('searchbox', { name: 'Search captures', exact: true }).focus()
+  await expect(editor).toHaveCount(0)
 })
 
 test('thought details have one labelled editor with keyboard expansion', async ({ page }) => {
@@ -51,6 +54,7 @@ test('fullscreen notes use the shared dialog and restore focus on Escape', async
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(fullscreen).toBeFocused()
+  await expect(fullscreen.locator('..')).toHaveCSS('opacity', '1')
 })
 
 test('Market and Student share numeric editing with cancel and one save', async ({ page }) => {
@@ -72,9 +76,14 @@ test('Market and Student share numeric editing with cancel and one save', async 
   await expect(trigger).toBeFocused()
   expect(backend.writes.filter(write => write.key === 'cortex-finances')).toHaveLength(before)
   await trigger.click()
-  await input.fill('550000')
+  await input.fill('550.000')
   await input.press('Enter')
   await expect(trigger).toBeFocused()
   await expect.poll(() => backend.writes.filter(write => write.key === 'cortex-finances').length).toBe(before + 1)
   await expect.poll(() => (backend.stores['cortex-finances'] as { items: { months: number[] }[] }).items[0].months[9]).toBe(550000)
+  await trigger.click()
+  await input.fill('646,000')
+  await input.press('Enter')
+  await expect.poll(() => (backend.stores['cortex-finances'] as { items: { months: number[] }[] }).items[0].months[9]).toBe(646000)
+  expect(backend.writes.filter(write => write.key === 'cortex-finances')).toHaveLength(before + 2)
 })

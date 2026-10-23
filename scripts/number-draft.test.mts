@@ -42,3 +42,12 @@ test('unbounded drafts remain finite and whole-money rules reject fractions', ()
   const large = parseNumberDraft('9'.repeat(307), { min: 0 })
   assert.equal(large.ok && Number.isFinite(large.value), true)
 })
+
+
+test('whole-money drafts preserve thousands grouping without changing grade decimals', () => {
+  const rule = { min: 0, integer: true }
+  for (const value of ['646000', '646.000', '646,000']) assert.deepEqual(parseNumberDraft(value, rule), { ok: true, value: 646000 })
+  for (const value of ['1.250.000', '1,250,000']) assert.deepEqual(parseNumberDraft(value, rule), { ok: true, value: 1250000 })
+  for (const value of ['646.5', '646,5', '1.234,567']) assert.deepEqual(parseNumberDraft(value, rule), { ok: false })
+  assert.deepEqual(parseNumberDraft('4,5', grade), { ok: true, value: 4.5 })
+})
