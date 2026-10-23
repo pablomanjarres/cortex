@@ -128,13 +128,13 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
         {/* Editable name/description */}
         {editing && selected && (
           <div className="flex gap-2">
-            <Input
+            <Input aria-label="Template name"
               value={selected.name}
               onChange={e => updateTemplateName(e.target.value)}
               className="h-7 flex-1 text-xs"
               placeholder="Template name"
             />
-            <Input
+            <Input aria-label="Template description"
               value={selected.description}
               onChange={e => updateTemplateDescription(e.target.value)}
               className="h-7 flex-[2] text-xs"
@@ -202,28 +202,28 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
                   {/* Inline add food */}
                   {editing && addingMealId === meal.id && (
                     <div className="flex items-center gap-1.5 pt-1">
-                      <Input
+                      <Input aria-label="Food name"
                         placeholder="Name"
                         value={newName}
                         onChange={e => setNewName(e.target.value)}
                         className="h-7 flex-1 text-xs"
                         onKeyDown={e => e.key === 'Enter' && addFood(meal.id)}
                       />
-                      <Input
+                      <Input aria-label="Protein (g)"
                         type="number"
                         placeholder="Prot"
                         value={newProtein}
                         onChange={e => setNewProtein(e.target.value)}
                         className="h-7 w-14 text-xs"
                       />
-                      <Input
+                      <Input aria-label="Calories"
                         type="number"
                         placeholder="Cal"
                         value={newCalories}
                         onChange={e => setNewCalories(e.target.value)}
                         className="h-7 w-14 text-xs"
                       />
-                      <Input
+                      <Input aria-label="Quantity"
                         placeholder="Qty"
                         value={newQuantity}
                         onChange={e => setNewQuantity(e.target.value)}

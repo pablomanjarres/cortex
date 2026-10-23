@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Field } from '@/components/shared/Field'
 import type { WorkHoursCommand, WorkHoursState, WorkProject } from '../../../electron/work-hours-model'
 import { copAmount } from './work-hours-ui'
 
@@ -17,10 +18,9 @@ export function WorkProjectForm({ busy, onAdd }: WorkProjectFormProps) {
   }
   return (
     <form onSubmit={(event) => { void submit(event) }} className="flex flex-wrap items-end gap-2">
-      <label className="min-w-0 flex-1 space-y-1.5 text-sm font-medium" htmlFor="work-project-name">
-        New project
-        <Input id="work-project-name" placeholder="Project name" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} />
-      </label>
+      <Field label="New project" className="flex-1">
+        {(id) => <Input id={id} placeholder="Project name" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} />}
+      </Field>
       <Button type="submit" variant="secondary" disabled={busy || !name.trim()}>Add project</Button>
     </form>
   )
@@ -56,17 +56,15 @@ export function WorkProjectSettings({ project, busy, onAdd, commandError, onComm
   return (
     <div className="space-y-5">
       <form onSubmit={(event) => { void saveName(event) }} className="flex flex-wrap items-end gap-2">
-        <label className="min-w-0 flex-1 space-y-1.5 text-sm font-medium" htmlFor="work-project-edit-name">
-          Project name
-          <Input id="work-project-edit-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} />
-        </label>
+        <Field label="Project name" className="flex-1">
+          {(id) => <Input id={id} value={name} onChange={(event) => setName(event.target.value)} maxLength={120} />}
+        </Field>
         <Button type="submit" variant="secondary" disabled={busy || !name.trim() || name.trim() === project.name}>Save name</Button>
       </form>
       <form onSubmit={(event) => { void saveRate(event) }} className="flex flex-wrap items-end gap-2">
-        <label className="w-44 space-y-1.5 text-sm font-medium" htmlFor="work-hourly-rate">
-          Rate (COP/hour)
-          <Input id="work-hourly-rate" type="number" min="0" step="0.01" inputMode="decimal" placeholder="Not set" value={rate} onChange={(event) => setRate(event.target.value)} />
-        </label>
+        <Field label="Rate (COP/hour)" className="w-44">
+          {(id) => <Input id={id} type="number" min="0" step="0.01" inputMode="decimal" placeholder="Not set" value={rate} onChange={(event) => setRate(event.target.value)} />}
+        </Field>
         <Button type="submit" variant="secondary" disabled={busy || (rate.trim() === '' ? project.ratePerHour === null : Number(rate) === project.ratePerHour)}>Save rate</Button>
       </form>
       <p className="text-sm text-muted-foreground">

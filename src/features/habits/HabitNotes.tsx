@@ -1,3 +1,4 @@
+import { Textarea } from '@/components/ui/textarea'
 import { StickyNote } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -47,12 +48,12 @@ export function HabitNoteEditor({ habit, onChange }: HabitNoteEditorProps) {
         <StickyNote className="h-3 w-3" />
         What this means · what counts as done
       </div>
-      <textarea
+      <Textarea aria-label="Habit notes"
         value={habit.context ?? ''}
         onChange={(e) => onChange(e.target.value)}
         autoFocus
         placeholder="Write the full meaning of this habit and exactly what has to be done to check it off..."
-        className="min-h-[72px] w-full resize-y rounded-md border border-input bg-input/20 px-2.5 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors duration-150 placeholder:text-foreground-faint focus-visible:border-ring/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="min-h-[72px] w-full resize-y px-2.5 py-2 text-sm leading-relaxed"
       />
     </div>
   )

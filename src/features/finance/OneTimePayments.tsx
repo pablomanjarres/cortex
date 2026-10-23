@@ -1,7 +1,9 @@
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Field } from '@/components/shared/Field'
 import { Modal } from '@/components/shared/Modal'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { FINANCE_CATEGORIES, type OneTimePayment } from './finance-model'
@@ -28,7 +30,6 @@ function initialDate(year: number, month: number): string {
 }
 
 export function OneTimePayments({ year, month, monthLabel, payments, total, formatAmount, onSave, onDelete }: Props) {
-  const formId = useId()
   const [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
 
@@ -92,31 +93,30 @@ export function OneTimePayments({ year, month, monthLabel, payments, total, form
       <Modal open={draft !== null} onOpenChange={(open) => { if (!open) setDraft(null) }} title={draft?.mode === 'edit' ? 'Edit one-time payment' : 'Add one-time payment'} description="Record an extra expense for one date.">
         {draft && (
           <form onSubmit={save} className="space-y-3">
-            <div className="space-y-1 text-sm font-medium">
-              <label htmlFor={`${formId}-name`}>Name</label>
-              <Input id={`${formId}-name`} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required maxLength={100} autoFocus />
-            </div>
-            <div className="space-y-1 text-sm font-medium">
-              <label htmlFor={`${formId}-amount`}>Amount (COP)</label>
-              <Input id={`${formId}-amount`} value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value.replace(/\D/g, '') })} inputMode="numeric" pattern="[1-9][0-9]*" required />
-            </div>
-            <div className="space-y-1 text-sm font-medium">
-              <label htmlFor={`${formId}-date`}>Date</label>
-              <Input id={`${formId}-date`} type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} min={`${year}-01-01`} max={`${year}-12-31`} required />
-            </div>
-            <div className="space-y-1 text-sm font-medium">
-              <label htmlFor={`${formId}-category`}>Category</label>
-              <select id={`${formId}-category`} value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-                {FINANCE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1 text-sm font-medium">
-              <label htmlFor={`${formId}-status`}>Status</label>
-              <select id={`${formId}-status`} value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as Draft['status'] })} className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm">
-                <option value="Paid">Paid</option>
-                <option value="Upcoming">Upcoming</option>
-              </select>
-            </div>
+            <Field label="Name">
+              {(id) => <Input id={id} value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required maxLength={100} autoFocus />}
+            </Field>
+            <Field label="Amount (COP)">
+              {(id) => <Input id={id} value={draft.amount} onChange={(event) => setDraft({ ...draft, amount: event.target.value.replace(/\D/g, '') })} inputMode="numeric" pattern="[1-9][0-9]*" required />}
+            </Field>
+            <Field label="Date">
+              {(id) => <Input id={id} type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} min={`${year}-01-01`} max={`${year}-12-31`} required />}
+            </Field>
+            <Field label="Category">
+              {(id) => (
+                <Select id={id} value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
+                  {FINANCE_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                </Select>
+              )}
+            </Field>
+            <Field label="Status">
+              {(id) => (
+                <Select id={id} value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as Draft['status'] })}>
+                  <option value="Paid">Paid</option>
+                  <option value="Upcoming">Upcoming</option>
+                </Select>
+              )}
+            </Field>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="secondary" onClick={() => setDraft(null)}>Cancel</Button>
               <Button type="submit">Save payment</Button>

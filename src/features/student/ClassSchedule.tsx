@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { useState } from 'react'
 import { useStore } from '@/lib/store'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -24,11 +25,6 @@ export interface ClassMeeting {
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DEFAULT_TERM_START = '2026-07-15'
 const DEFAULT_TERM_END = '2026-11-28'
-
-// Shared token style for native <select> controls (mirrors the Input primitive;
-// the global :focus-visible rule supplies the focus ring).
-const selectCls =
-  'h-8 cursor-pointer rounded-md border border-input bg-input/20 px-2 text-sm text-foreground transition-colors duration-150 outline-none'
 
 interface Draft {
   courseId: string
@@ -138,16 +134,17 @@ export function ClassSchedule({ courses }: Props) {
   const renderForm = () => (
     <div className="flex flex-col gap-2.5 rounded-md border border-border bg-muted/20 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <Select
           value={draft.courseId}
           onChange={(e) => setDraft((p) => ({ ...p, courseId: e.target.value }))}
-          className={selectCls}
+          aria-label="Course"
+          className="h-8 cursor-pointer px-2 text-sm"
         >
           {courses.length === 0 && <option value="">No courses</option>}
           {courses.map((c) => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
-        </select>
+        </Select>
         <div className="flex items-center gap-1">
           {DAY_LABELS.map((lbl, i) => (
             <Button
@@ -167,21 +164,21 @@ export function ClassSchedule({ courses }: Props) {
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Clock className="h-3.5 w-3.5" />
-          <Input type="time" value={draft.startTime} onChange={(e) => setDraft((p) => ({ ...p, startTime: e.target.value }))} className="w-28 font-mono text-xs" />
+          <Input type="time" value={draft.startTime} onChange={(e) => setDraft((p) => ({ ...p, startTime: e.target.value }))} aria-label="Start time" className="w-28 font-mono text-xs" />
           <span>–</span>
-          <Input type="time" value={draft.endTime} onChange={(e) => setDraft((p) => ({ ...p, endTime: e.target.value }))} className="w-28 font-mono text-xs" />
+          <Input type="time" value={draft.endTime} onChange={(e) => setDraft((p) => ({ ...p, endTime: e.target.value }))} aria-label="End time" className="w-28 font-mono text-xs" />
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <MapPin className="h-3.5 w-3.5" />
-          <Input value={draft.room} onChange={(e) => setDraft((p) => ({ ...p, room: e.target.value }))} placeholder="Room" className="w-28 text-xs" />
+          <Input value={draft.room} onChange={(e) => setDraft((p) => ({ ...p, room: e.target.value }))} placeholder="Room" aria-label="Room" className="w-28 text-xs" />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span>Term</span>
-          <Input type="date" value={draft.termStart} onChange={(e) => setDraft((p) => ({ ...p, termStart: e.target.value }))} className="w-36 font-mono text-xs" />
+          <Input type="date" value={draft.termStart} onChange={(e) => setDraft((p) => ({ ...p, termStart: e.target.value }))} aria-label="Term start" className="w-36 font-mono text-xs" />
           <span>→</span>
-          <Input type="date" value={draft.termEnd} onChange={(e) => setDraft((p) => ({ ...p, termEnd: e.target.value }))} className="w-36 font-mono text-xs" />
+          <Input type="date" value={draft.termEnd} onChange={(e) => setDraft((p) => ({ ...p, termEnd: e.target.value }))} aria-label="Term end" className="w-36 font-mono text-xs" />
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" onClick={save} disabled={!canSave}>

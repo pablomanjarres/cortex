@@ -1,9 +1,12 @@
+import { InlineNumberEditor } from '@/components/shared/InlineNumberEditor'
+import { Select } from '@/components/ui/select'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, useReducedMotion } from 'framer-motion'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Input } from '@/components/ui/input'
+import { Field } from '@/components/shared/Field'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { useStore, readStore, writeStore } from '@/lib/store'
@@ -115,8 +118,6 @@ export function MarketLog() {
   // Data for selected week
   const [log, setLogState] = useState<WeeklyMarketLog>({ weekStart: selectedWeek, items: [] })
   const [budget, setBudget] = useStore<number>('cortex-market-budget', 646000)
-  const [editingBudget, setEditingBudget] = useState(false)
-  const [budgetInput, setBudgetInput] = useState('')
   // The Finances Food budget is the single source of truth; Market spend rolls up into it.
   const [finances, setFinances] = useStore<FinanceDataLike>('cortex-finances', { year: new Date().getFullYear(), items: [] })
   const backfillRan = useRef(false)
@@ -344,24 +345,25 @@ export function MarketLog() {
         <StatTile label="Week total" value={fmtCOP(weeklyTotal)} icon={<Store />} />
         <StatTile label="Month total" value={fmtCOP(monthlyTotal)} icon={<TrendingUp />} />
         <div
-          className="surface cursor-pointer rounded-xl p-4"
-          onClick={() => { setEditingBudget(true); setBudgetInput(String(foodBudget)) }}
+          className="surface rounded-xl p-4"
           title="Synced with the Finances Food budget"
         >
           <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Food budget</p>
-          {editingBudget ? (
-            <input
-              value={budgetInput}
-              onChange={(e) => setBudgetInput(e.target.value.replace(/\D/g, ''))}
-              onKeyDown={(e) => { if (e.key === 'Enter') { const v = Number(budgetInput) || 0; setFinances(prev => withFoodBudget(prev, viewMonth, v)); setBudget(() => v || 646000); setEditingBudget(false) } }}
-              onBlur={() => { const v = Number(budgetInput) || 0; setFinances(prev => withFoodBudget(prev, viewMonth, v)); setBudget(() => v || 646000); setEditingBudget(false) }}
-              className="mt-1.5 w-full border-b border-input bg-transparent font-mono text-2xl font-medium tabular-nums text-foreground"
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
-            <p className="mt-1.5 font-mono text-2xl font-medium leading-none tabular-nums text-foreground">{fmtCOP(foodBudget)}</p>
-          )}
+          <InlineNumberEditor
+            key={viewMonth}
+            value={foodBudget}
+            rule={{ min: 0, integer: true }}
+            label="Food budget (COP)"
+            onCommit={value => {
+              if (value === undefined) return
+              setFinances(prev => withFoodBudget(prev, viewMonth, value))
+              setBudget(() => value || 646000)
+            }}
+            className="mt-1.5 justify-start font-mono text-2xl font-medium leading-none tabular-nums text-foreground"
+            inputClassName="mt-1.5 w-full font-mono text-2xl font-medium tabular-nums"
+          >
+            {fmtCOP(foodBudget)}
+          </InlineNumberEditor>
           <p className={`mt-1.5 font-mono text-2xs tabular-nums ${monthlyTotal <= foodBudget ? 'text-success' : 'text-destructive'}`}>
             {monthlyTotal <= foodBudget ? `${fmtCOP(foodBudget - monthlyTotal)} left` : `Over by ${fmtCOP(monthlyTotal - foodBudget)}`}
           </p>
@@ -487,18 +489,18 @@ export function MarketLog() {
             </div>
             {/* Custom preset form */}
             <div className="flex flex-wrap items-end gap-2">
-              <Input placeholder="Name" value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
+              <Input placeholder="Name" aria-label="Preset name" value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
                 className="h-8 min-w-[120px] flex-1 text-xs" />
-              <Input type="number" placeholder="Price" value={newPresetPrice} onChange={(e) => setNewPresetPrice(e.target.value)}
+              <Input type="number" placeholder="Price" aria-label="Preset price (COP)" value={newPresetPrice} onChange={(e) => setNewPresetPrice(e.target.value)}
                 className="h-8 w-20 text-xs" />
-              <select value={newPresetStore} onChange={(e) => setNewPresetStore(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground">
+              <Select value={newPresetStore} onChange={(e) => setNewPresetStore(e.target.value)} aria-label="Preset store"
+                className="w-auto h-8 px-2 text-xs">
                 {STORES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <select value={newPresetCategory} onChange={(e) => setNewPresetCategory(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground">
+              </Select>
+              <Select value={newPresetCategory} onChange={(e) => setNewPresetCategory(e.target.value)} aria-label="Preset category"
+                className="w-auto h-8 px-2 text-xs">
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              </Select>
               <Button variant="secondary" size="icon" onClick={saveToPresets} aria-label="Save preset">
                 <Bookmark />
               </Button>
@@ -510,30 +512,29 @@ export function MarketLog() {
       {/* Add item form — only for current or future weeks */}
       <WidgetCard title={`Add Purchase — ${getWeekLabel(selectedWeek)}`} compact delay={0.05}>
         <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-[120px] flex-1">
-            <label className="text-2xs text-muted-foreground">Item</label>
-            <Input placeholder="Pollo, leche..." value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />
-          </div>
-          <div className="w-20">
-            <label className="text-2xs text-muted-foreground">Price (COP)</label>
-            <Input type="number" placeholder="12000" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />
-          </div>
-          <div className="w-14">
-            <label className="text-2xs text-muted-foreground">Qty</label>
-            <Input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} className="h-8 text-xs" min={1} />
-          </div>
-          <div className="w-20">
-            <label className="text-2xs text-muted-foreground">Store</label>
-            <select value={newStore} onChange={(e) => setNewStore(e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground">
-              {STORES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="w-20">
-            <label className="text-2xs text-muted-foreground">Category</label>
-            <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground">
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
+          <Field label="Item" className="min-w-[120px] flex-1">
+            {(id) => <Input id={id} placeholder="Pollo, leche..." value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />}
+          </Field>
+          <Field label="Price (COP)" className="w-20">
+            {(id) => <Input id={id} type="number" placeholder="12000" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />}
+          </Field>
+          <Field label="Qty" className="w-14">
+            {(id) => <Input id={id} type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} className="h-8 text-xs" min={1} />}
+          </Field>
+          <Field label="Store" className="w-20">
+            {(id) => (
+              <Select id={id} value={newStore} onChange={(e) => setNewStore(e.target.value)} className="h-8 w-full px-2 text-xs">
+                {STORES.map(s => <option key={s} value={s}>{s}</option>)}
+              </Select>
+            )}
+          </Field>
+          <Field label="Category" className="w-20">
+            {(id) => (
+              <Select id={id} value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="h-8 w-full px-2 text-xs">
+                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            )}
+          </Field>
           <Button variant="secondary" size="sm" className="h-8 shrink-0" onClick={addItem} aria-label="Add purchase">
             <Plus />
           </Button>

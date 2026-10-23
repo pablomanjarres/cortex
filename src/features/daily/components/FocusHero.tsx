@@ -70,7 +70,7 @@ export function FocusHero({
         </div>
 
         <div className="my-auto space-y-5 text-center">
-          <Input
+          <Input aria-label="Focus task"
             value={task}
             onChange={(event) => onTaskChange(event.target.value)}
             placeholder="What are you working on?"
@@ -122,7 +122,7 @@ export function FocusHero({
           </div>
           {showCustomTime && (
             <div className="flex items-center gap-2">
-              <Input
+              <Input aria-label="Custom minutes"
                 type="number"
                 min={1}
                 max={240}

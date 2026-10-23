@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CalendarRange, Gauge, History, RefreshCw, WalletCards } from 'lucide-react'
 import type {
@@ -208,9 +209,9 @@ export function CloudCostsPage() {
             <section className="space-y-3" aria-label="GCP project costs">
               <div className="flex flex-wrap items-center gap-3">
                 <label htmlFor="cloud-project" className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">GCP project</label>
-                <select id="cloud-project" value={selectedProject} onChange={(event) => setProjectSelection(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground">
+                <Select id="cloud-project" value={selectedProject} onChange={(event) => setProjectSelection(event.target.value)} className="w-auto h-8 px-2 text-xs">
                   {projectNames.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
+                </Select>
                 <span className="font-mono text-xs tabular-nums text-foreground">Current month {fmtUsd(projectMonthly.at(-1)?.total ?? 0)} before credits</span>
               </div>
               <div className="grid gap-4 lg:grid-cols-3">

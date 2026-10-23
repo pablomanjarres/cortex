@@ -1,3 +1,7 @@
+import { parseTags } from '@/lib/tags'
+import { SearchInput } from '@/components/shared/SearchInput'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -12,17 +16,10 @@ import {
   STUDY_NOTES_KEY, noteId, normalizeNotes, normText, getToday, fmtDate,
   type Course, type StudyNote,
 } from './student-types'
-import { Search, Pin, PinOff, Pencil, Trash2 } from 'lucide-react'
+import { Pin, PinOff, Pencil, Trash2 } from 'lucide-react'
 
-// Shared token style for native <select> controls (mirrors the Input primitive,
-// including its focus-visible ring — outline-none alone would suppress it).
-const selectCls =
-  'cursor-pointer rounded-md border border-input bg-input/20 text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+const textareaCls = 'w-full resize-none px-3 py-2 text-sm leading-relaxed'
 
-const textareaCls =
-  'w-full resize-none rounded-md border border-input bg-input/20 px-3 py-2 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
-
-const parseTags = (s: string) => s.split(',').map((t) => t.trim()).filter(Boolean)
 
 const autosize = (el: HTMLTextAreaElement) => {
   el.style.height = 'auto'
@@ -149,7 +146,7 @@ export function NotesTab() {
       {/* Composer */}
       <div className="surface rounded-xl p-4">
         <div className="flex flex-col gap-3">
-          <textarea
+          <Textarea aria-label="New study note"
             value={draft}
             onChange={(e) => { setDraft(e.target.value); autosize(e.currentTarget) }}
             rows={2}
@@ -157,12 +154,12 @@ export function NotesTab() {
             className={textareaCls}
           />
           <div className="flex flex-wrap items-center gap-2">
-            <select value={courseSel} onChange={(e) => setCourseSel(e.target.value)} className={`${selectCls} h-8 px-2 text-xs`}>
+            <Select aria-label="Note course" value={courseSel} onChange={(e) => setCourseSel(e.target.value)} className="h-8 cursor-pointer px-2 text-xs">
               <option value="">General</option>
               {activeCourses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               {otherCourses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-            <Input
+            </Select>
+            <Input aria-label="Note tags"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
               placeholder="tags, comma separated"
@@ -203,10 +200,7 @@ export function NotesTab() {
             <Pin /> pinned
           </Chip>
         </div>
-        <div className="relative max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-          <Input placeholder="Search notes, tags…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-7 pl-8 text-xs" />
-        </div>
+        <SearchInput label="Search notes" containerClassName="max-w-xs" placeholder="Search notes, tags…" value={search} onChange={(e) => setSearch(e.target.value)} className="h-7 text-xs" />
       </div>
 
       {/* Feed */}
@@ -301,7 +295,7 @@ function NoteCard({ note, courseName, onTogglePin, onEdit, onDelete }: {
       )}
     >
       {editing ? (
-        <textarea
+        <Textarea aria-label="Edit note"
           ref={taRef}
           value={draft}
           onChange={(e) => { setDraft(e.target.value); autosize(e.currentTarget) }}

@@ -1,7 +1,10 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react'
-import ReactDOM from 'react-dom'
+import { useState, useRef, useLayoutEffect, type ComponentProps, type RefObject } from 'react'
 import Markdown from 'react-markdown'
 import TurndownService from 'turndown'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Modal } from '@/components/shared/Modal'
 import {
   Bold, Italic, List, Heading2, Quote, Code, Image as ImageIcon,
   Maximize2, Check, Eye, Pencil, ChevronLeft,
@@ -14,7 +17,7 @@ const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fen
 /** Render markdown, resolving `img:<id>` sources from an in-memory cache. */
 function mdImageRenderer(images: Record<string, string>, className: string) {
   return {
-    img: ({ src, alt, ...props }: any) => {
+    img: ({ src, alt, ...props }: ComponentProps<'img'>) => {
       if (src?.startsWith('img:')) {
         const data = images[src.slice(4)]
         if (data) return <img src={data} alt={alt || ''} className={className} {...props} />
@@ -47,16 +50,19 @@ function makeInsert(ref: React.RefObject<HTMLTextAreaElement | null>, value: str
 
 function ToolbarButton({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="icon-xs"
       // mousedown-preventDefault keeps focus in the textarea so inline mode
       // doesn't blur-and-close when a toolbar button is pressed.
-      onMouseDown={e => { e.preventDefault(); onClick() }}
+      onMouseDown={e => e.preventDefault()}
+      onClick={onClick}
       title={title}
-      className="cursor-pointer p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+      aria-label={title}
     >
       {children}
-    </button>
+    </Button>
   )
 }
 
@@ -118,22 +124,17 @@ async function pickImages(onAddImage: (dataUrls: string[]) => Promise<string[]>,
 // ── Fullscreen editor (refined: centered reading column) ─────────────────────
 
 function FullscreenEditor({
-  title, value, onChangeTitle, onChange, onClose, onAddImage, images, placeholder,
+  open, returnFocus, title, value, onChangeTitle, onChange, onClose, onAddImage, images, placeholder,
 }: {
-  title?: string; value: string
+  open: boolean; title?: string; value: string
+  returnFocus: RefObject<HTMLButtonElement | null>
   onChangeTitle?: (v: string) => void; onChange: (v: string) => void; onClose: () => void
   onAddImage?: (dataUrls: string[]) => Promise<string[]>; images: Record<string, string>; placeholder?: string
 }) {
   const [preview, setPreview] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const apply = makeInsert(ref, value, onChange)
+  const apply: MdApply = (prefix, suffix) => makeInsert(ref, value, onChange)(prefix, suffix)
   const words = value.trim() ? value.trim().split(/\s+/).length : 0
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   const insertImages = () => onAddImage && pickImages(onAddImage, tags => {
     const ta = ref.current
@@ -141,29 +142,32 @@ function FullscreenEditor({
     onChange(value.slice(0, pos) + '\n' + tags + '\n' + value.slice(pos))
   })
 
-  return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+  return (
+    <Modal open={open} onOpenChange={open => { if (!open) onClose() }} size="full" aria-label="Notes editor" finalFocus={returnFocus} showCloseButton={false} className="grid-rows-1 gap-0 overflow-hidden p-0">
+    <div className="flex h-full flex-col">
       {/* Bar */}
       <div className="flex items-center justify-between px-4 md:pl-20 py-3 border-b border-border">
-        <button onClick={onClose} className="cursor-pointer flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors [-webkit-app-region:no-drag]">
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} className="cursor-pointer flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors [-webkit-app-region:no-drag]">
           <ChevronLeft className="h-4 w-4" /> Done
-        </button>
+        </Button>
         <span className="font-mono text-2xs tabular-nums text-foreground-faint">{words} {words === 1 ? 'word' : 'words'}</span>
         <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
-          <button onClick={() => setPreview(false)} className={`cursor-pointer px-2.5 py-1 rounded-md transition-colors ${!preview ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} title="Write" aria-pressed={!preview}><Pencil className="h-3.5 w-3.5" /></button>
-          <button onClick={() => setPreview(true)} className={`cursor-pointer px-2.5 py-1 rounded-md transition-colors ${preview ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} title="Preview" aria-pressed={preview}><Eye className="h-3.5 w-3.5" /></button>
+          <Button type="button" variant="ghost" size="icon-xs" onClick={() => setPreview(false)} className={`cursor-pointer px-2.5 py-1 rounded-md transition-colors ${!preview ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} title="Write" aria-label="Write" aria-pressed={!preview}><Pencil className="h-3.5 w-3.5" /></Button>
+          <Button type="button" variant="ghost" size="icon-xs" onClick={() => setPreview(true)} className={`cursor-pointer px-2.5 py-1 rounded-md transition-colors ${preview ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} title="Preview" aria-label="Preview" aria-pressed={preview}><Eye className="h-3.5 w-3.5" /></Button>
         </div>
       </div>
 
       {/* Centered reading column */}
-      <div className="flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
         <div className="mx-auto w-full max-w-3xl px-5 md:px-8 flex flex-col min-h-full">
           {onChangeTitle !== undefined && (
-            <input
+            <Input
+              aria-label="Notes title"
               value={title ?? ''}
               onChange={e => onChangeTitle?.(e.target.value)}
               placeholder="Title"
-              className="pt-8 pb-3 text-2xl md:text-3xl font-semibold bg-transparent outline-none border-none text-foreground placeholder:text-foreground-faint font-serif"
+              variant="inline"
+              className="h-auto border-0 pt-8 pb-3 text-2xl md:text-3xl font-semibold shadow-none"
             />
           )}
 
@@ -183,21 +187,23 @@ function FullscreenEditor({
           ) : (
             <>
               <FormatToolbar apply={apply} onImage={onAddImage ? insertImages : undefined} className="py-2 border-y border-border/60 mb-3 sticky top-0 bg-background/80 backdrop-blur-sm" />
-              <textarea
+              <Textarea
+                variant="inline"
                 ref={ref}
                 value={value}
                 onChange={e => onChange(e.target.value)}
                 onPaste={e => handleRichPaste(e, ref, value, onChange)}
                 placeholder={placeholder || 'Write your notes here… (Markdown supported)'}
-                className="flex-1 w-full pb-16 text-base leading-[1.75] bg-transparent outline-none resize-none text-foreground placeholder:text-foreground-faint"
+                aria-label="Notes"
+                className="flex-1 px-0 pb-16 text-base leading-[1.75] resize-none"
                 autoFocus
               />
             </>
           )}
         </div>
       </div>
-    </div>,
-    document.body,
+    </div>
+    </Modal>
   )
 }
 
@@ -230,7 +236,8 @@ export function NotesField({
   const [editing, setEditing] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
-  const apply = makeInsert(ref, value, onChange)
+  const fullscreenTrigger = useRef<HTMLButtonElement>(null)
+  const apply: MdApply = (prefix, suffix) => makeInsert(ref, value, onChange)(prefix, suffix)
 
   // Auto-grow the inline textarea to fit its content.
   useLayoutEffect(() => {
@@ -255,38 +262,40 @@ export function NotesField({
           className={`rounded-md border border-input bg-input/60 focus-within:border-ring/60 transition-colors ${className}`}
           // clicking anywhere but the textarea shouldn't blur-close
           onMouseDown={e => { if (e.target !== ref.current) e.preventDefault() }}
+          onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false) }}
         >
           <div className="flex items-center justify-between px-2 py-1 border-b border-border/60">
             <FormatToolbar apply={apply} onImage={onAddImage ? insertImages : undefined} />
             <div className="flex items-center gap-0.5">
-              <button type="button" onMouseDown={e => { e.preventDefault(); setFullscreen(true) }} title="Fullscreen" className="cursor-pointer p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
+              <Button ref={fullscreenTrigger} type="button" variant="ghost" size="icon-xs" onMouseDown={event => event.preventDefault()} onClick={() => setFullscreen(true)} title="Fullscreen" aria-label="Fullscreen">
                 <Maximize2 className="h-3.5 w-3.5" />
-              </button>
-              <button type="button" onMouseDown={e => { e.preventDefault(); setEditing(false) }} title="Done" className="cursor-pointer p-1.5 rounded-md text-success hover:bg-success/10 transition-colors">
+              </Button>
+              <Button type="button" variant="ghost" size="icon-xs" onMouseDown={event => event.preventDefault()} onClick={() => setEditing(false)} title="Done" aria-label="Done" className="text-success hover:bg-success/10">
                 <Check className="h-3.5 w-3.5" />
-              </button>
+              </Button>
             </div>
           </div>
-          <textarea
+          <Textarea
+            variant="inline"
             ref={ref}
             value={value}
             onChange={e => onChange(e.target.value)}
             onPaste={e => handleRichPaste(e, ref, value, onChange)}
-            onBlur={() => setEditing(false)}
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setEditing(false) } }}
             placeholder={placeholder}
             style={{ minHeight }}
-            className="w-full px-3 py-2.5 text-sm leading-relaxed bg-transparent outline-none resize-none text-foreground placeholder:text-foreground-faint"
+            aria-label="Notes"
+            className="px-3 py-2.5 text-sm leading-relaxed resize-none"
             autoFocus
           />
         </div>
-        {fullscreen && (
           <FullscreenEditor
+            open={fullscreen}
+            returnFocus={fullscreenTrigger}
             title={title} value={value} images={images} placeholder={placeholder}
             onChangeTitle={onChangeTitle} onChange={onChange} onAddImage={onAddImage}
             onClose={() => setFullscreen(false)}
           />
-        )}
       </>
     )
   }
@@ -310,32 +319,39 @@ export function NotesField({
           <span className="text-sm text-foreground-faint">{placeholder}</span>
         )}
         {/* hover actions */}
-        <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
+        <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <Button
+            variant="ghost"
+            size="icon-xs"
             type="button"
             onClick={e => { e.stopPropagation(); setEditing(true) }}
             title="Edit inline"
+            aria-label="Edit inline"
             className="cursor-pointer p-1 rounded-md bg-background/70 text-muted-foreground hover:text-foreground transition-colors"
           >
             <Pencil className="h-3 w-3" />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
             type="button"
+            ref={fullscreenTrigger}
             onClick={e => { e.stopPropagation(); setFullscreen(true) }}
             title="Fullscreen"
+            aria-label="Fullscreen"
             className="cursor-pointer p-1 rounded-md bg-background/70 text-muted-foreground hover:text-foreground transition-colors"
           >
             <Maximize2 className="h-3 w-3" />
-          </button>
+          </Button>
         </div>
       </div>
-      {fullscreen && (
         <FullscreenEditor
+          open={fullscreen}
+          returnFocus={fullscreenTrigger}
           title={title} value={value} images={images} placeholder={placeholder}
           onChangeTitle={onChangeTitle} onChange={onChange} onAddImage={onAddImage}
           onClose={() => setFullscreen(false)}
         />
-      )}
     </>
   )
 }

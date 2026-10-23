@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { ShieldCheck } from 'lucide-react'
 import type { CloudCostSettings as Settings } from '../../../electron/cloud-cost-types.ts'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { Field } from '@/components/shared/Field'
 import { Input } from '@/components/ui/input'
 import { Chip } from '@/components/ui/chip'
 import { Button } from '@/components/ui/button'
@@ -11,8 +12,7 @@ interface CloudCostSettingsProps {
   onChange: (update: (current: Settings) => Settings) => void
 }
 
-interface FieldProps {
-  id: string
+interface SettingFieldProps {
   label: string
   hint: string
   value: string
@@ -20,19 +20,36 @@ interface FieldProps {
   onChange: (value: string) => void
 }
 
-function SettingField({ id, label, hint, value, placeholder, onChange }: FieldProps) {
+function SettingField({ label, hint, value, placeholder, onChange }: SettingFieldProps) {
   return (
-    <label htmlFor={id} className="flex flex-col gap-1.5">
-      <span className="text-xs font-medium text-foreground">{label}</span>
-      <Input
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        className="font-mono text-xs"
-      />
-      <span className="text-2xs leading-relaxed text-foreground-faint">{hint}</span>
-    </label>
+    <Field label={label} hint={hint}>
+      {(id) => (
+        <Input
+          id={id}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          autoComplete="off"
+          spellCheck={false}
+          className="font-mono text-xs"
+        />
+      )}
+    </Field>
+  )
+}
+
+/** One credential source: title, configured state, and its settings. */
+function ProviderPanel({ title, configured, children }: { title: string; configured: boolean; children: ReactNode }) {
+  return (
+    <section aria-label={title} className="flex flex-col gap-3 rounded-md bg-secondary/20 p-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{title}</h3>
+        <Chip variant={configured ? 'success' : 'neutral'} size="sm">
+          {configured ? 'Configured' : 'Not configured'}
+        </Chip>
+      </div>
+      {children}
+    </section>
   )
 }
 
@@ -139,32 +156,18 @@ export function CloudCostSettings({ settings, onChange }: CloudCostSettingsProps
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="flex flex-col gap-3 rounded-md bg-secondary/20 p-3">
-          <div className="flex items-center justify-between">
-            <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">AWS Cost Explorer</p>
-            <Chip variant={settings.awsProfile ? 'success' : 'neutral'} size="sm">
-              {settings.awsProfile ? 'Configured' : 'Not configured'}
-            </Chip>
-          </div>
+        <ProviderPanel title="AWS Cost Explorer" configured={Boolean(settings.awsProfile)}>
           <SettingField
-            id="aws-profile"
             label="AWS profile"
             hint="A local profile with ce:GetCostAndUsage. Enter default for the standard profile."
             value={settings.awsProfile}
             placeholder="default"
             onChange={(value) => set('awsProfile', value)}
           />
-        </div>
+        </ProviderPanel>
 
-        <div className="flex flex-col gap-3 rounded-md bg-secondary/20 p-3">
-          <div className="flex items-center justify-between">
-            <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">GCP Billing Export</p>
-            <Chip variant={settings.gcpBillingTable ? 'success' : 'neutral'} size="sm">
-              {settings.gcpBillingTable ? 'Configured' : 'Not configured'}
-            </Chip>
-          </div>
+        <ProviderPanel title="GCP Billing Export" configured={Boolean(settings.gcpBillingTable)}>
           <SettingField
-            id="gcp-billing-table"
             label="Billing table"
             hint="The Standard or Detailed export table in project.dataset.table form."
             value={settings.gcpBillingTable}
@@ -172,7 +175,6 @@ export function CloudCostSettings({ settings, onChange }: CloudCostSettingsProps
             onChange={(value) => set('gcpBillingTable', value)}
           />
           <SettingField
-            id="gcp-query-project"
             label="Query project"
             hint="Optional project charged for BigQuery queries."
             value={settings.gcpQueryProject}
@@ -180,14 +182,13 @@ export function CloudCostSettings({ settings, onChange }: CloudCostSettingsProps
             onChange={(value) => set('gcpQueryProject', value)}
           />
           <GcpBillingCredential settings={settings} />
-        </div>
+        </ProviderPanel>
       </div>
 
-      <div className="mt-4 max-w-xs">
-        <label htmlFor="cloud-budget" className="flex flex-col gap-1.5">
-          <span className="text-xs font-medium text-foreground">Monthly budget (USD)</span>
+      <Field label="Monthly budget (USD)" hint="Set to zero to hide budget progress." className="mt-4 max-w-xs">
+        {(id) => (
           <Input
-            id="cloud-budget"
+            id={id}
             type="number"
             min="0"
             step="1"
@@ -196,9 +197,8 @@ export function CloudCostSettings({ settings, onChange }: CloudCostSettingsProps
             placeholder="100"
             className="font-mono text-xs"
           />
-          <span className="text-2xs text-foreground-faint">Set to zero to hide budget progress.</span>
-        </label>
-      </div>
+        )}
+      </Field>
     </WidgetCard>
   )
 }

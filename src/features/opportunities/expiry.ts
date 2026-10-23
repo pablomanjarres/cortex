@@ -1,4 +1,4 @@
-import type { Opportunity } from './OpportunitiesPage'
+import type { Opportunity } from './opportunity-model'
 
 type Deadline = Pick<Opportunity, 'deadline' | 'rolling' | 'deadlineType'>
 

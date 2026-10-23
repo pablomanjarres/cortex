@@ -1,17 +1,20 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { StatTile } from '@/components/shared/StatTile'
+import { SearchInput } from '@/components/shared/SearchInput'
+import { SortableHeader } from '@/components/shared/SortableHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CHART_FONT_MONO, ThemedTooltip, axisProps, chartColor, chartColors, cssVar } from '@/lib/chart-theme'
 import { useStore } from '@/lib/store'
 import { OneTimePayments } from './OneTimePayments'
 import { FinanceItemCell } from './FinanceItemCell'
-import { FINANCE_CATEGORIES, financeMonth, receivedAmountFor, withReceivedAmount, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
+import { FINANCE_CATEGORIES, financeMonth, isPaidFor, settlementFor, withSettlement, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
 import {
   TrendingUp,
   TrendingDown,
@@ -22,9 +25,6 @@ import {
   Wallet,
   CreditCard,
   Columns2,
-  Search,
-  ChevronUp,
-  ChevronDown,
   Eye,
   EyeOff,
 } from 'lucide-react'
@@ -93,17 +93,16 @@ const fmtCell = (n: number) => `$${n.toLocaleString('es-CO')}`
 
 function CurrencyCell({ value, onChange, className }: { value: number; onChange: (v: number) => void; className?: string }) {
   const [focused, setFocused] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   return (
-    <input
-      ref={inputRef}
+    <Input
+      variant="inline"
       type="text"
       value={focused ? (value || '') : (value ? fmtCell(value) : '')}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onChange={(e) => onChange(parseInt(e.target.value.replace(/\D/g, '')) || 0)}
-      className={`w-[70px] bg-transparent text-right font-mono tabular-nums outline-none ${className ?? ''}`}
+      className={`w-[70px] border-transparent py-0 text-right font-mono tabular-nums hover:border-border/60 focus-visible:border-border/60 ${className ?? ''}`}
       placeholder="$0"
     />
   )
@@ -165,18 +164,8 @@ export function FinancePage() {
   const deleteOneTimePayment = (id: string) =>
     updateData((prev) => ({ ...prev, oneTimePayments: (prev.oneTimePayments ?? []).filter((item) => item.id !== id) }))
 
-  const setPaidAmount = (id: string, monthIdx: number, amount: number) =>
-    updateData((prev) => ({ ...prev, items: prev.items.map((i) => {
-      if (i.id !== id) return i
-      const paidAmounts = [...(i.paidAmounts || Array(12).fill(0))]
-      paidAmounts[monthIdx] = amount
-      const paid = [...(i.paid || Array(12).fill(false))]
-      paid[monthIdx] = amount >= i.months[monthIdx] && i.months[monthIdx] > 0
-      return { ...i, paidAmounts, paid }
-    }) }))
-
-  const setReceivedAmount = (id: string, monthIdx: number, amount: number | null) =>
-    updateData((prev) => withReceivedAmount(prev, id, monthIdx, amount))
+  const settle = (id: string, monthIdx: number, amount: number | null) =>
+    updateData((prev) => withSettlement(prev, id, monthIdx, amount))
 
   const monthlyTotals = useMemo(() => MONTHS.map((month, i) => ({ month, ...financeMonth(data, i) })), [data])
 
@@ -419,44 +408,35 @@ export function FinancePage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative max-w-xs flex-1">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-              <Input
-                placeholder="Search items..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="h-7 pl-8 text-xs"
-              />
-            </div>
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
-              className="h-7 cursor-pointer rounded-md border border-input bg-transparent px-2 text-xs text-muted-foreground">
+            <SearchInput
+              label="Search budget items"
+              placeholder="Search items..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              containerClassName="max-w-xs flex-1"
+              className="h-8 text-xs"
+            />
+            <Select aria-label="Filter by category" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-8 w-auto cursor-pointer px-2 py-0 text-xs text-muted-foreground">
               <option value="">All Categories</option>
               {FINANCE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </Select>
           </div>
         </div>
         <div className="-mx-4 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border/50 font-mono text-2xs uppercase tracking-wider text-muted-foreground">
-                <th className="sticky left-0 z-10 min-w-[240px] bg-card px-4 py-2 text-left font-medium">
-                  <Button variant="ghost" size="xs" onClick={() => toggleSort('name')} className="-ml-2 gap-1 font-mono text-2xs uppercase tracking-wider">
-                    Item
-                    {sortField === 'name' ? (sortDir === 'asc' ? <ChevronUp /> : <ChevronDown />) : <ChevronUp className="opacity-0 transition-opacity group-hover/button:opacity-40" />}
-                  </Button>
-                </th>
+                <SortableHeader label="Item" active={sortField === 'name'} ascending={sortDir === 'asc'} onSort={() => toggleSort('name')}
+                  className="sticky left-0 z-10 min-w-[240px] bg-card px-4 font-medium" />
                 <th className="w-16 py-2 text-left font-medium">Type</th>
                 <th className="w-24 py-2 text-left font-medium">Category</th>
                 {!compact && MONTHS.map((m, i) => (
                   <th key={m} className={`min-w-[80px] py-2 text-right font-medium ${i === selectedMonth ? 'text-foreground' : ''}`}>{m}</th>
                 ))}
                 {compact && <th className="min-w-[80px] py-2 text-right font-medium">{MONTHS[selectedMonth]}</th>}
-                <th className="min-w-[90px] py-2 text-right font-medium">
-                  <Button variant="ghost" size="xs" onClick={() => toggleSort('total')} className="-mr-2 gap-1 font-mono text-2xs uppercase tracking-wider">
-                    Total
-                    {sortField === 'total' ? (sortDir === 'asc' ? <ChevronUp /> : <ChevronDown />) : <ChevronUp className="opacity-0 transition-opacity group-hover/button:opacity-40" />}
-                  </Button>
-                </th>
+                <SortableHeader label="Total" active={sortField === 'total'} ascending={sortDir === 'asc'} onSort={() => toggleSort('total')}
+                  className="min-w-[90px] text-right font-medium" />
                 <th className="w-6 py-2"></th>
               </tr>
             </thead>
@@ -468,46 +448,36 @@ export function FinancePage() {
                 return [
                   ...group.items.map((item, idx) => {
                     const total = item.months.reduce((a, b) => a + b, 0)
-                    const isPaidSelected = item.type !== 'Income' && item.months[selectedMonth] > 0 && (item.paid?.[selectedMonth] ?? false)
+                    const isPaidSelected = isPaidFor(item, selectedMonth)
                     return (
                       <tr key={item.id} className={`group border-b border-border/20 hover:bg-secondary/30 ${idx % 2 === 1 ? 'bg-secondary/10' : ''}`}>
                         <td className="sticky left-0 z-10 min-w-[240px] bg-inherit px-4 py-2">
                           <FinanceItemCell
-                            key={`${item.id}-${selectedMonth}-${item.type}`}
-                            kind={item.type === 'Income' ? 'received' : 'paid'}
                             name={item.name}
                             onNameChange={(name) => setField(item.id, { name })}
-                            amount={item.type === 'Income'
-                              ? receivedAmountFor(item, selectedMonth)
-                              : (item.paidAmounts?.[selectedMonth] ?? (item.paid?.[selectedMonth] ? item.months[selectedMonth] : 0))}
-                            expected={item.months[selectedMonth]}
-                            settled={item.paid?.[selectedMonth] ?? false}
+                            month={selectedMonth}
+                            settlement={settlementFor(item, selectedMonth)}
                             concealed={hideIncome && item.type === 'Income'}
                             formatAmount={fmtCOP}
-                            onSave={(amount) => item.type === 'Income'
-                              ? setReceivedAmount(item.id, selectedMonth, amount)
-                              : setPaidAmount(item.id, selectedMonth, amount)}
-                            onClear={item.type === 'Income'
-                              ? () => setReceivedAmount(item.id, selectedMonth, null)
-                              : undefined}
+                            onSettle={(amount) => settle(item.id, selectedMonth, amount)}
                           />
                         </td>
                         <td className="py-2">
-                          <select value={item.type} onChange={(e) => setField(item.id, { type: e.target.value as ItemType })}
-                            className="cursor-pointer rounded-full border border-border bg-transparent px-1.5 py-0.5 font-mono text-3xs text-muted-foreground outline-none hover:text-foreground">
+                          <Select variant="inline" aria-label={`Type for ${item.name}`} value={item.type} onChange={(e) => setField(item.id, { type: e.target.value as ItemType })}
+                            className="w-auto cursor-pointer font-mono text-3xs text-muted-foreground hover:text-foreground">
                             <option value="Income">Income</option><option value="Expense">Expense</option><option value="Subscription">Sub</option>
-                          </select>
+                          </Select>
                         </td>
                         <td className="py-2">
                           {item.type !== 'Income' ? (
-                            <select value={item.category || 'Other'} onChange={(e) => setField(item.id, { category: e.target.value })}
-                              className="cursor-pointer rounded-full bg-transparent px-1.5 py-0.5 font-mono text-3xs text-muted-foreground outline-none hover:text-foreground">
+                            <Select variant="inline" aria-label={`Category for ${item.name}`} value={item.category || 'Other'} onChange={(e) => setField(item.id, { category: e.target.value })}
+                              className="w-auto cursor-pointer font-mono text-3xs text-muted-foreground hover:text-foreground">
                               {FINANCE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                            </select>
+                            </Select>
                           ) : null}
                         </td>
                         {!compact && item.months.map((val, mi) => {
-                          const cellPaid = item.type !== 'Income' && val > 0 && (item.paid?.[mi] ?? false)
+                          const cellPaid = isPaidFor(item, mi)
                           return (
                             <td key={mi} className={`py-2 text-right ${mi === selectedMonth ? 'bg-foreground/[0.03]' : ''} ${cellPaid ? 'bg-success/10' : ''}`}>
                               {hideIncome && item.type === 'Income' ? (

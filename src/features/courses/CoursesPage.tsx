@@ -1,3 +1,5 @@
+import { SearchInput } from '@/components/shared/SearchInput'
+import { Select } from '@/components/ui/select'
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -6,6 +8,7 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Modal } from '@/components/shared/Modal'
 import { NotesField } from '@/components/shared/NotesField'
 import { Input } from '@/components/ui/input'
+import { Field } from '@/components/shared/Field'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
@@ -13,7 +16,7 @@ import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
 import { saveFile, loadFile, deleteFile, fileToDataUrl, formatBytes, extFor } from '@/lib/media'
 import {
-  Search, Plus, Trash2, X, Link as LinkIcon, GraduationCap, FileText, Download,
+  Plus, Trash2, X, Link as LinkIcon, GraduationCap, FileText, Download,
   Upload, Image as ImageIcon, ChevronLeft, ChevronRight, Minus, Paperclip, BookOpen,
 } from 'lucide-react'
 
@@ -52,10 +55,6 @@ const catIcon: Record<Category, typeof BookOpen> = {
   course: GraduationCap, pdf: FileText, note: BookOpen, reference: BookOpen, link: LinkIcon, other: Paperclip,
 }
 
-// Shared token style for native <select> controls (mirrors the Input primitive;
-// the global :focus-visible rule supplies the focus ring).
-const selectCls =
-  'cursor-pointer rounded-md border border-input bg-input/20 text-foreground transition-colors duration-150 outline-none'
 
 // ── File helpers ─────────────────────────────────────────────────────────────
 
@@ -330,10 +329,7 @@ export function CoursesPage() {
               </Chip>
             ))}
           </div>
-          <div className="relative max-w-xs">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-            <Input placeholder="Search courses, notes, subjects…" value={search} onChange={e => setSearch(e.target.value)} className="h-7 pl-8 text-xs" />
-          </div>
+          <SearchInput label="Search courses" containerClassName="max-w-xs" placeholder="Search courses, notes, subjects…" value={search} onChange={e => setSearch(e.target.value)} className="h-7 text-xs" />
         </div>
 
         {/* Grid */}
@@ -523,27 +519,28 @@ function ExpandedItem({
       </div>
 
       {/* Title */}
-      <Input value={item.title} onChange={e => onField({ title: e.target.value })} placeholder="Title" className="h-10 text-base font-semibold" />
+      <Input aria-label="Title" value={item.title} onChange={e => onField({ title: e.target.value })} placeholder="Title" className="h-10 text-base font-semibold" />
 
       {/* Meta row */}
       <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-        <div>
-          <label className="mb-1 block text-2xs text-muted-foreground">Category</label>
-          <select value={item.category} onChange={e => onField({ category: e.target.value as Category })} className={`${selectCls} h-8 w-full px-2 text-xs`}>
-            {CATEGORIES.map(c => <option key={c} value={c}>{catLabel[c]}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-2xs text-muted-foreground">Subject</label>
-          <Input value={item.subject} onChange={e => onField({ subject: e.target.value })} placeholder="e.g. Formal Languages" className="h-8 text-xs" />
-        </div>
-        <div>
-          <label className="mb-1 block text-2xs text-muted-foreground">Link</label>
+        <Field label="Category">
+          {(id) => (
+            <Select id={id} value={item.category} onChange={e => onField({ category: e.target.value as Category })} className="h-8 cursor-pointer px-2 text-xs">
+              {CATEGORIES.map(c => <option key={c} value={c}>{catLabel[c]}</option>)}
+            </Select>
+          )}
+        </Field>
+        <Field label="Subject">
+          {(id) => <Input id={id} value={item.subject} onChange={e => onField({ subject: e.target.value })} placeholder="e.g. Formal Languages" className="h-8 text-xs" />}
+        </Field>
+        <Field label="Link">
+          {(id) => (
           <div className="relative">
             <LinkIcon className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-foreground-faint" />
-            <Input value={item.url} onChange={e => onField({ url: e.target.value })} placeholder="https://…" className="h-8 pl-7 text-xs" />
+            <Input id={id} value={item.url} onChange={e => onField({ url: e.target.value })} placeholder="https://…" className="h-8 pl-7 text-xs" />
           </div>
-        </div>
+          )}
+        </Field>
       </div>
 
       {/* Notes */}
