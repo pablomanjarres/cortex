@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { Modal } from '@/components/shared/Modal'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Field } from '@/components/shared/Field'
 import type { WorkSession, WorkSessionValues } from '../../../electron/work-hours-model'
 
 function localDateTime(iso: string): string {
@@ -64,30 +66,19 @@ export function WorkSessionEditor({ session, busy, saveError, onClose, onSave }:
     >
         <form onSubmit={(event) => { void save(event) }} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1.5 text-sm font-medium" htmlFor="work-session-start">
-              Started
-              <Input id="work-session-start" type="datetime-local" step="1" required value={startedAt} onChange={(event) => setStartedAt(event.target.value)} />
-            </label>
-            <label className="space-y-1.5 text-sm font-medium" htmlFor="work-session-end">
-              Ended
-              <Input id="work-session-end" type="datetime-local" step="1" required value={endedAt} onChange={(event) => setEndedAt(event.target.value)} />
-            </label>
+            <Field label="Started">
+              {(id) => <Input id={id} type="datetime-local" step="1" required value={startedAt} onChange={(event) => setStartedAt(event.target.value)} />}
+            </Field>
+            <Field label="Ended">
+              {(id) => <Input id={id} type="datetime-local" step="1" required value={endedAt} onChange={(event) => setEndedAt(event.target.value)} />}
+            </Field>
           </div>
-          <label className="block space-y-1.5 text-sm font-medium" htmlFor="work-session-description">
-            Work description
-            <textarea
-              id="work-session-description"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={3}
-              placeholder="What was delivered?"
-              className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            />
-          </label>
-          <label className="block space-y-1.5 text-sm font-medium" htmlFor="work-session-pr">
-            Pull request URL
-            <Input id="work-session-pr" type="url" placeholder="https://github.com/owner/repo/pull/123" value={prUrl} onChange={(event) => setPrUrl(event.target.value)} />
-          </label>
+          <Field label="Work description">
+            {(id) => <Textarea id={id} value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="What was delivered?" />}
+          </Field>
+          <Field label="Pull request URL">
+            {(id) => <Input id={id} type="url" placeholder="https://github.com/owner/repo/pull/123" value={prUrl} onChange={(event) => setPrUrl(event.target.value)} />}
+          </Field>
           <label className="flex items-center gap-2 text-sm font-medium">
             <input type="checkbox" checked={billable} onChange={(event) => setBillable(event.target.checked)} className="size-4 accent-accent" />
             Billable time

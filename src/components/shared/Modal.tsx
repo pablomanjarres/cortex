@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -22,6 +22,8 @@ interface ModalProps {
   footer?: ReactNode
   showCloseButton?: boolean
   className?: string
+  'aria-label'?: string
+  finalFocus?: ComponentProps<typeof DialogContent>['finalFocus']
 }
 
 const sizeClasses: Record<NonNullable<ModalProps['size']>, string> = {
@@ -45,10 +47,14 @@ export function Modal({
   footer,
   showCloseButton = true,
   className,
+  'aria-label': ariaLabel,
+  finalFocus,
 }: ModalProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => onOpenChange(next)}>
       <DialogContent
+        aria-label={ariaLabel}
+        finalFocus={finalFocus}
         showCloseButton={showCloseButton}
         className={cn(sizeClasses[size], className)}
       >
