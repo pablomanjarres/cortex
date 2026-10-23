@@ -2,7 +2,7 @@ import type { GitHubStats, LemonStats, VercelStats, SupabaseStats } from './metr
 import type { CloudCostCache, CloudCostSettings, CloudCostSourceStatus, CloudProvider } from '../../electron/cloud-cost-types'
 import type { WorkEvidence, WorkHoursCommand, WorkHoursState } from '../../electron/work-hours-model'
 
-interface ProjectInfo {
+export interface ProjectInfo {
   name: string
   path: string
   description: string | null

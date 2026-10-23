@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { useStore } from '@/lib/store'
 import { WorkHoursPanel } from './WorkHoursPanel'
+import { scanProjects } from './project-api'
+import type { ProjectInfo } from '@/types/electron'
 import {
   RefreshCw,
   GitBranch,
@@ -32,22 +34,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-type ProjectType = 'app' | 'monorepo' | 'library' | 'skill' | 'assets' | 'unknown'
-
-interface ProjectInfo {
-  name: string
-  path: string
-  description: string | null
-  type: ProjectType
-  hasPackageJson: boolean
-  hasClaude: boolean
-  gitRemote: string | null
-  latestCommit: { message: string; date: string } | null
-  workflows: { name: string; scheduled: boolean; cron?: string }[]
-  techStack: string[]
-  scripts: string[]
-  connections: string[]
-}
+type ProjectType = ProjectInfo['type']
 
 const EMPTY_PROJECTS: ProjectInfo[] = []
 
@@ -134,7 +121,7 @@ export function ProjectsPage() {
   const [scannedProjects, setProjects] = useState<ProjectInfo[] | null>(null)
   const [meta] = useStore<Record<string, ProjectMeta>>('cortex-project-meta', {})
   const [cachedProjects] = useStore<{ data: ProjectInfo[]; lastUpdated: string } | null>('cortex-cache-projects', null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<ProjectType | null>(null)
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
@@ -144,12 +131,7 @@ export function ProjectsPage() {
   const fetchProjects = async () => {
     setLoading(true)
     try {
-      if (window.electronAPI?.projects) {
-        setProjects(await window.electronAPI.projects.scan())
-      } else {
-        const res = await fetch('/api/projects/scan')
-        if (res.ok) setProjects(await res.json())
-      }
+      setProjects(await scanProjects())
     } catch (e) {
       console.error('Failed to scan projects:', e)
     } finally {
@@ -157,7 +139,14 @@ export function ProjectsPage() {
     }
   }
 
-  useEffect(() => { fetchProjects() }, [])
+  useEffect(() => {
+    let active = true
+    void scanProjects()
+      .then((result) => { if (active) setProjects(result) })
+      .catch((error) => { if (active) console.error('Failed to scan projects:', error) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
 
   const projects = scannedProjects ?? (!isElectron && cachedProjects ? cachedProjects.data : EMPTY_PROJECTS)
 
