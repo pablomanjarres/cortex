@@ -13,7 +13,7 @@ export function SearchInput({ label, className, containerClassName, ...props }: 
   return (
     <div className={cn('relative min-w-0', containerClassName)}>
       <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-      <Input {...props} type="search" aria-label={label} className={cn('pl-9', className)} />
+      <Input {...props} type="text" role="searchbox" aria-label={label} className={cn('pl-9', className)} />
     </div>
   )
 }
