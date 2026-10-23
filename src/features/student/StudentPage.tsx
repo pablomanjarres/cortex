@@ -1,5 +1,8 @@
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
+import { SortableHeader, tableHeaderClassName } from '@/components/shared/SortableHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -8,6 +11,9 @@ import { useStore, readStore, updateStoreValue } from '@/lib/store'
 import { deleteFile } from '@/lib/media'
 import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 import { ClassSchedule } from './ClassSchedule'
+import { InlineNumberEditor } from '@/components/shared/InlineNumberEditor'
+import { OptionSelect } from './OptionSelect'
+import { formatNumberDraft, parseNumberDraft, type NumberRule } from '@/lib/number-draft'
 import { StudentOverviewCards } from './StudentOverviewCards'
 import { includeAssignmentType, studentOverview } from './student-overview'
 import { DEFAULT_ASSIGNMENTS, DEFAULT_COURSES, DEFAULT_SEMESTERS, DEFAULT_TOPICS } from './student-defaults'
@@ -22,9 +28,6 @@ import {
   CalendarDays,
   AlertCircle,
   CheckCircle2,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
   Plus,
   X,
   Trash2,
@@ -50,10 +53,11 @@ const gradeInk = (g: number) => (g >= 3 ? 'text-success' : 'text-destructive')
 const deadlineUrgency = (days: number): 'danger' | 'warning' | 'neutral' =>
   days <= 2 ? 'danger' : days <= 7 ? 'warning' : 'neutral'
 
-// Shared token style for native <select> controls (mirrors the Input primitive;
-// the global :focus-visible rule supplies the focus ring).
-const selectCls =
-  'cursor-pointer rounded-md border border-input bg-input/20 text-foreground transition-colors duration-150 outline-none'
+const GRADE_RULE: NumberRule = { min: 0, max: 5, blank: 'clear' }
+const WEIGHT_RULE: NumberRule = { min: 0, max: 100 }
+const CREDITS_RULE: NumberRule = { min: 0 }
+/** Assignment weights are stored as fractions; edit them as percentages without float noise. */
+const weightPercent = (a: Assignment) => Math.round(a.weight * 1000) / 10
 
 /** Property row in the course detail panel (static — module scope keeps children state stable). */
 function Prop({ label, children }: { label: string; children: React.ReactNode }) {
@@ -63,13 +67,6 @@ function Prop({ label, children }: { label: string; children: React.ReactNode })
       <span className="text-xs">{children}</span>
     </div>
   )
-}
-
-/** Sort direction glyph for the assignments table header. */
-function SortIcon({ k, sortKey, sortAsc }: { k: SortKey; sortKey: SortKey; sortAsc: boolean }) {
-  return sortKey === k
-    ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
-    : <ArrowUpDown className="h-3 w-3 opacity-30" />
 }
 
 function cmp(a: Assignment, b: Assignment, key: SortKey, asc: boolean): number {
@@ -83,85 +80,6 @@ function cmp(a: Assignment, b: Assignment, key: SortKey, asc: boolean): number {
   return asc ? v : -v
 }
 
-// ── Inline Edit Cells ─────────────────────────────────────────────────────────
-// Click-to-edit table cells are a documented compact pattern: a <Button>'s fixed
-// height and centered inline-flex layout doesn't fit dense table cells, so these
-// stay bare elements; the global :focus-visible rule supplies their focus rings.
-
-function EditableGrade({ value, onChange }: { value?: number; onChange: (v?: number) => void }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value?.toFixed(1) ?? '')
-  const ref = useRef<HTMLInputElement>(null)
-
-  useEffect(() => { if (editing) ref.current?.focus() }, [editing])
-
-  const commit = () => {
-    setEditing(false)
-    const n = parseFloat(draft)
-    if (draft === '' || draft === '-') onChange(undefined)
-    else if (!isNaN(n) && n >= 0 && n <= 5) onChange(Math.round(n * 10) / 10)
-  }
-
-  if (!editing) {
-    return (
-      <button onClick={() => { setDraft(value?.toFixed(1) ?? ''); setEditing(true) }} className="w-full cursor-pointer text-right font-mono tabular-nums">
-        {value !== undefined ? (
-          <span className={gradeInk(value)}>{value.toFixed(1)}</span>
-        ) : (
-          <span className="text-foreground-faint">—</span>
-        )}
-      </button>
-    )
-  }
-
-  return (
-    <input
-      ref={ref}
-      type="text"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
-      className="w-12 border-b border-input bg-transparent text-right font-mono text-xs tabular-nums outline-none"
-      placeholder="0-5"
-    />
-  )
-}
-
-function EditableNumber({ value, suffix, onChange }: { value: number; suffix?: string; onChange: (v?: number) => void }) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value % 1 === 0 ? value.toFixed(0) : value.toFixed(1))
-  const ref = useRef<HTMLInputElement>(null)
-
-  useEffect(() => { if (editing) ref.current?.focus() }, [editing])
-
-  const commit = () => {
-    setEditing(false)
-    const n = parseFloat(draft)
-    if (!isNaN(n) && n >= 0) onChange(Math.round(n * 10) / 10)
-  }
-
-  if (!editing) {
-    return (
-      <button onClick={() => { setDraft(value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)); setEditing(true) }} className="cursor-pointer text-right font-mono tabular-nums text-muted-foreground">
-        {value % 1 === 0 ? value.toFixed(0) : value.toFixed(1)}{suffix}
-      </button>
-    )
-  }
-
-  return (
-    <input
-      ref={ref}
-      type="text"
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
-      className="w-10 border-b border-input bg-transparent text-right font-mono text-xs tabular-nums outline-none"
-    />
-  )
-}
-
 // ── Add Assignment row ────────────────────────────────────────────────────────
 
 function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: Assignment) => void; onCancel: () => void }) {
@@ -169,18 +87,21 @@ function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: As
   const [type, setType] = useState<AssignmentType>('Exam')
   const [weight, setWeight] = useState('')
   const [deadline, setDeadline] = useState('')
+  const [weightInvalid, setWeightInvalid] = useState(false)
   const ref = useRef<HTMLInputElement>(null)
 
   useEffect(() => { ref.current?.focus() }, [])
 
   const submit = () => {
     if (!name.trim()) return
+    const parsedWeight = parseNumberDraft(weight, { ...WEIGHT_RULE, blank: 'clear' })
+    if (!parsedWeight.ok) { setWeightInvalid(true); return }
     onAdd({
       id: `custom-${Date.now()}`,
       name: name.trim(),
       courseId,
       type,
-      weight: parseFloat(weight) / 100 || 0,
+      weight: (parsedWeight.value ?? 0) / 100,
       deadline: deadline || undefined,
       done: false,
       priority: 'Medium',
@@ -191,26 +112,36 @@ function AddRow({ courseId, onAdd, onCancel }: { courseId: string; onAdd: (a: As
     <tr className="border-b border-border/60 bg-muted/20">
       <td className="px-4 py-2"><Plus className="h-3.5 w-3.5 text-muted-foreground" /></td>
       <td className="py-2">
-        <input
+        <Input
           ref={ref}
+          variant="inline"
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
+          aria-label="New assignment name"
           placeholder="Assignment name..."
-          className="w-full bg-transparent text-xs font-medium outline-none placeholder:text-foreground-faint"
+          className="font-medium"
         />
       </td>
       <td className="py-2">
-        <select value={type} onChange={(e) => setType(e.target.value as AssignmentType)} className={`${selectCls} h-6 px-1.5 font-mono text-2xs`}>
-          {ALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
+        <OptionSelect value={type} options={ALL_TYPES} onChange={setType} label="New assignment type" />
       </td>
       <td className="py-2 text-right">
-        <input value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="%" className="w-10 bg-transparent text-right font-mono text-xs tabular-nums outline-none placeholder:text-foreground-faint" />
+        <Input
+          variant="inline"
+          inputMode="decimal"
+          value={weight}
+          onChange={(e) => { setWeight(e.target.value); setWeightInvalid(false) }}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') onCancel() }}
+          aria-label="New assignment weight"
+          aria-invalid={weightInvalid || undefined}
+          placeholder="%"
+          className="w-10 text-right font-mono tabular-nums"
+        />
       </td>
       <td className="py-2" />
       <td className="py-2 text-right">
-        <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="cursor-pointer bg-transparent font-mono text-2xs tabular-nums outline-none" />
+        <Input variant="inline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} aria-label="New assignment deadline" className="w-auto cursor-pointer font-mono text-2xs tabular-nums" />
       </td>
       <td className="py-2 pl-2">
         <div className="flex gap-1">
@@ -297,13 +228,15 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
           <Icon className="size-4 text-accent" />
         </Button>
         {editingName ? (
-          <input
+          <Input
             ref={nameRef}
+            variant="inline"
             value={draftName}
             onChange={(e) => setDraftName(e.target.value)}
             onBlur={commitName}
             onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setDraftName(course.name); setEditingName(false) } }}
-            className="border-b border-input bg-transparent text-base font-semibold outline-none"
+            aria-label="Course name"
+            className="w-auto text-base font-semibold"
           />
         ) : (
           /* Click-to-edit title — documented compact pattern (bare text button). */
@@ -322,32 +255,18 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
         {/* Properties */}
         <div className="flex flex-col sm:border-r sm:border-border/60 sm:pr-6">
           <Prop label="Semester">
-            <select
-              value={course.semester}
-              onChange={(e) => onUpdateCourse({ semester: e.target.value })}
-              className={`${selectCls} h-6 px-1.5 font-mono text-2xs`}
-            >
-              {semesters.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <OptionSelect value={course.semester} options={semesters} onChange={(semester) => onUpdateCourse({ semester })} label="Semester" />
           </Prop>
-          <Prop label="Credits"><EditableNumber value={course.credits} onChange={(v) => onUpdateCourse({ credits: v ?? course.credits })} /></Prop>
+          <Prop label="Credits">
+            <InlineNumberEditor value={course.credits} rule={CREDITS_RULE} label="Credits" onCommit={(credits) => { if (credits !== undefined) onUpdateCourse({ credits }) }} className="text-muted-foreground">
+              {formatNumberDraft(course.credits)}
+            </InlineNumberEditor>
+          </Prop>
           <Prop label="Status">
-            <select
-              value={course.status}
-              onChange={(e) => onUpdateCourse({ status: e.target.value as CourseStatus })}
-              className={`${selectCls} h-6 px-1.5 font-mono text-2xs`}
-            >
-              {ALL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <OptionSelect value={course.status} options={ALL_STATUSES} onChange={(status) => onUpdateCourse({ status })} label="Status" />
           </Prop>
           <Prop label="Difficulty">
-            <select
-              value={course.difficulty}
-              onChange={(e) => onUpdateCourse({ difficulty: e.target.value as Difficulty })}
-              className={`${selectCls} h-6 px-1.5 font-mono text-2xs ${diffInk[course.difficulty]}`}
-            >
-              {ALL_DIFFICULTIES.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
+            <OptionSelect value={course.difficulty} options={ALL_DIFFICULTIES} onChange={(difficulty) => onUpdateCourse({ difficulty })} label="Difficulty" className={diffInk[course.difficulty]} />
           </Prop>
           <Prop label="Current Grade">
             {currentGrade !== undefined ? (
@@ -396,13 +315,15 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
             {addingTopic && (
               <div className="flex items-center gap-2 px-3 py-2">
                 <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-                <input
+                <Input
                   ref={newRef}
+                  variant="inline"
                   value={newTopicName}
                   onChange={(e) => setNewTopicName(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') addTopic(); if (e.key === 'Escape') setAddingTopic(false) }}
+                  aria-label="New topic name"
                   placeholder="Topic name..."
-                  className="flex-1 bg-transparent text-xs outline-none placeholder:text-foreground-faint"
+                  className="flex-1"
                 />
                 <Button variant="ghost" size="icon-xs" onClick={addTopic} aria-label="Add topic" className="text-success hover:text-success"><CheckCircle2 /></Button>
                 <Button variant="ghost" size="icon-xs" onClick={() => setAddingTopic(false)} aria-label="Cancel"><X /></Button>
@@ -415,11 +336,11 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
       {/* Notes */}
       <div className="mt-5 border-t border-border/60 pt-4">
         <h3 className="mb-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Notes</h3>
-        <textarea
+        <Textarea aria-label="Course notes"
           value={course.notes ?? ''}
           onChange={(e) => onUpdateCourse({ notes: e.target.value })}
           placeholder="Class notes, formulas, reminders… (autosaves)"
-          className="min-h-[140px] w-full resize-y rounded-md border border-input bg-input/20 px-3 py-2 text-xs leading-relaxed outline-none transition-colors placeholder:text-foreground-faint"
+          className="min-h-[140px] w-full resize-y px-3 py-2 text-xs leading-relaxed"
         />
       </div>
     </div>
@@ -563,6 +484,7 @@ export function StudentPage() {
     setSelectedTypes((prev) => { const next = new Set(prev); if (next.has(t)) { if (next.size > 1) next.delete(t) } else next.add(t); return next })
   }
   const toggleSort = (key: SortKey) => { if (sortKey === key) setSortAsc((p) => !p); else { setSortKey(key); setSortAsc(true) } }
+  const sortProps = (key: SortKey) => ({ active: sortKey === key, ascending: sortAsc, onSort: () => toggleSort(key) })
 
   const upcoming = overview.deadlineQueue
 
@@ -643,14 +565,16 @@ export function StudentPage() {
         })}
         {addingSemester ? (
           <div className="flex items-center rounded-full border border-input px-2.5 py-1.5">
-            <input
+            <Input
               ref={semAddRef}
+              variant="inline"
               value={newSemesterName}
               onChange={(e) => setNewSemesterName(e.target.value)}
               onBlur={addSemester}
               onKeyDown={(e) => { if (e.key === 'Enter') addSemester(); if (e.key === 'Escape') { setAddingSemester(false); setNewSemesterName('') } }}
+              aria-label="New semester name"
               placeholder="5th Semester..."
-              className="w-28 bg-transparent font-mono text-2xs outline-none placeholder:text-foreground-faint"
+              className="w-28 border-b-0 py-0 font-mono text-2xs"
             />
           </div>
         ) : (
@@ -730,14 +654,16 @@ export function StudentPage() {
         {addingCourse ? (
           <div className="flex flex-col gap-2 rounded-xl border border-dashed border-input bg-muted/20 px-4 py-3">
             <Plus className="h-4 w-4 text-muted-foreground" />
-            <input
+            <Input
               ref={courseAddRef}
+              variant="inline"
               value={newCourseName}
               onChange={(e) => setNewCourseName(e.target.value)}
               onBlur={addCourse}
               onKeyDown={(e) => { if (e.key === 'Enter') addCourse(); if (e.key === 'Escape') { setAddingCourse(false); setNewCourseName('') } }}
+              aria-label="New course name"
               placeholder="Course name..."
-              className="bg-transparent text-xs font-medium outline-none placeholder:text-foreground-faint"
+              className="font-medium"
             />
           </div>
         ) : (
@@ -902,20 +828,12 @@ export function StudentPage() {
             <thead>
               <tr className="border-b border-border/60 text-muted-foreground">
                 <th className="w-6 px-4 py-2"></th>
-                <th className="py-2 text-left font-medium">
-                  <Button variant="ghost" size="xs" onClick={() => toggleSort('name')} className="-ml-2">Name <SortIcon k="name" sortKey={sortKey} sortAsc={sortAsc} /></Button>
-                </th>
-                {!selectedCourse && <th className="py-2 text-left font-medium">Course</th>}
-                <th className="py-2 text-left font-medium">Type</th>
-                <th className="py-2 text-right font-medium">
-                  <Button variant="ghost" size="xs" onClick={() => toggleSort('weight')}>Weight <SortIcon k="weight" sortKey={sortKey} sortAsc={sortAsc} /></Button>
-                </th>
-                <th className="py-2 text-right font-medium">
-                  <Button variant="ghost" size="xs" onClick={() => toggleSort('grade')}>Grade <SortIcon k="grade" sortKey={sortKey} sortAsc={sortAsc} /></Button>
-                </th>
-                <th className="py-2 text-right font-medium">
-                  <Button variant="ghost" size="xs" onClick={() => toggleSort('deadline')}>Deadline <SortIcon k="deadline" sortKey={sortKey} sortAsc={sortAsc} /></Button>
-                </th>
+                <SortableHeader label="Name" {...sortProps('name')} />
+                {!selectedCourse && <th scope="col" className={tableHeaderClassName}>Course</th>}
+                <th scope="col" className={tableHeaderClassName}>Type</th>
+                <SortableHeader label="Weight" {...sortProps('weight')} className="text-right" />
+                <SortableHeader label="Grade" {...sortProps('grade')} className="text-right" />
+                <SortableHeader label="Deadline" {...sortProps('deadline')} className="text-right" />
                 <th className="w-6 py-2"></th>
               </tr>
             </thead>
@@ -944,28 +862,41 @@ export function StudentPage() {
                       </td>
                     )}
                     <td className="py-2.5">
-                      <select
+                      <OptionSelect
                         value={a.type}
-                        onChange={(e) => setField(a.id, { type: e.target.value as AssignmentType })}
-                        className="cursor-pointer appearance-none rounded-full border border-border bg-transparent px-1.5 py-0.5 font-mono text-3xs text-muted-foreground outline-none transition-colors hover:border-input hover:text-foreground"
-                      >
-                        {ALL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                      </select>
-                    </td>
-                    <td className="py-2.5 text-right">
-                      <EditableNumber
-                        value={a.weight * 100}
-                        suffix="%"
-                        onChange={(v) => setField(a.id, { weight: (v ?? 0) / 100 })}
+                        options={ALL_TYPES}
+                        onChange={(type) => setField(a.id, { type })}
+                        label={`Type for ${a.name}`}
+                        className="h-auto appearance-none bg-transparent py-0.5 text-3xs text-muted-foreground hover:border-input hover:text-foreground"
                       />
                     </td>
-                    <td className="py-2.5 text-right"><EditableGrade value={a.grade} onChange={(v) => setGrade(a.id, v)} /></td>
                     <td className="py-2.5 text-right">
-                      <input
+                      <InlineNumberEditor
+                        value={weightPercent(a)}
+                        rule={WEIGHT_RULE}
+                        label={`Weight for ${a.name}`}
+                        onCommit={(v) => setField(a.id, { weight: (v ?? 0) / 100 })}
+                        className="text-muted-foreground"
+                        inputClassName="w-10"
+                      >
+                        {formatNumberDraft(weightPercent(a))}%
+                      </InlineNumberEditor>
+                    </td>
+                    <td className="py-2.5 text-right">
+                      <InlineNumberEditor value={a.grade} rule={GRADE_RULE} label={`Grade for ${a.name}`} placeholder="0-5" onCommit={(v) => setGrade(a.id, v)} className="w-full">
+                        {a.grade !== undefined
+                          ? <span className={gradeInk(a.grade)}>{a.grade.toFixed(1)}</span>
+                          : <span className="text-foreground-faint">—</span>}
+                      </InlineNumberEditor>
+                    </td>
+                    <td className="py-2.5 text-right">
+                      <Input
+                        variant="inline"
                         type="date"
                         value={a.deadline ?? ''}
                         onChange={(e) => setField(a.id, { deadline: e.target.value || undefined })}
-                        className="w-[100px] cursor-pointer bg-transparent text-right font-mono text-2xs tabular-nums text-muted-foreground outline-none"
+                        aria-label={`Deadline for ${a.name}`}
+                        className="w-[100px] cursor-pointer border-b-0 text-right font-mono text-2xs tabular-nums text-muted-foreground"
                       />
                     </td>
                     <td className="py-2.5 pr-4">

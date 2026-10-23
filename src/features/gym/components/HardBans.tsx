@@ -1,3 +1,5 @@
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { useState, useMemo } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Flame, Plus, X, Pencil, Check, ChevronDown, AlertTriangle } from 'lucide-react'
@@ -151,12 +153,12 @@ export function HardBans() {
                         className="overflow-hidden"
                       >
                         <div className="space-y-2 px-4 pb-3">
-                          <textarea
+                          <Textarea aria-label="Violation notes"
                             value={violationNotes}
                             onChange={e => setViolationNotes(e.target.value)}
                             placeholder="What happened?"
                             rows={2}
-                            className="w-full resize-none rounded-md border border-input bg-input/20 px-3 py-2 text-sm text-foreground placeholder:text-foreground-faint"
+                            className="w-full resize-none px-3 py-2 text-sm"
                           />
                           <Button variant="destructive" size="sm" onClick={() => logViolation(ban.id)}>
                             <AlertTriangle />
@@ -177,7 +179,7 @@ export function HardBans() {
       {editing && (
         <div className="surface space-y-2 rounded-xl p-3">
           <div className="flex items-center gap-2">
-            <Input
+            <Input aria-label="New hard ban"
               type="text"
               value={newName}
               onChange={e => setNewName(e.target.value)}
@@ -185,13 +187,13 @@ export function HardBans() {
               className="flex-1"
               onKeyDown={e => e.key === 'Enter' && addBan()}
             />
-            <select
+            <Select aria-label="Hard ban category"
               value={newCategory}
               onChange={e => setNewCategory(e.target.value as HardBan['category'])}
-              className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+              className="w-auto h-8 px-2 text-xs"
             >
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            </Select>
             <Button variant="secondary" size="icon-sm" onClick={addBan} aria-label="Add ban">
               <Plus />
             </Button>

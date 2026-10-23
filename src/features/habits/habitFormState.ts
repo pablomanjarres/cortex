@@ -15,6 +15,3 @@ export const emptyHabitDraft = (): HabitDraft => ({
   category: '',
   cadence: 'weekly',
 })
-
-export const habitSelectClass =
-  'rounded-md border border-input bg-input/20 text-foreground outline-none transition-colors duration-150 focus-visible:border-ring/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'

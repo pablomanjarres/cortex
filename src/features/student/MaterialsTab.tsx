@@ -1,3 +1,5 @@
+import { parseTags } from '@/lib/tags'
+import { Textarea } from '@/components/ui/textarea'
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -7,6 +9,7 @@ import { Modal } from '@/components/shared/Modal'
 import { StatTile } from '@/components/shared/StatTile'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Input } from '@/components/ui/input'
+import { Field } from '@/components/shared/Field'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
@@ -57,7 +60,6 @@ function linkName(url: string): string {
 /** Default display name for a text material: its first words. */
 const textName = (t: string) => t.trim().split(/\s+/).slice(0, 6).join(' ') || 'Untitled'
 
-const parseTags = (s: string) => s.split(',').map(t => t.trim()).filter(Boolean)
 
 const isImageFile = (f?: MaterialFile) => !!f && f.mime.startsWith('image/')
 const isPdfFile = (f?: MaterialFile) => !!f && f.mime === 'application/pdf'
@@ -468,7 +470,7 @@ export function MaterialsTab() {
                 className="h-fit"
               >
                 <div className="flex flex-col gap-2">
-                  <Input
+                  <Input aria-label="Quick note"
                     value={quickNote}
                     onChange={(e) => setQuickNote(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') addQuickNote() }}
@@ -523,47 +525,44 @@ export function MaterialsTab() {
         {editor && (
           <div className="flex flex-col gap-3">
             {editor.kind === 'link' && (
-              <div>
-                <label className="mb-1 block text-2xs text-muted-foreground">URL</label>
-                <Input value={editor.url} onChange={(e) => setEditor({ ...editor, url: e.target.value })} placeholder="https://…" className="h-8 font-mono text-xs" />
-              </div>
+              <Field label="URL">
+                {(id) => <Input id={id} value={editor.url} onChange={(e) => setEditor({ ...editor, url: e.target.value })} placeholder="https://…" className="h-8 font-mono text-xs" />}
+              </Field>
             )}
             {editor.kind === 'text' && (
-              <div>
-                <label className="mb-1 block text-2xs text-muted-foreground">Text</label>
-                <textarea
+              <Field label="Text">
+                {(id) => (
+                <Textarea
+                  id={id}
                   value={editor.text}
                   onChange={(e) => setEditor({ ...editor, text: e.target.value })}
                   rows={5}
                   placeholder="Formulas, prof constraints, anything worth keeping…"
-                  className="w-full resize-y rounded-md border border-input bg-input/20 px-3 py-2 text-xs leading-relaxed outline-none placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  className="w-full resize-y px-3 py-2 text-xs leading-relaxed"
                 />
-              </div>
+                )}
+              </Field>
             )}
             {editor.file && (
               <p className="font-mono text-2xs text-foreground-faint">
                 {editor.file.name} · {formatBytes(editor.file.size)}
               </p>
             )}
-            <div>
-              <label className="mb-1 block text-2xs text-muted-foreground">Name</label>
-              <Input value={editor.name} onChange={(e) => setEditor({ ...editor, name: e.target.value })} placeholder="Display name (auto if empty)" className="h-8 text-xs" />
-            </div>
-            <div>
-              <label className="mb-1 block text-2xs text-muted-foreground">Unit</label>
-              <Input list="material-unit-options" value={editor.unit} onChange={(e) => setEditor({ ...editor, unit: e.target.value })} placeholder="Unidad 1, Contenidos generales…" className="h-8 text-xs" />
-              <datalist id="material-unit-options">
-                {namedUnits.map((u) => <option key={u} value={u} />)}
-              </datalist>
-            </div>
-            <div>
-              <label className="mb-1 block text-2xs text-muted-foreground">Description</label>
-              <Input value={editor.description} onChange={(e) => setEditor({ ...editor, description: e.target.value })} placeholder="What is this?" className="h-8 text-xs" />
-            </div>
-            <div>
-              <label className="mb-1 block text-2xs text-muted-foreground">Tags</label>
-              <Input value={editor.tags} onChange={(e) => setEditor({ ...editor, tags: e.target.value })} placeholder="comma, separated" className="h-8 text-xs" />
-            </div>
+            <Field label="Name">
+              {(id) => <Input id={id} value={editor.name} onChange={(e) => setEditor({ ...editor, name: e.target.value })} placeholder="Display name (auto if empty)" className="h-8 text-xs" />}
+            </Field>
+            <Field label="Unit">
+              {(id) => <Input id={id} list="material-unit-options" value={editor.unit} onChange={(e) => setEditor({ ...editor, unit: e.target.value })} placeholder="Unidad 1, Contenidos generales…" className="h-8 text-xs" />}
+            </Field>
+            <datalist id="material-unit-options">
+              {namedUnits.map((u) => <option key={u} value={u} />)}
+            </datalist>
+            <Field label="Description">
+              {(id) => <Input id={id} value={editor.description} onChange={(e) => setEditor({ ...editor, description: e.target.value })} placeholder="What is this?" className="h-8 text-xs" />}
+            </Field>
+            <Field label="Tags">
+              {(id) => <Input id={id} value={editor.tags} onChange={(e) => setEditor({ ...editor, tags: e.target.value })} placeholder="comma, separated" className="h-8 text-xs" />}
+            </Field>
           </div>
         )}
       </Modal>

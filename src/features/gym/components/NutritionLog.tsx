@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { NutritionSummary } from './NutritionSummary'
 import { Input } from '@/components/ui/input'
@@ -249,20 +250,20 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
         <div className="surface flex flex-wrap items-center gap-2 rounded-xl p-3">
           <div className="flex items-center gap-1">
             <label className="text-2xs text-muted-foreground">Protein</label>
-            <Input type="number" value={targetInputs.protein}
+            <Input aria-label="Protein target (g)" type="number" value={targetInputs.protein}
               onChange={(e) => setTargetInputs(p => ({ ...p, protein: e.target.value }))}
               className="h-7 w-16 text-xs tabular-nums" />
             <span className="text-2xs text-muted-foreground">g</span>
           </div>
           <div className="flex items-center gap-1">
             <label className="text-2xs text-muted-foreground">Calories</label>
-            <Input type="number" value={targetInputs.calories}
+            <Input aria-label="Calories target" type="number" value={targetInputs.calories}
               onChange={(e) => setTargetInputs(p => ({ ...p, calories: e.target.value }))}
               className="h-7 w-20 text-xs tabular-nums" />
           </div>
           <div className="flex items-center gap-1">
             <label className="text-2xs text-muted-foreground">Water</label>
-            <Input type="number" step="0.1" value={targetInputs.water}
+            <Input aria-label="Water target" type="number" step="0.1" value={targetInputs.water}
               onChange={(e) => setTargetInputs(p => ({ ...p, water: e.target.value }))}
               className="h-7 w-16 text-xs tabular-nums" />
             <span className="text-2xs text-muted-foreground">L</span>
@@ -428,7 +429,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
             <div className="space-y-2 sm:flex sm:items-end sm:gap-2 sm:space-y-0">
               <div className="flex gap-2 sm:contents">
                 <div className="flex-1 sm:flex-1">
-                  <Input
+                  <Input aria-label="Food name"
                     placeholder="Food name"
                     value={newFoodName}
                     onChange={(e) => setNewFoodName(e.target.value)}
@@ -437,7 +438,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   />
                 </div>
                 <div className="w-20 sm:w-16">
-                  <Input
+                  <Input aria-label="Quantity"
                     placeholder="Qty"
                     value={newFoodQuantity}
                     onChange={(e) => setNewFoodQuantity(e.target.value)}
@@ -447,7 +448,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
               </div>
               <div className="flex gap-2 sm:contents">
                 <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
-                  <Input
+                  <Input aria-label="Protein (g)"
                     type="number"
                     placeholder="Protein (g)"
                     value={newFoodProtein}
@@ -456,7 +457,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   />
                 </div>
                 <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
-                  <Input
+                  <Input aria-label="Calories"
                     type="number"
                     placeholder="Calories"
                     value={newFoodCalories}
@@ -542,7 +543,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
           <div className="mt-1 space-y-2 border-t border-border/60 pt-3 sm:flex sm:items-end sm:gap-2 sm:space-y-0">
             <div className="flex gap-2 sm:contents">
               <div className="flex-1">
-                <Input
+                <Input aria-label="Pantry item name"
                   placeholder="Item name"
                   value={newPantryName}
                   onChange={(e) => setNewPantryName(e.target.value)}
@@ -551,7 +552,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                 />
               </div>
               <div className="w-20 sm:w-16">
-                <Input
+                <Input aria-label="Serving"
                   placeholder="Serving"
                   value={newPantryServing}
                   onChange={(e) => setNewPantryServing(e.target.value)}
@@ -561,7 +562,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
             </div>
             <div className="flex gap-2 sm:contents">
               <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
-                <Input
+                <Input aria-label="Pantry protein (g)"
                   type="number"
                   placeholder="Protein (g)"
                   value={newPantryProtein}
@@ -570,7 +571,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                 />
               </div>
               <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
-                <Input
+                <Input aria-label="Pantry calories"
                   type="number"
                   placeholder="Calories"
                   value={newPantryCalories}
@@ -579,13 +580,13 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
                   onKeyDown={(e) => e.key === 'Enter' && addPantryItem()}
                 />
               </div>
-              <select
+              <Select aria-label="Pantry category"
                 value={newPantryCategory}
                 onChange={(e) => setNewPantryCategory(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground sm:h-7 sm:text-xs"
+                className="w-auto h-9 px-2 text-sm sm:h-7 sm:text-xs"
               >
                 {PANTRY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              </Select>
               <Button
                 variant="secondary"
                 size="icon"

@@ -203,3 +203,20 @@ When updating a page, first replace local cards with `WidgetCard` or `.surface`,
 local KPI blocks with `StatTile`, local filters/tags with `Chip`, raw buttons with
 `Button`, and chart colors with `chart-theme`. Preserve data semantics before
 polishing the layout.
+
+## Component ownership
+
+`Input`, `Select`, and `Textarea` share surface, focus, disabled, and invalid styles
+in `components/ui/control-styles.ts`. Use the `inline` variant for row edits.
+`Field` owns label ids and hint associations; `SearchInput` owns its icon and
+accessible name; `TagInput` keeps a comma-separated draft until Enter or blur.
+`InlineNumberEditor` and `lib/number-draft.ts` own numeric drafts shared by Student
+and the Market budget. `SortableHeader` owns sort buttons and `aria-sort`. Use these owners instead of
+copying control markup or base classes into a feature.
+
+Keep compound behavior with its feature: Finance's `SettlementControl` owns the
+paid/received trigger, editor, and progress; `BookFields`, `ContactFields`, and
+`CrmContactFields` are shared by their desktop and mobile presentations.
+Automations uses `RunCard` for history, attention, and recent runs. Opportunities
+keeps editable fields in `OpportunityEditor` and record rules in
+`opportunity-model.ts`. Pages compose these components and retain store access.

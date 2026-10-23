@@ -1,3 +1,4 @@
+import { SearchInput } from '@/components/shared/SearchInput'
 import { useState, useEffect, useMemo } from 'react'
 import Markdown from 'react-markdown'
 import { PageShell } from '@/components/shared/PageShell'
@@ -7,34 +8,23 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import {
   RefreshCw,
   CheckCircle2,
   XCircle,
   Clock,
-  AlertTriangle,
   ChevronLeft,
   Server,
   Code,
   Brain,
   Flame,
-  Search,
   FileText,
-  ArrowRight,
 } from 'lucide-react'
+import { runStatusOf, timeAgo, type AutomationRun } from './automation-runs'
+import { RunCard, RunStatusLine } from './RunCard'
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-interface AutomationRun {
-  id: string
-  taskName: string
-  timestamp: string
-  status: 'success' | 'error' | 'pending-approval'
-  summary: string
-  fullOutput: string
-  approved?: boolean
-}
 
 type TaskType = 'claude' | 'launchd' | 'cron' | 'n8n' | 'hook'
 type TaskHost = 'mac-mini'
@@ -114,25 +104,6 @@ const groupIcon: Record<string, typeof Code> = {
   'System': Server,
 }
 
-// Run status is a STATUS — semantic tokens only.
-const statusMeta: Record<string, { icon: typeof CheckCircle2; chip: 'success' | 'danger' | 'warning'; text: string; label: string }> = {
-  success: { icon: CheckCircle2, chip: 'success', text: 'text-success', label: 'Success' },
-  error: { icon: XCircle, chip: 'danger', text: 'text-destructive', label: 'Error' },
-  'pending-approval': { icon: AlertTriangle, chip: 'warning', text: 'text-warning', label: 'Pending approval' },
-}
-
-function timeAgo(ts: string): string {
-  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000)
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
-}
-
-function fmtDate(ts: string): string {
-  return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
 // ── Markdown prose styling ───────────────────────────────────────────────────
 
 const mdComponents = {
@@ -154,6 +125,8 @@ const mdComponents = {
   th: (props: any) => <th className="border-b border-border/60 px-2 py-1.5 text-left font-medium text-muted-foreground" {...props} />,
   td: (props: any) => <td className="border-b border-border/40 px-2 py-1.5 text-muted-foreground" {...props} />,
 }
+
+const footerAction = 'h-auto flex-1 rounded-none py-2 font-mono text-2xs font-normal'
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -250,9 +223,6 @@ export function AutomationsPage() {
   // ── Detail view: reading a specific run ─────────────────────────
   if (selectedRun) {
     const task = allTasks.find((t) => t.name === selectedRun.taskName)
-    const st = statusMeta[selectedRun.status] || statusMeta.success
-    const StatusIcon = st.icon
-
     return (
       <PageShell>
         <div>
@@ -277,13 +247,7 @@ export function AutomationsPage() {
           ) : undefined}
         />
 
-        <div className="-mt-3 flex flex-wrap items-center gap-2 sm:gap-3">
-          <Chip variant={st.chip} size="sm">
-            <StatusIcon /> {st.label}
-          </Chip>
-          <span className="font-mono text-2xs text-muted-foreground">{fmtDate(selectedRun.timestamp)}</span>
-          <span className="font-mono text-2xs text-foreground-faint">{timeAgo(selectedRun.timestamp)}</span>
-        </div>
+        <RunStatusLine run={selectedRun} />
 
         {selectedRun.summary && (
           <div className="rounded-md border border-border/60 bg-secondary/20 px-4 py-3">
@@ -322,29 +286,9 @@ export function AutomationsPage() {
         <div className="flex flex-col gap-3">
           {taskRuns.length === 0 ? (
             <EmptyState message="No runs recorded yet for this task." />
-          ) : taskRuns.map((run) => {
-            const st = statusMeta[run.status] || statusMeta.success
-            const StatusIcon = st.icon
-            return (
-              <button key={run.id} onClick={() => setSelectedRun(run)}
-                className="surface w-full cursor-pointer rounded-xl px-4 py-3 text-left transition-colors hover:bg-secondary/20">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex items-center gap-2">
-                      <StatusIcon className={`h-3.5 w-3.5 shrink-0 ${st.text}`} />
-                      <span className="font-mono text-xs font-medium">{fmtDate(run.timestamp)}</span>
-                      <span className="font-mono text-2xs text-foreground-faint">{timeAgo(run.timestamp)}</span>
-                    </div>
-                    {run.summary && <p className="text-sm text-muted-foreground">{run.summary}</p>}
-                    {run.fullOutput && (
-                      <p className="mt-1 line-clamp-2 text-xs text-foreground-faint">{run.fullOutput.slice(0, 200)}</p>
-                    )}
-                  </div>
-                  <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-foreground-faint" />
-                </div>
-              </button>
-            )
-          })}
+          ) : taskRuns.map((run) => (
+            <RunCard key={run.id} run={run} layout="history" onOpen={setSelectedRun} />
+          ))}
         </div>
       </PageShell>
     )
@@ -380,20 +324,7 @@ export function AutomationsPage() {
         <WidgetCard title="Needs your attention" description={`${pendingApprovals.length} pending`} variant="urgent" delay={0}>
           <div className="flex flex-col gap-2">
             {pendingApprovals.map((run) => (
-              <button key={run.id} onClick={() => setSelectedRun(run)}
-                className="w-full cursor-pointer rounded-md border border-warning/25 bg-warning/10 px-4 py-3 text-left transition-colors hover:bg-warning/15">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
-                      <span className="font-mono text-sm font-medium">{run.taskName}</span>
-                      <span className="font-mono text-2xs text-foreground-faint">{timeAgo(run.timestamp)}</span>
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground">{run.summary}</p>
-                  </div>
-                  <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-warning" />
-                </div>
-              </button>
+              <RunCard key={run.id} run={run} layout="attention" onOpen={setSelectedRun} />
             ))}
           </div>
         </WidgetCard>
@@ -403,36 +334,17 @@ export function AutomationsPage() {
       {recentRuns.length > 0 && (
         <WidgetCard title="Recent jobs" description={`${recentRuns.length} in the last 24h`} delay={0.05}>
           <div className="flex flex-col gap-1">
-            {recentRuns.map((run) => {
-              const st = statusMeta[run.status] || statusMeta.success
-              const StatusIcon = st.icon
-              return (
-                <button key={run.id} onClick={() => setSelectedRun(run)}
-                  className="group flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-secondary/30">
-                  <StatusIcon className={`h-4 w-4 shrink-0 ${st.text}`} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-medium">{run.taskName}</span>
-                      <Chip variant={st.chip} size="sm">{st.label}</Chip>
-                    </div>
-                    {run.summary && <p className="mt-0.5 truncate text-2xs text-muted-foreground">{run.summary}</p>}
-                  </div>
-                  <span className="shrink-0 font-mono text-2xs text-foreground-faint">{timeAgo(run.timestamp)}</span>
-                  <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                </button>
-              )
-            })}
+            {recentRuns.map((run) => (
+              <RunCard key={run.id} run={run} layout="compact" onOpen={setSelectedRun} />
+            ))}
           </div>
         </WidgetCard>
       )}
 
       {/* Search + Group filter */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative w-full sm:max-w-xs sm:flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks..."
-            className="h-8 pl-8 text-xs" />
-        </div>
+        <SearchInput label="Search tasks" containerClassName="w-full sm:max-w-xs sm:flex-1" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks..."
+            className="h-8 text-xs" />
         <div className="flex flex-wrap gap-1.5 overflow-x-auto">
           {groups.map((g) => (
             <Chip key={g} selectable size="sm" selected={groupFilter === g}
@@ -458,7 +370,7 @@ export function AutomationsPage() {
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {tasksInGroup.map((task) => {
                 const lastRun = taskLastRun[task.name]
-                const st = lastRun ? statusMeta[lastRun.status] : null
+                const st = lastRun ? runStatusOf(lastRun) : null
                 const StatusIcon = st?.icon || Clock
 
                 return (
@@ -500,18 +412,18 @@ export function AutomationsPage() {
                       )}
                     </div>
 
-                    {/* Action footer — compact full-bleed segments (Button can't span card edges) */}
+                    {/* Action footer — full-bleed segments that keep Button focus and keyboard behavior */}
                     <div className="flex border-t border-border/60">
                       {lastRun && (
-                        <button onClick={() => setSelectedRun(lastRun)}
-                          className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 py-2 font-mono text-2xs text-muted-foreground transition-colors hover:bg-secondary/30 hover:text-foreground">
-                          <FileText className="h-3 w-3" /> Read report
-                        </button>
+                        <Button variant="ghost" size="sm" className={footerAction}
+                          aria-label={`Read ${task.name} report`} onClick={() => setSelectedRun(lastRun)}>
+                          <FileText className="size-3" /> Read report
+                        </Button>
                       )}
-                      <button onClick={() => setSelectedTask(task.name)}
-                        className="flex flex-1 cursor-pointer items-center justify-center gap-1.5 border-l border-border/60 py-2 font-mono text-2xs text-muted-foreground transition-colors first:border-l-0 hover:bg-secondary/30 hover:text-foreground">
-                        <Clock className="h-3 w-3" /> History
-                      </button>
+                      <Button variant="ghost" size="sm" className={cn(footerAction, 'border-l border-border/60 first:border-l-0')}
+                        aria-label={`History for ${task.name}`} onClick={() => setSelectedTask(task.name)}>
+                        <Clock className="size-3" /> History
+                      </Button>
                     </div>
                   </div>
                 )
