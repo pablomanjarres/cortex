@@ -4,7 +4,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { DailyPage } from '../src/features/daily/DailyPage.tsx'
-import { SprintProvider } from '../src/lib/sprint-context.tsx'
+import { SprintProvider } from '../src/lib/sprint-context.ts'
 
 // tsx's Node transform uses the classic JSX runtime for imported components.
 Object.assign(globalThis, { React })

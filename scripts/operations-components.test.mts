@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { runStatusOf, timeAgo } from '../src/features/automations/automation-runs.ts'
+import { parseRunLog, parseScheduledTasks, runStatusOf, timeAgo } from '../src/features/automations/automation-runs.ts'
 import {
   ageRuleOf, deadlineTypeOf, deadlineTypePatch, parseAmountUsd, requires18PlusFor,
   type Opportunity,
@@ -18,6 +18,29 @@ test('automation run times read relative to now', () => {
   assert.equal(timeAgo('2026-10-23T11:15:00Z', now), '45m ago')
   assert.equal(timeAgo('2026-10-23T09:00:00Z', now), '3h ago')
   assert.equal(timeAgo('2026-10-20T12:00:00Z', now), '3d ago')
+})
+
+test('stored run logs parse into displayable runs', () => {
+  const runs = parseRunLog({ runs: [
+    { id: 'a', taskName: 'backup', timestamp: '2026-10-23T11:00:00Z', status: 'error', summary: 'failed', fullOutput: 'log', approved: false },
+    { id: 'b', taskName: 'backup', timestamp: '2026-10-23T10:00:00Z', status: 'renamed-status' },
+    { id: 3, taskName: 'broken' },
+    null,
+  ] })
+  assert.deepEqual(runs, [
+    { id: 'a', taskName: 'backup', timestamp: '2026-10-23T11:00:00Z', status: 'error', summary: 'failed', fullOutput: 'log', approved: false },
+    { id: 'b', taskName: 'backup', timestamp: '2026-10-23T10:00:00Z', status: 'success', summary: '', fullOutput: '' },
+  ])
+  assert.deepEqual(parseRunLog(null), [])
+  assert.deepEqual(parseRunLog({ runs: 'nope' }), [])
+})
+
+test('scheduled tasks parse names and optional descriptions', () => {
+  assert.deepEqual(parseScheduledTasks([{ name: 'daily', description: 'Runs daily' }, { name: 'bare' }, { description: 'nameless' }]), [
+    { name: 'daily', description: 'Runs daily' },
+    { name: 'bare', description: '' },
+  ])
+  assert.deepEqual(parseScheduledTasks({}), [])
 })
 
 test('deadline type writes keep the legacy rolling flag in sync', () => {

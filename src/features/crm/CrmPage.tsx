@@ -23,6 +23,9 @@ import {
 } from './crm-model'
 import { CrmContactFields } from './CrmContactFields'
 
+/** Stable fallback so memoized views do not recompute when no org is active. */
+const EMPTY_CONTACTS: CrmContact[] = []
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function CrmPage() {
@@ -36,7 +39,7 @@ export function CrmPage() {
   const [showNewOrg, setShowNewOrg] = useState(false)
 
   const activeOrg = data.orgs.find((o) => o.id === data.activeOrg) || data.orgs[0]
-  const contacts = activeOrg?.contacts || []
+  const contacts = activeOrg?.contacts ?? EMPTY_CONTACTS
 
   const setActiveOrg = (id: string) => updateData((p) => ({ ...p, activeOrg: id }))
 

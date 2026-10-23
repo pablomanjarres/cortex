@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { useStore } from '@/lib/store'
 import { WorkHoursPanel } from './WorkHoursPanel'
+import { scanProjects } from './project-api'
+import type { ProjectInfo } from '@/types/electron'
 import {
   RefreshCw,
   GitBranch,
@@ -32,22 +34,9 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-type ProjectType = 'app' | 'monorepo' | 'library' | 'skill' | 'assets' | 'unknown'
+type ProjectType = ProjectInfo['type']
 
-interface ProjectInfo {
-  name: string
-  path: string
-  description: string | null
-  type: ProjectType
-  hasPackageJson: boolean
-  hasClaude: boolean
-  gitRemote: string | null
-  latestCommit: { message: string; date: string } | null
-  workflows: { name: string; scheduled: boolean; cron?: string }[]
-  techStack: string[]
-  scripts: string[]
-  connections: string[]
-}
+const EMPTY_PROJECTS: ProjectInfo[] = []
 
 interface ProjectMeta {
   displayName: string
@@ -129,10 +118,10 @@ function DetailField({ icon: Icon, title, className, children }: { icon?: Lucide
 }
 
 export function ProjectsPage() {
-  const [projects, setProjects] = useState<ProjectInfo[]>([])
+  const [scannedProjects, setProjects] = useState<ProjectInfo[] | null>(null)
   const [meta] = useStore<Record<string, ProjectMeta>>('cortex-project-meta', {})
   const [cachedProjects] = useStore<{ data: ProjectInfo[]; lastUpdated: string } | null>('cortex-cache-projects', null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<ProjectType | null>(null)
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
@@ -142,12 +131,7 @@ export function ProjectsPage() {
   const fetchProjects = async () => {
     setLoading(true)
     try {
-      if (window.electronAPI?.projects) {
-        setProjects(await window.electronAPI.projects.scan())
-      } else {
-        const res = await fetch('/api/projects/scan')
-        if (res.ok) setProjects(await res.json())
-      }
+      setProjects(await scanProjects())
     } catch (e) {
       console.error('Failed to scan projects:', e)
     } finally {
@@ -155,12 +139,16 @@ export function ProjectsPage() {
     }
   }
 
-  useEffect(() => { fetchProjects() }, [])
-
   useEffect(() => {
-    if (isElectron || !cachedProjects?.data) return
-    setProjects(cachedProjects.data)
-  }, [cachedProjects])
+    let active = true
+    void scanProjects()
+      .then((result) => { if (active) setProjects(result) })
+      .catch((error) => { if (active) console.error('Failed to scan projects:', error) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const projects = scannedProjects ?? (!isElectron && cachedProjects ? cachedProjects.data : EMPTY_PROJECTS)
 
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {
@@ -207,7 +195,7 @@ export function ProjectsPage() {
       {/* Header stats */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4 font-mono text-2xs tabular-nums">
-          <p className="text-muted-foreground">{projects.length} projects{!isElectron && cachedProjects?.lastUpdated ? ` · cached ${timeAgo(cachedProjects.lastUpdated)}` : ''}</p>
+          <p className="text-muted-foreground">{projects.length} projects{scannedProjects === null && !isElectron && cachedProjects?.lastUpdated ? ` · cached ${timeAgo(cachedProjects.lastUpdated)}` : ''}</p>
           {activeCount > 0 && <p className="text-success">{activeCount} active</p>}
           {loginCount > 0 && <p className="text-muted-foreground"><Power className="-mt-px mr-0.5 inline h-3 w-3" />{loginCount} on login</p>}
           {alwaysOnCount > 0 && <p className="text-muted-foreground"><Zap className="-mt-px mr-0.5 inline h-3 w-3" />{alwaysOnCount} always on</p>}
@@ -220,8 +208,8 @@ export function ProjectsPage() {
       {!isElectron && projects.length === 0 ? (
         <WidgetCard title="Projects" delay={0}>
           <EmptyState
-            message="No cached data yet."
-            hint="Open the desktop app to scan your Projects directory."
+            message={scannedProjects === null ? 'No cached data yet.' : 'No projects found.'}
+            hint={scannedProjects === null ? 'Open the desktop app to scan your Projects directory.' : undefined}
           />
         </WidgetCard>
       ) : (
