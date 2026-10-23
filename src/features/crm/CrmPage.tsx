@@ -6,98 +6,32 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/shared/SearchInput'
+import { SortableHeader, tableHeaderClassName } from '@/components/shared/SortableHeader'
 import { useStore } from '@/lib/store'
 import { NoelleCrmPanel } from './noelle-crm-panel'
 import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
 import { recordRefs } from '@/lib/knowledge'
 import { useRecordParam } from '@/lib/use-url-param'
 import {
-  Search,
   Plus,
   Trash2,
   Building2,
-  Phone,
-  Mail,
-  Globe,
   DollarSign,
   Users,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
 } from 'lucide-react'
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-interface CrmContact {
-  id: string
-  name: string
-  company: string
-  role: string
-  email: string
-  phone: string
-  website: string
-  status: 'lead' | 'prospect' | 'active' | 'churned' | 'paused'
-  value: number
-  notes: string
-  lastContact: string
-  tags: string[]
-}
-
-interface CrmOrg {
-  id: string
-  name: string
-  contacts: CrmContact[]
-}
-
-interface CrmData {
-  orgs: CrmOrg[]
-  activeOrg: string
-}
-
-const DEFAULT_DATA: CrmData = {
-  orgs: [
-    { id: 'freelancing', name: 'Freelancing', contacts: [] },
-  ],
-  activeOrg: 'freelancing',
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-// Pipeline states map to the semantic Chip trio (see OpportunitiesPage):
-// only truly semantic states carry a tone; new/incoming stays neutral.
-type ChipVariant = 'neutral' | 'accent' | 'success' | 'warning' | 'danger'
-
-const statusConfig: Record<CrmContact['status'], { label: string; chip: ChipVariant }> = {
-  lead: { label: 'Lead', chip: 'neutral' },
-  prospect: { label: 'Prospect', chip: 'accent' },
-  active: { label: 'Active', chip: 'success' },
-  churned: { label: 'Churned', chip: 'danger' },
-  paused: { label: 'Paused', chip: 'warning' },
-}
-
-const ALL_STATUSES: CrmContact['status'][] = ['lead', 'prospect', 'active', 'churned', 'paused']
-
-type SortKey = 'name' | 'company' | 'value' | 'status' | 'lastContact'
-
-function fmtDate(d: string) { return d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '' }
-function fmtMoney(n: number) { return n > 0 ? `$${n.toLocaleString('en-US')}` : '' }
-
-// Shared token styles (same quiet patterns as the other contact tables).
-const selectCls =
-  'h-8 w-full cursor-pointer rounded-md border border-input bg-input/20 px-2 text-xs text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
-const textareaCls =
-  'w-full resize-none rounded-md border border-input bg-input/20 px-3 py-2 text-xs text-foreground outline-none placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
-const lineInputCls = 'w-full border-b border-border/60 bg-transparent py-1 text-xs outline-none placeholder:text-foreground-faint'
-const labelCls = 'text-2xs text-muted-foreground'
-const thCls = 'py-2 text-left font-mono text-2xs font-normal uppercase tracking-wider'
-const thBtnCls = 'flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground'
+import {
+  ALL_STATUSES, DEFAULT_DATA, fmtDate, fmtMoney, statusConfig,
+  type CrmContact, type CrmData, type CrmStatus, type SortKey,
+} from './crm-model'
+import { CrmContactFields } from './CrmContactFields'
 
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function CrmPage() {
   const [data, updateData] = useStore<CrmData>('cortex-crm', DEFAULT_DATA)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<CrmContact['status'] | null>(null)
+  const [statusFilter, setStatusFilter] = useState<CrmStatus | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortAsc, setSortAsc] = useState(true)
@@ -168,8 +102,8 @@ export function CrmPage() {
     if (sortKey === k) setSortAsc((p) => !p)
     else { setSortKey(k); setSortAsc(true) }
   }
-  const SortIcon = ({ k }: { k: SortKey }) =>
-    sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
+  const sortProps = (k: SortKey) => ({ active: sortKey === k, ascending: sortAsc, onSort: () => toggleSort(k) })
+  const toggleExpanded = (id: string) => setExpanded(expanded === id ? null : id)
 
   const filtered = useMemo(() => {
     const lowerSearch = search.toLowerCase()
@@ -198,6 +132,12 @@ export function CrmPage() {
     for (const c of contacts) counts[c.status] = (counts[c.status] || 0) + 1
     return counts
   }, [contacts])
+  const emptyState = (
+    <EmptyState
+      message={contacts.length === 0 ? 'No contacts yet.' : 'No contacts match.'}
+      hint={contacts.length === 0 ? 'Press Add to create one.' : 'Try clearing a filter.'}
+    />
+  )
 
   return (
     <PageShell>
@@ -223,6 +163,7 @@ export function CrmPage() {
               onChange={(e) => setNewOrgName(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addOrg()}
               placeholder="Org name..."
+              aria-label="Organization name"
               className="h-7 w-32 text-xs"
               autoFocus
             />
@@ -259,10 +200,7 @@ export function CrmPage() {
 
       {/* Search + Filters + Add */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative max-w-xs flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-          <Input placeholder="Search contacts..." value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 pl-8 text-xs" />
-        </div>
+        <SearchInput label="Search CRM contacts" placeholder="Search contacts..." value={search} onChange={(e) => setSearch(e.target.value)} containerClassName="max-w-xs flex-1" className="h-8 text-xs" />
         <div className="flex flex-wrap gap-1.5">
           {ALL_STATUSES.map((s) => (
             <Chip key={s} selectable variant={statusConfig[s].chip} selected={statusFilter === s} onClick={() => setStatusFilter(statusFilter === s ? null : s)}>
@@ -277,157 +215,99 @@ export function CrmPage() {
 
       {/* Mobile: Contact cards */}
       <div className="flex flex-col gap-3 md:hidden">
-        {filtered.length === 0 ? (
-          <EmptyState
-            message={contacts.length === 0 ? 'No contacts yet.' : 'No contacts match.'}
-            hint={contacts.length === 0 ? 'Press Add to create one.' : 'Try clearing a filter.'}
-          />
-        ) : filtered.map((c) => (
-          <div key={c.id} className="surface rounded-xl p-4">
-            <div className="flex items-start justify-between" onClick={() => setExpanded(expanded === c.id ? null : c.id)}>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{c.name}</p>
-                <p className="truncate text-xs text-muted-foreground">{[c.company, c.role].filter(Boolean).join(' · ') || 'No company'}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Chip size="sm" variant={statusConfig[c.status].chip}>{statusConfig[c.status].label}</Chip>
-              </div>
-            </div>
-            <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-              {c.value > 0 && <span className="font-mono tabular-nums">{fmtMoney(c.value)}</span>}
-              {c.lastContact && <span className="font-mono">{fmtDate(c.lastContact)}</span>}
-              {c.tags.length > 0 && <span className="truncate">{c.tags.join(', ')}</span>}
-            </div>
-            {expanded === c.id && (
-              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
-                <div className="flex flex-col gap-2">
-                  <label className={labelCls}>Name</label>
-                  <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className={labelCls}>Company</label><input value={c.company} onChange={(e) => setField(c.id, { company: e.target.value })} className={lineInputCls} /></div>
-                  <div><label className={labelCls}>Role</label><input value={c.role} onChange={(e) => setField(c.id, { role: e.target.value })} className={lineInputCls} /></div>
-                </div>
-                <div><label className={labelCls}>Status</label>
-                  <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })} className={selectCls}>
-                    {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
-                  </select>
-                </div>
-                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className={`${lineInputCls} flex-1 font-mono`} /></div>
-                <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className={`${lineInputCls} flex-1`} /></div>
-                <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.website} onChange={(e) => setField(c.id, { website: e.target.value })} placeholder="Website" className={`${lineInputCls} flex-1 font-mono`} /></div>
-                <div className="flex items-center gap-2"><DollarSign className="h-3.5 w-3.5 text-muted-foreground" /><input type="number" value={c.value || ''} onChange={(e) => setField(c.id, { value: parseInt(e.target.value) || 0 })} placeholder="Deal value" className={`${lineInputCls} flex-1 font-mono tabular-nums`} /></div>
-                <div><label className={labelCls}>Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
-                <div><label className={labelCls}>Notes</label>
-                  <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })} className={textareaCls} rows={3} placeholder="Notes..." />
-                </div>
-                <div><label className={labelCls}>Tags (comma-separated)</label>
-                  <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className={lineInputCls} placeholder="vip, priority..." />
-                </div>
-                <KnowledgeLink cortexRef={recordRefs.crm(c.id)} />
-                <Button variant="destructive" size="sm" className="w-full" onClick={() => deleteContact(c.id)}>
-                  <Trash2 /> Delete contact
+        {filtered.length === 0 ? emptyState : filtered.map((c) => {
+          const detailId = `crm-card-${c.id}`
+          return (
+            <div key={c.id} className="surface rounded-xl p-4">
+              <div className="flex items-start justify-between gap-2">
+                <Button variant="ghost" size="sm" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id} aria-controls={detailId}
+                  onClick={() => toggleExpanded(c.id)}
+                  className="h-auto min-h-11 min-w-0 flex-1 justify-start p-0 text-left whitespace-normal">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{c.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{[c.company, c.role].filter(Boolean).join(' · ') || 'No company'}</span>
+                  </span>
                 </Button>
+                <Chip size="sm" variant={statusConfig[c.status].chip} className="mt-1">{statusConfig[c.status].label}</Chip>
               </div>
-            )}
-          </div>
-        ))}
+              <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+                {c.value > 0 && <span className="font-mono tabular-nums">{fmtMoney(c.value)}</span>}
+                {c.lastContact && <span className="font-mono">{fmtDate(c.lastContact)}</span>}
+                {c.tags.length > 0 && <span className="truncate">{c.tags.join(', ')}</span>}
+              </div>
+              <div id={detailId} hidden={expanded !== c.id}>
+                {expanded === c.id && (
+                  <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
+                    <CrmContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
+                    <KnowledgeLink cortexRef={recordRefs.crm(c.id)} />
+                    <Button variant="destructive" size="sm" className="w-full" onClick={() => deleteContact(c.id)}>
+                      <Trash2 /> Delete contact
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* Desktop: Table */}
       <WidgetCard title={activeOrg?.name || 'CRM'} description={`${filtered.length} contacts`} delay={0.1} className="hidden md:block">
-        <div className="-mx-4 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border/60 text-muted-foreground">
-                {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
-                <th className={`${thCls} min-w-[160px] px-4`}>
-                  <button onClick={() => toggleSort('name')} className={thBtnCls}>Name <SortIcon k="name" /></button>
-                </th>
-                <th className={`${thCls} min-w-[120px]`}>
-                  <button onClick={() => toggleSort('company')} className={thBtnCls}>Company <SortIcon k="company" /></button>
-                </th>
-                <th className={thCls}>Role</th>
-                <th className={thCls}>
-                  <button onClick={() => toggleSort('status')} className={thBtnCls}>Status <SortIcon k="status" /></button>
-                </th>
-                <th className={`${thCls} text-right`}>
-                  <button onClick={() => toggleSort('value')} className={`${thBtnCls} ml-auto`}>Value <SortIcon k="value" /></button>
-                </th>
-                <th className={`${thCls} text-right`}>
-                  <button onClick={() => toggleSort('lastContact')} className={`${thBtnCls} ml-auto`}>Last <SortIcon k="lastContact" /></button>
-                </th>
-                <th className="w-6 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c) => (
-                <Fragment key={c.id}>
-                  <tr onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-                    className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                    <td className="px-4 py-2.5"><span className="font-medium">{c.name}</span></td>
-                    <td className="py-2.5 text-muted-foreground">{c.company || '—'}</td>
-                    <td className="py-2.5 text-muted-foreground">{c.role || '—'}</td>
-                    <td className="py-2.5"><Chip size="sm" variant={statusConfig[c.status].chip}>{statusConfig[c.status].label}</Chip></td>
-                    <td className="py-2.5 text-right font-mono tabular-nums text-muted-foreground">{fmtMoney(c.value) || '—'}</td>
-                    <td className="py-2.5 text-right font-mono text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
-                    <td className="py-2.5 pr-4">
-                      <Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
-                        <Trash2 />
-                      </Button>
-                    </td>
-                  </tr>
-                  {expanded === c.id && (
-                    <tr>
-                      <td colSpan={7} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                          <div className="flex flex-col gap-2">
-                            <label className={labelCls}>Name</label>
-                            <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} />
-                            <div className="grid grid-cols-2 gap-2">
-                              <div><label className={labelCls}>Company</label><input value={c.company} onChange={(e) => setField(c.id, { company: e.target.value })} className={lineInputCls} /></div>
-                              <div><label className={labelCls}>Role</label><input value={c.role} onChange={(e) => setField(c.id, { role: e.target.value })} className={lineInputCls} /></div>
+        {filtered.length === 0 ? emptyState : (
+          <div className="-mx-4 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border/60 text-muted-foreground">
+                  <SortableHeader label="Name" {...sortProps('name')} className="min-w-[160px] px-4" />
+                  <SortableHeader label="Company" {...sortProps('company')} className="min-w-[120px]" />
+                  <th scope="col" className={tableHeaderClassName}>Role</th>
+                  <SortableHeader label="Status" {...sortProps('status')} />
+                  <SortableHeader label="Value" {...sortProps('value')} className="text-right" />
+                  <SortableHeader label="Last" {...sortProps('lastContact')} className="text-right" />
+                  <th className="w-6 py-2"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((c) => {
+                  const detailId = `crm-row-${c.id}`
+                  return (
+                    <Fragment key={c.id}>
+                      <tr onClick={() => toggleExpanded(c.id)}
+                        className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
+                        <td className="px-4 py-2.5"><Button variant="ghost" size="xs" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id} aria-controls={detailId}
+                          onClick={(e) => { e.stopPropagation(); toggleExpanded(c.id) }}
+                          className="min-h-7 px-0 text-left font-medium hover:text-accent">{c.name}</Button></td>
+                        <td className="py-2.5 text-muted-foreground">{c.company || '—'}</td>
+                        <td className="py-2.5 text-muted-foreground">{c.role || '—'}</td>
+                        <td className="py-2.5"><Chip size="sm" variant={statusConfig[c.status].chip}>{statusConfig[c.status].label}</Chip></td>
+                        <td className="py-2.5 text-right font-mono tabular-nums text-muted-foreground">{fmtMoney(c.value) || '—'}</td>
+                        <td className="py-2.5 text-right font-mono text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
+                        <td className="py-2.5 pr-4">
+                          <Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
+                            <Trash2 />
+                          </Button>
+                        </td>
+                      </tr>
+                      <tr id={detailId} hidden={expanded !== c.id}>
+                        {expanded === c.id && (
+                          <td colSpan={7} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
+                            <CrmContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
+                            <div className="flex items-end justify-end gap-2 pt-4">
+                              <KnowledgeLink cortexRef={recordRefs.crm(c.id)} />
+                              <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
+                                <Trash2 /> Delete contact
+                              </Button>
                             </div>
-                            <div><label className={labelCls}>Status</label>
-                              <select value={c.status} onChange={(e) => setField(c.id, { status: e.target.value as CrmContact['status'] })} className={selectCls}>
-                                {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
-                              </select>
-                            </div>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className={`${lineInputCls} flex-1 font-mono`} /></div>
-                            <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className={`${lineInputCls} flex-1`} /></div>
-                            <div className="flex items-center gap-2"><Globe className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.website} onChange={(e) => setField(c.id, { website: e.target.value })} placeholder="Website" className={`${lineInputCls} flex-1 font-mono`} /></div>
-                            <div className="flex items-center gap-2"><DollarSign className="h-3.5 w-3.5 text-muted-foreground" /><input type="number" value={c.value || ''} onChange={(e) => setField(c.id, { value: parseInt(e.target.value) || 0 })} placeholder="Deal value" className={`${lineInputCls} flex-1 font-mono tabular-nums`} /></div>
-                            <div><label className={labelCls}>Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <label className={labelCls}>Notes</label>
-                            <textarea value={c.notes} onChange={(e) => setField(c.id, { notes: e.target.value })} className={textareaCls} rows={4} placeholder="Notes about this contact..." />
-                            <label className={labelCls}>Tags (comma-separated)</label>
-                            <input value={c.tags.join(', ')} onChange={(e) => setField(c.id, { tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })} className={lineInputCls} placeholder="vip, priority, follow-up..." />
-                          </div>
-                          <div className="flex items-end justify-end gap-2 pt-2 lg:col-span-3">
-                            <KnowledgeLink cortexRef={recordRefs.crm(c.id)} />
-                            <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
-                              <Trash2 /> Delete contact
-                            </Button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && (
-            <EmptyState
-              message={contacts.length === 0 ? 'No contacts yet.' : 'No contacts match.'}
-              hint={contacts.length === 0 ? 'Press Add to create one.' : 'Try clearing a filter.'}
-            />
-          )}
-        </div>
+                          </td>
+                        )}
+                      </tr>
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </WidgetCard>
     </PageShell>
   )

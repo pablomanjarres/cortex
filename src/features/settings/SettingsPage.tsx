@@ -95,6 +95,7 @@ function KeyRow({ field }: { field: KeyField }) {
           <div className="mt-2 flex gap-2">
             <Input
               type={showValue ? 'text' : 'password'}
+              aria-label={field.label}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && save()}

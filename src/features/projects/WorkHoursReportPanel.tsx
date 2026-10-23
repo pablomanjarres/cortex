@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
+import { Field } from '@/components/shared/Field'
 import {
   type WorkEvidence,
   type WorkProject,
@@ -91,14 +92,12 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
   return (
     <WidgetCard title="Client reports" description="Choose billable sessions, check delivery evidence, then save a fixed report snapshot.">
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1.5 text-sm font-medium" htmlFor="report-from">
-          From
-          <Input id="report-from" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-        </label>
-        <label className="space-y-1.5 text-sm font-medium" htmlFor="report-through">
-          Through
-          <Input id="report-through" type="date" value={through} onChange={(event) => setThrough(event.target.value)} />
-        </label>
+        <Field label="From">
+          {(id) => <Input id={id} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />}
+        </Field>
+        <Field label="Through">
+          {(id) => <Input id={id} type="date" value={through} onChange={(event) => setThrough(event.target.value)} />}
+        </Field>
       </div>
       {invalidRange && <p role="alert" className="mt-2 text-sm text-destructive">The end date must be on or after the start date.</p>}
       <p className="mt-2 text-xs text-muted-foreground">Sessions overlapping the dates are included at their full duration. Review any interrupted session in the history first.</p>
@@ -125,14 +124,12 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
       )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1.5 text-sm font-medium" htmlFor="report-task">
-          Delivered task
-          <Input id="report-task" value={task} onChange={(event) => setTask(event.target.value)} placeholder="What was delivered?" />
-        </label>
-        <label className="space-y-1.5 text-sm font-medium" htmlFor="report-pr">
-          PR URL for evidence
-          <Input id="report-pr" type="url" value={prUrl} onChange={(event) => setPrUrl(event.target.value)} placeholder={attachedUrls[0] || 'https://github.com/owner/repo/pull/123'} />
-        </label>
+        <Field label="Delivered task">
+          {(id) => <Input id={id} value={task} onChange={(event) => setTask(event.target.value)} placeholder="What was delivered?" />}
+        </Field>
+        <Field label="PR URL for evidence">
+          {(id) => <Input id={id} type="url" value={prUrl} onChange={(event) => setPrUrl(event.target.value)} placeholder={attachedUrls[0] || 'https://github.com/owner/repo/pull/123'} />}
+        </Field>
       </div>
       {prConflict && <p role="alert" className="mt-2 text-sm text-destructive">Selected sessions reference different PRs. Correct the links or choose one deliverable.</p>}
       {invalidPr && <p role="alert" className="mt-2 text-sm text-destructive">Enter an HTTPS pull request URL.</p>}

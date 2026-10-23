@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { useStore } from '@/lib/store'
@@ -14,7 +14,6 @@ import { projectRefId } from '../../../electron/knowledge/refs'
 import { projectPriorityRank } from '../../../electron/project-priority'
 import {
   RefreshCw,
-  Search,
   GitBranch,
   ExternalLink,
   Clock,
@@ -35,6 +34,7 @@ import {
   Archive,
   Info,
   Zap,
+  type LucideIcon,
 } from 'lucide-react'
 
 type ProjectType = 'app' | 'monorepo' | 'library' | 'skill' | 'assets' | 'unknown'
@@ -109,6 +109,28 @@ function daysAgo(dateStr: string): string {
   if (diff === 1) return 'yesterday'
   if (diff < 30) return `${diff}d ago`
   return `${Math.floor(diff / 30)}mo ago`
+}
+
+const detailTitleClassName = 'flex items-center gap-1 font-mono text-2xs uppercase tracking-wider text-foreground-faint'
+
+/** A titled, tinted callout for the project's written context. */
+function DetailNote({ icon: Icon, title, className, children }: { icon: LucideIcon; title: string; className?: string; children: ReactNode }) {
+  return (
+    <div className="rounded-md bg-secondary/30 px-3 py-2.5">
+      <p className={`mb-1 ${detailTitleClassName}`}><Icon className="h-3 w-3" /> {title}</p>
+      <p className={`text-xs ${className ?? 'text-muted-foreground'}`}>{children}</p>
+    </div>
+  )
+}
+
+/** A labelled fact in the expanded project grid. */
+function DetailField({ icon: Icon, title, className, children }: { icon?: LucideIcon; title: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={className}>
+      <p className={`${Icon ? 'mb-1' : 'mb-0.5'} ${detailTitleClassName}`}>{Icon && <Icon className="h-3 w-3" />}{title}</p>
+      {children}
+    </div>
+  )
 }
 
 export function ProjectsPage() {
@@ -220,15 +242,14 @@ export function ProjectsPage() {
         <>
           {/* Filters */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative max-w-xs flex-1">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-              <Input
-                placeholder="Search projects..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-8 pl-8 text-xs"
-              />
-            </div>
+            <SearchInput
+              label="Search projects"
+              placeholder="Search projects..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              containerClassName="max-w-xs flex-1"
+              className="h-8 text-xs"
+            />
             <div className="flex flex-wrap gap-1.5">
               {(['app', 'monorepo', 'library', 'skill', 'assets'] as ProjectType[]).map((t) => {
                 const cfg = typeConfig[t]
@@ -261,9 +282,22 @@ export function ProjectsPage() {
               return (
                 <div key={project.name} id={`project-${projectRefId(project.name)}`} className="surface rounded-xl transition-colors hover:bg-secondary/20">
                   {/* Card header */}
-                  <button
+                  <div className="relative">
+                    {ghUrl && (
+                      <a href={ghUrl} target="_blank" rel="noopener noreferrer"
+                        aria-label={`Open ${m?.displayName || project.name} on GitHub`}
+                        className="absolute right-10 top-3 z-10 flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground">
+                        <ExternalLink className="size-3" />
+                      </a>
+                    )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-label={`Details for ${m?.displayName || project.name}`}
+                    aria-expanded={isExpanded}
+                    aria-controls={isExpanded ? `project-details-${projectRefId(project.name)}` : undefined}
                     onClick={() => toggleExpand(project.name)}
-                    className="flex w-full cursor-pointer items-start gap-3 px-4 py-3 text-left"
+                    className="h-auto w-full items-start justify-start gap-3 whitespace-normal px-4 py-3 text-left text-foreground"
                   >
                     <TypeIcon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
@@ -322,69 +356,41 @@ export function ProjectsPage() {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-1">
-                      {ghUrl && (
-                        <a href={ghUrl} onClick={(e) => e.stopPropagation()} target="_blank" rel="noopener noreferrer"
-                          aria-label={`Open ${m?.displayName || project.name} on GitHub`}
-                          className="flex h-6 w-6 items-center justify-center rounded-md text-foreground-faint transition-colors hover:bg-muted/60 hover:text-foreground">
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
                       {isExpanded ? <ChevronDown className="h-4 w-4 text-foreground-faint" /> : <ChevronRight className="h-4 w-4 text-foreground-faint" />}
                     </div>
-                  </button>
+                  </Button>
+                  </div>
 
                   {/* Expanded details */}
                   {isExpanded && (
-                    <div className="ml-8 space-y-3 border-t border-border/60 px-4 pb-4 pt-3">
+                    <div id={`project-details-${projectRefId(project.name)}`} className="ml-8 space-y-3 border-t border-border/60 px-4 pb-4 pt-3">
                       <KnowledgeLink cortexRef={recordRefs.project(project.name)} />
                       {/* Why it exists */}
-                      {m?.why && (
-                        <div className="rounded-md bg-secondary/30 px-3 py-2.5">
-                          <p className="mb-1 flex items-center gap-1 font-mono text-2xs uppercase tracking-wider text-foreground-faint">
-                            <AlertTriangle className="h-3 w-3" /> Why this exists
-                          </p>
-                          <p className="text-xs text-foreground">{m.why}</p>
-                        </div>
-                      )}
+                      {m?.why && <DetailNote icon={AlertTriangle} title="Why this exists" className="text-foreground">{m.why}</DetailNote>}
 
                       {/* Operational notes */}
-                      {m?.notes && (
-                        <div className="rounded-md bg-secondary/30 px-3 py-2.5">
-                          <p className="mb-1 flex items-center gap-1 font-mono text-2xs uppercase tracking-wider text-foreground-faint">
-                            <Info className="h-3 w-3" /> Notes
-                          </p>
-                          <p className="text-xs text-muted-foreground">{m.notes}</p>
-                        </div>
-                      )}
+                      {m?.notes && <DetailNote icon={Info} title="Notes">{m.notes}</DetailNote>}
 
                       <div className="grid grid-cols-2 gap-3 text-xs">
-                        <div>
-                          <p className="mb-0.5 font-mono text-2xs uppercase tracking-wider text-foreground-faint">Path</p>
+                        <DetailField title="Path">
                           <p className="truncate font-mono text-2xs text-muted-foreground">{project.path}</p>
-                        </div>
+                        </DetailField>
                         {project.gitRemote && (
-                          <div>
-                            <p className="mb-0.5 font-mono text-2xs uppercase tracking-wider text-foreground-faint">Remote</p>
+                          <DetailField title="Remote">
                             <p className="truncate font-mono text-2xs text-muted-foreground">{project.gitRemote}</p>
-                          </div>
+                          </DetailField>
                         )}
                         {project.scripts.length > 0 && (
-                          <div className="col-span-2">
-                            <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-foreground-faint">
-                              <FileCode className="-mt-px mr-0.5 inline h-3 w-3" />Scripts ({project.scripts.length})
-                            </p>
+                          <DetailField icon={FileCode} title={`Scripts (${project.scripts.length})`} className="col-span-2">
                             <div className="flex flex-wrap gap-1">
                               {project.scripts.map((s) => (
                                 <Chip key={s} size="sm">{s}</Chip>
                               ))}
                             </div>
-                          </div>
+                          </DetailField>
                         )}
                         {project.workflows.length > 0 && (
-                          <div className="col-span-2">
-                            <p className="mb-1 font-mono text-2xs uppercase tracking-wider text-foreground-faint">
-                              <Clock className="-mt-px mr-0.5 inline h-3 w-3" />Workflows
-                            </p>
+                          <DetailField icon={Clock} title="Workflows" className="col-span-2">
                             {project.workflows.map((wf) => (
                               <div key={wf.name} className="flex items-center gap-2 py-0.5">
                                 <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${wf.scheduled ? 'bg-warning' : 'bg-muted-foreground/30'}`} />
@@ -392,7 +398,7 @@ export function ProjectsPage() {
                                 {wf.cron && <span className="font-mono text-3xs text-warning">{wf.cron}</span>}
                               </div>
                             ))}
-                          </div>
+                          </DetailField>
                         )}
                       </div>
                     </div>

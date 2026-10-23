@@ -3,8 +3,10 @@ import { Play, Square } from 'lucide-react'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Modal } from '@/components/shared/Modal'
+import { Field } from '@/components/shared/Field'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
+import { Select } from '@/components/ui/select'
 import { useStore } from '@/lib/store'
 import {
   emptyWorkHoursState,
@@ -100,17 +102,13 @@ export function WorkHoursPanel() {
         {project ? (
           <div className="space-y-5">
             <div className="flex flex-wrap items-end justify-between gap-3">
-              <label className="min-w-0 flex-1 space-y-1.5 text-sm font-medium" htmlFor="work-project-select">
-                Project
-                <select
-                  id="work-project-select"
-                  value={projectId}
-                  onChange={(event) => setSelectedId(event.target.value)}
-                  className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                >
-                  {state.projects.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
-                </select>
-              </label>
+              <Field label="Project" className="flex-1">
+                {(id) => (
+                  <Select id={id} value={projectId} onChange={(event) => setSelectedId(event.target.value)}>
+                    {state.projects.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
+                  </Select>
+                )}
+              </Field>
               <div className="flex flex-wrap items-center gap-2">
                 {active ? (
                   <>

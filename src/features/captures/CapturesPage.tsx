@@ -8,10 +8,11 @@ import { NotesField } from '@/components/shared/NotesField'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { SearchInput } from '@/components/shared/SearchInput'
 import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
 import {
-  Search,
   Plus,
   Trash2,
   Image as ImageIcon,
@@ -57,10 +58,6 @@ const sourceLabel: Record<CaptureSource, string> = {
   x: 'X', tiktok: 'TikTok', linkedin: 'LinkedIn', reddit: 'Reddit',
   article: 'Article', screenshot: 'Screenshot', other: 'Other',
 }
-
-// Shared token style for native <select> controls (mirrors the Input primitive).
-const selectCls =
-  'w-full h-8 cursor-pointer rounded-md border border-input bg-input/20 px-2 text-xs text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 // ── Media helpers ────────────────────────────────────────────────────────────
 
@@ -379,15 +376,7 @@ export function CapturesPage() {
             </Chip>
           ))}
         </div>
-        <div className="relative max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-          <Input
-            placeholder="Search captures..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="h-7 pl-8 text-xs"
-          />
-        </div>
+        <SearchInput label="Search captures" placeholder="Search captures..." value={search} onChange={e => setSearch(e.target.value)} className="h-7 text-xs" containerClassName="max-w-xs" />
       </div>
 
       {/* Drop zone */}
@@ -513,13 +502,14 @@ export function CapturesPage() {
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="mb-1 block text-2xs text-muted-foreground">Source</label>
-                          <select
+                          <Select
+                            aria-label={`Source for ${cap.title || 'capture'}`}
                             value={cap.source}
                             onChange={e => setField(cap.id, { source: e.target.value as CaptureSource })}
-                            className={selectCls}
+                            className="h-8 px-2 text-xs"
                           >
                             {SOURCES.map(s => <option key={s} value={s}>{sourceLabel[s]}</option>)}
-                          </select>
+                          </Select>
                         </div>
                         <div>
                           <label className="mb-1 block text-2xs text-muted-foreground">URL</label>

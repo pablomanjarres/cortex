@@ -4,100 +4,25 @@ import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/shared/SearchInput'
+import { SortableHeader, tableHeaderClassName } from '@/components/shared/SortableHeader'
 import {
-  Phone,
-  Mail,
-  Search,
   Plus,
   Trash2,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
   Cake,
   Clock,
   RotateCcw,
 } from 'lucide-react'
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-type SortKey = 'name' | 'title' | 'birthday' | 'lastContact'
-
-interface Contact {
-  id: string
-  name: string
-  title: string
-  nickname: string
-  categories: string[]
-  fields: string[]
-  followUp: boolean
-  birthday: string
-  phone: string
-  lastContact: string
-  interval: number
-  email: string
-  socialProfiles: string
-  address: string
-}
-
-// ── Data ─────────────────────────────────────────────────────────────────────
-
-const DEFAULT_CONTACTS: Contact[] = []
-
-function withContactDefaults(contact: Partial<Contact> & Pick<Contact, 'id' | 'name'>): Contact {
-  const savedFields = Object.fromEntries(Object.entries(contact).filter(([, value]) => value != null))
-  return {
-    title: '', nickname: '', followUp: false, birthday: '', phone: '',
-    lastContact: '', interval: 0, email: '', socialProfiles: '', address: '',
-    ...savedFields,
-    id: contact.id,
-    name: contact.name,
-    categories: Array.isArray(contact.categories) ? contact.categories : [],
-    fields: Array.isArray(contact.fields) ? contact.fields : [],
-  } as Contact
-}
-
 import { useStore } from '@/lib/store'
 import { syncBirthdayToCalendar } from '@/lib/calendar-sync'
 import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
 import { recordRefs } from '@/lib/knowledge'
 import { useRecordParam } from '@/lib/use-url-param'
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-const ALL_CATEGORIES = ['Relative 👨‍👩‍👦', 'High Potential 🚀', 'Ally 🤝', 'Connector 🧠', 'Friend 😊', 'Acquaintance 👋', 'Routine Contact 🧺', 'Dormant 💤', 'Positive Rival 🥊', 'Mentor 🧓', 'Close Friend 🫂']
-
-const ALL_FIELDS = ['Tech', 'Business', 'Education', 'Health', 'Design', 'Law', 'Gastronomy', 'Music', 'Industry', 'Media', 'Construction', 'Fin']
-
-function daysUntilBirthday(bday: string): number | null {
-  if (!bday) return null
-  const today = new Date()
-  const birth = new Date(bday)
-  const next = new Date(today.getFullYear(), birth.getMonth(), birth.getDate())
-  if (next < today) next.setFullYear(next.getFullYear() + 1)
-  return Math.ceil((next.getTime() - today.getTime()) / 86_400_000)
-}
-
-function calcAge(bday: string): number | null {
-  if (!bday) return null
-  const today = new Date()
-  const birth = new Date(bday)
-  let age = today.getFullYear() - birth.getFullYear()
-  if (today < new Date(today.getFullYear(), birth.getMonth(), birth.getDate())) age--
-  return age
-}
-
-function fmtDate(d: string) {
-  if (!d) return '—'
-  return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-// Shared token styles: native <select>-free page, but the same quiet
-// inline-edit patterns as the rest of the app.
-const lineInputCls = 'w-full border-b border-border/60 bg-transparent py-1 text-xs outline-none placeholder:text-foreground-faint'
-const labelCls = 'text-2xs text-muted-foreground'
-const thCls = 'py-2 text-left font-mono text-2xs font-normal uppercase tracking-wider'
-const thBtnCls = 'flex cursor-pointer items-center gap-1 transition-colors hover:text-foreground'
+import {
+  ALL_CATEGORIES, DEFAULT_CONTACTS, calcAge, daysUntilBirthday, fmtDate, withContactDefaults,
+  type Contact, type SortKey,
+} from './contact-model'
+import { ContactFields } from './ContactFields'
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -161,7 +86,11 @@ export function SocialPage() {
   }
 
   const toggleSort = (k: SortKey) => { if (sortKey === k) setSortAsc((p) => !p); else { setSortKey(k); setSortAsc(true) } }
-  const sortIcon = (k: SortKey) => sortKey === k ? (sortAsc ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-30" />
+  const sortProps = (k: SortKey) => ({ active: sortKey === k, ascending: sortAsc, onSort: () => toggleSort(k) })
+  const toggleExpanded = (id: string) => setExpanded(expanded === id ? null : id)
+  const emptyState = contacts.length === 0
+    ? <EmptyState message="No one here yet." hint="Press Add to keep your first contact." />
+    : <EmptyState message="No contacts match." hint="Clear the search or category filter." />
 
   const filtered = useMemo(() =>
     contacts
@@ -269,10 +198,7 @@ export function SocialPage() {
 
       {/* Search + Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search contacts..." className="h-8 pl-8 text-xs" />
-        </div>
+        <SearchInput label="Search contacts" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search contacts..." containerClassName="min-w-[200px] flex-1" className="h-8 text-xs" />
         <div className="flex flex-wrap gap-1.5">
           {ALL_CATEGORIES.slice(0, 8).map((cat) => (
             <Chip key={cat} selectable selected={filterCat === cat} onClick={() => setFilterCat(filterCat === cat ? null : cat)}>
@@ -287,147 +213,98 @@ export function SocialPage() {
 
       {/* Mobile: Contact cards */}
       <div className="flex flex-col gap-3 md:hidden">
-        {filtered.map((c) => (
-          <div key={c.id} className="surface rounded-xl p-4">
-            <div className="flex items-start justify-between gap-2">
-              <Button variant="ghost" size="sm" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id}
-                onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-                className="h-auto min-h-11 min-w-0 flex-1 justify-start p-0 text-left whitespace-normal">
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{c.name}{c.nickname ? <span className="ml-1 text-2xs text-muted-foreground">({c.nickname})</span> : null}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{c.title || 'No title'}</span>
-                </span>
-              </Button>
-              <Button variant="ghost" size="icon-lg" aria-label="Delete contact" className="shrink-0 active:text-destructive" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
-                <Trash2 />
-              </Button>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1">
-              {c.categories.map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}
-              {c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}
-            </div>
-            <div className="mt-2 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
-              {c.phone && <span>{c.phone}</span>}
-              {calcAge(c.birthday) != null && <span className="tabular-nums">Age {calcAge(c.birthday)}</span>}
-              {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
-            </div>
-            {expanded === c.id && (
-              <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
-                <div><label className={labelCls}>Name</label><input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} /></div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div><label className={labelCls}>Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className={lineInputCls} /></div>
-                  <div><label className={labelCls}>Nickname</label><input value={c.nickname} onChange={(e) => setField(c.id, { nickname: e.target.value })} className={lineInputCls} /></div>
-                  <div><label className={labelCls}>Birthday</label><input type="date" value={c.birthday} onChange={(e) => setField(c.id, { birthday: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
-                  <div><label className={labelCls}>Interval (days)</label><input type="number" value={c.interval || ''} onChange={(e) => setField(c.id, { interval: parseInt(e.target.value) || 0 })} className={`${lineInputCls} font-mono tabular-nums`} /></div>
-                </div>
-                <div><label className={labelCls}>Address</label><input value={c.address} onChange={(e) => setField(c.id, { address: e.target.value })} className={lineInputCls} /></div>
-                <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className={`${lineInputCls} flex-1 font-mono`} /></div>
-                <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className={`${lineInputCls} flex-1`} /></div>
-                <div><label className={labelCls}>Social Profiles</label><input value={c.socialProfiles} onChange={(e) => setField(c.id, { socialProfiles: e.target.value })} className={lineInputCls} /></div>
-                <div><label className={labelCls}>Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
-                <label className={labelCls}>Categories</label>
-                <div className="flex flex-wrap gap-1">
-                  {ALL_CATEGORIES.map((cat) => {
-                    const on = c.categories.includes(cat)
-                    return <Chip key={cat} size="sm" selectable selected={on} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })}>{cat}</Chip>
-                  })}
-                </div>
-                <label className={labelCls}>Fields</label>
-                <div className="flex flex-wrap gap-1">
-                  {ALL_FIELDS.map((f) => {
-                    const on = c.fields.includes(f)
-                    return <Chip key={f} size="sm" selectable selected={on} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}>{f}</Chip>
-                  })}
-                </div>
-                <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
-                <Button variant="destructive" size="sm" className="w-full" onClick={() => deleteContact(c.id)}>
-                  <Trash2 /> Delete contact
+        {filtered.length === 0 ? emptyState : filtered.map((c) => {
+          const detailId = `contact-card-${c.id}`
+          const age = calcAge(c.birthday)
+          return (
+            <div key={c.id} className="surface rounded-xl p-4">
+              <div className="flex items-start justify-between gap-2">
+                <Button variant="ghost" size="sm" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id} aria-controls={detailId}
+                  onClick={() => toggleExpanded(c.id)}
+                  className="h-auto min-h-11 min-w-0 flex-1 justify-start p-0 text-left whitespace-normal">
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{c.name}{c.nickname ? <span className="ml-1 text-2xs text-muted-foreground">({c.nickname})</span> : null}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{c.title || 'No title'}</span>
+                  </span>
+                </Button>
+                <Button variant="ghost" size="icon-lg" aria-label="Delete contact" className="shrink-0 active:text-destructive" onClick={() => deleteContact(c.id)}>
+                  <Trash2 />
                 </Button>
               </div>
-            )}
-          </div>
-        ))}
+              <div className="mt-2 flex flex-wrap gap-1">
+                {c.categories.map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}
+                {c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}
+              </div>
+              <div className="mt-2 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
+                {c.phone && <span>{c.phone}</span>}
+                {age != null && <span className="tabular-nums">Age {age}</span>}
+                {c.lastContact && <span>{fmtDate(c.lastContact)}</span>}
+              </div>
+              <div id={detailId} hidden={expanded !== c.id}>
+                {expanded === c.id && (
+                  <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
+                    <ContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
+                    <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* Desktop: Table */}
       <WidgetCard title="Contacts" description={`${filtered.length} of ${contacts.length}`} delay={0.1} className="hidden md:block">
-        {filtered.length === 0 ? (
-          <EmptyState message="No one here yet." hint="Press Add to keep your first contact." />
-        ) : (
+        {filtered.length === 0 ? emptyState : (
           <div className="-mx-4 overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
-                  {/* Sort headers: compact table-header toggles (focus ring from the global rule). */}
-                  <th className={`${thCls} px-4`}><button onClick={() => toggleSort('name')} className={thBtnCls}>Name {sortIcon('name')}</button></th>
-                  <th className={thCls}><button onClick={() => toggleSort('title')} className={thBtnCls}>Title {sortIcon('title')}</button></th>
-                  <th className={thCls}>Category</th>
-                  <th className={thCls}>Field</th>
-                  <th className={thCls}><button onClick={() => toggleSort('birthday')} className={thBtnCls}>Age {sortIcon('birthday')}</button></th>
-                  <th className={thCls}>Phone</th>
-                  <th className={thCls}><button onClick={() => toggleSort('lastContact')} className={thBtnCls}>Last {sortIcon('lastContact')}</button></th>
-                  <th className="w-6 py-2"></th>
+                  <SortableHeader label="Name" {...sortProps('name')} className="px-4" />
+                  <SortableHeader label="Title" {...sortProps('title')} />
+                  <th scope="col" className={tableHeaderClassName}>Category</th>
+                  <th scope="col" className={tableHeaderClassName}>Field</th>
+                  <SortableHeader label="Age" {...sortProps('birthday')} />
+                  <th scope="col" className={tableHeaderClassName}>Phone</th>
+                  <SortableHeader label="Last" {...sortProps('lastContact')} />
+                  <th className="w-6 py-2"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => (
-                  <Fragment key={c.id}>
-                    <tr ref={(el) => { rowRefs.current[c.id] = el }} onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-                      className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                      <td className="px-4 py-2.5"><Button variant="ghost" size="xs" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id}
-                        onClick={(e) => { e.stopPropagation(); setExpanded(expanded === c.id ? null : c.id) }}
-                        className="min-h-7 px-0 text-left font-medium hover:text-accent">{c.name}</Button>{c.nickname && <span className="ml-1.5 text-2xs text-muted-foreground">({c.nickname})</span>}</td>
-                      <td className="py-2.5 text-muted-foreground">{c.title}</td>
-                      <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.categories.slice(0, 2).map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}{c.categories.length > 2 && <span className="font-mono text-3xs text-foreground-faint">+{c.categories.length - 2}</span>}</div></td>
-                      <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}</div></td>
-                      <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{calcAge(c.birthday) ?? '—'}</td>
-                      <td className="py-2.5 font-mono text-muted-foreground">{c.phone || '—'}</td>
-                      <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
-                      <td className="py-2.5 pr-4"><Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}><Trash2 /></Button></td>
-                    </tr>
-                    {expanded === c.id && (
-                      <tr>
-                        <td colSpan={8} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
-                          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                            <div className="flex flex-col gap-2">
-                              <label className={labelCls}>Name</label>
-                              <input value={c.name} onChange={(e) => setField(c.id, { name: e.target.value })} className={`${lineInputCls} pb-1 text-sm font-semibold`} />
-                              <div className="grid grid-cols-2 gap-2">
-                                <div><label className={labelCls}>Title</label><input value={c.title} onChange={(e) => setField(c.id, { title: e.target.value })} className={lineInputCls} /></div>
-                                <div><label className={labelCls}>Nickname</label><input value={c.nickname} onChange={(e) => setField(c.id, { nickname: e.target.value })} className={lineInputCls} /></div>
-                                <div><label className={labelCls}>Birthday</label><input type="date" value={c.birthday} onChange={(e) => setField(c.id, { birthday: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
-                                <div><label className={labelCls}>Interval (days)</label><input type="number" value={c.interval || ''} onChange={(e) => setField(c.id, { interval: parseInt(e.target.value) || 0 })} className={`${lineInputCls} font-mono tabular-nums`} /></div>
-                              </div>
-                              <div><label className={labelCls}>Address</label><input value={c.address} onChange={(e) => setField(c.id, { address: e.target.value })} className={lineInputCls} /></div>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.phone} onChange={(e) => setField(c.id, { phone: e.target.value })} placeholder="Phone" className={`${lineInputCls} flex-1 font-mono`} /></div>
-                              <div className="flex items-center gap-2"><Mail className="h-3.5 w-3.5 text-muted-foreground" /><input value={c.email} onChange={(e) => setField(c.id, { email: e.target.value })} placeholder="Email" className={`${lineInputCls} flex-1`} /></div>
-                              <div><label className={labelCls}>Social Profiles</label><input value={c.socialProfiles} onChange={(e) => setField(c.id, { socialProfiles: e.target.value })} className={lineInputCls} /></div>
-                              <div><label className={labelCls}>Last Contact</label><input type="date" value={c.lastContact} onChange={(e) => setField(c.id, { lastContact: e.target.value })} className={`${lineInputCls} cursor-pointer font-mono`} /></div>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <label className={labelCls}>Categories</label>
-                              <div className="flex flex-wrap gap-1">
-                                {ALL_CATEGORIES.map((cat) => { const on = c.categories.includes(cat); return <Chip key={cat} size="sm" selectable selected={on} onClick={() => setField(c.id, { categories: on ? c.categories.filter((x) => x !== cat) : [...c.categories, cat] })}>{cat}</Chip> })}
-                              </div>
-                              <label className={`${labelCls} mt-1`}>Fields</label>
-                              <div className="flex flex-wrap gap-1">
-                                {ALL_FIELDS.map((f) => { const on = c.fields.includes(f); return <Chip key={f} size="sm" selectable selected={on} onClick={() => setField(c.id, { fields: on ? c.fields.filter((x) => x !== f) : [...c.fields, f] })}>{f}</Chip> })}
-                              </div>
-                            </div>
-                            <div className="flex items-end justify-end gap-2 pt-2 lg:col-span-3">
+                {filtered.map((c) => {
+                  const detailId = `contact-row-${c.id}`
+                  const age = calcAge(c.birthday)
+                  return (
+                    <Fragment key={c.id}>
+                      <tr ref={(el) => { rowRefs.current[c.id] = el }} onClick={() => toggleExpanded(c.id)}
+                        className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
+                        <td className="px-4 py-2.5"><Button variant="ghost" size="xs" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id} aria-controls={detailId}
+                          onClick={(e) => { e.stopPropagation(); toggleExpanded(c.id) }}
+                          className="min-h-7 px-0 text-left font-medium hover:text-accent">{c.name}</Button>{c.nickname && <span className="ml-1.5 text-2xs text-muted-foreground">({c.nickname})</span>}</td>
+                        <td className="py-2.5 text-muted-foreground">{c.title}</td>
+                        <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.categories.slice(0, 2).map((cat) => <Chip key={cat} size="sm">{cat}</Chip>)}{c.categories.length > 2 && <span className="font-mono text-3xs text-foreground-faint">+{c.categories.length - 2}</span>}</div></td>
+                        <td className="py-2.5"><div className="flex flex-wrap gap-1">{c.fields.map((f) => <Chip key={f} size="sm">{f}</Chip>)}</div></td>
+                        <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{age ?? '—'}</td>
+                        <td className="py-2.5 font-mono text-muted-foreground">{c.phone || '—'}</td>
+                        <td className="py-2.5 font-mono tabular-nums text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
+                        <td className="py-2.5 pr-4"><Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}><Trash2 /></Button></td>
+                      </tr>
+                      <tr id={detailId} hidden={expanded !== c.id}>
+                        {expanded === c.id && (
+                          <td colSpan={8} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
+                            <ContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
+                            <div className="flex items-end justify-end gap-2 pt-4">
                               <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
                               <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
                                 <Trash2 /> Delete contact
                               </Button>
                             </div>
-                          </div>
-                        </td>
+                          </td>
+                        )}
                       </tr>
-                    )}
-                  </Fragment>
-                ))}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>

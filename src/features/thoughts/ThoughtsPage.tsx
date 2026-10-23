@@ -6,7 +6,11 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
-import { Search, Plus, Trash2, Star, Lightbulb, BookOpen } from 'lucide-react'
+import { Select } from '@/components/ui/select'
+import { SearchInput } from '@/components/shared/SearchInput'
+import { Field } from '@/components/shared/Field'
+import { Textarea } from '@/components/ui/textarea'
+import { Plus, Trash2, Star, Lightbulb, BookOpen } from 'lucide-react'
 import { useStore } from '@/lib/store'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -103,12 +107,6 @@ const defaultBooks: Book[] = []
 
 const ALL_TOPICS: Topic[] = ['Personal', 'Finance', 'Business', 'Study', 'Health', 'Programming', 'Love', 'TODO', 'Digital Marketing', 'Job']
 
-// Shared token style for native <select> controls (mirrors the Input primitive).
-const selectCls =
-  'w-full h-8 cursor-pointer rounded-md border border-input bg-input/20 px-2 text-xs text-foreground transition-colors duration-150 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
-
-const labelCls = 'text-2xs text-muted-foreground'
-
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function ThoughtsPage() {
@@ -171,10 +169,7 @@ export function ThoughtsPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground-faint" />
-          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search thoughts..." className="h-8 pl-8 text-xs" />
-        </div>
+        <SearchInput label="Search thoughts" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search thoughts..." className="h-8 text-xs" containerClassName="min-w-[200px] flex-1" />
         <Chip selectable selected={filterHV} onClick={() => setFilterHV(!filterHV)}>
           <Star className={filterHV ? 'fill-accent' : ''} /> High-value
         </Chip>
@@ -217,18 +212,28 @@ export function ThoughtsPage() {
                   className={`flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-secondary/30 ${expanded === t.id ? 'bg-secondary/20' : ''}`}
                 >
                   {/* Compact inline toggle: the high-value star marker (accent = marked). */}
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     aria-label={t.highValue ? 'Unmark high-value' : 'Mark high-value'}
                     aria-pressed={t.highValue}
                     onClick={(e) => { e.stopPropagation(); setField(t.id, { highValue: !t.highValue }) }}
                     className="mt-0.5 shrink-0 cursor-pointer"
                   >
                     <Star className={`h-3.5 w-3.5 transition-colors ${t.highValue ? 'fill-accent text-accent' : 'text-foreground-faint/40 hover:text-accent/60'}`} />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium leading-snug">{t.name || 'Untitled'}</p>
-                    {t.subline && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{t.subline}</p>}
-                  </div>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Details for ${t.name || 'Untitled'}`}
+                    aria-expanded={expanded === t.id}
+                    aria-controls={`thought-details-${t.id}`}
+                    onClick={event => { event.stopPropagation(); setExpanded(expanded === t.id ? null : t.id) }}
+                    className="h-auto min-w-0 flex-1 flex-col items-start whitespace-normal p-0 text-left text-foreground"
+                  >
+                    <span className="text-sm font-medium leading-snug">{t.name || 'Untitled'}</span>
+                    {t.subline && <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{t.subline}</span>}
+                  </Button>
                   <div className="flex shrink-0 items-center gap-2">
                     {t.book && <span className="text-2xs text-foreground-faint">{t.book}</span>}
                     {t.topic && <Chip size="sm">{t.topic}</Chip>}
@@ -244,27 +249,25 @@ export function ThoughtsPage() {
                   </div>
                 </div>
                 {expanded === t.id && (
-                  <div className="mb-1 ml-6 border-l border-border/60 px-3 py-3">
+                  <div id={`thought-details-${t.id}`} className="mb-1 ml-6 border-l border-border/60 px-3 py-3">
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                       <div className="flex flex-col gap-2">
-                        <input value={t.name} onChange={(e) => setField(t.id, { name: e.target.value })} placeholder="Thought..." className="border-b border-border/60 bg-transparent pb-1 text-sm font-medium outline-none placeholder:text-foreground-faint" />
-                        <textarea value={t.subline} onChange={(e) => setField(t.id, { subline: e.target.value })} rows={3} placeholder="Details..." className="resize-none rounded-md border border-input bg-input/20 p-2 text-xs outline-none placeholder:text-foreground-faint focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" />
+                        <Field label="Thought">{id => <Input id={id} variant="inline" value={t.name} onChange={(e) => setField(t.id, { name: e.target.value })} placeholder="Thought..." className="pb-1 text-sm font-medium" />}</Field>
+                        <Field label="Details">{id => <Textarea id={id} value={t.subline} onChange={(e) => setField(t.id, { subline: e.target.value })} rows={3} placeholder="Details..." className="resize-none p-2 text-xs" />}</Field>
                       </div>
                       <div className="flex flex-col gap-2">
-                        <div><label className={labelCls}>Topic</label>
-                          <select value={t.topic} onChange={(e) => setField(t.id, { topic: e.target.value as Topic })} className={selectCls}>
+                        <Field label="Topic">{id => <Select id={id} value={t.topic} onChange={(e) => setField(t.id, { topic: e.target.value as Topic })} className="h-8 px-2 text-xs">
                             <option value="">None</option>
                             {ALL_TOPICS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
-                          </select></div>
-                        <div><label className={labelCls}>Book source</label>
-                          <select value={t.book} onChange={(e) => setField(t.id, { book: e.target.value })} className={selectCls}>
+                          </Select>}</Field>
+                        <Field label="Book source">{id => <Select id={id} value={t.book} onChange={(e) => setField(t.id, { book: e.target.value })} className="h-8 px-2 text-xs">
                             <option value="">No book</option>
                             {books.map((b) => <option key={b.id} value={b.title}>{b.title}</option>)}
                             {/* Show current value if not in books list */}
                             {t.book && !books.some((b) => b.title === t.book) && (
                               <option value={t.book}>{t.book}</option>
                             )}
-                          </select></div>
+                          </Select>}</Field>
                       </div>
                     </div>
                   </div>
