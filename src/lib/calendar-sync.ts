@@ -224,7 +224,7 @@ async function calendarAPI() {
       const res = await fetch(`/api/calendar/events?start=${start}&end=${end}`)
       return res.json()
     },
-    getEvent: async (_eventId: string) => {
+    getEvent: async () => {
       return null as CalendarEventResult | null
     },
   }

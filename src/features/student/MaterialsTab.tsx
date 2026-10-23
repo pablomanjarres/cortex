@@ -10,7 +10,8 @@ import { StatTile } from '@/components/shared/StatTile'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Input } from '@/components/ui/input'
 import { Field } from '@/components/shared/Field'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button-variants'
 import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/lib/store'
@@ -64,8 +65,10 @@ const textName = (t: string) => t.trim().split(/\s+/).slice(0, 6).join(' ') || '
 const isImageFile = (f?: MaterialFile) => !!f && f.mime.startsWith('image/')
 const isPdfFile = (f?: MaterialFile) => !!f && f.mime === 'application/pdf'
 
-const kindGlyph = (m: ClassMaterial) =>
-  m.kind === 'link' ? Link2 : m.kind === 'text' ? StickyNote : isImageFile(m.file) ? ImageIcon : FileText
+function MaterialGlyph({ material: m }: { material: ClassMaterial }) {
+  const Glyph = m.kind === 'link' ? Link2 : m.kind === 'text' ? StickyNote : isImageFile(m.file) ? ImageIcon : FileText
+  return <Glyph className="h-4 w-4 shrink-0 text-foreground-faint" />
+}
 
 // ── Add/edit modal draft ─────────────────────────────────────────────────────
 
@@ -625,12 +628,11 @@ function MaterialRow({ material: m, onOpen, onEdit, onDelete }: {
   onEdit: () => void
   onDelete: () => void
 }) {
-  const Glyph = kindGlyph(m)
   const OpenGlyph = m.kind === 'link' ? ExternalLink : Eye
   const revealCls = 'opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100'
   return (
     <div className="group flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-secondary/30">
-      <Glyph className="h-4 w-4 shrink-0 text-foreground-faint" />
+      <MaterialGlyph material={m} />
       {/* Click-to-open name — documented compact pattern (bare text trigger in a dense row). */}
       <button onClick={onOpen} title={`Open ${m.name}`} className="min-w-0 flex-1 cursor-pointer text-left">
         <p className="truncate text-sm font-medium">{m.name}</p>

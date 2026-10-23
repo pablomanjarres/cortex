@@ -54,12 +54,12 @@ export function HardBans() {
     [violations]
   )
 
-  function logViolation(banId: string) {
+  function logViolation(banId: string, recordedAt: Date) {
     const v: BanViolation = {
-      id: `${banId}-${Date.now()}`,
+      id: `${banId}-${recordedAt.getTime()}`,
       banId,
       date: today,
-      timestamp: new Date().toISOString(),
+      timestamp: recordedAt.toISOString(),
       notes: violationNotes.trim() || undefined,
     }
     setViolations(prev => [...prev, v])
@@ -160,7 +160,7 @@ export function HardBans() {
                             rows={2}
                             className="w-full resize-none px-3 py-2 text-sm"
                           />
-                          <Button variant="destructive" size="sm" onClick={() => logViolation(ban.id)}>
+                          <Button variant="destructive" size="sm" onClick={() => logViolation(ban.id, new Date())}>
                             <AlertTriangle />
                             Log Violation
                           </Button>
