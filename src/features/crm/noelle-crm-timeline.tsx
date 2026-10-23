@@ -70,7 +70,7 @@ export function NoelleCrmTimeline({ contact, renderMessageSource }: {
         <div className="flex flex-col gap-1">
           <label htmlFor={selectId} className="text-xs text-muted-foreground">Conversation</label>
           <Select id={selectId} value={conversation?.id} onChange={(event) => { setSelected(event.target.value); setVisible(PAGE_SIZE) }}
-            className="h-11 w-full min-w-0 rounded-md border border-input bg-input/20 px-3 text-xs">
+            className="h-11 text-xs">
             {conversations.map((item, index) => <option key={item.id} value={item.id}>Thread {index + 1} · {formatCrmTime(item.lastObservedAt)}</option>)}
           </Select>
         </div>

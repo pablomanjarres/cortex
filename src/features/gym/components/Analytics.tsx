@@ -1,3 +1,4 @@
+import { Select } from '@/components/ui/select'
 import { useState, useEffect, useMemo } from 'react'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
@@ -214,10 +215,10 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
             {/* Progressive Overload */}
             <WidgetCard title="Progressive Overload" description="Max weight per session" delay={0.05}>
               <div className="mb-3">
-                <select value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}
-                  className="h-7 rounded-md border border-input bg-background px-2 text-xs text-foreground">
+                <Select aria-label="Exercise" value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}
+                  className="w-auto h-7 px-2 text-xs">
                   {exerciseNames.map(name => <option key={name} value={name}>{name}</option>)}
-                </select>
+                </Select>
               </div>
               {overloadData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={180}>

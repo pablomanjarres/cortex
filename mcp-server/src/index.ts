@@ -2560,7 +2560,7 @@ server.tool(
 // Store key cortex-opportunities holds the whole OppData blob (items + hunt
 // orders + report + run flags). Always read-modify-write the whole object so
 // objectives/report/run state aren't clobbered. Shapes mirror
-// src/features/opportunities/OpportunitiesPage.tsx.
+// src/features/opportunities/opportunity-model.ts.
 
 interface McpOpportunity {
   id: string; title: string; host: string; category: string; goals: string[];

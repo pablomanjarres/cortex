@@ -1,3 +1,5 @@
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { useEffect, useState } from 'react'
 import { useRecordParam } from '@/lib/use-url-param'
 import { useStore } from '@/lib/store'
@@ -267,28 +269,29 @@ export function GoalsPage() {
       return (
         <div key={g.id} className="surface rounded-xl p-4">
           <div className="flex flex-col gap-2">
-            <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} className="h-9" placeholder="Goal title" autoFocus />
-            <textarea
+            <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveEdit()} aria-label="Goal title" className="h-9" placeholder="Goal title" autoFocus />
+            <Textarea
               value={editDetail}
               onChange={(e) => setEditDetail(e.target.value)}
+              aria-label="Goal details"
               placeholder="Why this matters / notes…"
-              className="min-h-14 w-full resize-y rounded-md border border-input bg-input/20 px-2.5 py-2 text-sm leading-relaxed text-foreground placeholder:text-foreground-faint"
+              className="min-h-14 w-full resize-y px-2.5 py-2 text-sm leading-relaxed"
             />
             <div className="flex flex-wrap items-center gap-2">
-              <Input value={editArea} onChange={(e) => setEditArea(e.target.value)} placeholder="Area" className="h-8 w-32 text-sm" list="goal-areas" />
-              <Input value={editPeriod} onChange={(e) => setEditPeriod(e.target.value)} placeholder="2026-Q3" className="h-8 w-28 text-sm" />
-              <input type="date" value={editTarget} onChange={(e) => setEditTarget(e.target.value)} className="h-8 rounded-md border border-input bg-input/20 px-2 text-sm text-foreground" />
+              <Input value={editArea} onChange={(e) => setEditArea(e.target.value)} aria-label="Goal area" placeholder="Area" className="h-8 w-32 text-sm" list="goal-areas" />
+              <Input value={editPeriod} onChange={(e) => setEditPeriod(e.target.value)} aria-label="Goal timeframe" placeholder="2026-Q3" className="h-8 w-28 text-sm" />
+              <Input type="date" value={editTarget} onChange={(e) => setEditTarget(e.target.value)} aria-label="Goal target date" className="h-8 w-auto px-2 text-sm" />
               {milestones.length === 0 && (
                 <div className="flex items-center gap-1">
-                  <Input value={editProgress} onChange={(e) => setEditProgress(e.target.value)} type="number" min={0} max={100} className="h-8 w-16 px-1 text-center text-sm" title="Progress %" />
+                  <Input value={editProgress} onChange={(e) => setEditProgress(e.target.value)} type="number" min={0} max={100} aria-label="Goal progress percent" className="h-8 w-16 px-1 text-center text-sm" title="Progress %" />
                   <span className="text-xs text-muted-foreground">%</span>
                 </div>
               )}
-              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value as GoalStatus)} className="h-8 cursor-pointer rounded-md border border-input bg-input/20 px-2 text-sm text-foreground">
+              <Select value={editStatus} onChange={(e) => setEditStatus(e.target.value as GoalStatus)} aria-label="Goal status" className="h-8 cursor-pointer px-2 text-sm">
                 <option value="active">Active</option>
                 <option value="done">Done</option>
                 <option value="archived">Archived</option>
-              </select>
+              </Select>
             </div>
             <div className="flex gap-2 pt-1">
               <Button onClick={saveEdit} className="flex-1">Save</Button>
@@ -383,12 +386,14 @@ export function GoalsPage() {
         {/* Add milestone */}
         <div className="mt-2 flex items-center gap-2">
           <Plus className="h-3.5 w-3.5 text-foreground-faint" />
-          <input
+          <Input
+            variant="inline"
             value={msDraft[g.id] ?? ''}
             onChange={(e) => setMsDraft((d) => ({ ...d, [g.id]: e.target.value }))}
             onKeyDown={(e) => e.key === 'Enter' && addMilestone(g.id)}
+            aria-label={`Add a step to ${g.title}`}
             placeholder="Add a step…"
-            className="flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-foreground-faint"
+            className="flex-1 border-b-0"
           />
         </div>
       </div>
@@ -457,7 +462,7 @@ export function GoalsPage() {
           <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addGoal()} aria-label="Goal title" placeholder="What do you want to achieve?" className="h-11 w-full min-w-0 text-sm sm:h-9 sm:w-auto sm:min-w-[180px] sm:flex-1" />
           <Input value={newArea} onChange={(e) => setNewArea(e.target.value)} aria-label="Goal area" placeholder="Area" className="h-11 w-32 text-sm sm:h-9" list="goal-areas" />
           <Input value={newPeriod} onChange={(e) => setNewPeriod(e.target.value)} aria-label="Goal timeframe" placeholder="2026-Q3" className="h-11 w-28 text-sm sm:h-9" />
-          <input type="date" value={newTarget} onChange={(e) => setNewTarget(e.target.value)} aria-label="Goal target date" className="h-11 rounded-md border border-input bg-input/20 px-2 text-sm text-foreground sm:h-9" />
+          <Input type="date" value={newTarget} onChange={(e) => setNewTarget(e.target.value)} aria-label="Goal target date" className="h-11 w-auto px-2 text-sm sm:h-9" />
           <Button variant="secondary" size="icon-lg" onClick={addGoal} aria-label="Add goal" title="Add goal">
             <Plus className="size-5" />
           </Button>
