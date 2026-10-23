@@ -91,6 +91,7 @@ for (const layout of layouts) {
     test('CRM contacts edit through labelled fields, keep typed tags and filter to empty', async ({ page }) => {
       const backend = await mockStores(page, { 'cortex-crm': fixtureCrm })
       await page.goto('/#/social?tab=crm')
+      await page.getByRole('tab', { name: 'CRM', exact: true }).click()
       const { toggle, region } = await expandWithKeyboard(page, 'Fixture client')
 
       await region.getByRole('textbox', { name: 'Role', exact: true }).fill('Fixture role')
