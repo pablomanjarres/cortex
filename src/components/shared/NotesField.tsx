@@ -188,13 +188,14 @@ function FullscreenEditor({
             <>
               <FormatToolbar apply={apply} onImage={onAddImage ? insertImages : undefined} className="py-2 border-y border-border/60 mb-3 sticky top-0 bg-background/80 backdrop-blur-sm" />
               <Textarea
+                variant="inline"
                 ref={ref}
                 value={value}
                 onChange={e => onChange(e.target.value)}
                 onPaste={e => handleRichPaste(e, ref, value, onChange)}
                 placeholder={placeholder || 'Write your notes here… (Markdown supported)'}
                 aria-label="Notes"
-                className="min-h-0 flex-1 rounded-none border-0 bg-transparent px-0 pb-16 text-base leading-[1.75] resize-none shadow-none"
+                className="flex-1 px-0 pb-16 text-base leading-[1.75] resize-none"
                 autoFocus
               />
             </>
@@ -261,6 +262,7 @@ export function NotesField({
           className={`rounded-md border border-input bg-input/60 focus-within:border-ring/60 transition-colors ${className}`}
           // clicking anywhere but the textarea shouldn't blur-close
           onMouseDown={e => { if (e.target !== ref.current) e.preventDefault() }}
+          onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false) }}
         >
           <div className="flex items-center justify-between px-2 py-1 border-b border-border/60">
             <FormatToolbar apply={apply} onImage={onAddImage ? insertImages : undefined} />
@@ -274,16 +276,16 @@ export function NotesField({
             </div>
           </div>
           <Textarea
+            variant="inline"
             ref={ref}
             value={value}
             onChange={e => onChange(e.target.value)}
             onPaste={e => handleRichPaste(e, ref, value, onChange)}
-            onBlur={event => { if (!event.currentTarget.parentElement?.contains(event.relatedTarget)) setEditing(false) }}
             onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); setEditing(false) } }}
             placeholder={placeholder}
             style={{ minHeight }}
             aria-label="Notes"
-            className="min-h-0 rounded-none border-0 bg-transparent px-3 py-2.5 text-sm leading-relaxed resize-none shadow-none"
+            className="px-3 py-2.5 text-sm leading-relaxed resize-none"
             autoFocus
           />
         </div>
@@ -317,7 +319,7 @@ export function NotesField({
           <span className="text-sm text-foreground-faint">{placeholder}</span>
         )}
         {/* hover actions */}
-        <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
           <Button
             variant="ghost"
             size="icon-xs"

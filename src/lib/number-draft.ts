@@ -15,8 +15,9 @@ const DECIMAL = /^\d+(?:[.,]\d+)?$/
 export function parseNumberDraft(draft: string, rule: NumberRule): NumberDraftResult {
   const text = draft.trim()
   if (text === '') return rule.blank === 'clear' ? { ok: true, value: undefined } : { ok: false }
-  if (!DECIMAL.test(text)) return { ok: false }
-  const n = Number(text.replace(',', '.'))
+  const groupedInteger = /^\d{1,3}([.,])\d{3}(?:\1\d{3})*$/.test(text)
+  if (!(rule.integer ? /^\d+$/.test(text) || groupedInteger : DECIMAL.test(text))) return { ok: false }
+  const n = Number(rule.integer ? text.replace(/[.,]/g, '') : text.replace(',', '.'))
   if (!Number.isFinite(n) || (rule.integer && !Number.isSafeInteger(n))) return { ok: false }
   if (n < rule.min || (rule.max !== undefined && n > rule.max)) return { ok: false }
   return { ok: true, value: Number(n.toFixed(1)) }
