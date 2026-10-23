@@ -93,7 +93,9 @@ They add a readable status outline, not a colored card fill.
 
 ### Button
 
-Use `@/components/ui/button` for every app button.
+Use `@/components/ui/button` for every app button. Button-styled links and upload
+labels use `buttonVariants` from `@/components/ui/button-variants`; the styles
+have one owner.
 
 Variants:
 
@@ -220,3 +222,6 @@ paid/received trigger, editor, and progress; `BookFields`, `ContactFields`, and
 Automations uses `RunCard` for history, attention, and recent runs. Opportunities
 keeps editable fields in `OpportunityEditor` and record rules in
 `opportunity-model.ts`. Pages compose these components and retain store access.
+Automations loads HTTP/IPC data through `automation-api.ts`; its parsing and
+status helpers stay in `automation-runs.ts`. Projects loads scans through
+`project-api.ts` and shares the desktop bridge's `ProjectInfo` contract.

@@ -3,7 +3,7 @@ import type { CloudCostCache, CloudCostSettings, CloudCostSourceStatus, CloudPro
 import type { WorkEvidence, WorkHoursCommand, WorkHoursState } from '../../electron/work-hours-model'
 import type { KnowledgeLinkResult } from '../../electron/knowledge/refs'
 
-interface ProjectInfo {
+export interface ProjectInfo {
   name: string
   path: string
   description: string | null
