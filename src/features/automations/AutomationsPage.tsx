@@ -21,7 +21,8 @@ import {
   Flame,
   FileText,
 } from 'lucide-react'
-import { loadRunLog, loadScheduledTasks, runStatusOf, timeAgo, type AutomationRun, type ScheduledTask } from './automation-runs'
+import { runStatusOf, timeAgo, type AutomationRun, type ScheduledTask } from './automation-runs'
+import { loadRunLog, loadScheduledTasks } from './automation-api'
 import { RunCard, RunStatusLine } from './RunCard'
 
 // ── Types ────────────────────────────────────────────────────────────────────
