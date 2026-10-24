@@ -14,6 +14,7 @@ const runtime = process.env.CORTEX_REMINDER_STATE_DIR || path.join(homedir(), 'L
 const notify = process.env.CORTEX_NOTIFY_SCRIPT || path.join(homedir(), 'Projects', 'pushover', 'bin', 'notify.sh')
 const stateFile = path.join(runtime, 'deliveries.json')
 const lockPath = path.join(runtime, 'run.lock')
+const failureFile = path.join(runtime, 'failure.json')
 const MAX_STATE_BYTES = 2 * 1024 * 1024
 
 async function request(route: string, body?: unknown) {
@@ -47,11 +48,12 @@ async function readState(): Promise<ReminderDeliveryState> {
   if (data?.version !== 1 || !data.deliveries || typeof data.deliveries !== 'object' || Array.isArray(data.deliveries)) throw new Error('Reminder state needs recovery; no notifications were retried.')
   if (Object.keys(data.deliveries).length > MAX_REMINDER_HISTORY) throw new Error('Reminder history exceeds its supported limit.')
   for (const [key, value] of Object.entries(data.deliveries)) {
-    const delivery = value as { status?: unknown; dueDate?: unknown; updatedAt?: unknown }
+    const delivery = value as { status?: unknown; dueDate?: unknown; updatedAt?: unknown; reviewReportedAt?: unknown }
     if (key.length > 1024 || !delivery || !['sending', 'sent', 'uncertain'].includes(delivery.status as string)
       || !parseAccountDate(delivery.dueDate) || typeof delivery.updatedAt !== 'string' || !Number.isFinite(Date.parse(delivery.updatedAt))) {
       throw new Error('Reminder state needs recovery; no notifications were retried.')
     }
+    if (delivery.reviewReportedAt !== undefined && (typeof delivery.reviewReportedAt !== 'string' || !Number.isFinite(Date.parse(delivery.reviewReportedAt)))) throw new Error('Reminder review receipt is not valid.')
   }
   return data
 }
@@ -89,18 +91,28 @@ export async function main(args: string[]) {
   if (!await acquireLock()) { console.log(JSON.stringify({ skipped: 'already-running' })); return }
   try {
     const result = await runPaymentReminders({ now: () => new Date(), readAccounts,
-      readConfig: () => request(`/api/data?key=${PAYMENT_REMINDERS_KEY}`), readState, writeState, send }, dryRun)
+      readConfig: () => request(`/api/data?key=${PAYMENT_REMINDERS_KEY}`), readState, writeState, send,
+      reportHeld: async (count) => { await request('/api/automation/run', { taskName: 'Credit card payment reminders', status: 'error',
+        summary: `${count} Pushcut delivery could not be confirmed. Held for review; it will not be automatically resent.` }) },
+    }, dryRun)
     console.log(JSON.stringify(result))
-    if (!dryRun) await request('/api/automation/run', { taskName: 'Credit card payment reminders', status: 'success',
-      summary: `${result.pushed} reminders sent; ${result.upcoming.length} confirmed payment schedules checked.` })
+    if (!dryRun && result.pushed > 0) await request('/api/automation/run', { taskName: 'Credit card payment reminders', status: 'success',
+      summary: `${result.pushed} reminders sent; ${result.upcoming.length} confirmed payment schedules checked; ${result.held} held for review.` })
+    if (!dryRun) await fs.rm(failureFile, { force: true })
+    if (result.newlyHeld) { console.error('Pushcut delivery is held for review; no automatic retry will be made.'); process.exitCode = 1 }
   } catch (error) {
     if (!dryRun) {
       const summary = error instanceof Error ? error.message : 'Payment reminder check failed.'
-      try {
+      const previous = await fs.readFile(failureFile, 'utf8').catch(() => '')
+      if (previous !== summary) try {
         await request('/api/automation/run', { taskName: 'Credit card payment reminders', status: 'error', summary })
+        await fs.writeFile(failureFile, summary, { mode: 0o600 })
       } catch {
-        await exec(notify, ['-c', 'service-issue', '-t', 'Cortex payment reminders need attention', '-m',
-          'The payment reminder check could not reach Cortex or save its result. Open Cortex and check the reminder job.', '--id', 'cortex-payment-reminder-health'], { timeout: 40_000, maxBuffer: 16_384 }).catch(() => {})
+        try {
+          await exec(notify, ['-c', 'service-issue', '-t', 'Cortex payment reminders need attention', '-m',
+            'The payment reminder check could not reach Cortex or save its result. Open Cortex and check the reminder job.', '--id', 'cortex-payment-reminder-health'], { timeout: 40_000, maxBuffer: 16_384 })
+          await fs.writeFile(failureFile, summary, { mode: 0o600 })
+        } catch { /* The required LaunchAgent's nonzero exit is also monitored. */ }
       }
     }
     throw error

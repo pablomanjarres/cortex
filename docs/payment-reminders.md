@@ -2,7 +2,7 @@
 
 The macOS LaunchAgent `com.pablo.cortex-payment-reminders` checks Cortex on each hour and at login. It sends one Pushcut reminder per credit card payment cycle, three calendar days before the deadline, from 09:00 America/Bogota. A late check catches up through the due date; it does not send overdue reminders.
 
-The Mac must be awake and Cortex must be running. launchd coalesces missed calendar checks when the Mac wakes. Run results appear in Cortex Automations. The existing notification sender reads Pushcut credentials from its configured private store; the reminder job holds no credentials.
+The Mac must be awake and Cortex must be running. launchd coalesces missed calendar checks when the Mac wakes. Deliveries and new failures appear in Cortex Automations; quiet checks stay in the job's bounded output log. The existing notification sender reads Pushcut credentials from its configured private store; the reminder job holds no credentials.
 
 ## Ownership
 
@@ -39,10 +39,10 @@ The Cortex store key `cortex-card-payment-reminders` holds:
 
 Reminders default to disabled until configured. Exclusions remain effective even if an account later receives a payment date. After verifying that date, remove its ID from the exclusion list. Account dates and settings are reread before each send, so future edits apply without reinstalling.
 
-To stop delivery, set `enabled` to `false`. To unload the timer, run `launchctl bootout gui/$(id -u)/com.pablo.cortex-payment-reminders`.
+To stop delivery, set `enabled` to `false`. This keeps the timer healthy while sending nothing. Unloading or removing the timer also requires removing its required-job registration in the infrastructure monitor.
 
 ## Delivery failures
 
 An accepted Pushcut request is recorded as `sent`; this confirms service acceptance, not that the phone displayed the notification. A failed or interrupted send stays `sending` or `uncertain` and is not automatically repeated. Check the notification sender's receipt and the phone before resolving that one entry. Keep the rest of the delivery history intact.
 
-Failures are reported to Cortex Automations. If Cortex is unreachable, the existing notification sender receives a service-issue alert. The infrastructure monitor also watches the job's exit status and required presence. Output logs in `~/Library/Logs/Cortex` rotate at 1 MiB.
+New failures are reported once to Cortex Automations. Held deliveries stay visible in each check's output without repeating the alert. If Cortex is unreachable, the existing notification sender receives a service-issue alert once per failure episode. The infrastructure monitor also watches the job's exit status and required presence. Output logs in `~/Library/Logs/Cortex` rotate at 1 MiB.

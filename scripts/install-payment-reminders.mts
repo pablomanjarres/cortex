@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
+import { setTimeout as delay } from 'node:timers/promises'
 
 const exec = promisify(execFile)
 const source = fileURLToPath(new URL('..', import.meta.url))
@@ -51,12 +52,20 @@ if (check) {
   await fs.mkdir(logs, { recursive: true, mode: 0o700 })
   await fs.mkdir(path.dirname(plistPath), { recursive: true })
   await exec('/bin/launchctl', ['bootout', service]).catch(() => {})
+  for (let attempt = 0; ; attempt++) {
+    try { await exec('/bin/launchctl', ['print', service]) } catch { break }
+    if (attempt >= 25) throw new Error('The previous reminder job has not stopped; installation paused before replacing its files.')
+    await delay(200)
+  }
   const previous = `${target}.previous`
   await fs.rm(previous, { recursive: true, force: true })
   await fs.rename(target, previous).catch((error) => { if (error.code !== 'ENOENT') throw error })
   try { await fs.rename(staging, target) } catch (error) { await fs.rename(previous, target).catch(() => {}); throw error }
   await fs.writeFile(plistPath, plist, { mode: 0o600 })
   await exec('/usr/bin/plutil', ['-lint', plistPath])
-  await exec('/bin/launchctl', ['bootstrap', `gui/${uid}`, plistPath])
+  for (let attempt = 0; ; attempt++) {
+    try { await exec('/bin/launchctl', ['bootstrap', `gui/${uid}`, plistPath]); break }
+    catch (error) { if (attempt >= 2) throw error; await delay(500) }
+  }
   console.log(JSON.stringify({ label, installed: true, cadence: 'hourly', timeZone: 'America/Bogota', sourceFiles: files.length }))
 }

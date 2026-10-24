@@ -5,6 +5,7 @@ export interface ReminderDelivery {
   status: 'sending' | 'sent' | 'uncertain'
   dueDate: string
   updatedAt: string
+  reviewReportedAt?: string
 }
 export interface ReminderDeliveryState {
   version: 1
@@ -17,6 +18,7 @@ export interface PaymentReminderDeps {
   readState(): Promise<ReminderDeliveryState>
   writeState(state: ReminderDeliveryState): Promise<void>
   send(reminder: PaymentReminder): Promise<void>
+  reportHeld(count: number): Promise<void>
 }
 export const MAX_REMINDER_SENDS = 10
 export const MAX_REMINDER_HISTORY = 2000
@@ -31,11 +33,11 @@ export function pruneReminderState(state: ReminderDeliveryState, now: Date): Rem
 export async function runPaymentReminders(deps: PaymentReminderDeps, dryRun = false) {
   const now = deps.now()
   const config = normalizePaymentReminderConfig(await deps.readConfig())
-  if (!config.enabled) return { ...planPaymentReminders(await deps.readAccounts(), now, config, new Set()), pushed: 0, dryRun, skipped: 'disabled' }
+  if (!config.enabled) return { ...planPaymentReminders(await deps.readAccounts(), now, config, new Set()), pushed: 0, held: 0, newlyHeld: 0, dryRun, skipped: 'disabled' }
   let state = pruneReminderState(await deps.readState(), now)
   const delivered = () => new Set(Object.keys(state.deliveries))
   const plan = planPaymentReminders(await deps.readAccounts(), now, config, delivered())
-  if (dryRun) return { ...plan, pushed: 0, dryRun: true }
+  if (dryRun) return { ...plan, pushed: 0, held: Object.values(state.deliveries).filter((entry) => entry.status !== 'sent').length, newlyHeld: 0, dryRun: true }
 
   let pushed = 0
   for (const candidate of plan.due.slice(0, MAX_REMINDER_SENDS)) {
@@ -50,14 +52,19 @@ export async function runPaymentReminders(deps: PaymentReminderDeps, dryRun = fa
     } catch {
       state.deliveries[reminder.key] = { ...state.deliveries[reminder.key], status: 'uncertain' }
       await deps.writeState(state)
-      throw new Error('Pushcut delivery could not be confirmed. The reminder is held for review to avoid a duplicate.')
+      break
     }
     state.deliveries[reminder.key] = { ...state.deliveries[reminder.key], status: 'sent', updatedAt: deps.now().toISOString() }
     await deps.writeState(state)
     pushed++
   }
   await deps.writeState(state)
-  const held = Object.values(state.deliveries).filter((entry) => entry.status !== 'sent' && entry.dueDate >= plan.today).length
-  if (held) throw new Error(`${held} payment reminder delivery needs verification before retrying.`)
-  return { ...plan, pushed, dryRun: false }
+  const held = Object.entries(state.deliveries).filter(([, entry]) => entry.status !== 'sent' && entry.dueDate >= plan.today)
+  const unreported = held.filter(([, entry]) => !entry.reviewReportedAt)
+  if (unreported.length) {
+    await deps.reportHeld(unreported.length)
+    for (const [key, entry] of unreported) state.deliveries[key] = { ...entry, reviewReportedAt: deps.now().toISOString() }
+    await deps.writeState(state)
+  }
+  return { ...plan, pushed, held: held.length, newlyHeld: unreported.length, dryRun: false }
 }
