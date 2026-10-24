@@ -6,6 +6,7 @@ import { Field } from '@/components/shared/Field'
 import { Input } from '@/components/ui/input'
 import { Chip } from '@/components/ui/chip'
 import { Button } from '@/components/ui/button'
+import { CLOUD_SOURCE_LABELS, cloudSourceId } from './cloud-cost-store'
 
 interface CloudCostSettingsProps {
   settings: Settings
@@ -156,7 +157,7 @@ export function CloudCostSettings({ settings, onChange }: CloudCostSettingsProps
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <ProviderPanel title="AWS Cost Explorer" configured={Boolean(settings.awsProfile)}>
+        <ProviderPanel title={CLOUD_SOURCE_LABELS.aws} configured={Boolean(cloudSourceId(settings, 'aws'))}>
           <SettingField
             label="AWS profile"
             hint="A local profile with ce:GetCostAndUsage. Enter default for the standard profile."
@@ -166,7 +167,7 @@ export function CloudCostSettings({ settings, onChange }: CloudCostSettingsProps
           />
         </ProviderPanel>
 
-        <ProviderPanel title="GCP Billing Export" configured={Boolean(settings.gcpBillingTable)}>
+        <ProviderPanel title={CLOUD_SOURCE_LABELS.gcp} configured={Boolean(cloudSourceId(settings, 'gcp'))}>
           <SettingField
             label="Billing table"
             hint="The Standard or Detailed export table in project.dataset.table form."

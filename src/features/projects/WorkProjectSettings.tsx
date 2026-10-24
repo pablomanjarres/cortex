@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Notice } from '@/components/shared/Notice'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Field } from '@/components/shared/Field'
@@ -72,7 +73,7 @@ export function WorkProjectSettings({ project, busy, onAdd, commandError, onComm
         {project.billing && ` ${project.billing.includedHours} hours included. Cycle starts on day ${project.billing.cycleDay} (${project.billing.timeZone}).`}
       </p>
       <div className="border-t border-border/70 pt-5"><WorkProjectForm busy={busy} onAdd={onAdd} /></div>
-      {(error || commandError) && <p role="alert" className="text-sm text-destructive">{error || commandError}</p>}
+      {(error || commandError) && <Notice tone="danger">{error || commandError}</Notice>}
     </div>
   )
 }

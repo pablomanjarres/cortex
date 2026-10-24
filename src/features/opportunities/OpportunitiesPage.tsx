@@ -1,6 +1,5 @@
+import { FilterChips } from '@/components/shared/FilterChips'
 import { SearchInput } from '@/components/shared/SearchInput'
-import { Select } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
 import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -8,226 +7,31 @@ import { StatTile } from '@/components/shared/StatTile'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useStore } from '@/lib/store'
 import { useToday } from '@/lib/use-today'
-import { daysUntilDeadline, isOpportunityActive } from './expiry'
-import { OpportunityEditor } from './OpportunityEditor'
+import { isOpportunityActive } from './expiry'
+import { CountdownChip } from './CountdownChip'
+import { HuntOrders } from './HuntOrders'
+import { OpportunityRow } from './OpportunityRow'
 import {
-  ALL_STATUSES, DEFAULT_DATA, MODALITY_FILTERS, categoryConfig, categoryOf, deadlineTypeOf,
-  eligibilityOf, modalityConfig, modalityOf, priorityOf, statusConfig, statusOf,
-  type ChipVariant, type Goal, type Modality, type Objective, type ObjectiveParsed,
+  ALL_STATUSES, DEFAULT_DATA, MODALITY_FILTERS, categoryConfig, categoryOf, modalityConfig, modalityOf,
+  priorityOf, statusConfig,
+  type Goal, type Modality, type Objective, type ObjectiveParsed,
   type OppData, type OppStatus, type Opportunity, type OpportunityCategory,
 } from './opportunity-model'
 import {
+  KIND_GROUPS, REGION_ORDER, isNewThisWeek, isOpen, isOpenWindow, kindGroupFor, regionConfig, regionForText,
+  regionOf, sectionOf, topPicks as rankTopPicks, urgencySections, type KindGroup, type Region,
+} from './opportunity-radar'
+import {
   Plus,
-  Trash2,
-  ExternalLink,
   Target,
   CalendarClock,
   InfinityIcon,
   Sparkles,
   RefreshCw,
-  Send,
-  X,
-  Crosshair,
 } from 'lucide-react'
-
-// ── Region (geography) filter — the "click a tag to show only Colombia" axis ──
-// Distinct from modality (the venue axis) and eligibility (who-can-apply): this buckets an
-// item by WHERE in the world it is, read accent-insensitively from its location/title/tags.
-type Region = 'colombia' | 'latam' | 'usa' | 'europe' | 'asia' | 'online' | 'other'
-const regionConfig: Record<Region, { label: string; match: string[] }> = {
-  colombia: { label: 'Colombia', match: ['colombia', 'medellin', 'bogota', 'cali', 'barranquilla', 'cartagena', 'bucaramanga', 'pereira', 'manizales'] },
-  latam: { label: 'LatAm', match: ['latam', 'latin america', 'latinoamerica', 'mexico', 'brasil', 'brazil', 'argentina', 'chile', 'peru', 'ecuador', 'uruguay', 'bolivia', 'paraguay', 'venezuela', 'guatemala', 'costa rica', 'panama', 'dominican'] },
-  usa: { label: 'USA', match: ['united states', ' usa', 'u.s.', 'san francisco', 'new york', 'boston', 'seattle', 'austin', 'silicon valley', 'california', 'chicago', 'los angeles'] },
-  europe: { label: 'Europe', match: ['europe', 'london', 'berlin', 'paris', 'madrid', 'barcelona', 'amsterdam', 'lisbon', 'portugal', 'united kingdom', ' uk', 'germany', 'france', 'spain', 'netherlands', 'dublin', 'zurich', 'munich'] },
-  asia: { label: 'Asia', match: ['asia', 'india', 'bangalore', 'bengaluru', 'singapore', 'tokyo', 'japan', 'china', 'shenzhen', 'hong kong', 'dubai', 'uae', 'seoul', 'jakarta'] },
-  online: { label: 'Online', match: ['online', 'remote', 'virtual', 'global', 'worldwide', 'anywhere'] },
-  other: { label: 'Other', match: [] },
-}
-/** Most-specific region wins: Colombia > LatAm > a named country > Online. */
-const REGION_ORDER: Region[] = ['colombia', 'latam', 'usa', 'europe', 'asia', 'online', 'other']
-const deburr = (s: string) => (s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
-function regionOf(o: Opportunity): Region {
-  const hay = deburr(`${o.location} ${o.title} ${o.host} ${(o.tags || []).join(' ')}`)
-  for (const r of REGION_ORDER) {
-    if (r !== 'other' && regionConfig[r].match.some((m) => hay.includes(m))) return r
-  }
-  return 'other'
-}
-/** Region a hunt order's locations point at (e.g. ["Medellín","Bogotá"] -> 'colombia'). */
-function regionForText(text: string): Region | null {
-  const hay = deburr(text)
-  for (const r of REGION_ORDER) {
-    if (r !== 'other' && regionConfig[r].match.some((m) => hay.includes(m))) return r
-  }
-  return null
-}
-
-// ── Kind groups (the segmented filter: programs vs funding vs compete vs career) ──
-
-type KindGroup = 'all' | 'programs' | 'funding' | 'compete' | 'career' | 'other'
-const KIND_GROUPS: Record<Exclude<KindGroup, 'all'>, { label: string; categories: OpportunityCategory[] }> = {
-  programs: { label: 'Programs', categories: ['program', 'fellowship', 'accelerator', 'residency'] },
-  funding: { label: 'Funding', categories: ['grant', 'scholarship'] },
-  compete: { label: 'Compete', categories: ['hackathon', 'competition', 'pitch'] },
-  career: { label: 'Career', categories: ['internship', 'exchange'] },
-  other: { label: 'Other', categories: ['speaking', 'community', 'launch', 'trending', 'research', 'other'] },
-}
-const kindGroupFor = (c: OpportunityCategory): KindGroup => {
-  for (const [g, cfg] of Object.entries(KIND_GROUPS)) {
-    if (cfg.categories.includes(c)) return g as KindGroup
-  }
-  return 'other'
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtDate(d: string | null) {
-  return d ? new Date(`${d}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
-}
-/** Was this item discovered within the last 7 days? (drives the "New this week" KPI) */
-function isNewThisWeek(o: Opportunity): boolean {
-  return !!o.discoveredAt && (Date.now() - new Date(o.discoveredAt).getTime()) < 7 * 86_400_000
-}
-/** '$62.5k grant' style short money: 1500 -> $1.5k, 62500 -> $63k, 1000000 -> $1M. */
-function fmtAmount(n: number): string {
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`
-  if (n >= 1_000) return `$${Math.round(n / 1_000)}k`
-  return `$${n}`
-}
-
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-/** Squeeze a freeform nextWindowExpected into a chip-sized hint ("opens ~Sep 2026"). */
-function windowHint(s: string | null | undefined): string | null {
-  if (!s) return null
-  const tokens = s.split(/[\s,;()]+/)
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i]
-    const low = t.toLowerCase().replace(/[^a-z]/g, '')
-    const mi = MONTHS.indexOf(low.slice(0, 3))
-    if (mi === -1 || low.length < 3) continue
-    const year = /^20\d\d$/.test(tokens[i + 1] || '') ? tokens[i + 1] : null
-    if (/^[A-Z]/.test(t) || year) {
-      const label = MONTHS[mi][0].toUpperCase() + MONTHS[mi].slice(1)
-      return `opens ~${label}${year ? ` ${year}` : ''}`
-    }
-  }
-  const y = s.match(/\b20\d\d\b/)?.[0]
-  return y ? `opens ~${y}` : null
-}
-
-// ── Urgency sections — the core deadline-intelligence view ───────────────────
-
-type SectionKey = 'week' | 'month' | 'later' | 'rolling' | 'upcoming' | 'nodate' | 'closed'
-const SECTION_META: Record<SectionKey, { title: string; tone: string; dim?: boolean }> = {
-  week: { title: 'Closing this week', tone: 'text-destructive' },
-  month: { title: 'Closing this month', tone: 'text-warning' },
-  later: { title: 'Closing later', tone: 'text-muted-foreground' },
-  rolling: { title: 'Rolling · always open', tone: 'text-accent' },
-  upcoming: { title: 'Upcoming windows', tone: 'text-muted-foreground' },
-  nodate: { title: 'No date intel', tone: 'text-muted-foreground' },
-  closed: { title: 'Recently closed', tone: 'text-muted-foreground', dim: true },
-}
-const SECTION_ORDER: SectionKey[] = ['week', 'month', 'later', 'rolling', 'upcoming', 'nodate', 'closed']
-
-function sectionOf(o: Opportunity, today: string): SectionKey {
-  const dt = deadlineTypeOf(o)
-  if (dt === 'rolling' || dt === 'always-open') return 'rolling'
-  if (o.deadline) {
-    const d = daysUntilDeadline(o.deadline, today)
-    if (d !== null) {
-      if (d < 0) {
-        // A recurring program whose cycle closed >7d ago isn't "closed" —
-        // it's waiting for its next window.
-        if (dt === 'recurring' && d < -7) return 'upcoming'
-        return 'closed'
-      }
-      if (d <= 7) return 'week'
-      if (d <= 30) return 'month'
-      return 'later'
-    }
-  }
-  if (dt === 'recurring') return 'upcoming' // recurring without an active deadline
-  return 'nodate'
-}
-
-/** Sort rows within a section: dated ones by soonest deadline, open ones by leverage. */
-function sectionSort(key: SectionKey, a: Opportunity, b: Opportunity): number {
-  switch (key) {
-    case 'week':
-    case 'month':
-    case 'later':
-      return (a.deadline || '').localeCompare(b.deadline || '')
-    case 'closed':
-      return (b.deadline || '').localeCompare(a.deadline || '')
-    case 'rolling':
-    case 'upcoming':
-      return (b.leverageScore - a.leverageScore) || (priorityOf(a.priority).rank - priorityOf(b.priority).rank)
-    case 'nodate':
-      return (b.discoveredAt || '').localeCompare(a.discoveredAt || '')
-  }
-}
-
-/** Countdown chip content for a row (mono, semantic tone by urgency). */
-function countdownOf(o: Opportunity, today: string): { text: string; variant: ChipVariant; outline?: boolean; title?: string } {
-  const dt = deadlineTypeOf(o)
-  if (dt === 'rolling') return { text: 'rolling', variant: 'accent', outline: true }
-  if (dt === 'always-open') return { text: 'always open', variant: 'accent', outline: true }
-  if (o.deadline) {
-    const d = daysUntilDeadline(o.deadline, today)
-    if (d !== null) {
-      if (d < 0) return { text: `closed ${fmtDate(o.deadline)}`, variant: 'neutral' }
-      if (d <= 7) return { text: `D-${d}`, variant: 'danger', title: fmtDate(o.deadline) }
-      if (d <= 14) return { text: `D-${d}`, variant: 'warning', title: fmtDate(o.deadline) }
-      return { text: fmtDate(o.deadline), variant: 'neutral' }
-    }
-  }
-  if (dt === 'recurring') {
-    const hint = windowHint(o.nextWindowExpected)
-    return { text: hint ?? 'recurring', variant: 'neutral', title: o.nextWindowExpected ?? undefined }
-  }
-  return { text: 'no date', variant: 'neutral' }
-}
-
-/** Does an opportunity satisfy a hunt order's parsed constraints? Drives progress counts. */
-function objectiveMatches(o: Opportunity, p?: ObjectiveParsed): boolean {
-  if (!p) return false
-  if (o.status === 'archived' || o.status === 'lost') return false
-  if (p.category && o.category !== p.category) return false
-  if (p.eligibility && o.eligibility !== p.eligibility) return false
-  if (p.deadlineBefore && !o.rolling && o.deadline && o.deadline > p.deadlineBefore) return false
-  if (p.locations && p.locations.length) {
-    const where = deburr(`${o.location} ${o.title} ${o.host} ${o.notes} ${(o.tags || []).join(' ')}`)
-    if (!p.locations.some((l) => l && where.includes(deburr(l)))) return false
-  }
-  if (p.keywords && p.keywords.length) {
-    const hay = deburr(`${o.title} ${o.host} ${(o.tags || []).join(' ')} ${o.notes}`)
-    if (!p.keywords.some((k) => k && hay.includes(deburr(k)))) return false
-  }
-  return true
-}
-
-/** Leverage as five dots — filled dots are the accent, empty ones sit on the hairline. */
-function LeverageDots({ score }: { score: number }) {
-  const n = Math.max(0, Math.min(5, Math.round(score)))
-  return (
-    <span
-      className="inline-flex shrink-0 items-center gap-0.5"
-      role="img"
-      aria-label={`Leverage ${n} of 5`}
-      title={`Leverage ${n}/5`}
-    >
-      {Array.from({ length: 5 }).map((_, i) => (
-        <span key={i} aria-hidden className={`h-1.5 w-1.5 rounded-full ${i < n ? 'bg-accent' : 'bg-border'}`} />
-      ))}
-    </span>
-  )
-}
-
-// ── Component ────────────────────────────────────────────────────────────────
 
 export function OpportunitiesPage() {
   const [data, updateData] = useStore<OppData>('cortex-opportunities', DEFAULT_DATA)
@@ -264,16 +68,12 @@ export function OpportunitiesPage() {
 
   // ── Hunt orders (talk to radar) ─────────────────────────────────────────────
   const objectives = data.objectives || []
-  const [objInput, setObjInput] = useState('')
-  const addObjective = () => {
-    const text = objInput.trim()
-    if (!text) return
+  const addObjective = (text: string) => {
     const o: Objective = {
       id: `obj-${Date.now()}`, text, status: 'thinking', active: true,
       createdAt: new Date().toISOString(),
     }
     updateData((p) => ({ ...p, objectives: [...(p.objectives || []), o] }))
-    setObjInput('')
   }
   const setObjective = (id: string, f: Partial<Objective>) =>
     updateData((p) => ({ ...p, objectives: (p.objectives || []).map((o) => (o.id === id ? { ...o, ...f } : o)) }))
@@ -330,17 +130,7 @@ export function OpportunitiesPage() {
     )
   }, [items, live, search, kindGroup, catFilter, modalityFilter, statusFilter, regionFilter, thisRunOnly, showArchived, data.lastRunId])
 
-  const sections = useMemo(() => {
-    const buckets = new Map<SectionKey, Opportunity[]>()
-    for (const o of filtered) {
-      const k = sectionOf(o, today)
-      if (!buckets.has(k)) buckets.set(k, [])
-      buckets.get(k)!.push(o)
-    }
-    return SECTION_ORDER
-      .filter((k) => buckets.has(k))
-      .map((k) => ({ key: k, ...SECTION_META[k], items: buckets.get(k)!.sort((a, b) => sectionSort(k, a, b)) }))
-  }, [filtered, today])
+  const sections = useMemo(() => urgencySections(filtered, today), [filtered, today])
 
   // Keep a selected region clearable even if its last opportunity expires.
   const availableRegions = useMemo(() => {
@@ -350,35 +140,13 @@ export function OpportunitiesPage() {
   const showRegionFilters = availableRegions.length > 1 || regionFilter !== null
 
   // ── KPIs (over active opportunities) ────────────────────────────────────────
-  const openCount = live.filter((o) => o.status === 'new' || o.status === 'pursuing').length
+  const openCount = live.filter(isOpen).length
   const closingWeek = live.filter((o) => sectionOf(o, today) === 'week').length
-  const rollingCount = live.filter((o) => {
-    const dt = deadlineTypeOf(o)
-    return dt === 'rolling' || dt === 'always-open'
-  }).length
-  const newThisWeek = live.filter(isNewThisWeek).length
+  const rollingCount = live.filter(isOpenWindow).length
+  const newThisWeek = live.filter((o) => isNewThisWeek(o)).length
   const thisRunCount = data.lastRunId ? live.filter((o) => o.runId === data.lastRunId).length : 0
 
-  // TOP PICKS — deadline-aware leverage ranking:
-  //   score = priorityWeight × leverageScore × urgencyBoost
-  //     priorityWeight : high 3 · medium 2 · low 1
-  //     leverageScore  : 1..5 (from the radar/profile scoring)
-  //     urgencyBoost   : a dated deadline within 7 days ×2, within 14 days ×1.5, else ×1
-  //   Overdue items are excluded entirely; ties break toward the sooner deadline.
-  const topPicks = useMemo(() => {
-    const weight = { high: 3, medium: 2, low: 1 } as const
-    const scored = live
-      .filter((o) => o.status === 'new' || o.status === 'pursuing')
-      .map((o) => {
-        const dt = deadlineTypeOf(o)
-        const d = dt === 'rolling' || dt === 'always-open' ? null : daysUntilDeadline(o.deadline, today)
-        const boost = d !== null && d >= 0 ? (d <= 7 ? 2 : d <= 14 ? 1.5 : 1) : 1
-        const score = (weight[o.priority] ?? 2) * o.leverageScore * boost
-        return { o, score, d }
-      })
-    scored.sort((a, b) => (b.score - a.score) || ((a.d ?? Infinity) - (b.d ?? Infinity)))
-    return scored.slice(0, 5).map((x) => x.o)
-  }, [live, today])
+  const topPicks = useMemo(() => rankTopPicks(live, today), [live, today])
 
   return (
     <PageShell>
@@ -408,9 +176,7 @@ export function OpportunitiesPage() {
                     <div>
                       <p className="mb-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground">Top picks</p>
                       <div className="flex flex-col gap-1">
-                        {topPicks.map((o, i) => {
-                          const cd = countdownOf(o, today)
-                          return (
+                        {topPicks.map((o, i) => (
                             <Button
                               key={o.id}
                               variant="ghost"
@@ -424,11 +190,10 @@ export function OpportunitiesPage() {
                               <span className="truncate text-xs font-medium text-foreground">{o.title}</span>
                               {o.leverageNote && <span className="hidden truncate text-xs text-foreground-faint sm:inline">— {o.leverageNote}</span>}
                               <span className="ml-auto shrink-0">
-                                <Chip size="sm" variant={cd.variant} className={cd.outline ? 'bg-transparent' : undefined} title={cd.title}>{cd.text}</Chip>
+                                <CountdownChip opportunity={o} today={today} />
                               </span>
                             </Button>
-                          )
-                        })}
+                        ))}
                       </div>
                     </div>
                   )}
@@ -442,90 +207,14 @@ export function OpportunitiesPage() {
               description="Say it like you'd say it out loud — “I need 20 remote internships paying $2k+, deadline before Sept”. Radar reads it, then prioritizes those on every run."
               delay={0.1}
             >
-              <div className="flex flex-col gap-3">
-                {objectives.length > 0 && (
-                  <div className="flex flex-col gap-2.5">
-                    {objectives.map((obj) => {
-                      const found = obj.parsed ? live.filter((o) => objectiveMatches(o, obj.parsed)).length : 0
-                      const target = obj.parsed?.targetCount ?? null
-                      const pct = target ? Math.min(100, Math.round((found / target) * 100)) : 0
-                      const chips: string[] = []
-                      if (obj.parsed?.category) chips.push(categoryOf(obj.parsed.category).label)
-                      if (obj.parsed?.locations?.length) chips.push(obj.parsed.locations.join(' · '))
-                      if (obj.parsed?.eligibility) chips.push(eligibilityOf(obj.parsed.eligibility))
-                      if (obj.parsed?.salaryText) chips.push(obj.parsed.salaryText)
-                      if (obj.parsed?.deadlineBefore) chips.push(`by ${fmtDate(obj.parsed.deadlineBefore)}`)
-                      return (
-                        <div key={obj.id} className={`rounded-xl border p-3 transition-opacity ${obj.active ? 'border-border' : 'border-border/60 opacity-60'}`}>
-                          <div className="flex items-start gap-2.5">
-                            <Crosshair className={`mt-0.5 size-3.5 shrink-0 ${obj.active ? 'text-accent' : 'text-foreground-faint'}`} />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium leading-snug text-foreground">{obj.text}</p>
-                              {obj.status === 'thinking' && (
-                                <p className="mt-1 text-xs text-foreground-faint">Radar is reading this order…</p>
-                              )}
-                              {obj.status === 'error' && (
-                                <p className="mt-1 text-xs text-destructive">Couldn't read this: {obj.error || 'agent error'} — it still steers the next run as written.</p>
-                              )}
-                              {obj.status === 'ready' && obj.reply && (
-                                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{obj.reply}</p>
-                              )}
-                              {chips.length > 0 && (
-                                <div className="mt-1.5 flex flex-wrap gap-1">
-                                  {chips.map((c, i) => <Chip key={i} size="sm">{c}</Chip>)}
-                                </div>
-                              )}
-                              {obj.status === 'ready' && (
-                                <div className="mt-2 flex max-w-sm items-center gap-2">
-                                  {target ? (
-                                    <>
-                                      <Progress value={pct} className="flex-1" />
-                                      <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">{found} / {target} found</span>
-                                    </>
-                                  ) : (
-                                    <span className="font-mono text-2xs tabular-nums text-muted-foreground">{found} match{found === 1 ? '' : 'es'} so far</span>
-                                  )}
-                                  <Button variant="ghost" size="xs" onClick={() => showObjectiveMatches(obj.parsed)}>View</Button>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1">
-                              <Chip
-                                selectable
-                                selected={obj.active}
-                                size="sm"
-                                onClick={() => setObjective(obj.id, { active: !obj.active })}
-                                title={obj.active ? 'Pause (stop steering radar)' : 'Resume'}
-                              >
-                                {obj.active ? 'Active' : 'Paused'}
-                              </Chip>
-                              <Button variant="ghost" size="icon-xs" aria-label="Remove hunt order" onClick={() => deleteObjective(obj.id)}>
-                                <X />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* Composer */}
-                <div className="flex items-end gap-2">
-                  <Textarea
-                    value={objInput}
-                    onChange={(e) => setObjInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addObjective() } }}
-                    rows={2}
-                    placeholder="e.g. Find me 20 remote software internships paying $2k+/mo with deadlines before September…"
-                    className="flex-1 resize-none px-2.5 py-2 text-xs"
-                  />
-                  <Button size="sm" onClick={addObjective} disabled={!objInput.trim()}>
-                    <Send /> Send
-                  </Button>
-                </div>
-                <p className="-mt-1 font-mono text-2xs text-foreground-faint">⌘↵ to send · active orders steer the next “Run radar”.</p>
-              </div>
+              <HuntOrders
+                objectives={objectives}
+                live={live}
+                onAdd={addObjective}
+                onPatch={setObjective}
+                onDelete={deleteObjective}
+                onView={showObjectiveMatches}
+              />
             </WidgetCard>
 
             {/* Filter rail */}
@@ -564,35 +253,23 @@ export function OpportunitiesPage() {
                   </TabsList>
                 </Tabs>
                 {kindGroup !== 'all' && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {KIND_GROUPS[kindGroup].categories.map((c) => (
-                      <Chip key={c} selectable selected={catFilter === c} onClick={() => setCatFilter(catFilter === c ? null : c)}>
-                        {categoryOf(c).label}
-                      </Chip>
-                    ))}
-                  </div>
+                  <FilterChips label="Filter by category" size="md" value={catFilter} onChange={setCatFilter}
+                    options={KIND_GROUPS[kindGroup].categories.map((c) => ({ value: c, label: categoryOf(c).label }))} />
                 )}
               </div>
 
               {/* Status · modality · region chips */}
               <div className="flex flex-wrap items-center gap-1.5">
-                {ALL_STATUSES.map((s) => (
-                  <Chip key={s} selectable variant={statusConfig[s].chip} selected={statusFilter === s} onClick={() => setStatusFilter(statusFilter === s ? null : s)}>
-                    {statusConfig[s].label}
-                  </Chip>
-                ))}
+                <FilterChips label="Filter by status" size="md" value={statusFilter} onChange={setStatusFilter}
+                  options={ALL_STATUSES.map((s) => ({ value: s, label: statusConfig[s].label, variant: statusConfig[s].chip }))} />
                 <span aria-hidden className="mx-1 h-3.5 w-px bg-border" />
-                {MODALITY_FILTERS.map((m) => (
-                  <Chip key={m} selectable selected={modalityFilter === m} onClick={() => setModalityFilter(modalityFilter === m ? null : m)}>
-                    {modalityConfig[m].label}
-                  </Chip>
-                ))}
+                <FilterChips label="Filter by modality" size="md" value={modalityFilter} onChange={setModalityFilter}
+                  options={MODALITY_FILTERS.map((m) => ({ value: m, label: modalityConfig[m].label }))} />
                 {showRegionFilters && <span aria-hidden className="mx-1 h-3.5 w-px bg-border" />}
-                {showRegionFilters && availableRegions.map((r) => (
-                  <Chip key={r} selectable selected={regionFilter === r} onClick={() => setRegionFilter(regionFilter === r ? null : r)}>
-                    {regionConfig[r].label}
-                  </Chip>
-                ))}
+                {showRegionFilters && (
+                  <FilterChips label="Filter by region" size="md" value={regionFilter} onChange={setRegionFilter}
+                    options={availableRegions.map((r) => ({ value: r, label: regionConfig[r].label }))} />
+                )}
               </div>
             </div>
 
@@ -614,7 +291,7 @@ export function OpportunitiesPage() {
                     <div className={`surface rounded-xl ${section.dim ? 'opacity-70' : ''}`}>
                       <div className="flex flex-col divide-y divide-border/60">
                         {section.items.map((o) => (
-                          <OppRow
+                          <OpportunityRow
                             key={o.id}
                             o={o}
                             today={today}
@@ -633,83 +310,5 @@ export function OpportunitiesPage() {
             )}
           </div>
     </PageShell>
-  )
-}
-
-// ── Row (desktop) / stacked card (mobile) ────────────────────────────────────
-
-function OppRow({ o, today, expanded, onToggle, setField, toggleGoal, onDelete }: {
-  o: Opportunity
-  today: string
-  expanded: boolean
-  onToggle: () => void
-  setField: (id: string, f: Partial<Opportunity>) => void
-  toggleGoal: (id: string, g: Goal) => void
-  onDelete: () => void
-}) {
-  const cd = countdownOf(o, today)
-  return (
-    <div>
-      <div
-        onClick={onToggle}
-        className={`flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 transition-colors hover:bg-secondary/30 ${expanded ? 'bg-secondary/20' : ''}`}
-      >
-        <Button
-          type="button"
-          variant="ghost"
-          aria-label={`Details for ${o.title}`}
-          aria-expanded={expanded}
-          aria-controls={expanded ? `opportunity-details-${o.id}` : undefined}
-          onClick={event => { event.stopPropagation(); onToggle() }}
-          className="h-auto min-w-0 flex-1 basis-52 flex-col items-start gap-0 p-0 text-left text-foreground"
-        >
-          <span className="block max-w-full truncate text-sm font-medium">{o.title}</span>
-          <span className="block max-w-full truncate text-xs text-muted-foreground">
-            {o.host || eligibilityOf(o.eligibility)}
-            {o.location ? ` · ${o.location}` : ''}
-          </span>
-        </Button>
-        <Chip size="sm">{categoryOf(o.category).label}</Chip>
-        <Chip size="sm" variant={cd.variant} className={cd.outline ? 'bg-transparent' : undefined} title={cd.title}>{cd.text}</Chip>
-        {o.amountUsd != null && (
-          <span className="shrink-0 font-mono text-xs tabular-nums text-foreground">{fmtAmount(o.amountUsd)}</span>
-        )}
-        {o.requires18Plus === true && (
-          <Chip size="sm" variant="danger" className="bg-transparent" title="Requires 18+ — check eligibility">18+</Chip>
-        )}
-        <LeverageDots score={o.leverageScore} />
-        <Select
-          value={statusConfig[o.status] ? o.status : 'new'}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => setField(o.id, { status: e.target.value as OppStatus })}
-          aria-label="Status"
-          className={`h-7 w-24 shrink-0 cursor-pointer px-1.5 font-mono text-2xs ${statusOf(o.status).text}`}
-        >
-          {ALL_STATUSES.map((s) => <option key={s} value={s}>{statusConfig[s].label}</option>)}
-        </Select>
-        <div className="flex shrink-0 items-center gap-0.5">
-          {o.url && (
-            <a
-              href={o.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              title="Open link"
-              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <ExternalLink className="size-3.5" />
-            </a>
-          )}
-          <Button variant="ghost" size="icon-sm" aria-label="Delete opportunity" onClick={(e) => { e.stopPropagation(); onDelete() }}>
-            <Trash2 />
-          </Button>
-        </div>
-      </div>
-      {expanded && (
-        <div id={`opportunity-details-${o.id}`} className="border-t border-border/60 bg-secondary/10 px-4 py-4">
-          <OpportunityEditor o={o} setField={setField} toggleGoal={toggleGoal} onDelete={onDelete} />
-        </div>
-      )}
-    </div>
   )
 }

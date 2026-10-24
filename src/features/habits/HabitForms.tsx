@@ -7,41 +7,37 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import type { Cadence } from '@/lib/habits'
 import { type HabitDraft } from './habitFormState'
+import type { HabitEditor } from './useHabitEditor'
 
 interface HabitEditFieldsProps {
-  name: string
-  emoji: string
-  goal: string
-  cadence: Cadence
-  onNameChange: (value: string) => void
-  onEmojiChange: (value: string) => void
-  onGoalChange: (value: string) => void
-  onCadenceChange: (value: Cadence) => void
-  onSave: () => void
+  editor: HabitEditor
   compact?: boolean
 }
 
-export function HabitEditFields({
-  name,
-  emoji,
-  goal,
-  cadence,
-  onNameChange,
-  onEmojiChange,
-  onGoalChange,
-  onCadenceChange,
-  onSave,
-  compact = false,
-}: HabitEditFieldsProps) {
+export function HabitEditFields({ editor, compact = false }: HabitEditFieldsProps) {
+  const { draft, setField, save } = editor
   return (
     <div className="flex items-center gap-1.5">
-      <Input aria-label="Habit emoji" value={emoji} onChange={(e) => onEmojiChange(e.target.value)} className={cn(compact ? 'h-7 w-10 text-sm' : 'h-9 w-12', 'px-1 text-center')} />
-      <Input aria-label="Habit name" value={name} onChange={(e) => onNameChange(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && onSave()} className={compact ? 'h-7 text-sm' : 'h-9 flex-1'} autoFocus />
-      <Select aria-label="Habit cadence" value={cadence} onChange={(e) => onCadenceChange(e.target.value as Cadence)} className={cn('w-auto', compact ? 'h-7 px-1 text-xs' : 'h-9 px-1 text-xs')}>
+      <Input aria-label="Habit emoji" value={draft.emoji} onChange={(e) => setField('emoji', e.target.value)} className={cn(compact ? 'h-7 w-10 text-sm' : 'h-9 w-12', 'px-1 text-center')} />
+      <Input aria-label="Habit name" value={draft.name} onChange={(e) => setField('name', e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()} className={compact ? 'h-7 text-sm' : 'h-9 flex-1'} autoFocus />
+      <Select aria-label="Habit cadence" value={draft.cadence} onChange={(e) => setField('cadence', e.target.value as Cadence)} className={cn('w-auto', compact ? 'h-7 px-1 text-xs' : 'h-9 px-1 text-xs')}>
         <option value="weekly">/wk</option>
         <option value="monthly">/mo</option>
       </Select>
-      <Input aria-label="Habit goal" value={goal} onChange={(e) => onGoalChange(e.target.value)} className={cn(compact ? 'h-7 w-12 text-sm' : 'h-9 w-14', 'px-1 text-center')} placeholder={cadence === 'monthly' ? '1' : '7'} type="number" min={0} max={cadence === 'monthly' ? 31 : 7} />
+      <Input aria-label="Habit goal" value={draft.goal} onChange={(e) => setField('goal', e.target.value)} className={cn(compact ? 'h-7 w-12 text-sm' : 'h-9 w-14', 'px-1 text-center')} placeholder={draft.cadence === 'monthly' ? '1' : '7'} type="number" min={0} max={draft.cadence === 'monthly' ? 31 : 7} />
+    </div>
+  )
+}
+
+/** Edit fields with explicit Save and Cancel, for card layouts without a row action column. */
+export function HabitEditPanel({ editor, compact = false, size }: HabitEditFieldsProps & { size: 'sm' | 'lg' }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <HabitEditFields editor={editor} compact={compact} />
+      <div className="flex gap-2">
+        <Button size={size} className="flex-1" onClick={editor.save}>Save</Button>
+        <Button variant="ghost" size={size} onClick={editor.cancel}>Cancel</Button>
+      </div>
     </div>
   )
 }

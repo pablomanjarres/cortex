@@ -97,7 +97,27 @@ export interface StudyNote {
 
 const rand4 = () => Math.random().toString(36).slice(2, 6)
 export const matId = () => `mat-${Date.now()}-${rand4()}`
-export const noteId = () => `note-${Date.now()}-${rand4()}`
+const noteId = () => `note-${Date.now()}-${rand4()}`
+
+/**
+ * A note typed in the app. The course name is snapshotted so the note keeps
+ * its label after the course is renamed or deleted.
+ */
+export function newStudyNote(
+  text: string,
+  course?: Pick<Course, 'id' | 'name'>,
+  { tags = [], pinned = false }: { tags?: string[]; pinned?: boolean } = {},
+): StudyNote {
+  return {
+    id: noteId(),
+    ...(course ? { courseId: course.id, courseName: course.name } : {}),
+    text,
+    tags,
+    pinned,
+    source: 'manual',
+    createdAt: new Date().toISOString(),
+  }
+}
 
 // ── Normalizers (run at READ time — never persisted back on load) ───────────
 

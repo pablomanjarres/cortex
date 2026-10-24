@@ -1,17 +1,18 @@
+import { RefreshButton } from '@/components/shared/RefreshButton'
 import { Select } from '@/components/ui/select'
 import { useMemo, useState } from 'react'
-import { AlertTriangle, CalendarRange, Gauge, History, RefreshCw, WalletCards } from 'lucide-react'
+import { AlertTriangle, CalendarRange, Gauge, History, WalletCards } from 'lucide-react'
 import type {
   CloudCostCache,
-  CloudCostSourceStatus,
   CloudProvider,
   CloudProviderFilter,
 } from '../../../electron/cloud-cost-types.ts'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { Notice } from '@/components/shared/Notice'
+import { SetupState, SetupStatusRow } from '@/components/shared/SetupState'
 import { StatTile } from '@/components/shared/StatTile'
 import { TrendBadge } from '@/components/shared/TrendBadge'
-import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Progress } from '@/components/ui/progress'
 import { readStore, useStore } from '@/lib/store'
@@ -29,7 +30,16 @@ import { projectRanking, resourceRanking, spendDrivers, topServices } from './br
 import { CloudCostSettings } from './CloudCostSettings'
 import { DailyBurnChart, MonthlyProjectChart, MonthlySpendChart, ServiceMixChart } from './CloudCostCharts'
 import { AccountEstimateCard, ProjectRankingCard, ResourceRankingCard, SpendDriversCard } from './CloudCostBreakdowns'
-import { cloudCostViewState, cloudUsageEmptyMessage, DEFAULT_CLOUD_COST_SETTINGS, EMPTY_CLOUD_COST_CACHE } from './cloud-cost-store'
+import {
+  CLOUD_SOURCE_LABELS,
+  cloudCostViewState,
+  cloudSourceId,
+  cloudSourceState,
+  cloudUsageEmptyMessage,
+  DEFAULT_CLOUD_COST_SETTINGS,
+  EMPTY_CLOUD_COST_CACHE,
+  type CloudSourceState,
+} from './cloud-cost-store'
 import { fmtUsd } from './format'
 
 const PROVIDERS: Array<{ value: CloudProviderFilter; label: string }> = [
@@ -38,15 +48,16 @@ const PROVIDERS: Array<{ value: CloudProviderFilter; label: string }> = [
   { value: 'gcp', label: 'GCP' },
 ]
 
-function SourceChip({ provider, sourceId, status }: {
-  provider: CloudProvider
-  sourceId: string
-  status: CloudCostSourceStatus
-}) {
-  const configured = sourceId.trim().length > 0
-  const live = status.ok && status.sourceId === sourceId.trim()
-  const variant = live ? 'success' : configured ? 'warning' : 'neutral'
-  const label = live ? 'Live' : configured ? 'Needs refresh' : 'Off'
+const CLOUD_PROVIDERS: CloudProvider[] = ['aws', 'gcp']
+
+const SOURCE_CHIP: Record<CloudSourceState, { variant: 'success' | 'warning' | 'neutral'; label: string }> = {
+  live: { variant: 'success', label: 'Live' },
+  stale: { variant: 'warning', label: 'Needs refresh' },
+  off: { variant: 'neutral', label: 'Off' },
+}
+
+function SourceChip({ provider, state }: { provider: CloudProvider; state: CloudSourceState }) {
+  const { variant, label } = SOURCE_CHIP[state]
   return <Chip variant={variant} size="sm">{provider.toUpperCase()} · {label}</Chip>
 }
 
@@ -65,7 +76,11 @@ export function CloudCostsPage() {
   const [projectSelection, setProjectSelection] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const currentMonth = monthKey(now)
-  const hasConfiguredSource = Boolean(settings.awsProfile.trim() || settings.gcpBillingTable.trim())
+  const sourceStates: Record<CloudProvider, CloudSourceState> = {
+    aws: cloudSourceState(cloudSourceId(settings, 'aws'), cache.sources.aws),
+    gcp: cloudSourceState(cloudSourceId(settings, 'gcp'), cache.sources.gcp),
+  }
+  const hasConfiguredSource = CLOUD_PROVIDERS.some((source) => sourceStates[source] !== 'off')
   const canRefresh = Boolean(window.electronAPI?.cloudCosts) && hasConfiguredSource
 
   const monthly = useMemo(() => monthlySeries(cache.usageItems, provider, now), [cache.usageItems, provider, now])
@@ -99,14 +114,14 @@ export function CloudCostsPage() {
     } finally { setRefreshing(false) }
   }
 
-  const errors = (['aws', 'gcp'] as CloudProvider[])
+  const errors = CLOUD_PROVIDERS
     .map((source) => cache.sources[source].error)
     .filter((error): error is string => Boolean(error))
   const hasLiveSource = Object.values(cache.sources).some((source) => source.ok)
-  const selectedSourceId = provider === 'aws' ? settings.awsProfile.trim() : provider === 'gcp' ? settings.gcpBillingTable.trim() : ''
-  const selectedConfigured = provider === 'all' ? hasConfiguredSource : Boolean(selectedSourceId)
+  const selectedState = provider === 'all' ? null : sourceStates[provider]
+  const selectedConfigured = selectedState ? selectedState !== 'off' : hasConfiguredSource
   const selectedView = cloudCostViewState(cache, provider, currentMonth)
-  const selectedLive = provider === 'all' ? hasLiveSource : cache.sources[provider].ok && cache.sources[provider].sourceId === selectedSourceId
+  const selectedLive = selectedState ? selectedState === 'live' : hasLiveSource
   const selectedFailed = provider === 'all' ? errors.length > 0 : Boolean(cache.sources[provider].error)
 
   return (
@@ -116,10 +131,7 @@ export function CloudCostsPage() {
         title="Infrastructure ledger"
         subtitle="Actual AWS and GCP usage, normalized to USD and kept private on this Mac."
         actions={(
-          <Button variant="secondary" size="sm" onClick={refresh} disabled={!canRefresh || refreshing}>
-            <RefreshCw />
-            {refreshing ? 'Refreshing' : 'Refresh'}
-          </Button>
+          <RefreshButton onClick={refresh} busy={refreshing} disabled={!canRefresh} busyLabel="Refreshing" />
         )}
       />
 
@@ -131,8 +143,7 @@ export function CloudCostsPage() {
             </Chip>
           ))}
           <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-          <SourceChip provider="aws" sourceId={settings.awsProfile} status={cache.sources.aws} />
-          <SourceChip provider="gcp" sourceId={settings.gcpBillingTable} status={cache.sources.gcp} />
+          {CLOUD_PROVIDERS.map((source) => <SourceChip key={source} provider={source} state={sourceStates[source]} />)}
           {cache.fetchedAt ? (
             <span className="ml-auto font-mono text-2xs text-foreground-faint">
               Updated {new Date(cache.fetchedAt).toLocaleString()}
@@ -142,37 +153,24 @@ export function CloudCostsPage() {
       )}
 
       {errors.length > 0 ? (
-        <div className="flex items-start gap-2 rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{[...new Set(errors)].join(' ')} {cache.usageItems.length > 0 ? 'Last successful values remain visible.' : 'Usage is unavailable until a refresh succeeds.'}</span>
-        </div>
+        <Notice tone="warning" icon={<AlertTriangle />} className="text-xs">
+          {[...new Set(errors)].join(' ')} {cache.usageItems.length > 0 ? 'Last successful values remain visible.' : 'Usage is unavailable until a refresh succeeds.'}
+        </Notice>
       ) : null}
 
       {!selectedConfigured || !selectedView.showUsageAnalytics ? (
         <>
-        <section className="surface grid gap-6 rounded-xl p-5 sm:p-7 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" aria-labelledby="cloud-empty-title">
-          <div className="flex flex-col justify-center gap-4">
-            <span className="flex size-12 items-center justify-center rounded-xl bg-focus-surface text-accent" aria-hidden>
-              <WalletCards className="size-6" />
-            </span>
-            <div className="space-y-2">
-              <h2 id="cloud-empty-title" className="text-xl font-semibold text-foreground sm:text-2xl">
-                {selectedConfigured ? selectedView.showAccountEstimate ? 'Account adjustment available' : cloudUsageEmptyMessage(selectedLive, selectedFailed) : provider === 'all' ? 'Connect your cloud costs' : `Connect ${provider.toUpperCase()} to see its costs`}
-              </h2>
-              <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-                {selectedConfigured ? selectedView.showAccountEstimate ? 'No usage rows were returned. The current-month account adjustment is shown below; usage charts need usage data.' : 'Check the source status, then refresh after billing data is available. Usage charts appear when a snapshot contains usage.' : 'Set up the source in Connections below. Cortex reads local credentials and keeps the ledger on this Mac.'}
-              </p>
-            </div>
-          </div>
-          <div className="rounded-xl bg-secondary/40 p-4">
-            <h3 className="mb-3 text-sm font-semibold text-foreground">Billing sources</h3>
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm text-foreground">AWS Cost Explorer</span><SourceChip provider="aws" sourceId={settings.awsProfile} status={cache.sources.aws} /></div>
-              <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm text-foreground">GCP Billing Export</span><SourceChip provider="gcp" sourceId={settings.gcpBillingTable} status={cache.sources.gcp} /></div>
-            </div>
-            {cache.fetchedAt && <p className="mt-4 border-t border-border/60 pt-3 font-mono text-xs text-muted-foreground">Last snapshot {new Date(cache.fetchedAt).toLocaleString()}</p>}
-          </div>
-        </section>
+        <SetupState
+          icon={<WalletCards />}
+          title={selectedConfigured ? selectedView.showAccountEstimate ? 'Account adjustment available' : cloudUsageEmptyMessage(selectedLive, selectedFailed) : provider === 'all' ? 'Connect your cloud costs' : `Connect ${provider.toUpperCase()} to see its costs`}
+          description={selectedConfigured ? selectedView.showAccountEstimate ? 'No usage rows were returned. The current-month account adjustment is shown below; usage charts need usage data.' : 'Check the source status, then refresh after billing data is available. Usage charts appear when a snapshot contains usage.' : 'Set up the source in Connections below. Cortex reads local credentials and keeps the ledger on this Mac.'}
+          statusTitle="Billing sources"
+          footer={cache.fetchedAt ? `Last snapshot ${new Date(cache.fetchedAt).toLocaleString()}` : undefined}
+        >
+          {CLOUD_PROVIDERS.map((source) => (
+            <SetupStatusRow key={source} label={CLOUD_SOURCE_LABELS[source]}><SourceChip provider={source} state={sourceStates[source]} /></SetupStatusRow>
+          ))}
+        </SetupState>
         {selectedConfigured && selectedView.showAccountEstimate ? (
           <AccountEstimateCard estimate={estimate} scope={provider === 'all' ? 'AWS + GCP accounts' : `${provider.toUpperCase()} accounts`} />
         ) : null}

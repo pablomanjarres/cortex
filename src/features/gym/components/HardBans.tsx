@@ -1,6 +1,6 @@
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, type ReactNode } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
 import { Flame, Plus, X, Pencil, Check, ChevronDown, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,22 @@ import { DEFAULT_HARD_BANS } from '@/types/gym'
 const CATEGORIES: HardBan['category'][] = ['food', 'digital', 'lifestyle']
 const EPOCH = '2026-04-07'
 
+/** Height reveal for inline panels; instant under reduced motion. */
+function Collapse({ children }: { children: ReactNode }) {
+  const reduceMotion = useReducedMotion()
+  return (
+    <motion.div
+      initial={reduceMotion ? false : { height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={reduceMotion ? undefined : { height: 0, opacity: 0 }}
+      transition={{ duration: reduceMotion ? 0 : 0.15 }}
+      className="overflow-hidden"
+    >
+      {children}
+    </motion.div>
+  )
+}
+
 function daysBetween(a: string, b: string): number {
   const msA = new Date(a + 'T00:00:00').getTime()
   const msB = new Date(b + 'T00:00:00').getTime()
@@ -21,7 +37,6 @@ function daysBetween(a: string, b: string): number {
 }
 
 export function HardBans() {
-  const reduceMotion = useReducedMotion()
   const [bans, setBans] = useStore<HardBan[]>('cortex-hard-bans', DEFAULT_HARD_BANS)
   const [violations, setViolations] = useStore<BanViolation[]>('cortex-ban-violations', [])
   const [editing, setEditing] = useState(false)
@@ -145,13 +160,7 @@ export function HardBans() {
                   {/* Inline violation logger */}
                   <AnimatePresence>
                     {expandedBanId === ban.id && !editing && (
-                      <motion.div
-                        initial={reduceMotion ? false : { height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={reduceMotion ? undefined : { height: 0, opacity: 0 }}
-                        transition={{ duration: reduceMotion ? 0 : 0.15 }}
-                        className="overflow-hidden"
-                      >
+                      <Collapse>
                         <div className="space-y-2 px-4 pb-3">
                           <Textarea aria-label="Violation notes"
                             value={violationNotes}
@@ -165,7 +174,7 @@ export function HardBans() {
                             Log Violation
                           </Button>
                         </div>
-                      </motion.div>
+                      </Collapse>
                     )}
                   </AnimatePresence>
                 </div>
@@ -210,13 +219,7 @@ export function HardBans() {
           </Button>
           <AnimatePresence>
             {showRecent && (
-              <motion.div
-                initial={reduceMotion ? false : { height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={reduceMotion ? undefined : { height: 0, opacity: 0 }}
-                transition={{ duration: reduceMotion ? 0 : 0.15 }}
-                className="overflow-hidden"
-              >
+              <Collapse>
                 <div className="surface mt-2 divide-y divide-border/60 rounded-xl">
                   {recentViolations.map(v => (
                     <div key={v.id} className="flex items-start justify-between gap-3 px-4 py-2.5">
@@ -230,7 +233,7 @@ export function HardBans() {
                     </div>
                   ))}
                 </div>
-              </motion.div>
+              </Collapse>
             )}
           </AnimatePresence>
         </div>

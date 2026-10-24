@@ -4,6 +4,7 @@ import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Modal } from '@/components/shared/Modal'
 import { Field } from '@/components/shared/Field'
+import { Notice } from '@/components/shared/Notice'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Select } from '@/components/ui/select'
@@ -143,7 +144,7 @@ export function WorkHoursPanel() {
         ) : (
           <EmptyState message="No time projects yet." hint="Add a project to start recording work." className="py-5" />
         )}
-        {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
+        {error && <Notice tone="danger" className="mt-3">{error}</Notice>}
       </WidgetCard>
 
       {project && details && (
@@ -163,7 +164,7 @@ export function WorkHoursPanel() {
                 onToggleBillable={(session) => { void command(toggleBillableCommand(session)) }}
                 onEdit={(sessionId) => { setDetails(null); setEditingId(sessionId) }}
               />
-              {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
+              {error && <Notice tone="danger" className="mt-3">{error}</Notice>}
             </>
           )}
           {details === 'reports' && (

@@ -55,8 +55,8 @@ export function getISOWeek(isoDate: string): string {
 }
 
 /** Human-readable relative time, e.g. "2h ago", "5m ago" */
-export function timeAgo(isoTimestamp: string): string {
-  return formatElapsed((Date.now() - new Date(isoTimestamp).getTime()) / 1000)
+export function timeAgo(isoTimestamp: string, now = Date.now()): string {
+  return formatElapsed((now - new Date(isoTimestamp).getTime()) / 1000)
 }
 
 /** Elapsed seconds as relative time, e.g. "2h ago", "5m ago" */

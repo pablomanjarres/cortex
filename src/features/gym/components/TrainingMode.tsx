@@ -6,7 +6,7 @@ import { TrainingHeader } from './TrainingHeader'
 import { haptic } from '../domain/training-feedback'
 import { useTrainingClock } from '../hooks/use-training-clock'
 import { useSetDefaults } from '../hooks/use-set-defaults'
-import { activeSetIndex, setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
+import { activeSetIndex, entrySetIndex, nextSetPosition, setIndexAfterRemoval, summarizeWorkoutSets } from '../domain/workout-progress'
 import { ExerciseNavigator } from './ExerciseNavigator'
 import { ExerciseGuide } from './ExerciseGuide'
 import { SetEntry } from './SetEntry'
@@ -60,20 +60,12 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
       finishSession(logs, true)
       return
     }
-    // Where to move the "current" pointer next
-    let nextExIdx = idx
-    let nextSetIdx = logs[idx].sets.findIndex((s, i) => i > si && !s.completed)
-    if (nextSetIdx === -1) {
-      const after = logs.findIndex((ex, ei) => ei > idx && ex.sets.some((s) => !s.completed))
-      const target = after !== -1 ? after : logs.findIndex((ex) => ex.sets.some((s) => !s.completed))
-      nextExIdx = target === -1 ? idx : target
-      nextSetIdx = target === -1 ? si : logs[target].sets.findIndex((s) => !s.completed)
-    }
+    const next = nextSetPosition(logs, idx, si)
     onUpdate({
       ...activeWorkout,
       exerciseLogs: logs,
-      currentExerciseIndex: nextExIdx,
-      currentSetIndex: Math.max(0, nextSetIdx),
+      currentExerciseIndex: next.exerciseIndex,
+      currentSetIndex: Math.max(0, next.setIndex),
       restTimerEnd: completedAt + activeWorkout.restDuration * 1000,
       isResting: true,
     })
@@ -103,11 +95,10 @@ export function TrainingMode({ activeWorkout, plan, onUpdate, onFinish, onCancel
     if (ei < 0 || ei >= plan.exercises.length) return
     const log = activeWorkout.exerciseLogs[ei]
     if (!log) return
-    const firstIncomplete = log.sets.findIndex((s) => !s.completed)
     onUpdate({
       ...activeWorkout,
       currentExerciseIndex: ei,
-      currentSetIndex: firstIncomplete < 0 ? 0 : firstIncomplete,
+      currentSetIndex: entrySetIndex(log.sets),
       isResting: false,
       restTimerEnd: null,
     })

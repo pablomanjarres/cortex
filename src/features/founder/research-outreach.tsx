@@ -7,12 +7,13 @@ import { NoelleCrmContactList } from '@/features/crm/noelle-crm-contact-list'
 import { NoelleCrmTimeline } from '@/features/crm/noelle-crm-timeline'
 import { PLATFORM_LABELS, formatCrmTime } from '@/features/crm/noelle-crm-model'
 import { ResearchNotes, type ResearchActions } from './research-notes'
+import { ReviewStatusChip } from './research-review'
 import type { ResearchEventView, ResearchView } from '../../../electron/founder-research-model'
 
 function ResearchProvenance({ event }: { event: ResearchEventView }) {
   return (
     <div className="flex min-w-0 flex-col gap-3 border-t border-border pt-3 text-xs">
-      <div className="flex flex-wrap gap-2"><Chip>{event.purpose === 'research_invitation' ? 'Research invitation' : 'Research follow-up'}</Chip><Chip>Brief v{event.briefVersion}</Chip><Chip variant={event.review.status === 'approved' ? 'success' : event.review.status === 'rejected' ? 'danger' : 'warning'}>Review: {event.review.status.replaceAll('_', ' ')}</Chip></div>
+      <div className="flex flex-wrap gap-2"><Chip>{event.purpose === 'research_invitation' ? 'Research invitation' : 'Research follow-up'}</Chip><Chip>Brief v{event.briefVersion}</Chip><ReviewStatusChip status={event.review.status}>Review: {event.review.status.replaceAll('_', ' ')}</ReviewStatusChip></div>
       {event.requiresReview && <p className="text-warning">Needs re-review against the current published brief.</p>}
       {event.verificationReason && <p className="text-warning">{event.verificationReason}</p>}
       {event.review.reason && <p className="text-muted-foreground">{event.review.reason}</p>}

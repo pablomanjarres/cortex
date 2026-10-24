@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -7,8 +7,8 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
 import { selectPrimaryDisk } from '../../../electron/mac-stats'
-import { API_BASE } from './api-base'
 import { EightfoldProtection } from './EightfoldProtection'
+import { systemApiUrl, usePolledJson, type HostKey } from './system-api'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
 
@@ -25,8 +25,6 @@ interface GlancesPayload {
   processcount: { total: number; running: number; sleeping: number; thread: number }
   processlist: Array<{ pid: number; name: string; cpu_percent: number; memory_percent: number; username: string }>
 }
-
-type HostKey = 'mac'
 
 interface HostSpec {
   key: HostKey
@@ -52,6 +50,7 @@ function fmtRate(bytesPerSec: number): string {
   return `${fmtBytes(bytesPerSec, 1)}/s`
 }
 
+/** Sparkline stroke tone — accent at rest, semantic past thresholds. */
 /** Gauge text tone — semantic thresholds only (warning >70%, destructive >90%). */
 function pctTone(pct: number): string {
   if (pct > 90) return 'text-destructive'
@@ -59,10 +58,11 @@ function pctTone(pct: number): string {
   return ''
 }
 
-/** Sparkline stroke tone — accent at rest, semantic past thresholds. */
 function sparkTone(pct: number): string {
   return pctTone(pct) || 'text-accent'
 }
+
+// ── Sub-components ────────────────────────────────────────────────────────
 
 /** Gauge fill — accent at rest, semantic past thresholds (meter convention). */
 function barTone(pct: number): string {
@@ -70,8 +70,6 @@ function barTone(pct: number): string {
   if (pct > 70) return 'bg-warning'
   return 'bg-accent'
 }
-
-// ── Sub-components ────────────────────────────────────────────────────────
 
 function Bar({ pct, label, right }: { pct: number; label: string; right?: string }) {
   const clamped = Math.max(0, Math.min(100, pct))
@@ -131,42 +129,13 @@ function TrendPanel({ label, value, values }: { label: string; value: number; va
 // ── Per-host card ─────────────────────────────────────────────────────────
 
 function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
-  const [data, setData] = useState<GlancesPayload | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [stale, setStale] = useState(false)
   const [cpuHistory, setCpuHistory] = useState<number[]>([])
   const [memHistory, setMemHistory] = useState<number[]>([])
-
-  useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    const tick = async () => {
-      try {
-        const r = await fetch(`${API_BASE}${host.path}`, { cache: 'no-store' })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const json = (await r.json()) as GlancesPayload
-        if (cancelled) return
-        setData(json)
-        setError(null)
-        setStale(false)
-        setCpuHistory((history) => [...history, json.cpu?.total ?? 0].slice(-30))
-        setMemHistory((history) => [...history, json.mem?.percent ?? 0].slice(-30))
-      } catch (e: unknown) {
-        if (cancelled) return
-        setError(e instanceof Error ? e.message : 'fetch failed')
-        setStale(true)
-      } finally {
-        if (!cancelled) timer = setTimeout(tick, 2000)
-      }
-    }
-
-    tick()
-    return () => {
-      cancelled = true
-      if (timer) clearTimeout(timer)
-    }
-  }, [host.path])
+  const { data, error } = usePolledJson<GlancesPayload>(systemApiUrl(host.path), 2000, (json) => {
+    setCpuHistory((history) => [...history, json.cpu?.total ?? 0].slice(-30))
+    setMemHistory((history) => [...history, json.mem?.percent ?? 0].slice(-30))
+  })
+  const stale = Boolean(error)
 
   // ── Loading state ──
   if (!data && !error) {

@@ -39,17 +39,8 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
       <div className="ml-auto md:ml-0 md:min-w-0 md:flex-1">
         <RouteSearch />
       </div>
-      <div className="flex items-center gap-2 md:hidden">
-        <button
-          onClick={() => navigate('/library?kind=captures')}
-          aria-label="Capture"
-          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-action transition-colors hover:bg-primary/90 [-webkit-app-region:no-drag]"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="hidden shrink-0 items-center gap-2 md:flex lg:gap-4">
-        <div className="flex shrink-0 items-center gap-2 lg:gap-3">
+      <div className="flex shrink-0 items-center gap-2 lg:gap-3">
+        <div className="hidden shrink-0 items-center gap-2 md:flex lg:gap-3">
           <button
             onClick={() => navigate('/system')}
             aria-label="Open system status"
@@ -75,15 +66,15 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
               {sprintActive ? `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}` : 'Focus idle'}
             </span>
           </button>
-          <button
-            onClick={() => navigate('/library?kind=captures')}
-            aria-label="Capture"
-            className="flex h-11 items-center gap-2 rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-action transition-colors hover:bg-primary/90 lg:px-5 [-webkit-app-region:no-drag]"
-          >
-            <Plus className="h-4 w-4" />
-            <span className="hidden lg:inline">Capture</span>
-          </button>
         </div>
+        <button
+          onClick={() => navigate('/library?kind=captures')}
+          aria-label="Capture"
+          className="flex h-11 min-w-11 items-center justify-center gap-2 rounded-2xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-action transition-colors hover:bg-primary/90 lg:px-5 [-webkit-app-region:no-drag]"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="hidden lg:inline">Capture</span>
+        </button>
       </div>
     </header>
   )

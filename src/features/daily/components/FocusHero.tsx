@@ -3,7 +3,7 @@ import { Pause, Play, RotateCcw, Target } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import type { SprintSession } from '@/lib/sprint-context'
-import { formatMinutes } from './homePanelUtils'
+import { formatMinutes } from '@/lib/date-utils'
 
 export function FocusHero({
   isRunning,

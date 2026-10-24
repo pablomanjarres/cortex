@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/shared/Modal'
 import type { ExerciseLog, WorkoutDay } from '@/types/gym'
 import { ExerciseImage } from './ExerciseImage'
+import { completedSets } from '../domain/workout-sessions'
 
 interface ExerciseNavigatorProps {
   plan: WorkoutDay
@@ -28,7 +29,7 @@ export function ExerciseNavigator({ plan, logs, index, onSelect }: ExerciseNavig
         <div className="max-h-[60vh] divide-y divide-border overflow-y-auto">
           {logs.map((log, exerciseIndex) => {
             const exercise = plan.exercises.find((item) => item.id === log.exerciseId)
-            const completed = log.sets.filter((set) => set.completed).length
+            const completed = completedSets(log.sets).length
             return (
               <Button key={log.exerciseId} variant={index === exerciseIndex ? 'accent-outline' : 'ghost'}
                 className="h-auto min-h-16 w-full justify-start gap-3 whitespace-normal rounded-none px-2 py-3 text-left"

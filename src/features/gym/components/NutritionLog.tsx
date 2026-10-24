@@ -1,3 +1,4 @@
+import { DateStepper } from '@/components/shared/DateStepper'
 import { Select } from '@/components/ui/select'
 import { useState, useMemo, useCallback } from 'react'
 import { NutritionSummary } from './NutritionSummary'
@@ -13,16 +14,16 @@ import { localDate } from '@/lib/date-utils'
 import { useStore } from '@/lib/store'
 import {
   Plus,
-  X,
   Scale,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Bookmark,
   Pencil,
   Check,
   Trash2,
 } from 'lucide-react'
+import { emptyFoodDraft, foodFromDraft, foodTotals, macroLabel, mealsTotals, type FoodDraft } from '../domain/nutrition'
+import { FoodDraftFields, FoodRow } from './FoodControls'
+import { QuickAddPanel } from './QuickAddPanel'
+import { SelectionCard } from './SelectionCard'
 
 const PANTRY_CATEGORIES = ['Protein', 'Carbs', 'Dairy', 'Produce', 'Snacks', 'Other']
 
@@ -75,32 +76,17 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
   const [activeMeal, setActiveMeal] = useState(getDefaultMealIndex)
   const [quickFoods, setQuickFoods] = useStore<FoodItem[]>('cortex-quick-foods', COMMON_FOODS)
   const [pantry, setPantry] = useStore<PantryItem[]>('cortex-nutrition-pantry', [])
-  const [editingQuickAdd, setEditingQuickAdd] = useState(false)
-  const [newFoodName, setNewFoodName] = useState('')
-  const [newFoodProtein, setNewFoodProtein] = useState('')
-  const [newFoodCalories, setNewFoodCalories] = useState('')
-  const [newFoodQuantity, setNewFoodQuantity] = useState('')
+  const [foodDraft, setFoodDraft] = useState<FoodDraft>(emptyFoodDraft)
   const [newPantryName, setNewPantryName] = useState('')
   const [newPantryProtein, setNewPantryProtein] = useState('')
   const [newPantryCalories, setNewPantryCalories] = useState('')
   const [newPantryServing, setNewPantryServing] = useState('')
   const [newPantryCategory, setNewPantryCategory] = useState('Protein')
   const [weightInput, setWeightInput] = useState('')
-  const [showQuickAdd, setShowQuickAdd] = useState(true)
   const [editingTargets, setEditingTargets] = useState(false)
   const [targetInputs, setTargetInputs] = useState({ protein: '', calories: '', water: '' })
 
-  const totals = useMemo(() => {
-    let protein = 0
-    let calories = 0
-    for (const meal of nutrition.meals) {
-      for (const food of meal.foods) {
-        protein += food.protein
-        calories += food.calories
-      }
-    }
-    return { protein, calories }
-  }, [nutrition.meals])
+  const totals = useMemo(() => mealsTotals(nutrition.meals), [nutrition.meals])
 
   const addFood = (mealIndex: number, food: FoodItem) => {
     const meals = nutrition.meals.map((m, i) => {
@@ -119,17 +105,10 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
   }
 
   const addCustomFood = () => {
-    if (!newFoodName.trim()) return
-    addFood(activeMeal, {
-      name: newFoodName.trim(),
-      protein: Number(newFoodProtein) || 0,
-      calories: Number(newFoodCalories) || 0,
-      ...(newFoodQuantity.trim() ? { quantity: newFoodQuantity.trim() } : {}),
-    })
-    setNewFoodName('')
-    setNewFoodProtein('')
-    setNewFoodCalories('')
-    setNewFoodQuantity('')
+    const food = foodFromDraft(foodDraft)
+    if (!food) return
+    addFood(activeMeal, food)
+    setFoodDraft(emptyFoodDraft)
   }
 
   const removeQuickFood = (index: number) => {
@@ -137,18 +116,10 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
   }
 
   const saveToQuickAdd = () => {
-    if (!newFoodName.trim()) return
-    const food: FoodItem = {
-      name: newFoodName.trim(),
-      protein: Number(newFoodProtein) || 0,
-      calories: Number(newFoodCalories) || 0,
-      ...(newFoodQuantity.trim() ? { quantity: newFoodQuantity.trim() } : {}),
-    }
+    const food = foodFromDraft(foodDraft)
+    if (!food) return
     setQuickFoods(prev => [...prev, food])
-    setNewFoodName('')
-    setNewFoodProtein('')
-    setNewFoodCalories('')
-    setNewFoodQuantity('')
+    setFoodDraft(emptyFoodDraft)
   }
 
   // ── Pantry ──────────────────────────────────────────────────────────────────
@@ -211,32 +182,15 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
   }
 
   const todayWeight = bodyStats.find(s => s.date === localDate())?.weight
+  const activeMealTotals = foodTotals(nutrition.meals[activeMeal].foods)
 
   return (
     <div className="mt-4 space-y-4">
       {/* Day navigation */}
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" size="icon-lg" onClick={() => setDayOffset(d => d - 1)} aria-label="Previous day">
-          <ChevronLeft />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setDayOffset(0)}
-          className={`font-mono ${isToday ? 'text-foreground' : ''}`}
-        >
-          {formatDateLabel(viewDate)}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-lg"
-          onClick={() => setDayOffset(d => Math.min(d + 1, 0))}
-          disabled={dayOffset >= 0}
-          aria-label="Next day"
-        >
-          <ChevronRight />
-        </Button>
-      </div>
+      <DateStepper label={formatDateLabel(viewDate)} previousLabel="Previous day" nextLabel="Next day"
+        onPrevious={() => setDayOffset(d => d - 1)} onNext={() => setDayOffset(d => Math.min(d + 1, 0))}
+        nextDisabled={dayOffset >= 0} onReset={() => setDayOffset(0)} resetActive={isToday}
+        size="touch" className="justify-between" />
 
       {/* Targets editing */}
       {editingTargets ? (
@@ -302,26 +256,17 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
 
       {/* Meal selector tabs — mobile: 2x2 grid, desktop: row */}
       <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-1.5">
-        {nutrition.meals.map((meal, mi) => {
-          const mealProtein = meal.foods.reduce((s, f) => s + f.protein, 0)
-          const mealCals = meal.foods.reduce((s, f) => s + f.calories, 0)
-          return (
-            <Button
-              variant="secondary"
-              key={meal.id}
-              onClick={() => setActiveMeal(mi)}
-              aria-pressed={activeMeal === mi}
-              className={`h-auto min-h-14 flex-col items-start gap-1 whitespace-normal rounded-md border px-3 py-3 text-left sm:flex-1 ${
-                activeMeal === mi
-                  ? 'border-accent/40 bg-accent/10'
-                  : 'border-border bg-card hover:bg-muted/40'
-              }`}
-            >
-              <p className={`text-sm font-medium ${activeMeal === mi ? 'text-foreground' : 'text-muted-foreground'}`}>{meal.name}</p>
-              <p className="font-mono text-2xs tabular-nums text-foreground-faint">{mealProtein}g · {mealCals} kcal</p>
-            </Button>
-          )
-        })}
+        {nutrition.meals.map((meal, mi) => (
+          <SelectionCard
+            key={meal.id}
+            title={meal.name}
+            selected={activeMeal === mi}
+            onSelect={() => setActiveMeal(mi)}
+            className="sm:flex-1"
+          >
+            {macroLabel(foodTotals(meal.foods))}
+          </SelectionCard>
+        ))}
       </div>
 
       {/* Active meal food list */}
@@ -329,7 +274,7 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <h4 className="text-base font-semibold text-foreground">{nutrition.meals[activeMeal].name}</h4>
           <span className="font-mono text-2xs tabular-nums text-muted-foreground">
-            {nutrition.meals[activeMeal].foods.reduce((s, f) => s + f.protein, 0)}g protein · {nutrition.meals[activeMeal].foods.reduce((s, f) => s + f.calories, 0)} kcal
+            {activeMealTotals.protein}g protein · {activeMealTotals.calories} kcal
           </span>
         </div>
         {nutrition.meals[activeMeal].foods.length === 0 && (
@@ -340,148 +285,37 @@ export function NutritionLog({ nutrition: todayNutrition, onUpdate: onUpdateToda
           />
         )}
         {nutrition.meals[activeMeal].foods.map((food, fi) => (
-          <div key={fi} className="flex items-center justify-between border-t border-border/60 pb-0.5 pt-2.5 text-sm sm:pb-0 sm:pt-1.5 sm:text-xs">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-foreground">{food.name}</span>
-              {food.quantity && (
-                <span className="shrink-0 text-foreground-faint">{food.quantity}</span>
-              )}
-            </div>
-            <div className="flex shrink-0 items-center gap-3 sm:gap-2">
-              <span className="font-mono tabular-nums text-muted-foreground">{food.protein}g · {food.calories}</span>
-              <Button
-                variant="ghost"
-                size="icon-lg"
-                onClick={() => removeFood(activeMeal, fi)}
-                aria-label={`Remove ${food.name}`}
-                className="text-muted-foreground hover:text-destructive"
-              >
-                <X />
-              </Button>
-            </div>
-          </div>
+          <FoodRow key={fi} food={food} onRemove={() => removeFood(activeMeal, fi)} />
         ))}
       </div>
 
-      {/* Quick-add panel */}
-      <div className="surface space-y-3 rounded-xl p-4">
-        <div className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setShowQuickAdd(!showQuickAdd)}
-            className="h-11 whitespace-normal text-left text-base text-foreground"
-            aria-expanded={showQuickAdd}
-          >
-            Add food to {nutrition.meals[activeMeal].name}
-            <ChevronDown className={`transition-transform ${showQuickAdd ? 'rotate-180' : ''}`} />
-          </Button>
-          {showQuickAdd && (
-            <Button
-              variant={editingQuickAdd ? 'secondary' : 'ghost'}
-              size="icon-lg"
-              onClick={() => setEditingQuickAdd(!editingQuickAdd)}
-              aria-label={editingQuickAdd ? 'Done editing' : 'Edit quick-add items'}
-            >
-              <Pencil />
+      <QuickAddPanel
+        title={`Add food to ${nutrition.meals[activeMeal].name}`}
+        editLabel="Edit quick-add items"
+        doneLabel="Done editing"
+        items={quickFoods.map((food, i) => ({
+          key: `${food.name}-${i}`,
+          label: food.name,
+          detail: `${food.protein}g · ${food.calories}`,
+          onAdd: () => addFood(activeMeal, food),
+          onRemove: () => removeQuickFood(i),
+          removeLabel: `Remove ${food.name} from quick-add`,
+        }))}
+      >
+        <FoodDraftFields
+          draft={foodDraft}
+          onChange={setFoodDraft}
+          onSubmit={addCustomFood}
+          actions={<>
+            <Button variant="secondary" size="icon" className="h-11 w-11 shrink-0" onClick={addCustomFood} aria-label="Add to meal">
+              <Plus />
             </Button>
-          )}
-        </div>
-
-        {showQuickAdd && (
-          <>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-1.5">
-              {quickFoods.map((food, i) => (
-                <div key={`${food.name}-${i}`} className="group relative">
-                  <Button
-                    variant="secondary"
-                    onClick={() => !editingQuickAdd && addFood(activeMeal, food)}
-                    className={`h-auto min-h-14 w-full flex-col items-start gap-1 whitespace-normal rounded-md border border-border bg-muted/40 px-3 py-3 text-left text-sm ${
-                      editingQuickAdd ? 'cursor-default pr-12' : 'hover:bg-muted/70 active:bg-muted'
-                    }`}
-                  >
-                    <span className="text-foreground">{food.name}</span>
-                    <span className="ml-1 font-mono text-2xs tabular-nums text-foreground-faint">{food.protein}g · {food.calories}</span>
-                  </Button>
-                  {editingQuickAdd && (
-                    <Button
-                      variant="destructive"
-                      size="icon-lg"
-                      className="absolute right-0 top-0 h-11 w-11"
-                      onClick={() => removeQuickFood(i)}
-                      aria-label={`Remove ${food.name} from quick-add`}
-                    >
-                      <X />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Custom food input — mobile: stacked rows, desktop: single row */}
-            <div className="space-y-2 sm:flex sm:items-end sm:gap-2 sm:space-y-0">
-              <div className="flex gap-2 sm:contents">
-                <div className="flex-1 sm:flex-1">
-                  <Input aria-label="Food name"
-                    placeholder="Food name"
-                    value={newFoodName}
-                    onChange={(e) => setNewFoodName(e.target.value)}
-                    className="h-11 min-w-0 text-base"
-                    onKeyDown={(e) => e.key === 'Enter' && addCustomFood()}
-                  />
-                </div>
-                <div className="w-20 sm:w-16">
-                  <Input aria-label="Quantity"
-                    placeholder="Qty"
-                    value={newFoodQuantity}
-                    onChange={(e) => setNewFoodQuantity(e.target.value)}
-                    className="h-11 min-w-0 text-base"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2 sm:contents">
-                <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
-                  <Input aria-label="Protein (g)"
-                    type="number"
-                    placeholder="Protein (g)"
-                    value={newFoodProtein}
-                    onChange={(e) => setNewFoodProtein(e.target.value)}
-                    className="h-11 min-w-0 text-base"
-                  />
-                </div>
-                <div className="min-w-0 flex-1 sm:w-20 sm:flex-none">
-                  <Input aria-label="Calories"
-                    type="number"
-                    placeholder="Calories"
-                    value={newFoodCalories}
-                    onChange={(e) => setNewFoodCalories(e.target.value)}
-                    className="h-11 min-w-0 text-base"
-                    onKeyDown={(e) => e.key === 'Enter' && addCustomFood()}
-                  />
-                </div>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="h-11 w-11 shrink-0"
-                  onClick={addCustomFood}
-                  aria-label="Add to meal"
-                >
-                  <Plus />
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="h-11 w-11 shrink-0"
-                  onClick={saveToQuickAdd}
-                  aria-label="Save to quick-add"
-                >
-                  <Bookmark />
-                </Button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+            <Button variant="secondary" size="icon" className="h-11 w-11 shrink-0" onClick={saveToQuickAdd} aria-label="Save to quick-add">
+              <Bookmark />
+            </Button>
+          </>}
+        />
+      </QuickAddPanel>
 
       <SectionDisclosure title="Pantry">
       <WidgetCard title="Foods on hand" description="Add a serving to your snack." compact className="border-0 bg-transparent shadow-none">

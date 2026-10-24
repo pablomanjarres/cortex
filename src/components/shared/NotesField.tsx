@@ -5,12 +5,18 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Modal } from '@/components/shared/Modal'
+import { SegmentedControl, type SegmentedOption } from '@/components/shared/SegmentedControl'
 import {
   Bold, Italic, List, Heading2, Quote, Code, Image as ImageIcon,
   Maximize2, Check, Eye, Pencil, ChevronLeft,
 } from 'lucide-react'
 
 const turndown = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced', bulletListMarker: '-' })
+
+const EDITOR_MODES: SegmentedOption<'write' | 'preview'>[] = [
+  { value: 'write', label: <Pencil className="h-3.5 w-3.5" />, ariaLabel: 'Write' },
+  { value: 'preview', label: <Eye className="h-3.5 w-3.5" />, ariaLabel: 'Preview' },
+]
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
 
@@ -149,10 +155,7 @@ function FullscreenEditor({
           <ChevronLeft className="h-4 w-4" /> Done
         </Button>
         <span className="font-mono text-2xs tabular-nums text-foreground-faint">{words} {words === 1 ? 'word' : 'words'}</span>
-        <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
-          <Button type="button" variant="ghost" size="icon-xs" onClick={() => setPreview(false)} className={`cursor-pointer px-2.5 py-1 rounded-md transition-colors ${!preview ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} title="Write" aria-label="Write" aria-pressed={!preview}><Pencil className="h-3.5 w-3.5" /></Button>
-          <Button type="button" variant="ghost" size="icon-xs" onClick={() => setPreview(true)} className={`cursor-pointer px-2.5 py-1 rounded-md transition-colors ${preview ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground'}`} title="Preview" aria-label="Preview" aria-pressed={preview}><Eye className="h-3.5 w-3.5" /></Button>
-        </div>
+        <SegmentedControl label="Editor mode" options={EDITOR_MODES} value={preview ? 'preview' : 'write'} onChange={mode => setPreview(mode === 'preview')} size="icon-xs" className="[-webkit-app-region:no-drag]" />
       </div>
 
       {/* Centered reading column */}

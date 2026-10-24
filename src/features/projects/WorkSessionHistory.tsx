@@ -3,7 +3,7 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import type { WorkSession } from '../../../electron/work-hours-model'
-import { dateTime, duration } from './work-hours-ui'
+import { dateTime, duration, sessionTitle } from './work-hours-ui'
 
 interface WorkSessionHistoryProps {
   sessions: WorkSession[]
@@ -29,7 +29,7 @@ export function WorkSessionHistory({ sessions, busy, onToggleBillable, onEdit }:
                   </Chip>
                   {session.corrections.length > 0 && <Chip size="sm">Corrected</Chip>}
                 </div>
-                <p className="mt-1 text-sm">{session.description || 'Untitled work session'}</p>
+                <p className="mt-1 text-sm">{sessionTitle(session)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{dateTime(session.startedAt)} – {dateTime(session.endedAt)}</p>
                 {session.prUrl && <a className="mt-1 inline-block max-w-full truncate text-xs text-accent underline" href={session.prUrl} target="_blank" rel="noopener noreferrer">{session.prUrl}</a>}
               </div>

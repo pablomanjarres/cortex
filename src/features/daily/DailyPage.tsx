@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useStore, readStore, writeStore } from '@/lib/store'
+import { useStore, readStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import { useToday } from '@/lib/use-today'
 import { useDailyHabits } from '@/lib/use-daily-habits'
-import { isActiveHabit, type Habit } from '@/lib/habits'
+import type { Habit } from '@/lib/habits'
+import { DEFAULT_HABITS } from '@/features/habits/habit-defaults'
 import { useSprintTimer, type SprintSession } from '@/lib/sprint-context'
 import { useNavigate } from 'react-router-dom'
 import { PageShell } from '@/components/shared/PageShell'
@@ -25,30 +26,7 @@ import {
   type HomeCalendarEvent,
 } from './home-model'
 import type { Assignment, Course } from '@/features/student/student-types'
-
-// ─── FOUNDER HISTORY ──────────────────────────────────────
-
-interface HistoryEntry {
-  date: string
-  commits: number
-  users: number
-  deploys: number
-  mrr: number
-  prsOpen: number
-  prsMerged: number
-}
-
-// ─── HABITS (read from same store as HabitsPage) ─────────
-
-const defaultHabits: Habit[] = [
-  { id: '1', name: 'Workout', emoji: '💪' },
-  { id: '2', name: 'Read 30min', emoji: '📖' },
-  { id: '3', name: 'Meditate', emoji: '🧘' },
-  { id: '4', name: 'Journal', emoji: '✍️' },
-  { id: '5', name: 'No social media before noon', emoji: '📵' },
-  { id: '6', name: 'Drink 2L water', emoji: '💧' },
-  { id: '7', name: 'Sleep by 11pm', emoji: '🌙' },
-]
+import { useWeeklyAuditAutoTrigger } from './use-weekly-audit'
 
 // ─── PAGE ─────────────────────────────────────────────────
 
@@ -67,7 +45,7 @@ export function DailyPage() {
   } = useSprintTimer()
 
   // Habits (from shared store — same as HabitsPage)
-  const [habits] = useStore<Habit[]>('cortex-habits', defaultHabits)
+  const [habits] = useStore<Habit[]>('cortex-habits', DEFAULT_HABITS)
 
   // Habits — single source of truth via shared hook
   const { completedCount: habitsCompleted, isCompleted: isHabitDone, toggle: toggleHabit } = useDailyHabits(today, habits)
@@ -185,90 +163,7 @@ export function DailyPage() {
     }
   }, [sessionCount, habitsCompleted, habitSummary.total])
 
-  // ─── Weekly Audit Auto-Trigger ───────────────────────────
-  // Keyed to the reactive day so it re-checks after a midnight rollover
-  // (Sunday -> Monday while the app stays open). The existing-audit guard
-  // below prevents double-writing.
-  useEffect(() => {
-    const now = new Date(today + 'T00:00:00')
-    if (now.getDay() !== 1) return // Only on Mondays
-
-    const lastMonday = new Date(now)
-    lastMonday.setDate(lastMonday.getDate() - 7)
-
-    // Get ISO week number
-    const d = new Date(lastMonday)
-    d.setHours(0, 0, 0, 0)
-    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))
-    const week1 = new Date(d.getFullYear(), 0, 4)
-    const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7)
-    const weekId = `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
-
-    readStore(`cortex-weekly-audit-${weekId}`, null).then((existing) => {
-      if (existing) return // Already generated
-
-      // Generate audit for last week
-      const weekDates: string[] = []
-      for (let i = 0; i < 7; i++) {
-        const wd = new Date(lastMonday)
-        wd.setDate(wd.getDate() + i)
-        weekDates.push(localDate(wd))
-      }
-
-      Promise.all([
-        ...weekDates.map(date => readStore<SprintSession[]>(`cortex-daily-sessions-${date}`, [])),
-        readStore<Record<string, Record<string, boolean>>>('cortex-habits-history', {}),
-        readStore<HistoryEntry[]>('cortex-founder-history', []),
-        // Read habits fresh from the store — the `habits` hook value can still
-        // be the synchronous fallback (phantom ids '1'..'7') when this effect
-        // runs, which would score consistency against habits that don't exist.
-        readStore<Habit[]>('cortex-habits', defaultHabits),
-      ]).then((results) => {
-        const sessionsByDay = results.slice(0, 7) as SprintSession[][]
-        const habitHistory = results[7] as Record<string, Record<string, boolean>>
-        const founderHistory = results[8] as HistoryEntry[]
-        const storedHabits = results[9] as Habit[]
-
-        const allSessions = sessionsByDay.flat()
-        const totalSessions = allSessions.length
-        const totalDeepWork = allSessions.reduce((s, x) => s + x.duration, 0)
-
-        const dayCounts = sessionsByDay.map((s, i) => ({ date: weekDates[i], sessions: s.length }))
-        const bestDay = dayCounts.reduce((best, dc) => dc.sessions > best.sessions ? dc : best, { date: '', sessions: 0 })
-
-        // Habit stats — weekly cadence only (monthly habits are scored over the month)
-        const weeklyHabitIds = new Set(
-          storedHabits.filter(h => isActiveHabit(h) && (h.cadence ?? 'weekly') !== 'monthly').map(h => h.id)
-        )
-        const weekHabits = weekDates.map(wd => habitHistory[wd] || {})
-        const totalHabitChecks = weekHabits.reduce(
-          (s, day) => s + Object.keys(day).filter(id => day[id] && weeklyHabitIds.has(id)).length,
-          0
-        )
-        const totalHabitPossible = weeklyHabitIds.size * 7
-        const habitConsistency = totalHabitPossible > 0 ? Math.round((totalHabitChecks / totalHabitPossible) * 100) : 0
-
-        // Founder stats for the week
-        const weekFounder = founderHistory.filter(h => weekDates.includes(h.date))
-        const totalCommits = weekFounder.reduce((s, h) => s + h.commits, 0)
-        const totalDeploys = weekFounder.reduce((s, h) => s + h.deploys, 0)
-        const lastUsers = weekFounder.length > 0 ? weekFounder[weekFounder.length - 1].users : 0
-        const lastMrr = weekFounder.length > 0 ? weekFounder[weekFounder.length - 1].mrr : 0
-
-        const audit = {
-          weekId,
-          weekStart: weekDates[0],
-          weekEnd: weekDates[6],
-          sprintStats: { totalSessions, totalDeepWork, avgPerDay: Math.round(totalSessions / 7 * 10) / 10, bestDay },
-          habitStats: { consistency: habitConsistency },
-          founderStats: { commits: totalCommits, users: lastUsers, mrr: lastMrr, deploys: totalDeploys },
-          generatedAt: new Date().toISOString(),
-        }
-
-        writeStore(`cortex-weekly-audit-${weekId}`, audit)
-      })
-    })
-  }, [today])
+  useWeeklyAuditAutoTrigger(today)
 
   return (
     <PageShell>

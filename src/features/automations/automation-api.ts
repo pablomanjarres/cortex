@@ -29,3 +29,8 @@ export async function loadScheduledTasks(): Promise<ScheduledTask[]> {
   } catch { /* no source available */ }
   return []
 }
+
+/** Records the approval decision for a run that is waiting on one. */
+export async function reviewRun(runId: string, action: 'approve' | 'reject'): Promise<void> {
+  await fetch(`/api/automation/${runId}/${action}`, { method: 'POST' })
+}

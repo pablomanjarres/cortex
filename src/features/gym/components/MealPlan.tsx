@@ -2,10 +2,13 @@ import { useState, useMemo } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import type { DailyNutrition, MealTemplate, FoodItem } from '@/types/gym'
+import type { DailyNutrition, MealTemplate } from '@/types/gym'
 import { DEFAULT_MEAL_TEMPLATES } from '@/types/gym'
 import { useStore } from '@/lib/store'
-import { Pencil, Check, Plus, X, Download } from 'lucide-react'
+import { Pencil, Check, Plus, Download } from 'lucide-react'
+import { emptyFoodDraft, foodFromDraft, foodTotals, macroLabel, mealsTotals, type FoodDraft } from '../domain/nutrition'
+import { FoodDraftFields, FoodRow } from './FoodControls'
+import { SelectionCard } from './SelectionCard'
 
 interface MealPlanProps {
   nutrition: DailyNutrition
@@ -19,22 +22,14 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
 
   // Inline add-food state per meal id
   const [addingMealId, setAddingMealId] = useState<string | null>(null)
-  const [newName, setNewName] = useState('')
-  const [newProtein, setNewProtein] = useState('')
-  const [newCalories, setNewCalories] = useState('')
-  const [newQuantity, setNewQuantity] = useState('')
+  const [foodDraft, setFoodDraft] = useState<FoodDraft>(emptyFoodDraft)
 
   const selected = templates.find(t => t.id === selectedId) ?? templates[0]
 
-  const templateTotals = useMemo(() => {
-    const map: Record<string, { protein: number; calories: number }> = {}
-    for (const t of templates) {
-      let protein = 0, calories = 0
-      for (const m of t.meals) for (const f of m.foods) { protein += f.protein; calories += f.calories }
-      map[t.id] = { protein, calories }
-    }
-    return map
-  }, [templates])
+  const templateTotals = useMemo(
+    () => Object.fromEntries(templates.map(t => [t.id, mealsTotals(t.meals)])),
+    [templates],
+  )
 
   const loadIntoToday = () => {
     if (!selected) return
@@ -57,13 +52,8 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
   }
 
   const addFood = (mealId: string) => {
-    if (!newName.trim()) return
-    const food: FoodItem = {
-      name: newName.trim(),
-      protein: Number(newProtein) || 0,
-      calories: Number(newCalories) || 0,
-      ...(newQuantity.trim() ? { quantity: newQuantity.trim() } : {}),
-    }
+    const food = foodFromDraft(foodDraft)
+    if (!food) return
     setTemplates(prev => prev.map(t => {
       if (t.id !== selected.id) return t
       return { ...t, meals: t.meals.map(m => {
@@ -71,10 +61,7 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
         return { ...m, foods: [...m.foods, food] }
       })}
     }))
-    setNewName('')
-    setNewProtein('')
-    setNewCalories('')
-    setNewQuantity('')
+    setFoodDraft(emptyFoodDraft)
     setAddingMealId(null)
   }
 
@@ -92,28 +79,17 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
         {/* Template selector tabs + edit toggle */}
         <div className="flex items-start gap-1.5">
           <div className="flex flex-1 gap-1.5">
-            {templates.map(t => {
-              const totals = templateTotals[t.id] ?? { protein: 0, calories: 0 }
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setSelectedId(t.id)}
-                  aria-pressed={selectedId === t.id}
-                  className={`flex-1 rounded-md border px-3 py-2.5 text-left transition-colors ${
-                    selectedId === t.id
-                      ? 'border-accent/40 bg-accent/10'
-                      : 'border-border bg-card hover:bg-muted/40'
-                  }`}
-                >
-                  <p className={`text-xs font-medium ${selectedId === t.id ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    {t.name}
-                  </p>
-                  <p className="font-mono text-2xs tabular-nums text-foreground-faint">
-                    {totals.protein}g · {totals.calories} kcal
-                  </p>
-                </button>
-              )
-            })}
+            {templates.map(t => (
+              <SelectionCard
+                key={t.id}
+                title={t.name}
+                selected={selectedId === t.id}
+                onSelect={() => setSelectedId(t.id)}
+                className="flex-1"
+              >
+                {macroLabel(templateTotals[t.id] ?? { protein: 0, calories: 0 })}
+              </SelectionCard>
+            ))}
           </div>
           <Button
             variant={editing ? 'secondary' : 'ghost'}
@@ -151,15 +127,14 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
             )}
 
             {selected.meals.map(meal => {
-              const mealProtein = meal.foods.reduce((s, f) => s + f.protein, 0)
-              const mealCals = meal.foods.reduce((s, f) => s + f.calories, 0)
+              const mealTotals = foodTotals(meal.foods)
               return (
                 <div key={meal.id} className="space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-medium text-foreground">{meal.name}</span>
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-2xs tabular-nums text-foreground-faint">
-                        {mealProtein}g · {mealCals} kcal
+                        {macroLabel(mealTotals)}
                       </span>
                       {editing && (
                         <Button
@@ -175,71 +150,22 @@ export function MealPlan({ nutrition, onUpdate }: MealPlanProps) {
                   </div>
 
                   {meal.foods.map((food, fi) => (
-                    <div key={fi} className="flex items-center justify-between border-t border-border/60 pb-0.5 pt-1.5 text-xs">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate text-foreground">{food.name}</span>
-                        {food.quantity && (
-                          <span className="shrink-0 text-foreground-faint">{food.quantity}</span>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="font-mono tabular-nums text-muted-foreground">{food.protein}g · {food.calories}</span>
-                        {editing && (
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            onClick={() => removeFood(meal.id, fi)}
-                            aria-label={`Remove ${food.name}`}
-                            className="text-muted-foreground hover:text-destructive"
-                          >
-                            <X />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
+                    <FoodRow key={fi} food={food} dense onRemove={editing ? () => removeFood(meal.id, fi) : undefined} />
                   ))}
 
                   {/* Inline add food */}
                   {editing && addingMealId === meal.id && (
-                    <div className="flex items-center gap-1.5 pt-1">
-                      <Input aria-label="Food name"
-                        placeholder="Name"
-                        value={newName}
-                        onChange={e => setNewName(e.target.value)}
-                        className="h-7 flex-1 text-xs"
-                        onKeyDown={e => e.key === 'Enter' && addFood(meal.id)}
-                      />
-                      <Input aria-label="Protein (g)"
-                        type="number"
-                        placeholder="Prot"
-                        value={newProtein}
-                        onChange={e => setNewProtein(e.target.value)}
-                        className="h-7 w-14 text-xs"
-                      />
-                      <Input aria-label="Calories"
-                        type="number"
-                        placeholder="Cal"
-                        value={newCalories}
-                        onChange={e => setNewCalories(e.target.value)}
-                        className="h-7 w-14 text-xs"
-                      />
-                      <Input aria-label="Quantity"
-                        placeholder="Qty"
-                        value={newQuantity}
-                        onChange={e => setNewQuantity(e.target.value)}
-                        className="h-7 w-16 text-xs"
-                        onKeyDown={e => e.key === 'Enter' && addFood(meal.id)}
-                      />
-                      <Button
-                        variant="secondary"
-                        size="icon-sm"
-                        className="shrink-0"
-                        onClick={() => addFood(meal.id)}
-                        aria-label="Add food"
-                      >
-                        <Plus />
-                      </Button>
-                    </div>
+                    <FoodDraftFields
+                      draft={foodDraft}
+                      onChange={setFoodDraft}
+                      onSubmit={() => addFood(meal.id)}
+                      dense
+                      actions={(
+                        <Button variant="secondary" size="icon-sm" className="shrink-0" onClick={() => addFood(meal.id)} aria-label="Add food">
+                          <Plus />
+                        </Button>
+                      )}
+                    />
                   )}
                 </div>
               )

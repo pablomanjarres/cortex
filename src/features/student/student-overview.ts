@@ -10,6 +10,12 @@ export interface StudentOverview {
   deadlineQueue: Assignment[]
 }
 
+/** Courses filed under the semester, or every course when that term has none. */
+export function termCourses<T extends Pick<Course, 'semester'>>(courses: ReadonlyArray<T>, semester: string): ReadonlyArray<T> {
+  const inTerm = courses.filter((course) => course.semester === semester)
+  return inTerm.length ? inTerm : courses
+}
+
 /** Keep the priority row visible when navigating from the hero. */
 export function includeAssignmentType(selected: ReadonlySet<AssignmentType>, type: AssignmentType): Set<AssignmentType> {
   return new Set([...selected, type])
