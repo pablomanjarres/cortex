@@ -4,8 +4,10 @@ import {
   ACCOUNTS_KEY,
   EMPTY_ACCOUNTS,
   accountSummaries,
+  availableCreditFor,
   formatAccountMoney,
   nextMonthlyDate,
+  nextAccountCycleDate,
   saveAccount,
   setAccountArchived,
   upcomingAccountDates,
@@ -32,6 +34,14 @@ const withAccounts = (...accounts: FinancialAccount[]): AccountsData => ({ versi
 test('exposes the storage key and an empty envelope', () => {
   assert.equal(ACCOUNTS_KEY, 'cortex-financial-accounts')
   assert.deepEqual(EMPTY_ACCOUNTS, { version: 1, accounts: [] })
+})
+
+test('available credit stays unknown until both credit limit and debt are recorded', () => {
+  assert.equal(availableCreditFor(credit({ creditLimit: 1500000, balance: 300000 })), 1200000)
+  assert.equal(availableCreditFor(credit({ creditLimit: 1000000, balance: 1200000 })), 0)
+  assert.equal(availableCreditFor(credit({ balance: undefined })), undefined)
+  assert.equal(availableCreditFor(credit({ creditLimit: undefined })), undefined)
+  assert.equal(availableCreditFor(bank()), undefined)
 })
 
 test('foreign fee COP budget values must be whole nonnegative amounts', () => {
@@ -177,6 +187,28 @@ test('nextMonthlyDate includes today, clamps short months and rolls over Decembe
   assert.equal(nextMonthlyDate(31, '2026-12-31'), '2026-12-31')
   assert.throws(() => nextMonthlyDate(0, '2026-10-24'))
   assert.throws(() => nextMonthlyDate(5, '2026-13-01'))
+})
+
+test('credit schedules respect the first cycle month and continue across short months and years', () => {
+  assert.equal(nextMonthlyDate(24, '2026-10-24', '2026-11'), '2026-11-24')
+  assert.equal(nextMonthlyDate(31, '2027-01-10', '2027-02'), '2027-02-28')
+  assert.equal(nextMonthlyDate(31, '2027-03-01', '2027-02'), '2027-03-31')
+  assert.equal(nextMonthlyDate(5, '2026-12-20', '2027-01'), '2027-01-05')
+  assert.throws(() => nextMonthlyDate(5, '2026-10-24', '2026-13'))
+  const account = credit({ dueDay: 24, dueStartMonth: '2026-11', closingDay: 4, closingStartMonth: '2026-11' })
+  assert.deepEqual(upcomingAccountDates([account], '2026-10-24').map(({ type, date }) => [type, date]), [
+    ['closing', '2026-11-04'], ['payment', '2026-11-24'],
+  ])
+  assert.equal(validateAccount(account, []), null)
+  assert.match(validateAccount(credit({ dueStartMonth: '2026-13' }), [])!, /first payment month/i)
+  assert.match(validateAccount(credit({ closingStartMonth: '2026-11', closingDay: undefined }), [])!, /closing day/i)
+  assert.match(validateAccount(debit({ dueStartMonth: '2026-11' }), [])!, /only credit cards/i)
+  assert.equal(saveAccount(withAccounts(account), { ...account, name: 'Updated' }).accounts[0].dueStartMonth, '2026-11')
+  for (const invalid of ['', null, '2026-13']) {
+    const malformed = credit({ dueStartMonth: invalid as string, closingStartMonth: invalid as string })
+    assert.equal(nextAccountCycleDate(malformed, 'payment', '2026-10-24'), null)
+    assert.deepEqual(upcomingAccountDates([malformed], '2026-10-24'), [])
+  }
 })
 
 test('upcomingAccountDates lists payment, closing, fee and expiry dates for active accounts', () => {

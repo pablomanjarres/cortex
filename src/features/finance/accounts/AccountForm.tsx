@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { AccountFeesEditor, type FeeDraft } from './AccountFeesEditor'
+import { AccountCycleFields, type CycleMonths } from './AccountCycleFields'
 import { validateAccount, type AccountKind, type FinancialAccount } from './account-model'
 import { ACCOUNT_KINDS } from './account-options'
 import { parseAccountAmount } from './account-input'
@@ -25,14 +26,15 @@ export function AccountForm({ account, accounts, onSave, onCancel }: {
   const [linkedAccountId, setLinkedAccountId] = useState(account?.linkedAccountId ?? '')
   const [expiresOn, setExpiresOn] = useState(account?.expiresOn ?? '')
   const [notes, setNotes] = useState(account?.notes ?? '')
+  const [cycleMonths, setCycleMonths] = useState<CycleMonths>({ closingStartMonth: account?.closingStartMonth ?? '', dueStartMonth: account?.dueStartMonth ?? '' })
   const [numbers, setNumbers] = useState<Record<NumericField, string>>(() => Object.fromEntries(
     (['balance', 'creditLimit', 'minimumPayment', 'annualInterestRate', 'closingDay', 'dueDay'] as const)
       .map((key) => [key, account?.[key]?.toString() ?? '']),
   ) as Record<NumericField, string>)
   const [fees, setFees] = useState<FeeDraft[]>(() => (account?.fees ?? []).map((fee) => ({ ...fee, amount: String(fee.amount), nextChargeDate: fee.nextChargeDate ?? '', budgetAmountCOP: fee.budgetAmountCOP?.toString() ?? '', budgetStartMonth: fee.budgetStartMonth ?? fee.nextChargeDate?.slice(0, 7) ?? '' })))
   const [error, setError] = useState<string | null>(null)
-  const numberField = (key: NumericField, label: string, hint?: string) => <Field key={key} label={label} hint={hint}>{(fieldId) => <Input
-    id={fieldId} inputMode={key === 'dueDay' || key === 'closingDay' ? 'numeric' : 'decimal'} value={numbers[key]}
+  const numberField = (key: Exclude<NumericField, 'closingDay' | 'dueDay'>, label: string, hint?: string) => <Field key={key} label={label} hint={hint}>{(fieldId) => <Input
+    id={fieldId} inputMode="decimal" value={numbers[key]}
     onChange={(e) => setNumbers((previous) => ({ ...previous, [key]: e.target.value }))} />}</Field>
   const submit = (event: FormEvent) => {
     event.preventDefault()
@@ -43,6 +45,7 @@ export function AccountForm({ account, accounts, onSave, onCancel }: {
       ...(kind !== 'bank' ? { expiresOn: expiresOn || undefined } : {}),
       ...(kind === 'credit' ? Object.fromEntries((['creditLimit', 'minimumPayment', 'annualInterestRate', 'closingDay', 'dueDay'] as const)
         .map((key) => [key, key === 'creditLimit' || key === 'minimumPayment' ? parseAccountAmount(numbers[key], currency) : optionalNumber(numbers[key])])) : {}),
+      ...(kind === 'credit' ? { closingStartMonth: cycleMonths.closingStartMonth || undefined, dueStartMonth: cycleMonths.dueStartMonth || undefined } : {}),
       fees: fees.map((fee) => ({ ...fee, name: fee.name.trim(), amount: parseAccountAmount(fee.amount, currency) ?? NaN, nextChargeDate: fee.nextChargeDate || undefined,
         budgetAmountCOP: currency === 'COP' ? undefined : parseAccountAmount(fee.budgetAmountCOP, 'COP'), budgetStartMonth: fee.nextChargeDate ? undefined : fee.budgetStartMonth || undefined })),
     }
@@ -71,8 +74,9 @@ export function AccountForm({ account, accounts, onSave, onCancel }: {
         {numberField('creditLimit', 'Credit limit')}
         {numberField('minimumPayment', 'Minimum payment', 'Current statement amount; update when it changes.')}
         {numberField('annualInterestRate', 'Annual interest (%)')}
-        {numberField('closingDay', 'Statement closing day', 'Day of month · fecha de corte.')}
-        {numberField('dueDay', 'Payment due day', 'Day of month, from 1 to 31.')}
+        <AccountCycleFields days={numbers} months={cycleMonths}
+          onDayChange={(key, value) => setNumbers((previous) => ({ ...previous, [key]: value }))}
+          onMonthChange={(key, value) => setCycleMonths((previous) => ({ ...previous, [key]: value }))} />
       </>}
     </div>
     <AccountFeesEditor fees={fees} currency={currency} onChange={setFees} />
