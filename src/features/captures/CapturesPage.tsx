@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Modal } from '@/components/shared/Modal'
+import { ImageDots, ImageLightbox } from '@/components/shared/MediaViewer'
+import { Notice } from '@/components/shared/Notice'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { NotesField } from '@/components/shared/NotesField'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,8 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { Field } from '@/components/shared/Field'
 import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
+import { saveFile, loadFile, deleteFile, fileToDataUrl, dataUrlMime, mediaIdFor, uploadLimitError } from '@/lib/media'
+import { stepIndex, swipeStep } from '@/lib/media-navigation'
 import {
   Plus,
   Trash2,
@@ -59,64 +62,9 @@ const sourceLabel: Record<CaptureSource, string> = {
   article: 'Article', screenshot: 'Screenshot', other: 'Other',
 }
 
-// ── Media helpers ────────────────────────────────────────────────────────────
-
-async function saveImage(id: string, base64: string): Promise<boolean> {
-  if (window.electronAPI?.media) {
-    return window.electronAPI.media.save(id, base64)
-  }
-  try {
-    const res = await fetch('/api/media', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, base64 }),
-    })
-    if (res.ok) return true
-  } catch { /* fall through */ }
-  try { localStorage.setItem(`cortex-capture-img-${id}`, base64); return true } catch { return false }
-}
-
-async function loadImage(id: string): Promise<string | null> {
-  if (window.electronAPI?.media) {
-    return window.electronAPI.media.load(id)
-  }
-  try {
-    const res = await fetch(`/api/media?id=${encodeURIComponent(id)}`)
-    if (res.ok) {
-      const data = await res.json()
-      if (data) return data
-    }
-  } catch { /* fall through */ }
-  return localStorage.getItem(`cortex-capture-img-${id}`)
-}
-
-async function deleteImage(id: string): Promise<void> {
-  if (window.electronAPI?.media) {
-    await window.electronAPI.media.delete(id)
-  } else {
-    try {
-      await fetch('/api/media/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-    } catch { /* fall through */ }
-    localStorage.removeItem(`cortex-capture-img-${id}`)
-  }
-}
-
 // ── Notes editing ────────────────────────────────────────────────────────────
 // Notes now use the shared <NotesField>: inline quick-edit for short jots,
 // with an opt-in fullscreen mode for longer writing. See components/shared.
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -153,44 +101,23 @@ export function CapturesPage() {
     return () => clearTimeout(t)
   }, [uploadStatus])
 
-  // Lightbox keyboard navigation (Escape is handled by the Modal itself)
-  useEffect(() => {
-    if (!lightbox) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft') setLightbox(prev => prev ? { ...prev, index: (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null)
-      if (e.key === 'ArrowRight') setLightbox(prev => prev ? { ...prev, index: (prev.index + 1) % prev.imageIds.length } : null)
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [lightbox])
+  const setLightboxIndex = useCallback((index: number) =>
+    setLightbox(prev => prev ? { ...prev, index } : null), [])
+  const stepGallery = (capId: string, delta: number, count: number) =>
+    setGalleryIndex(prev => ({ ...prev, [capId]: stepIndex(prev[capId] || 0, delta, count) }))
 
   // Touch swipe helpers
   const onTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
   }, [])
 
-  const makeSwipeHandler = useCallback((capId: string, count: number) => (e: React.TouchEvent) => {
-    if (!touchStartRef.current || count <= 1) return
-    const dx = e.changedTouches[0].clientX - touchStartRef.current.x
-    const dy = e.changedTouches[0].clientY - touchStartRef.current.y
-    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
-      setGalleryIndex(prev => {
-        const cur = prev[capId] || 0
-        return { ...prev, [capId]: dx < 0 ? (cur + 1) % count : (cur - 1 + count) % count }
-      })
-    }
+  const makeSwipeHandler = (capId: string, count: number) => (e: React.TouchEvent) => {
+    if (count <= 1) return
+    const touch = e.changedTouches[0]
+    const step = swipeStep(touchStartRef.current, { x: touch.clientX, y: touch.clientY })
+    if (step) stepGallery(capId, step, count)
     touchStartRef.current = null
-  }, [])
-
-  const onLightboxSwipe = useCallback((e: React.TouchEvent) => {
-    if (!touchStartRef.current || !lightbox || lightbox.imageIds.length <= 1) return
-    const dx = e.changedTouches[0].clientX - touchStartRef.current.x
-    const dy = e.changedTouches[0].clientY - touchStartRef.current.y
-    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
-      setLightbox(prev => prev ? { ...prev, index: dx < 0 ? (prev.index + 1) % prev.imageIds.length : (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null)
-    }
-    touchStartRef.current = null
-  }, [lightbox])
+  }
 
   // Load images for visible captures
   useEffect(() => {
@@ -199,7 +126,8 @@ export function CapturesPage() {
     if (toLoad.length === 0) return
     let cancelled = false
     Promise.all(toLoad.map(async id => {
-      const data = await loadImage(id)
+      // No stored mime for captures: loadFile labels the bytes by their signature.
+      const data = await loadFile(id)
       return [id, data] as const
     })).then(results => {
       const newCache: Record<string, string> = {}
@@ -213,17 +141,36 @@ export function CapturesPage() {
     return () => { cancelled = true }
   }, [captures, imageCache])
 
+  const readImages = useCallback(async (files: File[]): Promise<string[]> => {
+    const error = files.map(file => uploadLimitError(file)).find(Boolean)
+    if (error) { setUploadStatus({ type: 'error', msg: error }); return [] }
+    try { return await Promise.all(files.map(fileToDataUrl)) } catch {
+      setUploadStatus({ type: 'error', msg: 'Could not read these images. Try again.' })
+      return []
+    }
+  }, [])
+
+  // Save images for a capture and cache them; ids of failed saves are left out.
+  const persistImages = useCallback(async (captureId: string, base64s: string[]) => {
+    const saved: string[] = []
+    let failed = 0
+    const stamp = Date.now()
+    for (let i = 0; i < base64s.length; i++) {
+      const imgId = mediaIdFor(captureId, i, '', dataUrlMime(base64s[i]) ?? 'image/png', stamp)
+      if (!await saveFile(imgId, base64s[i])) { failed++; continue }
+      setImageCache(prev => ({ ...prev, [imgId]: base64s[i] }))
+      saved.push(imgId)
+    }
+    if (failed) setUploadStatus({ type: 'error', msg: 'Some images could not be saved. Check their size and try again.' })
+    return { saved, failed }
+  }, [])
+
+  const attachImages = useCallback((captureId: string, ids: string[]) =>
+    updateCaptures(prev => prev.map(c => c.id === captureId ? { ...c, imageIds: [...c.imageIds, ...ids] } : c)), [updateCaptures])
+
   const addCapture = useCallback(async (images?: string[]) => {
     const id = `cap-${Date.now()}`
-    const imageIds: string[] = []
-    if (images?.length) {
-      for (let i = 0; i < images.length; i++) {
-        const imgId = `${id}-${i}.png`
-        await saveImage(imgId, images[i])
-        setImageCache(prev => ({ ...prev, [imgId]: images[i] }))
-        imageIds.push(imgId)
-      }
-    }
+    const imageIds = images?.length ? (await persistImages(id, images)).saved : []
     const capture: Capture = {
       id,
       title: '',
@@ -235,7 +182,7 @@ export function CapturesPage() {
     }
     updateCaptures(prev => [capture, ...prev])
     setExpanded(id)
-  }, [updateCaptures])
+  }, [persistImages, updateCaptures])
 
   const setField = (id: string, field: Partial<Capture>) =>
     updateCaptures(prev => prev.map(c => c.id === id ? { ...c, ...field } : c))
@@ -243,21 +190,15 @@ export function CapturesPage() {
   // Persist images inserted from within the notes editor; returns their ids so
   // NotesField can drop `![](img:id)` tags into the markdown.
   const addInlineImagesToCapture = async (id: string, base64s: string[]): Promise<string[]> => {
-    const ids: string[] = []
-    for (let i = 0; i < base64s.length; i++) {
-      const imgId = `${id}-${Date.now()}-${i}.png`
-      await saveImage(imgId, base64s[i])
-      setImageCache(prev => ({ ...prev, [imgId]: base64s[i] }))
-      ids.push(imgId)
-    }
-    updateCaptures(prev => prev.map(c => c.id === id ? { ...c, imageIds: [...c.imageIds, ...ids] } : c))
-    return ids
+    const { saved } = await persistImages(id, base64s)
+    attachImages(id, saved)
+    return saved
   }
 
   const deleteCapture = async (id: string) => {
     const cap = captures.find(c => c.id === id)
     if (cap) {
-      for (const imgId of cap.imageIds) await deleteImage(imgId)
+      for (const imgId of cap.imageIds) await deleteFile(imgId)
     }
     updateCaptures(prev => prev.filter(c => c.id !== id))
     if (expanded === id) setExpanded(null)
@@ -266,18 +207,13 @@ export function CapturesPage() {
   const addImagesToCapture = async (id: string, base64s: string[]) => {
     setUploading(id)
     try {
-      const newIds: string[] = []
-      for (let i = 0; i < base64s.length; i++) {
-        const imgId = `${id}-${Date.now()}-${i}.png`
-        const ok = await saveImage(imgId, base64s[i])
-        if (!ok) throw new Error(`Failed to save image ${i + 1}`)
-        setImageCache(prev => ({ ...prev, [imgId]: base64s[i] }))
-        newIds.push(imgId)
+      const { saved, failed } = await persistImages(id, base64s)
+      if (failed) {
+        await Promise.all(saved.map(deleteFile))
+        setUploadStatus({ type: 'error', msg: 'Failed to upload images' })
+        return
       }
-      // Use functional updater to avoid stale closure on imageIds
-      updateCaptures(prev => prev.map(c =>
-        c.id === id ? { ...c, imageIds: [...c.imageIds, ...newIds] } : c
-      ))
+      attachImages(id, saved)
       setUploadStatus({ type: 'success', msg: `${base64s.length} image${base64s.length > 1 ? 's' : ''} added` })
     } catch {
       setUploadStatus({ type: 'error', msg: 'Failed to upload images' })
@@ -289,7 +225,7 @@ export function CapturesPage() {
   const removeImageFromCapture = async (captureId: string, imgId: string) => {
     const cap = captures.find(c => c.id === captureId)
     if (!cap) return
-    await deleteImage(imgId)
+    await deleteFile(imgId)
     const newIds = cap.imageIds.filter(i => i !== imgId)
     setField(captureId, { imageIds: newIds })
     // Adjust gallery index if needed
@@ -314,12 +250,12 @@ export function CapturesPage() {
       }
       if (imageFiles.length > 0) {
         e.preventDefault()
-        Promise.all(imageFiles.map(f => fileToBase64(f))).then(b64s => addCapture(b64s))
+        void readImages(imageFiles).then(b64s => { if (b64s.length) return addCapture(b64s) })
       }
     }
     document.addEventListener('paste', handler)
     return () => document.removeEventListener('paste', handler)
-  }, [addCapture])
+  }, [addCapture, readImages])
 
   // Drop handlers
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -331,9 +267,9 @@ export function CapturesPage() {
       if (file.type.startsWith('image/')) imageFiles.push(file)
     }
     if (imageFiles.length > 0) {
-      Promise.all(imageFiles.map(f => fileToBase64(f))).then(b64s => addCapture(b64s))
+      void readImages(imageFiles).then(b64s => { if (b64s.length) return addCapture(b64s) })
     }
-  }, [addCapture])
+  }, [addCapture, readImages])
 
   // Filter + search
   const filtered = useMemo(() => {
@@ -362,6 +298,8 @@ export function CapturesPage() {
           </Button>
         }
       />
+
+      {uploadStatus?.type === 'error' && <Notice tone="danger">{uploadStatus.msg}</Notice>}
 
       {/* Filters */}
       <div className="flex flex-col gap-3">
@@ -425,31 +363,22 @@ export function CapturesPage() {
                     {currentSrc && <img src={currentSrc} alt="" className="h-full w-full cursor-pointer object-cover" onClick={e => { e.stopPropagation(); setLightbox({ imageIds: cap.imageIds, index: currentIdx }) }} />}
                     {cap.imageIds.length > 1 && (
                       <>
-                        {/* Compact overlay controls: scrim buttons over imagery (too small
-                            for Button chrome); focus ring comes from the global rule. */}
-                        <button
+                        <Button variant="secondary" size="icon-lg"
                           aria-label="Previous image"
-                          onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: (currentIdx - 1 + cap.imageIds.length) % cap.imageIds.length })) }}
-                          className="absolute left-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-full bg-black/50 p-2 text-white transition-colors duration-150 hover:bg-black/70 md:p-1"
+                          onClick={e => { e.stopPropagation(); stepGallery(cap.id, -1, cap.imageIds.length) }}
+                          className="absolute left-2 top-1/2 h-11 w-11 -translate-y-1/2 rounded-full"
                         >
                           <ChevronLeft className="h-5 w-5 md:h-4 md:w-4" />
-                        </button>
-                        <button
+                        </Button>
+                        <Button variant="secondary" size="icon-lg"
                           aria-label="Next image"
-                          onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: (currentIdx + 1) % cap.imageIds.length })) }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer rounded-full bg-black/50 p-2 text-white transition-colors duration-150 hover:bg-black/70 md:p-1"
+                          onClick={e => { e.stopPropagation(); stepGallery(cap.id, 1, cap.imageIds.length) }}
+                          className="absolute right-2 top-1/2 h-11 w-11 -translate-y-1/2 rounded-full"
                         >
                           <ChevronRight className="h-5 w-5 md:h-4 md:w-4" />
-                        </button>
-                        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1.5">
-                          {cap.imageIds.map((_, i) => (
-                            <button
-                              key={i}
-                              aria-label={`Go to image ${i + 1}`}
-                              onClick={e => { e.stopPropagation(); setGalleryIndex(prev => ({ ...prev, [cap.id]: i })) }}
-                              className={`h-1.5 cursor-pointer rounded-full transition-all duration-150 ${i === currentIdx ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
-                            />
-                          ))}
+                        </Button>
+                        <div className="absolute bottom-0 left-1/2 w-full -translate-x-1/2">
+                          <ImageDots count={cap.imageIds.length} index={currentIdx} overlay onChange={i => setGalleryIndex(prev => ({ ...prev, [cap.id]: i }))} />
                         </div>
                       </>
                     )}
@@ -540,14 +469,13 @@ export function CapturesPage() {
                               {imageCache[imgId] && (
                                 <img src={imageCache[imgId]} alt="" className="h-16 w-16 cursor-pointer rounded-md border border-border object-cover" onClick={() => setLightbox({ imageIds: cap.imageIds, index: i })} />
                               )}
-                              {/* Compact overlay control: floating remove badge on a thumbnail. */}
-                              <button
+                              <Button variant="secondary" size="icon-xs"
                                 aria-label="Remove image"
                                 onClick={() => removeImageFromCapture(cap.id, imgId)}
-                                className="absolute -right-1.5 -top-1.5 cursor-pointer rounded-full border border-border bg-background/90 p-0.5 text-muted-foreground opacity-0 transition-opacity duration-150 hover:text-destructive group-hover:opacity-100"
+                                className="absolute -right-1.5 -top-1.5 min-h-11 min-w-11 rounded-full text-muted-foreground opacity-100 hover:text-destructive sm:min-h-7 sm:min-w-7 sm:opacity-0 sm:focus-visible:opacity-100 sm:group-hover:opacity-100"
                               >
                                 <X className="h-2.5 w-2.5" />
-                              </button>
+                              </Button>
                               <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/50 px-1 font-mono text-3xs tabular-nums text-white">{i + 1}</span>
                             </div>
                           ))}
@@ -574,16 +502,16 @@ export function CapturesPage() {
                           onChange={async e => {
                             const files = e.target.files
                             if (!files?.length) return
-                            const b64s = await Promise.all(Array.from(files).map(f => fileToBase64(f)))
-                            await addImagesToCapture(cap.id, b64s)
+                            const b64s = await readImages(Array.from(files))
+                            if (b64s.length) await addImagesToCapture(cap.id, b64s)
                             e.target.value = ''
                           }}
                         />
                       </label>
                       {/* Upload status (transient confirmation) */}
-                      {uploadStatus && expanded === cap.id && (
-                        <div className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium ${uploadStatus.type === 'success' ? 'border-success/25 bg-success/10 text-success' : 'border-destructive/25 bg-destructive/10 text-destructive'}`}>
-                          {uploadStatus.type === 'success' ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                      {uploadStatus?.type === 'success' && expanded === cap.id && (
+                        <div role="status" className="flex items-center gap-2 rounded-md border border-success/25 bg-success/10 px-3 py-2 text-xs font-medium text-success">
+                          <Check className="h-3.5 w-3.5" />
                           {uploadStatus.msg}
                         </div>
                       )}
@@ -610,66 +538,15 @@ export function CapturesPage() {
         </div>
       )}
 
-      {/* Fullscreen lightbox — the one app Modal, full size */}
-      <Modal
-        open={!!lightbox}
-        onOpenChange={(o) => { if (!o) setLightbox(null) }}
-        size="full"
-        className="grid-rows-[1fr] [-webkit-app-region:no-drag]"
-      >
-        {lightbox && (
-          <div
-            className="relative flex h-full flex-col items-center justify-center gap-3"
-            onTouchStart={onTouchStart}
-            onTouchEnd={onLightboxSwipe}
-          >
-            {lightbox.imageIds.length > 1 && (
-              <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                {lightbox.index + 1} / {lightbox.imageIds.length}
-              </span>
-            )}
-            <img
-              src={imageCache[lightbox.imageIds[lightbox.index]]}
-              alt=""
-              className="min-h-0 max-w-full flex-1 rounded-md object-contain"
-            />
-            {lightbox.imageIds.length > 1 && (
-              <>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  aria-label="Previous image"
-                  className="absolute left-0 top-1/2 -translate-y-1/2"
-                  onClick={() => setLightbox(prev => prev ? { ...prev, index: (prev.index - 1 + prev.imageIds.length) % prev.imageIds.length } : null)}
-                >
-                  <ChevronLeft />
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  aria-label="Next image"
-                  className="absolute right-0 top-1/2 -translate-y-1/2"
-                  onClick={() => setLightbox(prev => prev ? { ...prev, index: (prev.index + 1) % prev.imageIds.length } : null)}
-                >
-                  <ChevronRight />
-                </Button>
-                <div className="flex gap-2">
-                  {/* Compact gallery-dot pattern — too small for Button chrome;
-                      focus ring comes from the global :focus-visible rule. */}
-                  {lightbox.imageIds.map((_, i) => (
-                    <button
-                      key={i}
-                      aria-label={`Go to image ${i + 1}`}
-                      onClick={() => setLightbox(prev => prev ? { ...prev, index: i } : null)}
-                      className={`h-2 cursor-pointer rounded-full transition-all duration-150 ${i === lightbox.index ? 'w-6 bg-foreground' : 'w-2 bg-muted-foreground/40 hover:bg-muted-foreground'}`}
-                    />
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-      </Modal>
+      {lightbox && (
+        <ImageLightbox
+          srcs={lightbox.imageIds.map(id => imageCache[id])}
+          index={lightbox.index}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightbox(null)}
+          showDots
+        />
+      )}
     </PageShell>
   )
 }
