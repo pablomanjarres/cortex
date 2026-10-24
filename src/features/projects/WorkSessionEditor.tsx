@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Modal } from '@/components/shared/Modal'
+import { Notice } from '@/components/shared/Notice'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -80,10 +82,10 @@ export function WorkSessionEditor({ session, busy, saveError, onClose, onSave }:
             {(id) => <Input id={id} type="url" placeholder="https://github.com/owner/repo/pull/123" value={prUrl} onChange={(event) => setPrUrl(event.target.value)} />}
           </Field>
           <label className="flex items-center gap-2 text-sm font-medium">
-            <input type="checkbox" checked={billable} onChange={(event) => setBillable(event.target.checked)} className="size-4 accent-accent" />
+            <Checkbox checked={billable} onChange={(event) => setBillable(event.target.checked)} />
             Billable time
           </label>
-          {(error || saveError) && <p role="alert" className="text-sm text-destructive">{error || saveError}</p>}
+          {(error || saveError) && <Notice tone="danger">{error || saveError}</Notice>}
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
             <Button type="submit" disabled={busy}>{session.needsReview ? 'Save and mark reviewed' : 'Save correction'}</Button>

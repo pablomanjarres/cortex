@@ -41,6 +41,8 @@ export function dateTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
+export const sessionTitle = (session: Pick<WorkSession, 'description'>) => session.description || 'Untitled work session'
+
 export function newId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
