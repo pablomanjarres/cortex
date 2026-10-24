@@ -60,6 +60,32 @@ test('accounts and cards persist together, keep cash separate from debt, and sur
   expect(backend.writes.some((write) => write.key === 'cortex-finances')).toBe(false)
 })
 
+test('a future first cycle stays consistent in the editor, card, and upcoming dates after reload', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-24T15:00:00Z'))
+  const backend = await mockStores(page, { 'cortex-financial-accounts': { version: 1, accounts: [] } })
+  await page.goto('/#/finance?view=accounts')
+  await page.getByRole('button', { name: 'Add account', exact: true }).first().click()
+  const form = page.getByRole('dialog')
+  await form.getByLabel('Type', { exact: true }).selectOption('credit')
+  await form.getByLabel('Name', { exact: true }).fill('Example card')
+  await form.getByLabel('Institution').fill('Test bank')
+  await form.getByLabel('Payment due day').fill('24')
+  await form.getByLabel('First payment month').fill('2026-11')
+  await form.getByLabel('Statement closing day').fill('4')
+  await form.getByLabel('First statement month').fill('2026-11')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect.poll(() => (backend.stores['cortex-financial-accounts'] as { accounts: { dueStartMonth?: string }[] }).accounts[0]?.dueStartMonth).toBe('2026-11')
+  await page.reload()
+  await expect(page.getByText('Nov 24, 2026 · day 24')).toBeVisible()
+  await expect(page.getByText('Nov 4, 2026 · day 4')).toBeVisible()
+  await expect(page.getByText('Oct 24, 2026', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Edit Example card' }).click()
+  await expect(form.getByLabel('First payment month')).toHaveValue('2026-11')
+  await form.getByLabel('Notes').fill('Updated without changing the cycle')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect(page.getByText('Nov 24, 2026 · day 24')).toBeVisible()
+})
+
 test('account fees project into their own budget rows and month focus keeps management available', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-10-24T15:00:00Z'))
   const backend = await mockStores(page, {
