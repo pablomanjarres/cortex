@@ -253,6 +253,9 @@ payment records. Generated rows are never stored as duplicate budget items.
 `budget-view.ts` defines which rows belong in a selected month's focus view.
 `accounts/account-input.ts` shares numeric draft parsing; `account-update.ts`
 rejects conflicting account changes without blocking the store's rebase queue.
+`accounts/account-reminders.ts` plans payment reminders from the same account
+calendar rules; the scheduled runner and its installation are described in
+`docs/payment-reminders.md`.
 
 Feature domain modules are the public interfaces for aggregate screens:
 Habits' `habit-progress.ts` owns cadence, goals, streaks, and weekly scoring;
