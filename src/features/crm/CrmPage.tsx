@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
@@ -6,6 +6,8 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
+import { FilterChips } from '@/components/shared/FilterChips'
+import { DisclosureCard, DisclosureTableRow } from '@/components/shared/RecordDisclosure'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { SortableHeader, tableHeaderClassName } from '@/components/shared/SortableHeader'
 import { useStore } from '@/lib/store'
@@ -21,7 +23,7 @@ import {
   ALL_STATUSES, DEFAULT_DATA, fmtDate, fmtMoney, statusConfig,
   type CrmContact, type CrmData, type CrmStatus, type SortKey,
 } from './crm-model'
-import { CrmContactFields } from './CrmContactFields'
+import { CrmContactEditor, CrmStatusChip } from './CrmContactFields'
 
 /** Stable fallback so memoized views do not recompute when no org is active. */
 const EMPTY_CONTACTS: CrmContact[] = []
@@ -192,13 +194,8 @@ export function CrmPage() {
       {/* Search + Filters + Add */}
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput label="Search CRM contacts" placeholder="Search contacts..." value={search} onChange={(e) => setSearch(e.target.value)} containerClassName="max-w-xs flex-1" className="h-8 text-xs" />
-        <div className="flex flex-wrap gap-1.5">
-          {ALL_STATUSES.map((s) => (
-            <Chip key={s} selectable variant={statusConfig[s].chip} selected={statusFilter === s} onClick={() => setStatusFilter(statusFilter === s ? null : s)}>
-              {statusConfig[s].label}
-            </Chip>
-          ))}
-        </div>
+        <FilterChips label="Filter by status" size="md" value={statusFilter} onChange={setStatusFilter}
+          options={ALL_STATUSES.map((s) => ({ value: s, label: statusConfig[s].label, variant: statusConfig[s].chip }))} />
         <Button size="sm" className="ml-auto" onClick={addContact}>
           <Plus /> Add
         </Button>
@@ -206,39 +203,20 @@ export function CrmPage() {
 
       {/* Mobile: Contact cards */}
       <div className="flex flex-col gap-3 md:hidden">
-        {filtered.length === 0 ? emptyState : filtered.map((c) => {
-          const detailId = `crm-card-${c.id}`
-          return (
-            <div key={c.id} className="surface rounded-xl p-4">
-              <div className="flex items-start justify-between gap-2">
-                <Button variant="ghost" size="sm" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id} aria-controls={detailId}
-                  onClick={() => toggleExpanded(c.id)}
-                  className="h-auto min-h-11 min-w-0 flex-1 justify-start p-0 text-left whitespace-normal">
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{c.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{[c.company, c.role].filter(Boolean).join(' · ') || 'No company'}</span>
-                  </span>
-                </Button>
-                <Chip size="sm" variant={statusConfig[c.status].chip} className="mt-1">{statusConfig[c.status].label}</Chip>
-              </div>
+        {filtered.length === 0 ? emptyState : filtered.map((c) => (
+          <DisclosureCard key={c.id} name={c.name} detailsId={`crm-card-${c.id}`} expanded={expanded === c.id} onToggle={() => toggleExpanded(c.id)}
+            subtitle={[c.company, c.role].filter(Boolean).join(' · ') || 'No company'}
+            aside={<CrmStatusChip status={c.status} className="mt-1" />}
+            meta={(
               <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
                 {c.value > 0 && <span className="font-mono tabular-nums">{fmtMoney(c.value)}</span>}
                 {c.lastContact && <span className="font-mono">{fmtDate(c.lastContact)}</span>}
                 {c.tags.length > 0 && <span className="truncate">{c.tags.join(', ')}</span>}
               </div>
-              <div id={detailId} hidden={expanded !== c.id}>
-                {expanded === c.id && (
-                  <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-3">
-                    <CrmContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
-                    <Button variant="destructive" size="sm" className="w-full" onClick={() => deleteContact(c.id)}>
-                      <Trash2 /> Delete contact
-                    </Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
+            )}>
+            <CrmContactEditor contact={c} onChange={(patch) => setField(c.id, patch)} onDelete={() => deleteContact(c.id)} />
+          </DisclosureCard>
+        ))}
       </div>
 
       {/* Desktop: Table */}
@@ -258,41 +236,24 @@ export function CrmPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => {
-                  const detailId = `crm-row-${c.id}`
-                  return (
-                    <Fragment key={c.id}>
-                      <tr onClick={() => toggleExpanded(c.id)}
-                        className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === c.id ? 'bg-secondary/20' : ''}`}>
-                        <td className="px-4 py-2.5"><Button variant="ghost" size="xs" aria-label={`Details for ${c.name}`} aria-expanded={expanded === c.id} aria-controls={detailId}
-                          onClick={(e) => { e.stopPropagation(); toggleExpanded(c.id) }}
-                          className="min-h-7 px-0 text-left font-medium hover:text-accent">{c.name}</Button></td>
-                        <td className="py-2.5 text-muted-foreground">{c.company || '—'}</td>
-                        <td className="py-2.5 text-muted-foreground">{c.role || '—'}</td>
-                        <td className="py-2.5"><Chip size="sm" variant={statusConfig[c.status].chip}>{statusConfig[c.status].label}</Chip></td>
-                        <td className="py-2.5 text-right font-mono tabular-nums text-muted-foreground">{fmtMoney(c.value) || '—'}</td>
-                        <td className="py-2.5 text-right font-mono text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
-                        <td className="py-2.5 pr-4">
-                          <Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
-                            <Trash2 />
-                          </Button>
-                        </td>
-                      </tr>
-                      <tr id={detailId} hidden={expanded !== c.id}>
-                        {expanded === c.id && (
-                          <td colSpan={7} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
-                            <CrmContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
-                            <div className="flex items-end justify-end gap-2 pt-4">
-                              <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
-                                <Trash2 /> Delete contact
-                              </Button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    </Fragment>
-                  )
-                })}
+                {filtered.map((c) => (
+                  <DisclosureTableRow key={c.id} name={c.name} detailsId={`crm-row-${c.id}`} expanded={expanded === c.id} onToggle={() => toggleExpanded(c.id)}
+                    colSpan={7} details={<CrmContactEditor contact={c} onChange={(patch) => setField(c.id, patch)} onDelete={() => deleteContact(c.id)} />}>
+                    {(toggle) => <>
+                      <td className="px-4 py-2.5">{toggle}</td>
+                      <td className="py-2.5 text-muted-foreground">{c.company || '—'}</td>
+                      <td className="py-2.5 text-muted-foreground">{c.role || '—'}</td>
+                      <td className="py-2.5"><CrmStatusChip status={c.status} /></td>
+                      <td className="py-2.5 text-right font-mono tabular-nums text-muted-foreground">{fmtMoney(c.value) || '—'}</td>
+                      <td className="py-2.5 text-right font-mono text-muted-foreground">{c.lastContact ? fmtDate(c.lastContact) : '—'}</td>
+                      <td className="py-2.5 pr-4">
+                        <Button variant="ghost" size="icon-xs" aria-label="Delete contact" className="opacity-0 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteContact(c.id) }}>
+                          <Trash2 />
+                        </Button>
+                      </td>
+                    </>}
+                  </DisclosureTableRow>
+                ))}
               </tbody>
             </table>
           </div>
