@@ -14,6 +14,7 @@ function fixture() {
     readState: async () => structuredClone(state),
     writeState: async (next) => { events.push(`write:${Object.values(next.deliveries).at(-1)?.status}`); state = structuredClone(next) },
     send: async () => { events.push('push') },
+    reportHeld: async (count) => { events.push(`review:${count}`) },
   }
   return { deps, events, state: () => state }
 }
@@ -36,10 +37,11 @@ test('dry run previews the reminder without sending or consuming it', async () =
 test('a timeout holds an uncertain delivery for review rather than replaying it', async () => {
   const f = fixture()
   f.deps.send = async () => { f.events.push('push'); throw Error('timeout') }
-  await assert.rejects(runPaymentReminders(f.deps), /held for review/)
+  assert.equal((await runPaymentReminders(f.deps)).newlyHeld, 1)
   assert.equal(Object.values(f.state().deliveries)[0].status, 'uncertain')
-  await assert.rejects(runPaymentReminders(f.deps), /needs verification/)
+  assert.equal((await runPaymentReminders(f.deps)).newlyHeld, 0)
   assert.equal(f.events.filter((event) => event === 'push').length, 1)
+  assert.equal(f.events.filter((event) => event === 'review:1').length, 1)
 })
 
 test('a crash after Pushcut acceptance but before settlement leaves a durable sending claim', async () => {
@@ -50,8 +52,20 @@ test('a crash after Pushcut acceptance but before settlement leaves a durable se
   }
   await assert.rejects(runPaymentReminders(f.deps), /disk full/)
   assert.equal(Object.values(f.state().deliveries)[0].status, 'sending')
-  await assert.rejects(runPaymentReminders(f.deps), /needs verification/)
+  assert.equal((await runPaymentReminders(f.deps)).held, 1)
   assert.equal(f.events.filter((event) => event === 'push').length, 1)
+})
+
+test('held review is acknowledged only after the report succeeds', async () => {
+  const f = fixture()
+  f.deps.send = async () => { throw Error('timeout') }
+  f.deps.reportHeld = async () => { throw Error('report unavailable') }
+  await assert.rejects(runPaymentReminders(f.deps), /report unavailable/)
+  assert.equal(Object.values(f.state().deliveries)[0].reviewReportedAt, undefined)
+  f.deps.reportHeld = async () => { f.events.push('review') }
+  assert.equal((await runPaymentReminders(f.deps)).newlyHeld, 1)
+  assert.equal((await runPaymentReminders(f.deps)).newlyHeld, 0)
+  assert.equal(f.events.filter((event) => event === 'review').length, 1)
 })
 
 test('exclusions and changed dates are reread at the point of delivery', async () => {

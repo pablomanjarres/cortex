@@ -15,12 +15,14 @@ test('the unattended CLI proves dry run, actual sender receipt, dedupe, lock, an
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   const accounts = { version: 1, accounts: [{ id: 'example', name: 'Example card', institution: 'Test bank', kind: 'credit', currency: 'COP', archived: false, dueDay: Number(today.slice(-2)), fees: [] }] }
   const reports: { status: string }[] = []
+  let unavailable = false
   const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json')
     if (req.method === 'POST') {
       let body = ''; for await (const chunk of req) body += chunk
       reports.push(JSON.parse(body)); res.end('{"ok":true}'); return
     }
+    if (unavailable) { res.statusCode = 503; res.end('{}'); return }
     res.end(JSON.stringify(req.url?.includes('cortex-card-payment-reminders') ? config : accounts))
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -33,7 +35,9 @@ test('the unattended CLI proves dry run, actual sender receipt, dedupe, lock, an
     await assert.rejects(fs.stat(path.join(state, 'deliveries.json')), /ENOENT/)
     assert.equal(reports.length, 0)
     assert.equal(JSON.parse((await run()).stdout).pushed, 1)
+    const reportCount = reports.length
     assert.equal(JSON.parse((await run()).stdout).pushed, 0)
+    assert.equal(reports.length, reportCount)
     assert.equal(await fs.readFile(deliveries, 'utf8'), 'push\n')
     assert.equal(reports.at(-1)?.status, 'success')
 
@@ -48,8 +52,18 @@ test('the unattended CLI proves dry run, actual sender receipt, dedupe, lock, an
     const held = JSON.parse(await fs.readFile(path.join(state, 'deliveries.json'), 'utf8'))
     assert.equal(Object.values(held.deliveries).length, 1)
     assert.equal((Object.values(held.deliveries)[0] as { status: string }).status, 'uncertain')
-    await assert.rejects(run(), /needs verification/)
+    const errors = reports.filter((report) => report.status === 'error').length
+    assert.equal(JSON.parse((await run()).stdout).held, 1)
+    assert.equal(reports.filter((report) => report.status === 'error').length, errors)
     assert.equal(await fs.readFile(deliveries, 'utf8'), 'push\npush\n')
+    unavailable = true
+    await assert.rejects(run(), /request failed/)
+    const outageReports = reports.length
+    await assert.rejects(run(), /request failed/)
+    assert.equal(reports.length, outageReports)
+    unavailable = false
+    await run()
+    await assert.rejects(fs.stat(path.join(state, 'failure.json')), /ENOENT/)
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
     await fs.rm(root, { recursive: true, force: true })
