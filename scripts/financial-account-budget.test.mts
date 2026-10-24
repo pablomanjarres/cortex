@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { AccountFee, FinancialAccount } from '../src/features/finance/accounts/account-model.ts'
+import { upcomingAccountDates, validateAccount } from '../src/features/finance/accounts/account-model.ts'
 import { financeMonth, type FinanceData } from '../src/features/finance/finance-model.ts'
 import {
   projectAccountFees,
@@ -22,6 +23,16 @@ const flags = (...indexes: number[]) => Array.from({ length: 12 }, (_, i) => ind
 const amounts = (amount: number, ...indexes: number[]) => Array.from({ length: 12 }, (_, i) => (indexes.includes(i) ? amount : 0))
 const project = (fees: BudgetFee[], year = 2026, overrides: Partial<BudgetAccount> = {}) =>
   projectAccountFees([account({ fees, ...overrides })], year)
+
+test('month-only fee schedules reach the budget without inventing an upcoming charge day', () => {
+  const entry = account({ fees: [fee({ nextChargeDate: undefined, budgetStartMonth: '2026-10' })] })
+  const [row] = projectAccountFees([entry], 2026)
+  assert.deepEqual(row.months, amounts(15000, 9, 10, 11))
+  assert.equal(row.missingDate, false)
+  assert.deepEqual(upcomingAccountDates([entry], '2026-10-24'), [])
+  assert.equal(validateAccount(entry, []), null)
+  assert.match(validateAccount(account({ fees: [fee({ budgetStartMonth: '2026-13' })] }), [])!, /budget start month/)
+})
 
 test('monthly fees charge every month from the anchor month, never before it', () => {
   const [row] = project([fee({ nextChargeDate: '2026-04-30' })])

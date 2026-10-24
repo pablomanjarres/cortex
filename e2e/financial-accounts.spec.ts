@@ -137,6 +137,27 @@ test('foreign fees remain separate until a COP budget amount is entered', async 
   await expect(page.getByText('Expenses', { exact: true }).first().locator('..').locator('..')).toContainText('$80K')
 })
 
+test('fees can start in a budget month while the exact charge date remains unknown', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-24T15:00:00Z'))
+  const backend = await mockStores(page, { 'cortex-finances': {year: 2026, items: []} })
+  await page.goto('/#/finance?view=accounts')
+  await page.getByRole('button', {name: 'Add account', exact: true}).click()
+  const form = page.getByRole('dialog')
+  await form.getByLabel('Type', {exact: true}).selectOption('credit')
+  await form.getByLabel('Name', {exact: true}).fill('Example card')
+  await form.getByLabel('Institution').fill('Example Bank')
+  await form.getByRole('button', {name: 'Add fee'}).click()
+  await form.getByLabel('Fee name').fill('Management fee')
+  await form.getByLabel('Fee amount').fill('12.000')
+  await expect(form.getByLabel('First charge date')).toHaveValue('')
+  await expect(form.getByLabel('Budget start month')).toHaveValue('2026-10')
+  await form.getByRole('button', {name: 'Save account'}).click()
+  await expect.poll(() => (backend.stores['cortex-financial-accounts'] as {accounts: {fees: {budgetStartMonth: string}[]}[]}|undefined)?.accounts?.[0]?.fees?.[0]?.budgetStartMonth).toBe('2026-10')
+  await expect(page.getByText('Management fee · Example card', {exact: true})).toHaveCount(0)
+  await page.getByRole('tab', {name: 'Budget', exact: true}).click()
+  await expect(page.getByRole('row').filter({hasText: 'Example card · Management fee'})).toContainText('$12.000')
+})
+
 test('a conflicting account update reports the rejection and later saves still persist', async ({ page }) => {
   const bank = { id: 'bank', name: 'Savings', institution: 'Bank', kind: 'bank', currency: 'COP', archived: false, fees: [] }
   const backend = await mockStores(page, { 'cortex-financial-accounts': { version: 1, accounts: [bank] } })
