@@ -17,10 +17,11 @@ import { useStore } from '@/lib/store'
 import { OneTimePayments } from './OneTimePayments'
 import { FinanceItemCell } from './FinanceItemCell'
 import { BudgetSummaryRow } from './BudgetSummaryRow'
+import { BudgetSection } from './BudgetSection'
 import { AccountFeeBudgetRow } from './accounts/AccountFeeBudgetRow'
 import { projectAccountFees, withAccountFeePayment } from './accounts/account-budget'
 import { ACCOUNTS_KEY, EMPTY_ACCOUNTS, type AccountsData } from './accounts/account-model'
-import { budgetItemMatchesMonth } from './budget-view'
+import { BUDGET_GROUPS, budgetItemGroup, budgetItemMatchesMonth, type BudgetGroup } from './budget-view'
 import { FINANCE_CATEGORIES, financeMonth, isPaidFor, settlementFor, withSettlement, type FinanceData, type FinanceItem, type ItemType, type OneTimePayment } from './finance-model'
 import {
   TrendingUp,
@@ -130,7 +131,7 @@ export function FinanceBudget() {
   const feeById = useMemo(() => new Map(feeRows.map((row) => [row.id, row])), [feeRows])
   const data = useMemo(() => ({ ...storedData, items: [...storedData.items, ...feeRows] }), [storedData, feeRows])
   const [selectedMonth, setSelectedMonth] = useState(() => currentMonth)
-  const [filterType, setFilterType] = useState<ItemType | null>(null)
+  const [filterType, setFilterType] = useState<BudgetGroup | null>(null)
   const [columnOverride, setColumnOverride] = useState<{ mode: string; compact: boolean } | null>(null)
   const compact = columnOverride?.mode === viewMode ? columnOverride.compact : viewMode !== 'all' || window.innerWidth < 768
   const [searchTerm, setSearchTerm] = useState('')
@@ -208,11 +209,11 @@ export function FinanceBudget() {
     const lowerSearch = searchTerm.toLowerCase()
     return data.items.filter((it) =>
       (viewMode === 'all' || budgetItemMatchesMonth(it, selectedMonth)) &&
-      (!filterType || it.type === filterType) &&
+      (!filterType || budgetItemGroup(it, feeById) === filterType) &&
       (!categoryFilter || it.category === categoryFilter) &&
       (!searchTerm || it.name.toLowerCase().includes(lowerSearch))
     )
-  }, [data.items, filterType, categoryFilter, searchTerm, viewMode, selectedMonth])
+  }, [data.items, feeById, filterType, categoryFilter, searchTerm, viewMode, selectedMonth])
 
   const sortItems = (items: FinanceItem[]) => {
     if (!sortField) return items
@@ -225,13 +226,13 @@ export function FinanceBudget() {
   }
 
   const groupedRows = useMemo(() => {
-    const groups = ITEM_TYPES
+    const groups = BUDGET_GROUPS
       .filter((t) => !filterType || filterType === t)
-      .map((t) => ({ type: t, items: sortItems(filtered.filter((it) => it.type === t)) }))
+      .map((t) => ({ type: t, items: sortItems(filtered.filter((it) => budgetItemGroup(it, feeById) === t)) }))
       .filter((g) => g.items.length > 0)
     return groups
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, filterType, sortField, sortDir])
+  }, [filtered, feeById, filterType, sortField, sortDir])
 
   const visibleMonths = compact ? [selectedMonth] : MONTH_INDEXES
 
@@ -416,7 +417,7 @@ export function FinanceBudget() {
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 overflow-x-auto sm:gap-2">
               <FilterChips label="Filter by type" size="md" value={filterType} onChange={setFilterType} className="shrink-0 flex-nowrap gap-1 sm:gap-1.5"
-                options={ITEM_TYPES.map((t) => ({ value: t, label: t === 'Subscription' ? 'Sub' : t }))} />
+                options={BUDGET_GROUPS.map((t) => ({ value: t, label: t === 'Subscription' ? 'Sub' : t }))} />
               <Chip selectable selected={compact} onClick={() => setColumnOverride({ mode: viewMode, compact: !compact })} aria-label="Toggle compact columns" className="shrink-0">
                 <Columns2 /> <span className="hidden sm:inline">Compact</span>
               </Chip>
@@ -461,13 +462,12 @@ export function FinanceBudget() {
                 <th className="w-6 py-2"></th>
               </tr>
             </thead>
-            <tbody>
               {groupedRows.map((group) => {
                 const groupSubtotals = MONTH_INDEXES.map((mi) => group.items.reduce((s, it) => s + it.months[mi], 0))
                 const concealGroup = hideIncome && group.type === 'Income'
 
-                return [
-                  ...group.items.map((item, idx) => feeById.has(item.id) ? <AccountFeeBudgetRow key={item.id} item={feeById.get(item.id)!}
+                return <BudgetSection key={group.type} title={group.type} columnCount={visibleMonths.length + 5}>
+                  {group.items.map((item, idx) => feeById.has(item.id) ? <AccountFeeBudgetRow key={item.id} item={feeById.get(item.id)!}
                     visibleMonths={visibleMonths} selectedMonth={selectedMonth} format={fmtCell} formatCompact={fmtCOP}
                     onSettle={(amount) => settle(item.id, selectedMonth, amount)} /> : (
                     <tr key={item.id} className={`group border-b border-border/20 hover:bg-secondary/30 ${idx % 2 === 1 ? 'bg-secondary/10' : ''}`}>
@@ -522,11 +522,12 @@ export function FinanceBudget() {
                         </Button>
                       </td>
                     </tr>
-                  )),
+                  ))}
                   <BudgetSummaryRow key={`subtotal-${group.type}`} label={`${group.type} Subtotal`} values={groupSubtotals} total={sum(groupSubtotals)}
-                    visibleMonths={visibleMonths} selectedMonth={selectedMonth} format={fmtCell} concealed={concealGroup} />,
-                ]
+                    visibleMonths={visibleMonths} selectedMonth={selectedMonth} format={fmtCell} concealed={concealGroup} />
+                </BudgetSection>
               })}
+            <tbody>
               {oneTimeYearTotal > 0 && (
                 <BudgetSummaryRow label="One-time Subtotal" values={oneTimeMonthTotals} total={oneTimeYearTotal}
                   visibleMonths={visibleMonths} selectedMonth={selectedMonth} format={fmtCell} />

@@ -3,6 +3,7 @@ import { SettlementControl } from '../SettlementControl'
 import { isPaidFor, settlementFor } from '../finance-model'
 import type { AccountFeeBudgetItem } from './account-budget'
 import { formatAccountMoney } from './account-model'
+import { ACCOUNT_FEE_GROUP } from '../budget-view'
 
 export function AccountFeeBudgetRow({ item, visibleMonths, selectedMonth, format, formatCompact, onSettle }: {
   item: AccountFeeBudgetItem; visibleMonths: number[]; selectedMonth: number
@@ -17,7 +18,7 @@ export function AccountFeeBudgetRow({ item, visibleMonths, selectedMonth, format
         <p className="text-2xs text-muted-foreground">{item.missingDate ? 'Set a charge date in Accounts' : item.missingRate ? `${item.originalCurrency} · set COP amount to include in totals` : 'Account fee · managed in Accounts'}</p>
       </SettlementControl>
     </td>
-    <td className="py-2 text-muted-foreground">Expense</td>
+    <td className="py-2 text-muted-foreground">{ACCOUNT_FEE_GROUP}</td>
     <td className="py-2 text-muted-foreground">Other</td>
     {visibleMonths.map((month) => <td key={month} className={`py-2 text-right font-mono tabular-nums ${isPaidFor(item, month) ? 'bg-success/10 text-success' : month === selectedMonth ? 'bg-foreground/[0.03]' : 'text-muted-foreground'}`}>
       {displayMonths[month] ? displayAmount(displayMonths[month]) : '—'}
