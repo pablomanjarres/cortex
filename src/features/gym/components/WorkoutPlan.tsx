@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { Modal } from '@/components/shared/Modal'
 import { Button } from '@/components/ui/button'
-import { Chip } from '@/components/ui/chip'
 import { WorkoutPlanEditor } from './WorkoutPlanEditor'
 import { WorkoutExerciseList } from './WorkoutExerciseList'
 import { WorkoutOverview } from './WorkoutOverview'
 import type { WorkoutDay, WorkoutSession, Exercise } from '@/types/gym'
-import { ExerciseImage } from './ExerciseImage'
+import { ExerciseGuideDialog } from './ExerciseGuide'
+import { GYM_DIALOG_CLOSE_CLASS, GYM_SCROLL_DIALOG_CLASS } from './gym-dialog'
 import { useSwimTimer } from '../domain/use-swim-timer'
 import { getScheduledWorkout, isSwimWorkout } from '../domain/workout-plan'
 import { WorkoutAwakeControl } from './WorkoutAwakeControl'
@@ -98,7 +98,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
       title={selectedDay.name}
       description={isSwimWorkout(selectedDay.name) ? 'Swim plan' : 'Tap an exercise to view its movement and notes.'}
       size="lg"
-      className="max-h-[calc(100dvh-2rem)] overflow-y-auto [&_[data-slot=dialog-close]]:size-11"
+      className={GYM_SCROLL_DIALOG_CLASS}
     >
       {isSwimWorkout(selectedDay.name) ? (
         <ol className="list-inside list-decimal space-y-4 py-2 text-base">
@@ -115,7 +115,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
       title="Edit plan"
       description="Changes are saved as you edit."
       size="lg"
-      className="max-h-[calc(100dvh-2rem)] overflow-y-auto [&_[data-slot=dialog-close]]:size-11"
+      className={GYM_SCROLL_DIALOG_CLASS}
       footer={<Button size="lg" className="min-h-12" onClick={() => setEditingDay(null)}>Done</Button>}
     >
       <WorkoutPlanEditor
@@ -132,7 +132,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
       onOpenChange={(open) => !open && setPendingStart(null)}
       title={latestSession?.workoutDayId === pendingStart?.id ? 'Redo workout?' : 'Replace today’s workout?'}
       description={`Today’s saved ${latestSession?.workoutName ?? 'workout'} will be replaced when you finish ${pendingStart?.name ?? 'this workout'}.`}
-      className="[&_[data-slot=dialog-close]]:size-11"
+      className={GYM_DIALOG_CLOSE_CLASS}
       footer={(
         <>
           <Button variant="secondary" size="lg" className="min-h-12" onClick={() => setPendingStart(null)}>Keep saved workout</Button>
@@ -145,26 +145,7 @@ export function WorkoutPlan({ plans, onUpdatePlans, onStartWorkout, onLogSwim, t
       <p className="text-sm text-muted-foreground">Your saved workout stays until the new one is logged.</p>
     </Modal>
 
-    <Modal
-      open={!!preview}
-      onOpenChange={(o) => !o && setPreview(null)}
-      title={preview?.name}
-      size="sm"
-      className="max-h-[calc(100dvh-2rem)] overflow-y-auto [&_[data-slot=dialog-close]]:size-11"
-    >
-      {preview && (
-        <div>
-          <ExerciseImage name={preview.name} gifMediaId={preview.gifMediaId} animated className="h-64 w-full" />
-          <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            <Chip size="sm" className="tabular-nums text-foreground">
-              {preview.sets}×{preview.repsRange}
-            </Chip>
-            {preview.startWeight && <Chip size="sm">{preview.startWeight}</Chip>}
-          </div>
-          {preview.notes && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{preview.notes}</p>}
-        </div>
-      )}
-    </Modal>
+    <ExerciseGuideDialog exercise={preview} onClose={() => setPreview(null)} />
     </>
   )
 }

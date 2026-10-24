@@ -1,3 +1,4 @@
+import { DateStepper } from '@/components/shared/DateStepper'
 import { InlineNumberEditor } from '@/components/shared/InlineNumberEditor'
 import { Select } from '@/components/ui/select'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
@@ -9,9 +10,13 @@ import { Input } from '@/components/ui/input'
 import { Field } from '@/components/shared/Field'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useStore, readStore, writeStore } from '@/lib/store'
 import { localDate, getWeekDates } from '@/lib/date-utils'
-import { MONTHS, relativeMarketDate } from '../domain/market-dates'
+import { MONTHS, marketWeekLabel, relativeMarketDate, weeksInMonth } from '../domain/market-dates'
+import { marketItemsTotal, spendBy } from '../domain/market'
+import { QuickAddPanel } from './QuickAddPanel'
+import { SelectionCard } from './SelectionCard'
 import { foodBudgetForMonth, foodSpentPrimary, withFoodSpent, withFoodBudget, sumMarket, type FinanceDataLike } from '@/lib/food-budget'
 import {
   Plus,
@@ -19,14 +24,7 @@ import {
   ShoppingCart,
   TrendingUp,
   Store,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  X,
-  Pencil,
   Bookmark,
-  Square,
-  CheckSquare,
 } from 'lucide-react'
 import type { MarketPreset, MarketList } from '@/types/gym'
 import { DEFAULT_MARKET_PRESETS } from '@/types/gym'
@@ -59,34 +57,25 @@ const fmtCOP = (n: number) => {
 }
 const fmtFull = (n: number) => `$${n.toLocaleString('es-CO')}`
 
-/** Get all Monday dates for weeks in a given month */
-function getWeeksInMonth(year: number, month: number): string[] {
-  const weeks: string[] = []
-  const d = new Date(year, month, 1)
-  // Go to the Monday of the week containing the 1st
-  const day = d.getDay()
-  d.setDate(d.getDate() - ((day + 6) % 7))
-  while (true) {
-    const weekStart = localDate(d)
-    // Include this week if any day falls in our target month
-    const weekEnd = new Date(d)
-    weekEnd.setDate(d.getDate() + 6)
-    if (d.getMonth() > month && d.getFullYear() >= year) break
-    if (weekEnd.getMonth() >= month || weekEnd.getFullYear() > year || d.getMonth() === month || weekEnd.getMonth() === month) {
-      weeks.push(weekStart)
-    }
-    d.setDate(d.getDate() + 7)
-    if (weeks.length > 6) break // safety
-  }
-  return weeks
-}
-
-function getWeekLabel(weekStart: string): string {
-  const start = new Date(weekStart + 'T00:00:00')
-  const end = new Date(start)
-  end.setDate(start.getDate() + 6)
-  const fmt = (d: Date) => `${d.getDate()} ${MONTHS[d.getMonth()]}`
-  return `${fmt(start)} – ${fmt(end)}`
+/** Spend split for the selected week, as bars relative to the week total. */
+function SpendBreakdown({ title, rows, total, delay }: { title: string; rows: [string, number][]; total: number; delay: number }) {
+  return (
+    <WidgetCard title={title} compact delay={delay}>
+      <div className="space-y-2">
+        {rows.map(([name, amount]) => (
+          <div key={name} className="flex items-center justify-between text-xs">
+            <span className="text-foreground">{name}</span>
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-24 rounded-full bg-muted/60">
+                <div className="h-full rounded-full bg-foreground/40" style={{ width: `${(amount / total) * 100}%` }} />
+              </div>
+              <span className="w-14 text-right font-mono tabular-nums text-muted-foreground">{fmtCOP(amount)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </WidgetCard>
+  )
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -101,7 +90,7 @@ export function MarketLog() {
   const [viewMonth, setViewMonth] = useState(() => Number(today.slice(5, 7)) - 1)
   const [selectedWeek, setSelectedWeek] = useState(todayWeekStart)
 
-  const weeksInMonth = useMemo(() => getWeeksInMonth(viewYear, viewMonth), [viewYear, viewMonth])
+  const monthWeeks = useMemo(() => weeksInMonth(viewYear, viewMonth), [viewYear, viewMonth])
 
   // Data for selected week
   const [log, setLogState] = useState<WeeklyMarketLog>({ weekStart: selectedWeek, items: [] })
@@ -125,9 +114,9 @@ export function MarketLog() {
   // Load all weeks in month for monthly total
   useEffect(() => {
     Promise.all(
-      weeksInMonth.map(w => readStore<WeeklyMarketLog>(`cortex-market-${w}`, { weekStart: w, items: [] }))
+      monthWeeks.map(w => readStore<WeeklyMarketLog>(`cortex-market-${w}`, { weekStart: w, items: [] }))
     ).then(setMonthLogs)
-  }, [weeksInMonth, log]) // re-fetch when current log changes
+  }, [monthWeeks, log]) // re-fetch when current log changes
 
   // Live sync: the Finances Food "spent" for the viewed month = the month's market total.
   useEffect(() => {
@@ -148,7 +137,7 @@ export function MarketLog() {
       if (done) return
       const totals: number[] = []
       for (let m = 0; m < 12; m++) {
-        const weeks = getWeeksInMonth(year, m)
+        const weeks = weeksInMonth(year, m)
         const logs = await Promise.all(weeks.map(w => readStore<WeeklyMarketLog>(`cortex-market-${w}`, { weekStart: w, items: [] })))
         totals[m] = sumMarket(logs)
       }
@@ -177,28 +166,17 @@ export function MarketLog() {
 
   // Quick-add presets
   const [presets, setPresets] = useStore<MarketPreset[]>('cortex-market-presets', DEFAULT_MARKET_PRESETS)
-  const [showQuickAdd, setShowQuickAdd] = useState(true)
-  const [editingPresets, setEditingPresets] = useState(false)
   const [newPresetName, setNewPresetName] = useState('')
   const [newPresetPrice, setNewPresetPrice] = useState('')
   const [newPresetStore, setNewPresetStore] = useState('D1')
   const [newPresetCategory, setNewPresetCategory] = useState('Protein')
 
-  const weeklyTotal = useMemo(() => log.items.reduce((s, item) => s + item.price * item.quantity, 0), [log.items])
-  const monthlyTotal = useMemo(() => monthLogs.reduce((s, wl) => s + wl.items.reduce((ws, item) => ws + item.price * item.quantity, 0), 0), [monthLogs])
+  const weeklyTotal = useMemo(() => marketItemsTotal(log.items), [log.items])
+  const monthlyTotal = useMemo(() => sumMarket(monthLogs), [monthLogs])
   // Budget shown = the Finances Food budget for this month (falls back to the legacy market budget).
   const foodBudget = foodBudgetForMonth(finances, viewMonth) || budget
-  const byStore = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const item of log.items) map.set(item.store, (map.get(item.store) || 0) + item.price * item.quantity)
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1])
-  }, [log.items])
-
-  const byCategory = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const item of log.items) map.set(item.category, (map.get(item.category) || 0) + item.price * item.quantity)
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1])
-  }, [log.items])
+  const byStore = useMemo(() => spendBy(log.items, item => item.store), [log.items])
+  const byCategory = useMemo(() => spendBy(log.items, item => item.category), [log.items])
 
   const addItem = () => {
     if (!newName.trim() || !newPrice) return
@@ -291,37 +269,25 @@ export function MarketLog() {
       {/* Month + Week navigation */}
       <motion.div initial={reduceMotion ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
         {/* Month selector */}
-        <div className="mb-3 flex items-center justify-between">
-          <Button variant="ghost" size="icon-sm" onClick={prevMonth} aria-label="Previous month">
-            <ChevronLeft />
-          </Button>
-          <span className="font-mono text-sm font-medium text-foreground">{MONTHS[viewMonth]} {viewYear}</span>
-          <Button variant="ghost" size="icon-sm" onClick={nextMonth} aria-label="Next month">
-            <ChevronRight />
-          </Button>
-        </div>
+        <DateStepper label={`${MONTHS[viewMonth]} ${viewYear}`} previousLabel="Previous month" nextLabel="Next month"
+          onPrevious={prevMonth} onNext={nextMonth} className="mb-3 justify-between" />
 
         {/* Week tabs */}
         <div className="flex gap-1.5 overflow-x-auto pb-1">
-          {weeksInMonth.map((w, i) => {
-            const weekTotal = monthLogs.find(ml => ml.weekStart === w)?.items.reduce((s, item) => s + item.price * item.quantity, 0) || 0
+          {monthWeeks.map((w, i) => {
+            const weekTotal = marketItemsTotal(monthLogs.find(ml => ml.weekStart === w)?.items ?? [])
             return (
-              <button
+              <SelectionCard
                 key={w}
-                onClick={() => setSelectedWeek(w)}
-                aria-pressed={selectedWeek === w}
-                className={`shrink-0 rounded-md border px-3 py-2 text-left transition-colors ${
-                  selectedWeek === w
-                    ? 'border-accent/40 bg-accent/10'
-                    : 'border-border bg-card hover:bg-muted/40'
-                } ${w === todayWeekStart ? 'ring-1 ring-foreground/20' : ''}`}
+                title={`Week ${i + 1}`}
+                selected={selectedWeek === w}
+                current={w === todayWeekStart}
+                onSelect={() => setSelectedWeek(w)}
+                className="shrink-0"
               >
-                <p className={`font-mono text-2xs ${selectedWeek === w ? 'text-foreground' : 'text-muted-foreground'}`}>
-                  Week {i + 1}
-                </p>
-                <p className="font-mono text-3xs tabular-nums text-foreground-faint">{getWeekLabel(w)}</p>
-                {weekTotal > 0 && <p className="mt-0.5 font-mono text-3xs tabular-nums text-foreground-faint">{fmtCOP(weekTotal)}</p>}
-              </button>
+                <span>{marketWeekLabel(w)}</span>
+                {weekTotal > 0 && <span>{fmtCOP(weekTotal)}</span>}
+              </SelectionCard>
             )
           })}
         </div>
@@ -387,21 +353,17 @@ export function MarketLog() {
                 key={`${li.name}-${i}`}
                 className="flex items-center justify-between gap-2 border-t border-border/60 pt-2 text-xs first:border-t-0 first:pt-0"
               >
-                <div className="flex min-w-0 items-center gap-2">
-                  <button
-                    onClick={() => toggleListItem(i)}
-                    className="shrink-0"
-                    aria-label={li.checked ? `Uncheck ${li.name}` : `Check off ${li.name}`}
-                  >
-                    {li.checked
-                      ? <CheckSquare className="h-4 w-4 text-success" />
-                      : <Square className="h-4 w-4 text-foreground-faint" />}
-                  </button>
+                <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2 sm:min-h-7">
+                  <Checkbox
+                    checked={!!li.checked}
+                    onChange={() => toggleListItem(i)}
+                    aria-label={`Bought ${li.name}`}
+                  />
                   <span className={`truncate ${li.checked ? 'text-foreground-faint line-through' : 'text-foreground'}`}>
                     {li.name}
                   </span>
                   <span className="shrink-0 font-mono tabular-nums text-foreground-faint">{li.quantity} · {fmtFull(li.price)}</span>
-                </div>
+                </label>
                 <div className="flex shrink-0 items-center gap-2">
                   <Chip size="sm" className="hidden sm:inline-flex">{li.store}</Chip>
                   <Chip size="sm" className="hidden sm:inline-flex">{li.category}</Chip>
@@ -423,82 +385,41 @@ export function MarketLog() {
         )}
       </WidgetCard>
 
-      {/* Quick Add */}
-      <div className="surface space-y-3 rounded-xl p-4">
-        <div className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setShowQuickAdd(!showQuickAdd)}
-            className="-ml-2 font-mono text-2xs uppercase tracking-wider text-muted-foreground"
-            aria-expanded={showQuickAdd}
-          >
-            Quick Add
-            <ChevronDown className={`transition-transform ${showQuickAdd ? 'rotate-180' : ''}`} />
+      <QuickAddPanel
+        title="Quick add"
+        editLabel="Edit presets"
+        doneLabel="Done editing presets"
+        items={presets.map((preset, i) => ({
+          key: `${preset.name}-${i}`,
+          label: preset.name,
+          detail: fmtCOP(preset.price),
+          onAdd: () => quickAddItem(preset, Date.now()),
+          onRemove: () => removePreset(i),
+          removeLabel: `Remove preset ${preset.name}`,
+        }))}
+      >
+        {/* Custom preset form */}
+        <div className="flex flex-wrap items-end gap-2">
+          <Input placeholder="Name" aria-label="Preset name" value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
+            className="h-8 min-w-[120px] flex-1 text-xs" />
+          <Input type="number" placeholder="Price" aria-label="Preset price (COP)" value={newPresetPrice} onChange={(e) => setNewPresetPrice(e.target.value)}
+            className="h-8 w-20 text-xs" />
+          <Select value={newPresetStore} onChange={(e) => setNewPresetStore(e.target.value)} aria-label="Preset store"
+            className="w-auto h-8 px-2 text-xs">
+            {STORES.map(s => <option key={s} value={s}>{s}</option>)}
+          </Select>
+          <Select value={newPresetCategory} onChange={(e) => setNewPresetCategory(e.target.value)} aria-label="Preset category"
+            className="w-auto h-8 px-2 text-xs">
+            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </Select>
+          <Button variant="secondary" size="icon" onClick={saveToPresets} aria-label="Save preset">
+            <Bookmark />
           </Button>
-          {showQuickAdd && (
-            <Button
-              variant={editingPresets ? 'secondary' : 'ghost'}
-              size="icon-xs"
-              onClick={() => setEditingPresets(!editingPresets)}
-              aria-label={editingPresets ? 'Done editing presets' : 'Edit presets'}
-            >
-              <Pencil />
-            </Button>
-          )}
         </div>
-        {showQuickAdd && (
-          <>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-1.5">
-              {presets.map((preset, i) => (
-                <div key={`${preset.name}-${i}`} className="group relative">
-                  <button
-                    onClick={() => !editingPresets && quickAddItem(preset, Date.now())}
-                    className={`w-full rounded-md border border-border bg-muted/40 px-3 py-2.5 text-left text-xs transition-colors sm:px-2.5 sm:py-1.5 ${
-                      editingPresets ? 'cursor-default pr-7' : 'hover:bg-muted/70 active:bg-muted'
-                    }`}
-                  >
-                    <span className="text-foreground">{preset.name}</span>
-                    <span className="ml-1 font-mono text-2xs tabular-nums text-foreground-faint">{fmtCOP(preset.price)}</span>
-                  </button>
-                  {editingPresets && (
-                    <Button
-                      variant="destructive"
-                      size="icon-xs"
-                      className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full"
-                      onClick={() => removePreset(i)}
-                      aria-label={`Remove preset ${preset.name}`}
-                    >
-                      <X />
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-            {/* Custom preset form */}
-            <div className="flex flex-wrap items-end gap-2">
-              <Input placeholder="Name" aria-label="Preset name" value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)}
-                className="h-8 min-w-[120px] flex-1 text-xs" />
-              <Input type="number" placeholder="Price" aria-label="Preset price (COP)" value={newPresetPrice} onChange={(e) => setNewPresetPrice(e.target.value)}
-                className="h-8 w-20 text-xs" />
-              <Select value={newPresetStore} onChange={(e) => setNewPresetStore(e.target.value)} aria-label="Preset store"
-                className="w-auto h-8 px-2 text-xs">
-                {STORES.map(s => <option key={s} value={s}>{s}</option>)}
-              </Select>
-              <Select value={newPresetCategory} onChange={(e) => setNewPresetCategory(e.target.value)} aria-label="Preset category"
-                className="w-auto h-8 px-2 text-xs">
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </Select>
-              <Button variant="secondary" size="icon" onClick={saveToPresets} aria-label="Save preset">
-                <Bookmark />
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
+      </QuickAddPanel>
 
       {/* Add item form — only for current or future weeks */}
-      <WidgetCard title={`Add Purchase — ${getWeekLabel(selectedWeek)}`} compact delay={0.05}>
+      <WidgetCard title={`Add Purchase — ${marketWeekLabel(selectedWeek)}`} compact delay={0.05}>
         <div className="flex flex-wrap items-end gap-2">
           <Field label="Item" className="min-w-[120px] flex-1">
             {(id) => <Input id={id} placeholder="Pollo, leche..." value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-xs" onKeyDown={(e) => e.key === 'Enter' && addItem()} />}
@@ -531,7 +452,7 @@ export function MarketLog() {
 
       {/* Items list */}
       {log.items.length > 0 ? (
-        <WidgetCard title={`Purchases — ${getWeekLabel(selectedWeek)}`} compact delay={0.1}>
+        <WidgetCard title={`Purchases — ${marketWeekLabel(selectedWeek)}`} compact delay={0.1}>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
@@ -583,37 +504,8 @@ export function MarketLog() {
       {/* Breakdown */}
       {log.items.length > 0 && (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <WidgetCard title="By Store" compact delay={0.15}>
-            <div className="space-y-2">
-              {byStore.map(([store, total]) => (
-                <div key={store} className="flex items-center justify-between text-xs">
-                  <span className="text-foreground">{store}</span>
-                  <div className="flex items-center gap-2">
-                    <div className="h-1 w-24 rounded-full bg-muted/60">
-                      <div className="h-full rounded-full bg-foreground/40" style={{ width: `${(total / weeklyTotal) * 100}%` }} />
-                    </div>
-                    <span className="w-14 text-right font-mono tabular-nums text-muted-foreground">{fmtCOP(total)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </WidgetCard>
-
-          <WidgetCard title="By Category" compact delay={0.2}>
-            <div className="space-y-2">
-              {byCategory.map(([cat, total]) => (
-                <div key={cat} className="flex items-center justify-between text-xs">
-                  <span className="text-foreground">{cat}</span>
-                  <div className="flex items-center gap-2">
-                    <div className="h-1 w-24 rounded-full bg-muted/60">
-                      <div className="h-full rounded-full bg-foreground/40" style={{ width: `${(total / weeklyTotal) * 100}%` }} />
-                    </div>
-                    <span className="w-14 text-right font-mono tabular-nums text-muted-foreground">{fmtCOP(total)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </WidgetCard>
+          <SpendBreakdown title="By Store" rows={byStore} total={weeklyTotal} delay={0.15} />
+          <SpendBreakdown title="By Category" rows={byCategory} total={weeklyTotal} delay={0.2} />
         </div>
       )}
     </div>
