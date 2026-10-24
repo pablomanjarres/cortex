@@ -9,7 +9,7 @@ import { useStore } from '@/lib/store'
 import { WorkHoursPanel } from './WorkHoursPanel'
 import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
 import { recordRefs } from '@/lib/knowledge'
-import { useUrlParam } from '@/lib/use-url-param'
+import { useOpenOnce, useScrollIntoView, useUrlParam } from '@/lib/use-url-param'
 import { projectRefId } from '../../../electron/knowledge/refs'
 import { projectPriorityRank } from '../../../electron/project-priority'
 import { scanProjects } from './project-api'
@@ -158,11 +158,10 @@ export function ProjectsPage() {
   // `?project=<ref id>` (see projectRefId) expands that project and scrolls to it.
   const [linkedProject] = useUrlParam('project', '')
   const linkedMatch = linkedProject ? projects.find((p) => projectRefId(p.name) === linkedProject) : undefined
-  const [openedProject, setOpenedProject] = useState<string | null>(null)
-  if (linkedMatch && linkedProject !== openedProject) { setOpenedProject(linkedProject); setExpanded((prev) => new Set(prev).add(linkedMatch.name)) }
-  useEffect(() => {
-    if (openedProject) requestAnimationFrame(() => document.getElementById(`project-${openedProject}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
-  }, [openedProject])
+  const openedProject = useOpenOnce(linkedMatch ? linkedProject : null, () => {
+    if (linkedMatch) setExpanded((prev) => new Set(prev).add(linkedMatch.name))
+  })
+  useScrollIntoView(openedProject && `project-${openedProject}`)
 
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {

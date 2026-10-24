@@ -12,7 +12,7 @@ import { useStore } from '@/lib/store'
 import { NoelleCrmPanel } from './noelle-crm-panel'
 import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
 import { recordRefs } from '@/lib/knowledge'
-import { useRecordParam } from '@/lib/use-url-param'
+import { useOpenOnce, useRecordParam } from '@/lib/use-url-param'
 import {
   Plus,
   Trash2,
@@ -49,8 +49,7 @@ export function CrmPage() {
   // `?record=crm:<id>` opens that contact, switching to its org when needed.
   const recordId = useRecordParam('crm')
   const recordOrg = recordId ? data.orgs.find((o) => o.contacts.some((c) => c.id === recordId))?.id ?? null : null
-  const [openedRecord, setOpenedRecord] = useState<string | null>(null)
-  if (recordId && recordOrg && recordId !== openedRecord) { setOpenedRecord(recordId); setExpanded(recordId) }
+  useOpenOnce(recordOrg ? recordId : null, setExpanded)
   useEffect(() => {
     if (recordOrg) updateData((p) => (p.activeOrg === recordOrg ? p : { ...p, activeOrg: recordOrg }))
   }, [recordOrg, updateData])

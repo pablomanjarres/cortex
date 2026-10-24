@@ -1,7 +1,7 @@
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { useEffect, useState } from 'react'
-import { useRecordParam } from '@/lib/use-url-param'
+import { useState } from 'react'
+import { useRecordParam, useScrollIntoView } from '@/lib/use-url-param'
 import { useStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import { PageShell } from '@/components/shared/PageShell'
@@ -98,9 +98,9 @@ export function GoalsPage() {
   const [view, setView] = useState<View>('area')
   // `?record=goal:<id>` (from vault notes and the knowledge summary) highlights that goal.
   const linkedGoal = useRecordParam('goal')
-  useEffect(() => {
-    if (linkedGoal) requestAnimationFrame(() => document.getElementById(`goal-${linkedGoal}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
-  }, [linkedGoal])
+  // Waits for the goal to load, so a link opened before the store resolves still lands on it.
+  const linkedLoaded = linkedGoal !== null && goals.some((g) => g.id === linkedGoal)
+  useScrollIntoView(linkedLoaded ? `goal-${linkedGoal}` : null)
   const [showArchived, setShowArchived] = useState(false)
 
   // Add-goal form

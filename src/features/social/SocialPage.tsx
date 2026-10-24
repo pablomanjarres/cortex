@@ -17,7 +17,7 @@ import { useStore } from '@/lib/store'
 import { syncBirthdayToCalendar } from '@/lib/calendar-sync'
 import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
 import { recordRefs } from '@/lib/knowledge'
-import { useRecordParam } from '@/lib/use-url-param'
+import { useOpenOnce, useRecordParam } from '@/lib/use-url-param'
 import {
   ALL_CATEGORIES, DEFAULT_CONTACTS, calcAge, daysUntilBirthday, fmtDate, withContactDefaults,
   type Contact, type SortKey,
@@ -38,8 +38,7 @@ export function SocialPage() {
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   // `?record=contact:<id>` opens that contact once per link.
   const recordId = useRecordParam('contact')
-  const [openedRecord, setOpenedRecord] = useState<string | null>(null)
-  if (recordId && recordId !== openedRecord) { setOpenedRecord(recordId); setExpanded(recordId) }
+  useOpenOnce(recordId, setExpanded)
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000)
