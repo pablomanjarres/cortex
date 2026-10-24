@@ -2,8 +2,8 @@ import { Archive, Pencil, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
-import { formatAccountMoney, nextMonthlyDate, type FinancialAccount } from './account-model'
-import { FEE_CADENCES } from './account-options'
+import { availableCreditFor, formatAccountMoney, nextAccountCycleDate, type FinancialAccount } from './account-model'
+import { ACCOUNT_KINDS, FEE_CADENCES } from './account-options'
 import { accountDateLabel } from './account-format'
 
 export function AccountCard({ account, accounts, today, onEdit, onArchive, onRestore }: {
@@ -14,22 +14,24 @@ export function AccountCard({ account, accounts, today, onEdit, onArchive, onRes
   const linked = accounts.find((entry) => entry.id === account.linkedAccountId)
   const money = (value: number | undefined) => value === undefined ? 'Not recorded' : formatAccountMoney(value, currency)
   const balance = kind === 'debit' ? linked?.balance : account.balance
+  const closing = nextAccountCycleDate(account, 'closing', today)
+  const payment = nextAccountCycleDate(account, 'payment', today)
   const details = [
     ...(kind === 'debit' ? [{ label: 'Linked bank', value: linked?.name ?? 'Unlinked' }] : []),
     ...(kind === 'credit' ? [
       { label: 'Credit limit', value: money(account.creditLimit) },
-      { label: 'Available credit', value: account.creditLimit === undefined || account.balance === undefined ? 'Not recorded' : money(Math.max(0, account.creditLimit - account.balance)) },
+      { label: 'Available credit', value: money(availableCreditFor(account)) },
       { label: 'Minimum payment', value: money(account.minimumPayment) },
       { label: 'Annual interest', value: account.annualInterestRate === undefined ? 'Not recorded' : `${account.annualInterestRate}%` },
-      { label: 'Statement closes', value: account.closingDay ? `${accountDateLabel(nextMonthlyDate(account.closingDay, today))} · day ${account.closingDay}` : 'Not set' },
-      { label: 'Payment due', value: account.dueDay ? `${accountDateLabel(nextMonthlyDate(account.dueDay, today))} · day ${account.dueDay}` : 'Not set' },
+      { label: 'Statement closes', value: closing ? `${accountDateLabel(closing)} · day ${account.closingDay}` : 'Not set' },
+      { label: 'Payment due', value: payment ? `${accountDateLabel(payment)} · day ${account.dueDay}` : 'Not set' },
     ] : []),
     ...(account.expiresOn ? [{ label: 'Expires', value: account.expiresOn }] : []),
   ]
   return <WidgetCard title={account.name} className="min-w-0">
     <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-      <Chip size="sm">{kind === 'bank' ? 'Bank account' : kind === 'credit' ? 'Credit card' : 'Debit card'}</Chip>
+      <Chip size="sm">{ACCOUNT_KINDS.find((option) => option.value === kind)?.label}</Chip>
       {account.archived && <Chip size="sm">Archived</Chip>}
       <span className="break-words">{account.institution}</span>
       {account.last4 && <span className="font-mono">•••• {account.last4}</span>}

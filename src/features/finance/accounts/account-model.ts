@@ -29,6 +29,8 @@ export interface FinancialAccount {
   annualInterestRate?: number
   closingDay?: number
   dueDay?: number
+  closingStartMonth?: string
+  dueStartMonth?: string
   linkedAccountId?: string
   expiresOn?: string
   notes?: string
@@ -42,6 +44,11 @@ export interface AccountsData {
 }
 
 export const EMPTY_ACCOUNTS: AccountsData = { version: 1, accounts: [] }
+
+export function availableCreditFor(account: FinancialAccount): number | undefined {
+  if (account.kind !== 'credit' || !isMoney(account.creditLimit) || !isMoney(account.balance)) return undefined
+  return Math.max(0, account.creditLimit - account.balance)
+}
 
 export const MAX_ACCOUNTS = 100
 export const MAX_FEES_PER_ACCOUNT = 20
@@ -114,12 +121,24 @@ function monthDate(y: number, m: number, offset: number, day: number): string {
   return formatYmd({ y: year, m: month, d: Math.min(day, daysInMonth(year, month)) })
 }
 
-export function nextMonthlyDate(day: number, today: string): string {
+export function nextMonthlyDate(day: number, today: string, firstMonth?: string): string {
   if (!isDay(day)) throw new Error('Day of month must be a whole number from 1 to 31.')
   const now = parseYmd(today)
   if (!now) throw new Error('Today must be a valid date (YYYY-MM-DD).')
+  const start = parseYearMonth(firstMonth)
+  if (firstMonth !== undefined && !start) throw new Error('First cycle month must be a valid month (YYYY-MM).')
+  if (start && firstMonth && firstMonth > today.slice(0, 7)) return monthDate(start.y, start.m, 0, day)
   const thisMonth = monthDate(now.y, now.m, 0, day)
   return thisMonth >= today ? thisMonth : monthDate(now.y, now.m, 1, day)
+}
+
+/** Invalid stored schedules stay unset; writes still reject them through validation. */
+export function nextAccountCycleDate(account: FinancialAccount, type: 'payment' | 'closing', today: string): string | null {
+  if (account.kind !== 'credit') return null
+  const day = type === 'payment' ? account.dueDay : account.closingDay
+  const firstMonth = type === 'payment' ? account.dueStartMonth : account.closingStartMonth
+  if (!isDay(day) || (firstMonth !== undefined && !parseYearMonth(firstMonth))) return null
+  return nextMonthlyDate(day, today, firstMonth)
 }
 
 /** Next occurrence on or after today, stepping from the original anchor so day 31 never drifts. */
@@ -198,6 +217,7 @@ function validateOwnFields(account: FinancialAccount): string | null {
   const creditOnly: Array<[keyof FinancialAccount, string]> = [
     ['creditLimit', 'a credit limit'], ['minimumPayment', 'a minimum payment'],
     ['closingDay', 'a closing day'], ['dueDay', 'a payment due day'],
+    ['closingStartMonth', 'a first statement month'], ['dueStartMonth', 'a first payment month'],
   ]
   if (kind !== 'credit') {
     for (const [field, label] of creditOnly) {
@@ -208,6 +228,14 @@ function validateOwnFields(account: FinancialAccount): string | null {
     if (account.minimumPayment !== undefined && !isMoney(account.minimumPayment)) return 'Minimum payment must be a number from 0 to the supported maximum.'
     if (account.closingDay !== undefined && !isDay(account.closingDay)) return 'Closing day must be a whole number from 1 to 31.'
     if (account.dueDay !== undefined && !isDay(account.dueDay)) return 'Payment due day must be a whole number from 1 to 31.'
+    for (const [month, day, label] of [
+      [account.closingStartMonth, account.closingDay, 'statement'],
+      [account.dueStartMonth, account.dueDay, 'payment'],
+    ] as const) {
+      if (month === undefined) continue
+      if (!parseYearMonth(month)) return `First ${label} month must be a valid month (YYYY-MM).`
+      if (day === undefined) return `Set a ${label === 'statement' ? 'closing' : 'payment due'} day for the first ${label} month.`
+    }
   }
 
   if (account.annualInterestRate !== undefined) {
@@ -341,17 +369,19 @@ export function upcomingAccountDates(accounts: FinancialAccount[], today: string
     if (account.archived) continue
     const base = { accountId: account.id, accountName: account.name, currency: account.currency }
     if (account.kind === 'credit') {
-      if (isDay(account.dueDay)) {
+      const payment = nextAccountCycleDate(account, 'payment', today)
+      const closing = nextAccountCycleDate(account, 'closing', today)
+      if (payment) {
         dates.push({
           ...base, id: `${account.id}:payment`, type: 'payment', label: 'Payment due',
-          date: nextMonthlyDate(account.dueDay, today),
+          date: payment,
           ...(isMoney(account.minimumPayment) ? { amount: account.minimumPayment } : {}),
         })
       }
-      if (isDay(account.closingDay)) {
+      if (closing) {
         dates.push({
           ...base, id: `${account.id}:closing`, type: 'closing', label: 'Statement closes',
-          date: nextMonthlyDate(account.closingDay, today),
+          date: closing,
         })
       }
     }

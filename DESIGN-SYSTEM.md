@@ -242,8 +242,10 @@ status helpers stay in `automation-runs.ts`. Projects loads scans through
 `project-api.ts` and shares the desktop bridge's `ProjectInfo` contract.
 `useProjectScan` owns request state; `ProjectCard` presents each result.
 
-Finance's `accounts/account-model.ts` owns account validation, links, fees,
-per-currency totals, and recurring dates. `AccountsSection` owns the account
+Finance's `accounts/account-model.ts` owns account validation, credit availability, links, fees,
+per-currency totals, and recurring dates with optional first-cycle months.
+`AccountCycleFields` presents the statement and payment schedules using shared fields.
+`AccountsSection` owns the account
 store and composes the editor, account cards, summaries, and date list.
 `FinancePage` owns section navigation; `FinanceBudget` owns the existing budget.
 `accounts/account-budget.ts` projects account fees into budget rows and owns their
