@@ -251,6 +251,9 @@ store and composes the editor, account cards, summaries, and date list.
 `accounts/account-budget.ts` projects account fees into budget rows and owns their
 payment records. Generated rows are never stored as duplicate budget items.
 `budget-view.ts` defines which rows belong in a selected month's focus view.
+It also owns display grouping: Income, Credit (projected account fees), Expense,
+and Subscription. `BudgetSection` provides the shared table group heading;
+Credit rows retain expense accounting and are never counted twice.
 `accounts/account-input.ts` shares numeric draft parsing; `account-update.ts`
 rejects conflicting account changes without blocking the store's rebase queue.
 `accounts/account-reminders.ts` plans payment reminders from the same account
