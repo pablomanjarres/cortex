@@ -29,7 +29,7 @@ export function AccountForm({ account, accounts, onSave, onCancel }: {
     (['balance', 'creditLimit', 'minimumPayment', 'annualInterestRate', 'closingDay', 'dueDay'] as const)
       .map((key) => [key, account?.[key]?.toString() ?? '']),
   ) as Record<NumericField, string>)
-  const [fees, setFees] = useState<FeeDraft[]>(() => (account?.fees ?? []).map((fee) => ({ ...fee, amount: String(fee.amount), nextChargeDate: fee.nextChargeDate ?? '', budgetAmountCOP: fee.budgetAmountCOP?.toString() ?? '' })))
+  const [fees, setFees] = useState<FeeDraft[]>(() => (account?.fees ?? []).map((fee) => ({ ...fee, amount: String(fee.amount), nextChargeDate: fee.nextChargeDate ?? '', budgetAmountCOP: fee.budgetAmountCOP?.toString() ?? '', budgetStartMonth: fee.budgetStartMonth ?? fee.nextChargeDate?.slice(0, 7) ?? '' })))
   const [error, setError] = useState<string | null>(null)
   const numberField = (key: NumericField, label: string, hint?: string) => <Field key={key} label={label} hint={hint}>{(fieldId) => <Input
     id={fieldId} inputMode={key === 'dueDay' || key === 'closingDay' ? 'numeric' : 'decimal'} value={numbers[key]}
@@ -44,7 +44,7 @@ export function AccountForm({ account, accounts, onSave, onCancel }: {
       ...(kind === 'credit' ? Object.fromEntries((['creditLimit', 'minimumPayment', 'annualInterestRate', 'closingDay', 'dueDay'] as const)
         .map((key) => [key, key === 'creditLimit' || key === 'minimumPayment' ? parseAccountAmount(numbers[key], currency) : optionalNumber(numbers[key])])) : {}),
       fees: fees.map((fee) => ({ ...fee, name: fee.name.trim(), amount: parseAccountAmount(fee.amount, currency) ?? NaN, nextChargeDate: fee.nextChargeDate || undefined,
-        budgetAmountCOP: currency === 'COP' ? undefined : parseAccountAmount(fee.budgetAmountCOP, 'COP') })),
+        budgetAmountCOP: currency === 'COP' ? undefined : parseAccountAmount(fee.budgetAmountCOP, 'COP'), budgetStartMonth: fee.nextChargeDate ? undefined : fee.budgetStartMonth || undefined })),
     }
     const invalid = validateAccount(entry, accounts)
     if (invalid) { setError(invalid); return }

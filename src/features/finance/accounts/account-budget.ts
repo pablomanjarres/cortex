@@ -44,7 +44,7 @@ function anchorIndex(value: unknown): number | null {
 
 /** Which months of `year` the fee is charged in, never before its first charge date. */
 function chargeMonths(fee: AccountFee, year: number): boolean[] | null {
-  const anchor = anchorIndex(fee.nextChargeDate)
+  const anchor = anchorIndex(fee.nextChargeDate ?? (fee.budgetStartMonth ? `${fee.budgetStartMonth}-01` : undefined))
   if (anchor === null) return null
   const step = fee.cadence === 'once' ? 0 : FEE_CADENCE_MONTHS[fee.cadence]
   return Array.from({ length: 12 }, (_, month) => {
