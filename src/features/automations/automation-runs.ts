@@ -38,13 +38,7 @@ export function runStatusOf(run: Pick<AutomationRun, 'status'>): RunStatusMeta {
   return STATUS_META[run.status] ?? STATUS_META.success
 }
 
-export function timeAgo(ts: string, now = Date.now()): string {
-  const diff = Math.floor((now - new Date(ts).getTime()) / 1000)
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
-  return `${Math.floor(diff / 86400)}d ago`
-}
+export { timeAgo } from '@/lib/date-utils'
 
 export function fmtRunDate(ts: string): string {
   return new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })

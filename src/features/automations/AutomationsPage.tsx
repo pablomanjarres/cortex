@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { RefreshButton } from '@/components/shared/RefreshButton'
+import { useState, useEffect, useMemo, useCallback, type ReactNode } from 'react'
 import Markdown, { type Components } from 'react-markdown'
 import { SearchInput } from '@/components/shared/SearchInput'
+import { FilterChips } from '@/components/shared/FilterChips'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -10,7 +12,6 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
 import {
-  RefreshCw,
   CheckCircle2,
   XCircle,
   Clock,
@@ -22,7 +23,7 @@ import {
   FileText,
 } from 'lucide-react'
 import { runStatusOf, timeAgo, type AutomationRun, type ScheduledTask } from './automation-runs'
-import { loadRunLog, loadScheduledTasks } from './automation-api'
+import { loadRunLog, loadScheduledTasks, reviewRun } from './automation-api'
 import { RunCard, RunStatusLine } from './RunCard'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -129,6 +130,94 @@ const mdComponents: Components = {
 
 const footerAction = 'h-auto flex-1 rounded-none py-2 font-mono text-2xs font-normal'
 
+/** A task, its last run, and the actions that open its report or history. */
+function TaskCard({ task, lastRun, onOpenRun, onOpenHistory }: {
+  task: TaskDef
+  lastRun: AutomationRun | undefined
+  onOpenRun: (run: AutomationRun) => void
+  onOpenHistory: (taskName: string) => void
+}) {
+  const st = lastRun ? runStatusOf(lastRun) : null
+  const StatusIcon = st?.icon || Clock
+
+  return (
+    <div className="surface rounded-xl transition-colors hover:bg-secondary/20">
+      {/* Card header */}
+      <div className="px-4 py-3">
+        <div className="flex items-start justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="break-all font-mono text-xs font-medium">{task.name}</span>
+              <Chip size="sm">{typeLabel[task.type]}</Chip>
+              <Chip size="sm">{hostLabel[task.host]}</Chip>
+            </div>
+            <p className="mt-0.5 text-2xs text-muted-foreground">{task.description}</p>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <Clock className="h-3 w-3 text-foreground-faint" />
+              <span className="font-mono text-2xs text-foreground-faint">{task.frequency}</span>
+            </div>
+          </div>
+          <div className="ml-2 flex items-center gap-1.5 shrink-0">
+            {lastRun ? (
+              <StatusIcon className={`h-3.5 w-3.5 ${st?.text || 'text-muted-foreground'}`} />
+            ) : (
+              <span className="font-mono text-2xs text-foreground-faint">—</span>
+            )}
+          </div>
+        </div>
+
+        {/* Last run preview */}
+        {lastRun && (
+          <div className="mt-3 border-t border-border/60 pt-2">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="font-mono text-3xs text-foreground-faint">{timeAgo(lastRun.timestamp)}</span>
+            </div>
+            {lastRun.summary && (
+              <p className="line-clamp-2 text-2xs text-muted-foreground">{lastRun.summary}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Action footer — full-bleed segments that keep Button focus and keyboard behavior */}
+      <div className="flex border-t border-border/60">
+        {lastRun && (
+          <Button variant="ghost" size="sm" className={footerAction}
+            aria-label={`Read ${task.name} report`} onClick={() => onOpenRun(lastRun)}>
+            <FileText className="size-3" /> Read report
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" className={cn(footerAction, 'border-l border-border/60 first:border-l-0')}
+          aria-label={`History for ${task.name}`} onClick={() => onOpenHistory(task.name)}>
+          <Clock className="size-3" /> History
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** A drill-down view with its way back to the task list. */
+function TaskSubview({ onBack, kicker, title, subtitle, actions, children }: {
+  onBack: () => void
+  kicker: string
+  title: string
+  subtitle?: string
+  actions?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <PageShell>
+      <div>
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ChevronLeft /> Back to tasks
+        </Button>
+      </div>
+      <PageHeader kicker={kicker} title={title} subtitle={subtitle} actions={actions} />
+      {children}
+    </PageShell>
+  )
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function AutomationsPage() {
@@ -173,7 +262,7 @@ export function AutomationsPage() {
 
   const handleAction = async (runId: string, action: 'approve' | 'reject') => {
     try {
-      await fetch(`/api/automation/${runId}/${action}`, { method: 'POST' })
+      await reviewRun(runId, action)
       fetchRuns()
       setSelectedRun(null)
     } catch { /* silent */ }
@@ -212,29 +301,22 @@ export function AutomationsPage() {
   if (selectedRun) {
     const task = allTasks.find((t) => t.name === selectedRun.taskName)
     return (
-      <PageShell>
-        <div>
-          <Button variant="ghost" size="sm" onClick={() => setSelectedRun(null)}>
-            <ChevronLeft /> Back to tasks
-          </Button>
-        </div>
-
-        <PageHeader
-          kicker="Run report"
-          title={selectedRun.taskName}
-          subtitle={task?.description}
-          actions={selectedRun.status === 'pending-approval' ? (
-            <>
-              <Button size="sm" onClick={() => handleAction(selectedRun.id, 'approve')}>
-                <CheckCircle2 /> Approve
-              </Button>
-              <Button variant="destructive" size="sm" onClick={() => handleAction(selectedRun.id, 'reject')}>
-                <XCircle /> Reject
-              </Button>
-            </>
-          ) : undefined}
-        />
-
+      <TaskSubview
+        onBack={() => setSelectedRun(null)}
+        kicker="Run report"
+        title={selectedRun.taskName}
+        subtitle={task?.description}
+        actions={selectedRun.status === 'pending-approval' ? (
+          <>
+            <Button size="sm" onClick={() => handleAction(selectedRun.id, 'approve')}>
+              <CheckCircle2 /> Approve
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => handleAction(selectedRun.id, 'reject')}>
+              <XCircle /> Reject
+            </Button>
+          </>
+        ) : undefined}
+      >
         <RunStatusLine run={selectedRun} />
 
         {selectedRun.summary && (
@@ -249,7 +331,7 @@ export function AutomationsPage() {
             <Markdown components={mdComponents}>{selectedRun.fullOutput}</Markdown>
           </div>
         )}
-      </PageShell>
+      </TaskSubview>
     )
   }
 
@@ -258,19 +340,12 @@ export function AutomationsPage() {
     const task = allTasks.find((t) => t.name === selectedTask)
 
     return (
-      <PageShell>
-        <div>
-          <Button variant="ghost" size="sm" onClick={() => setSelectedTask(null)}>
-            <ChevronLeft /> Back to tasks
-          </Button>
-        </div>
-
-        <PageHeader
-          kicker="Task history"
-          title={selectedTask}
-          subtitle={task ? `${task.description} · ${task.frequency}` : undefined}
-        />
-
+      <TaskSubview
+        onBack={() => setSelectedTask(null)}
+        kicker="Task history"
+        title={selectedTask}
+        subtitle={task ? `${task.description} · ${task.frequency}` : undefined}
+      >
         <div className="flex flex-col gap-3">
           {taskRuns.length === 0 ? (
             <EmptyState message="No runs recorded yet for this task." />
@@ -278,7 +353,7 @@ export function AutomationsPage() {
             <RunCard key={run.id} run={run} layout="history" onOpen={setSelectedRun} />
           ))}
         </div>
-      </PageShell>
+      </TaskSubview>
     )
   }
 
@@ -293,9 +368,7 @@ export function AutomationsPage() {
             <span className="text-warning">{` · ${pendingApprovals.length} pending`}</span>
           )}
         </p>
-        <Button variant="secondary" size="sm" onClick={refreshAll} disabled={loading}>
-          <RefreshCw /> Refresh
-        </Button>
+        <RefreshButton onClick={refreshAll} busy={loading} />
       </div>
 
       {/* Initial load — skeleton in place of the runs widgets */}
@@ -333,14 +406,7 @@ export function AutomationsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchInput label="Search tasks" containerClassName="w-full sm:max-w-xs sm:flex-1" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search tasks..."
             className="h-8 text-xs" />
-        <div className="flex flex-wrap gap-1.5 overflow-x-auto">
-          {groups.map((g) => (
-            <Chip key={g} selectable size="sm" selected={groupFilter === g}
-              onClick={() => setGroupFilter(groupFilter === g ? null : g)}>
-              {g}
-            </Chip>
-          ))}
-        </div>
+        <FilterChips label="Task groups" options={groups.map((g) => ({ value: g, label: g }))} value={groupFilter} onChange={setGroupFilter} className="overflow-x-auto" />
       </div>
 
       {/* Task groups */}
@@ -356,66 +422,9 @@ export function AutomationsPage() {
               <h2 className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{group}</h2>
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {tasksInGroup.map((task) => {
-                const lastRun = taskLastRun[task.name]
-                const st = lastRun ? runStatusOf(lastRun) : null
-                const StatusIcon = st?.icon || Clock
-
-                return (
-                  <div key={task.name} className="surface rounded-xl transition-colors hover:bg-secondary/20">
-                    {/* Card header */}
-                    <div className="px-4 py-3">
-                      <div className="flex items-start justify-between">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="break-all font-mono text-xs font-medium">{task.name}</span>
-                            <Chip size="sm">{typeLabel[task.type]}</Chip>
-                            <Chip size="sm">{hostLabel[task.host]}</Chip>
-                          </div>
-                          <p className="mt-0.5 text-2xs text-muted-foreground">{task.description}</p>
-                          <div className="mt-1.5 flex items-center gap-1.5">
-                            <Clock className="h-3 w-3 text-foreground-faint" />
-                            <span className="font-mono text-2xs text-foreground-faint">{task.frequency}</span>
-                          </div>
-                        </div>
-                        <div className="ml-2 flex items-center gap-1.5 shrink-0">
-                          {lastRun ? (
-                            <StatusIcon className={`h-3.5 w-3.5 ${st?.text || 'text-muted-foreground'}`} />
-                          ) : (
-                            <span className="font-mono text-2xs text-foreground-faint">—</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Last run preview */}
-                      {lastRun && (
-                        <div className="mt-3 border-t border-border/60 pt-2">
-                          <div className="mb-1 flex items-center gap-2">
-                            <span className="font-mono text-3xs text-foreground-faint">{timeAgo(lastRun.timestamp)}</span>
-                          </div>
-                          {lastRun.summary && (
-                            <p className="line-clamp-2 text-2xs text-muted-foreground">{lastRun.summary}</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action footer — full-bleed segments that keep Button focus and keyboard behavior */}
-                    <div className="flex border-t border-border/60">
-                      {lastRun && (
-                        <Button variant="ghost" size="sm" className={footerAction}
-                          aria-label={`Read ${task.name} report`} onClick={() => setSelectedRun(lastRun)}>
-                          <FileText className="size-3" /> Read report
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="sm" className={cn(footerAction, 'border-l border-border/60 first:border-l-0')}
-                        aria-label={`History for ${task.name}`} onClick={() => setSelectedTask(task.name)}>
-                        <Clock className="size-3" /> History
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
+              {tasksInGroup.map((task) => (
+                <TaskCard key={task.name} task={task} lastRun={taskLastRun[task.name]} onOpenRun={setSelectedRun} onOpenHistory={setSelectedTask} />
+              ))}
             </div>
           </div>
         )

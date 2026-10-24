@@ -55,8 +55,8 @@ export function getISOWeek(isoDate: string): string {
 }
 
 /** Human-readable relative time, e.g. "2h ago", "5m ago" */
-export function timeAgo(isoTimestamp: string): string {
-  const diff = Date.now() - new Date(isoTimestamp).getTime()
+export function timeAgo(isoTimestamp: string, now = Date.now()): string {
+  const diff = now - new Date(isoTimestamp).getTime()
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'just now'
   if (mins < 60) return `${mins}m ago`
