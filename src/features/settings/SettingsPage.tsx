@@ -6,6 +6,7 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
+import { SegmentedControl, type SegmentedOption } from '@/components/shared/SegmentedControl'
 import {
   applyThemePreference,
   readStoredThemePreference,
@@ -28,6 +29,11 @@ const keyFields: KeyField[] = [
   { service: 'supabase-service-key', label: 'Supabase Service Key', placeholder: 'eyJ...', description: 'Service role key (not anon key)' },
   { service: 'lemon-api-key', label: 'Lemon Squeezy API Key', placeholder: 'API key from Settings', description: 'Settings → API in Lemon Squeezy dashboard' },
   { service: 'lemon-store-id', label: 'Lemon Squeezy Store ID', placeholder: '12345', description: 'Your store ID number' },
+]
+
+const THEME_OPTIONS: SegmentedOption<ThemePreference>[] = [
+  { value: 'dark', label: 'Dark' },
+  { value: 'light', label: 'Light' },
 ]
 
 function KeyRow({ field }: { field: KeyField }) {
@@ -203,21 +209,7 @@ export function SettingsPage() {
             <p className="text-sm font-medium">Theme</p>
             <p className="mt-0.5 text-xs text-muted-foreground">Dark is the default Cortex look; light stays available.</p>
           </div>
-          <div className="inline-flex rounded-md border border-border bg-card p-1" aria-label="Appearance theme">
-            {(['dark', 'light'] as const).map((option) => (
-              <Button
-                key={option}
-                type="button"
-                variant={theme === option ? 'default' : 'ghost'}
-                size="sm"
-                aria-pressed={theme === option}
-                onClick={() => chooseTheme(option)}
-                className="min-w-20 capitalize"
-              >
-                {option}
-              </Button>
-            ))}
-          </div>
+          <SegmentedControl label="Appearance theme" options={THEME_OPTIONS} value={theme} onChange={chooseTheme} optionClassName="min-w-20" />
         </div>
       </WidgetCard>
 
