@@ -13,6 +13,7 @@ export interface AccountFee {
   cadence: FeeCadence
   nextChargeDate?: string
   budgetAmountCOP?: number
+  budgetStartMonth?: string
 }
 
 export interface FinancialAccount {
@@ -154,6 +155,7 @@ function validateFee(fee: AccountFee, index: number): string | null {
   if (fee.budgetAmountCOP !== undefined && (!isMoney(fee.budgetAmountCOP) || !Number.isSafeInteger(fee.budgetAmountCOP))) {
     return `${label}: budget amount must be a non-negative whole COP amount within the supported range.`
   }
+  if (fee.budgetStartMonth !== undefined && !parseYearMonth(fee.budgetStartMonth)) return `${label}: budget start month must be a valid month (YYYY-MM).`
   if (!CADENCES.includes(fee.cadence)) return `${label}: frequency must be monthly, quarterly, yearly or once.`
   if (fee.nextChargeDate !== undefined && !parseYmd(fee.nextChargeDate)) {
     return `${label}: first charge date must be a valid date (YYYY-MM-DD).`
