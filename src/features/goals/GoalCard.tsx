@@ -1,5 +1,3 @@
-import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
-import { recordRefs } from '@/lib/knowledge'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
@@ -65,7 +63,6 @@ export function GoalCard({ goal: g, highlighted = false, ...actions }: { goal: G
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <KnowledgeLink cortexRef={recordRefs.goal(g.id)} />
           <span className={`font-mono text-sm font-medium tabular-nums ${pct === 100 ? 'text-success' : 'text-muted-foreground'}`}>{pct}%</span>
           <div className="flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
             <Button variant="ghost" size="icon-xs" onClick={actions.onEdit} aria-label="Edit goal" title="Edit">

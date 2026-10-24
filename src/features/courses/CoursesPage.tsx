@@ -19,6 +19,7 @@ import {
   readDraggedLink, uploadLimitError,
 } from '@/lib/media'
 import { useFileDropZone } from '@/lib/use-file-drop-zone'
+import { Notice } from '@/components/shared/Notice'
 import {
   Plus, Trash2, X, Link as LinkIcon, GraduationCap, FileText, Download,
   Upload, Image as ImageIcon, Minus, Paperclip, BookOpen,
@@ -297,7 +298,7 @@ export function CoursesPage() {
           }
         />
 
-        {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+        {error && <Notice tone="danger">{error}</Notice>}
 
         {/* Filters */}
         <div className="flex flex-col gap-3">
