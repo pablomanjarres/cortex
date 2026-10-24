@@ -51,7 +51,11 @@ test('midnight completion logs once to the start day and clears the timer', asyn
   await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
   await page.clock.runFor(4000)
   await expect.poll(() => backend.stores['cortex-active-sprint']).toBeNull()
-  await expect.poll(() => backend.stores['cortex-daily-sessions-2026-09-15']).toEqual([
+  await expect.poll(async () => {
+    // The async read can finish after runFor; advance the paused debounce too.
+    await page.clock.runFor(250)
+    return backend.stores['cortex-daily-sessions-2026-09-15']
+  }).toEqual([
     expect.objectContaining({ task: 'Cross midnight', duration: 1, startedAt: '2026-09-16T04:59:00Z' }),
   ])
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))

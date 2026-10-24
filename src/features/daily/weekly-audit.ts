@@ -62,4 +62,3 @@ export function buildWeeklyAudit({ weekDates, sessionsByDay, habits, habitHistor
     generatedAt: generatedAt.toISOString(),
   }
 }
-
