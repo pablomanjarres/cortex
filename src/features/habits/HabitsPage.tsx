@@ -1,100 +1,48 @@
+import { DateStepper } from '@/components/shared/DateStepper'
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { readStore, useStore } from '@/lib/store'
-import { localDate, getWeekLabel } from '@/lib/date-utils'
+import { getWeekDates, localDate, getWeekLabel } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
-import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
-import { Flame, Trophy, X, Pencil, Check, ChevronLeft, ChevronRight, Archive } from 'lucide-react'
-import type { Cadence, Habit } from '@/lib/habits'
+import { Flame, Trophy } from 'lucide-react'
+import type { Habit } from '@/lib/habits'
 import { isActiveHabit } from '@/lib/habits'
-import { HabitAddForm, HabitEditFields } from './HabitForms'
+import { HabitAddForm, HabitEditFields, HabitEditPanel } from './HabitForms'
+import { ActiveHabitActions, HabitDayToggle, HabitGoalProgress } from './HabitControls'
 import { HabitNoteButton, HabitNoteEditor } from './HabitNotes'
 import { OnHoldHabitsSection } from './OnHoldHabitsSection'
 import { emptyHabitDraft, type HabitDraft } from './habitFormState'
 import { migrateLegacyHabitHistory, weekDays, type HabitHistory } from './habit-migration'
-
-const OLD_DEFAULT_IDS = ['1', '2', '3', '4', '5', '6', '7']
-
-const defaultHabits: Habit[] = [
-  // Hygiene
-  { id: 'h1', name: 'Morning routine', emoji: '🚿', weeklyGoal: 7, category: 'Hygiene' },
-  // Health
-  { id: 'h2', name: 'Workout', emoji: '💪', weeklyGoal: 4, category: 'Health' },
-  // Mind
-  { id: 'h3', name: 'Journal', emoji: '✍️', weeklyGoal: 7, category: 'Mind' },
-  { id: 'h4', name: 'Non-tech reading', emoji: '📖', weeklyGoal: 7, category: 'Mind' },
-  // GTM
-  { id: 'h5', name: 'Ship something', emoji: '🚀', weeklyGoal: 7, category: 'GTM' },
-  { id: 'h6', name: '5+ DMs sent', emoji: '💬', weeklyGoal: 5, category: 'GTM' },
-  { id: 'h7', name: 'X engagement', emoji: '🐦', weeklyGoal: 5, category: 'GTM' },
-]
+import { DEFAULT_HABITS, LEGACY_DEFAULT_HABIT_IDS } from './habit-defaults'
+import { habitGoalLabel, habitProgress, habitStreak, weeklyHabitScore, withGoal } from './habit-progress'
+import { useHabitEditor } from './useHabitEditor'
 
 function getWeekDatesWithOffset(offset: number): string[] {
-  const now = new Date()
-  const day = now.getDay()
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - ((day + 6) % 7) + offset * 7)
-  const dates: string[] = []
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    dates.push(localDate(d))
-  }
-  return dates
-}
-
-// All calendar dates (YYYY-MM-DD) in the month containing the anchor date.
-function getMonthDates(anchorDateStr: string): string[] {
-  const anchor = new Date(anchorDateStr + 'T00:00:00')
-  const year = anchor.getFullYear()
-  const month = anchor.getMonth()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const dates: string[] = []
-  for (let i = 1; i <= daysInMonth; i++) {
-    dates.push(localDate(new Date(year, month, i)))
-  }
-  return dates
+  const anchor = new Date()
+  anchor.setDate(anchor.getDate() + offset * 7)
+  return getWeekDates(localDate(anchor))
 }
 
 function getMonthLabel(anchorDateStr: string): string {
   return new Date(anchorDateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'long' })
 }
 
-// Parse a goal input. A goal of 0 is allowed — it means the habit has no
-// required completions this week/month (paused / optional, still trackable).
-// A blank or invalid input falls back to the cadence default; an explicit 0 is
-// kept (note: `parseInt('0') || 7` would wrongly coerce 0 back to the default).
-function parseGoal(raw: string, cadence: Cadence): number {
-  const max = cadence === 'monthly' ? 31 : 7
-  const fallback = cadence === 'monthly' ? 1 : 7
-  const t = raw.trim()
-  if (t === '') return fallback
-  const n = parseInt(t, 10)
-  if (Number.isNaN(n)) return fallback
-  return Math.min(Math.max(n, 0), max)
-}
-
 export function HabitsPage() {
-  const [habits, setHabits] = useStore<Habit[]>('cortex-habits', defaultHabits)
+  const [habits, setHabits] = useStore<Habit[]>('cortex-habits', DEFAULT_HABITS)
   const [grid, setGrid] = useStore<HabitHistory>('cortex-habits-grid', {})
   const [habitHistory, setHabitHistory] = useStore<HabitHistory>('cortex-habits-history', {})
   const [activeDraft, setActiveDraft] = useState<HabitDraft>(() => emptyHabitDraft())
   const [holdDraft, setHoldDraft] = useState<HabitDraft>(() => emptyHabitDraft())
   const [customCategory, setCustomCategory] = useState({ active: false, hold: false })
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editName, setEditName] = useState('')
-  const [editEmoji, setEditEmoji] = useState('')
-  const [editGoal, setEditGoal] = useState('')
-  const [editCadence, setEditCadence] = useState<Cadence>('weekly')
+  const editor = useHabitEditor(setHabits)
   const [weekOffset, setWeekOffset] = useState(0)
   const [expandedNoteId, setExpandedNoteId] = useState<string | null>(null)
 
   const weekDates = getWeekDatesWithOffset(weekOffset)
   // Monthly-cadence habits are scored over the calendar month of the viewed week.
-  const monthDates = getMonthDates(weekDates[0])
   const monthLabel = getMonthLabel(weekDates[0])
 
   // One-time migration from old weekly grid to date-based history
@@ -114,11 +62,11 @@ export function HabitsPage() {
   const migratedRef = useRef(false)
   useEffect(() => {
     if (migratedRef.current) return
-    const hasOldIds = habits.length > 0 && habits.every(h => OLD_DEFAULT_IDS.includes(h.id))
+    const hasOldIds = habits.length > 0 && habits.every(h => LEGACY_DEFAULT_HABIT_IDS.includes(h.id))
     const hasNoCategories = habits.every(h => !h.category)
     if (hasOldIds && hasNoCategories) {
       migratedRef.current = true
-      setHabits(defaultHabits)
+      setHabits(DEFAULT_HABITS)
     }
   }, [habits, setHabits])
 
@@ -148,16 +96,13 @@ export function HabitsPage() {
     onHold = false
   ) => {
     if (!draft.name.trim()) return
-    const base = {
+    const habit = withGoal<Habit>({
       id: Date.now().toString(),
       name: draft.name.trim(),
       emoji: draft.emoji || '⭐',
       category: draft.category || undefined,
       onHold,
-    }
-    const habit: Habit = draft.cadence === 'monthly'
-      ? { ...base, cadence: 'monthly', monthlyGoal: parseGoal(draft.goal, 'monthly') }
-      : { ...base, cadence: 'weekly', weeklyGoal: parseGoal(draft.goal, 'weekly') }
+    }, draft.cadence, draft.goal)
     setHabits((prev) => [...prev, habit])
     setDraft(emptyHabitDraft())
     setCustomCategory((prev) => ({ ...prev, [draftKey]: false }))
@@ -188,126 +133,35 @@ export function HabitsPage() {
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, onHold } : h)))
   }
 
-  const startEdit = (habit: Habit) => {
-    setEditingId(habit.id)
-    setEditName(habit.name)
-    setEditEmoji(habit.emoji)
-    const cadence = habit.cadence ?? 'weekly'
-    setEditCadence(cadence)
-    setEditGoal(String(cadence === 'monthly' ? (habit.monthlyGoal ?? 1) : (habit.weeklyGoal ?? 7)))
-  }
-
-  const saveEdit = () => {
-    if (!editingId || !editName.trim()) return
-    setHabits((prev) =>
-      prev.map((h) => {
-        if (h.id !== editingId) return h
-        const next: Habit = { ...h, name: editName.trim(), emoji: editEmoji || h.emoji, cadence: editCadence }
-        if (editCadence === 'monthly') {
-          next.monthlyGoal = parseGoal(editGoal, 'monthly')
-          delete next.weeklyGoal
-        } else {
-          next.weeklyGoal = parseGoal(editGoal, 'weekly')
-          delete next.monthlyGoal
-        }
-        return next
-      })
-    )
-    setEditingId(null)
-  }
-
   const toggleNote = (id: string) => setExpandedNoteId((cur) => (cur === id ? null : id))
   const setHabitContext = (id: string, value: string) =>
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, context: value.trim() ? value : undefined } : h)))
 
-  const getStreak = (habitId: string) => {
-    let streak = 0
-    const today = new Date()
-    for (let i = 0; i < 365; i++) {
-      const d = new Date(today)
-      d.setDate(today.getDate() - i)
-      const dateStr = localDate(d)
-      if (habitHistory[dateStr]?.[habitId]) {
-        streak++
-      } else {
-        break
-      }
-    }
-    return streak
-  }
-
-  // Consecutive calendar months (back from now) whose completions met the monthly goal.
-  // The current, still-in-progress month never breaks the streak — it just doesn't count yet.
-  const getMonthlyStreak = (habitId: string, goal: number) => {
-    if (goal <= 0) return 0 // no target ⇒ no streak to earn
-    let streak = 0
-    const now = new Date()
-    for (let i = 0; i < 120; i++) {
-      const first = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const done = getMonthDates(localDate(first)).filter(d => habitHistory[d]?.[habitId]).length
-      if (done >= goal) streak++
-      else if (i === 0) continue
-      else break
-    }
-    return streak
-  }
-
-  // Cadence-aware progress for the currently-viewed window (week or month).
-  const getProgress = (habit: Habit) => {
-    if ((habit.cadence ?? 'weekly') === 'monthly') {
-      const goal = habit.monthlyGoal ?? 1
-      const done = monthDates.filter(d => habitHistory[d]?.[habit.id]).length
-      return { cadence: 'monthly' as const, goal, done, met: done >= goal }
-    }
-    const goal = habit.weeklyGoal ?? 7
-    const done = weekDates.filter(d => habitHistory[d]?.[habit.id]).length
-    return { cadence: 'weekly' as const, goal, done, met: done >= goal }
-  }
-  const getStreakFor = (habit: Habit) =>
-    (habit.cadence ?? 'weekly') === 'monthly'
-      ? getMonthlyStreak(habit.id, habit.monthlyGoal ?? 1)
-      : getStreak(habit.id)
-
-  // Weekly score respects per-habit goals (e.g. Train 3/week = 100% at 3).
-  // Monthly habits are tracked over the month, so they're excluded from the weekly rollup.
-  // Habits with a 0 goal are "not required this week" — excluded so they neither
-  // inflate the score (as a free 100%) nor divide by zero.
-  const weeklyHabits = activeHabits.filter(h => (h.cadence ?? 'weekly') === 'weekly')
-  const scoredWeeklyHabits = weeklyHabits.filter(h => (h.weeklyGoal ?? 7) > 0)
-  const habitWeekProgress = scoredWeeklyHabits.map((h) => {
-    const goal = h.weeklyGoal ?? 7
-    const done = weekDates.filter(d => habitHistory[d]?.[h.id]).length
-    return { done, goal, pct: Math.min(done / goal, 1) }
-  })
-  const weeklyScore = scoredWeeklyHabits.length > 0
-    ? Math.round(habitWeekProgress.reduce((s, h) => s + h.pct, 0) / scoredWeeklyHabits.length * 100)
-    : 0
-  const totalCompleted = habitWeekProgress.reduce((s, h) => s + Math.min(h.done, h.goal), 0)
-  const totalGoals = habitWeekProgress.reduce((s, h) => s + h.goal, 0)
+  const getProgress = (habit: Habit) => habitProgress(habit, habitHistory, weekDates)
+  const { score: weeklyScore, completed: totalCompleted, goals: totalGoals } = weeklyHabitScore(habits, habitHistory, weekDates)
 
   const todayDayIndex = (() => {
     const d = new Date().getDay()
     return (d + 6) % 7 // 0=Mon, 6=Sun
   })()
 
-  const editFieldProps = {
-    name: editName,
-    emoji: editEmoji,
-    goal: editGoal,
-    cadence: editCadence,
-    onNameChange: setEditName,
-    onEmojiChange: setEditEmoji,
-    onGoalChange: setEditGoal,
-    onCadenceChange: setEditCadence,
-    onSave: saveEdit,
-  }
+  const habitActions = (habit: Habit, dense: boolean) => (
+    <ActiveHabitActions
+      dense={dense}
+      editing={editor.editingId === habit.id}
+      onEdit={() => editor.start(habit)}
+      onSave={editor.save}
+      onArchive={() => setHabitOnHold(habit.id, true)}
+      onDelete={() => removeHabit(habit.id)}
+    />
+  )
 
   const renderHabitRow = (habit: Habit) => (
     <Fragment key={habit.id}>
     <tr className="group border-t border-border/60">
       <td className="py-2.5 pr-4 text-sm text-foreground">
-        {editingId === habit.id ? (
-          <HabitEditFields {...editFieldProps} compact />
+        {editor.editingId === habit.id ? (
+          <HabitEditFields editor={editor} compact />
         ) : (
           <span className="inline-flex items-center">
             <span className="mr-2">{habit.emoji}</span>{habit.name}
@@ -315,59 +169,23 @@ export function HabitsPage() {
           </span>
         )}
       </td>
-      {weekDays.map((day, dayIndex) => {
-        const checked = !!habitHistory[weekDates[dayIndex]]?.[habit.id]
-        return (
-          <td key={day} className="py-2.5 text-center">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => toggle(habit.id, dayIndex)}
-              aria-pressed={checked}
-              aria-label={`${habit.name} — ${day}`}
-              className={cn(
-                checked
-                  ? 'border-success/25 bg-success/10 text-success hover:bg-success/15 hover:text-success'
-                  : 'bg-secondary hover:bg-secondary/80'
-              )}
-            >
-              {checked && <span className="text-xs">✓</span>}
-            </Button>
-          </td>
-        )
-      })}
+      {weekDays.map((day, dayIndex) => (
+        <td key={day} className="py-2.5 text-center">
+          <HabitDayToggle
+            habitName={habit.name}
+            day={day}
+            checked={!!habitHistory[weekDates[dayIndex]]?.[habit.id]}
+            isToday={dayIndex === todayDayIndex}
+            dense
+            onToggle={() => toggle(habit.id, dayIndex)}
+          />
+        </td>
+      ))}
       <td className="py-2.5 text-center">
-        {(() => {
-          const p = getProgress(habit)
-          return (
-            <span className={cn(
-              'font-mono text-sm tabular-nums',
-              p.goal === 0 ? 'text-foreground-faint' : p.met ? 'text-success' : 'text-muted-foreground'
-            )}>
-              {Math.min(p.done, p.goal)}/{p.goal}
-              {p.cadence === 'monthly' && <span className="ml-0.5 text-3xs font-normal text-foreground-faint" title={`Monthly goal · ${monthLabel}`}>/mo</span>}
-            </span>
-          )
-        })()}
+        <HabitGoalProgress progress={getProgress(habit)} monthLabel={monthLabel} className="text-sm" />
       </td>
       <td className="py-2.5 text-center">
-        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          {editingId === habit.id ? (
-            <Button variant="ghost" size="icon-xs" onClick={saveEdit} aria-label="Save habit">
-              <Check />
-            </Button>
-          ) : (
-            <Button variant="ghost" size="icon-xs" onClick={() => startEdit(habit)} aria-label="Edit habit">
-              <Pencil />
-            </Button>
-          )}
-          <Button variant="ghost" size="icon-xs" onClick={() => setHabitOnHold(habit.id, true)} aria-label="Move habit to on hold">
-            <Archive />
-          </Button>
-          <Button variant="ghost" size="icon-xs" onClick={() => removeHabit(habit.id)} aria-label="Delete habit" className="hover:text-destructive">
-            <X />
-          </Button>
-        </div>
+        {habitActions(habit, true)}
       </td>
     </tr>
     {expandedNoteId === habit.id && (
@@ -389,22 +207,10 @@ export function HabitsPage() {
           <span className="font-mono text-2xl font-medium tabular-nums md:hidden">{weeklyScore}%</span>
           <span className="font-mono text-xs tabular-nums text-muted-foreground md:text-sm">{totalCompleted}/{totalGoals}</span>
         </div>
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon-sm" onClick={() => setWeekOffset(w => w - 1)} aria-label="Previous week">
-            <ChevronLeft />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setWeekOffset(0)}
-            className={cn('font-mono', weekOffset === 0 && 'text-foreground')}
-          >
-            {weekOffset === 0 ? 'This week' : getWeekLabel(weekDates[0])}
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={() => setWeekOffset(w => Math.min(w + 1, 0))} aria-label="Next week" disabled={weekOffset >= 0}>
-            <ChevronRight />
-          </Button>
-        </div>
+        <DateStepper label={weekOffset === 0 ? 'This week' : getWeekLabel(weekDates[0])}
+          previousLabel="Previous week" nextLabel="Next week" onPrevious={() => setWeekOffset(w => w - 1)}
+          onNext={() => setWeekOffset(w => Math.min(w + 1, 0))} nextDisabled={weekOffset >= 0}
+          onReset={() => setWeekOffset(0)} resetActive={weekOffset === 0} />
       </div>
 
       {/* ── Mobile: card layout ───────────────────────────────────── */}
@@ -418,20 +224,14 @@ export function HabitsPage() {
                 <p className="pt-2 font-mono text-2xs uppercase tracking-widest text-foreground-faint">{cat}</p>
               )}
               {catHabits.map((habit) => {
-          const { cadence, goal, done, met } = getProgress(habit)
-          const streak = getStreakFor(habit)
-          const streakUnit = cadence === 'monthly' ? 'mo' : 'd'
+          const progress = getProgress(habit)
+          const streak = habitStreak(habit, habitHistory)
+          const streakUnit = progress.cadence === 'monthly' ? 'mo' : 'd'
 
           return (
             <div key={habit.id} className="surface rounded-xl p-4">
-              {editingId === habit.id ? (
-                <div className="flex flex-col gap-2">
-                  <HabitEditFields {...editFieldProps} />
-                  <div className="flex gap-2">
-                    <Button size="lg" className="flex-1" onClick={saveEdit}>Save</Button>
-                    <Button variant="ghost" size="lg" onClick={() => setEditingId(null)}>Cancel</Button>
-                  </div>
-                </div>
+              {editor.editingId === habit.id ? (
+                <HabitEditPanel editor={editor} size="lg" />
               ) : (
                 <>
                   {/* Header row: emoji + name + streak + actions */}
@@ -447,53 +247,24 @@ export function HabitsPage() {
                           {streak}{streakUnit}
                         </Chip>
                       )}
-                      <span className={cn(
-                        'font-mono text-xs tabular-nums',
-                        goal === 0 ? 'text-foreground-faint' : met ? 'text-success' : 'text-muted-foreground'
-                      )}>
-                        {Math.min(done, goal)}/{goal}
-                        {cadence === 'monthly' && <span className="ml-0.5 text-3xs font-normal text-foreground-faint">/mo</span>}
-                      </span>
+                      <HabitGoalProgress progress={progress} monthLabel={monthLabel} className="text-xs" />
                       <HabitNoteButton habit={habit} expanded={expandedNoteId === habit.id} onToggle={() => toggleNote(habit.id)} mobile />
-                      <Button variant="ghost" size="icon-lg" onClick={() => startEdit(habit)} aria-label="Edit habit">
-                        <Pencil />
-                      </Button>
-                      <Button variant="ghost" size="icon-lg" onClick={() => setHabitOnHold(habit.id, true)} aria-label="Move habit to on hold">
-                        <Archive />
-                      </Button>
-                      <Button variant="ghost" size="icon-lg" onClick={() => removeHabit(habit.id)} aria-label="Delete habit" className="active:text-destructive">
-                        <X />
-                      </Button>
+                      {habitActions(habit, false)}
                     </div>
                   </div>
                   {/* Day circles */}
                   <div className="grid grid-cols-7 gap-0.5">
-                    {weekDays.map((day, i) => {
-                      const isChecked = !!habitHistory[weekDates[i]]?.[habit.id]
-                      const isToday = i === todayDayIndex
-                      return (
-                        <Button
-                          key={day}
-                          variant="ghost"
-                          onClick={() => toggle(habit.id, i)}
-                          aria-pressed={isChecked}
-                          aria-label={`${habit.name} — ${day}`}
-                          className="h-auto min-w-0 flex-col gap-1 px-0 py-1"
-                        >
-                          <span className={cn('font-mono text-2xs', isToday ? 'text-foreground' : 'text-foreground-faint')}>{day}</span>
-                          <span className={cn(
-                            'flex h-7 w-7 items-center justify-center rounded-full transition-colors min-[360px]:h-9 min-[360px]:w-9',
-                            isChecked
-                              ? 'border border-success/25 bg-success/10 text-success'
-                              : isToday
-                                ? 'bg-secondary ring-1 ring-input'
-                                : 'bg-secondary'
-                          )}>
-                            {isChecked && <span className="text-sm">✓</span>}
-                          </span>
-                        </Button>
-                      )
-                    })}
+                    {weekDays.map((day, i) => (
+                      <HabitDayToggle
+                        key={day}
+                        habitName={habit.name}
+                        day={day}
+                        checked={!!habitHistory[weekDates[i]]?.[habit.id]}
+                        isToday={i === todayDayIndex}
+                        dense={false}
+                        onToggle={() => toggle(habit.id, i)}
+                      />
+                    ))}
                   </div>
                   {expandedNoteId === habit.id && (
                     <div className="mt-3">
@@ -528,11 +299,10 @@ export function HabitsPage() {
           customCategory={customCategory.hold}
           setCustomCategory={(value) => setCustomCategory((prev) => ({ ...prev, hold: value }))}
           categoryOptions={categoryOptions}
-          edit={{ ...editFieldProps, editingId, cancel: () => setEditingId(null) }}
+          editor={editor}
           expandedNoteId={expandedNoteId}
           onAdd={() => addHabit(holdDraft, setHoldDraft, 'hold', true)}
           onActivate={(id) => setHabitOnHold(id, false)}
-          onEdit={startEdit}
           onDelete={removeHabit}
           onToggleNote={toggleNote}
           onContextChange={setHabitContext}
@@ -597,10 +367,9 @@ export function HabitsPage() {
           <WidgetCard title="Streaks" delay={0.2}>
             <div className="flex flex-col gap-2">
               {activeHabits.map((habit) => {
-                const { cadence, goal } = getProgress(habit)
-                const unit = cadence === 'monthly' ? 'mo' : 'd'
-                const label = cadence === 'monthly' ? `${goal}x/mo` : (goal < 7 ? `${goal}x/wk` : null)
-                const streak = getStreakFor(habit)
+                const unit = habit.cadence === 'monthly' ? 'mo' : 'd'
+                const label = habitGoalLabel(habit)
+                const streak = habitStreak(habit, habitHistory)
                 return (
                   <div key={habit.id} className="flex items-center justify-between rounded-md px-2 py-1.5">
                     <div className="flex min-w-0 items-center gap-1.5">
@@ -625,12 +394,11 @@ export function HabitsPage() {
             customCategory={customCategory.hold}
             setCustomCategory={(value) => setCustomCategory((prev) => ({ ...prev, hold: value }))}
             categoryOptions={categoryOptions}
-            edit={{ ...editFieldProps, editingId, cancel: () => setEditingId(null) }}
+            editor={editor}
             expandedNoteId={expandedNoteId}
             onAdd={() => addHabit(holdDraft, setHoldDraft, 'hold', true)}
             onActivate={(id) => setHabitOnHold(id, false)}
-            onEdit={startEdit}
-            onDelete={removeHabit}
+              onDelete={removeHabit}
             onToggleNote={toggleNote}
             onContextChange={setHabitContext}
           />

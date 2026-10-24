@@ -1,21 +1,24 @@
+import { DateStepper } from '@/components/shared/DateStepper'
 import { useState, useEffect, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ThemedTooltip, axisProps, chartColors, cssVar } from '@/lib/chart-theme'
 import { cn } from '@/lib/utils'
 import { useStore, readStore } from '@/lib/store'
-import { localDate, getISOWeek, getWeekLabel, formatMinutes } from '@/lib/date-utils'
+import { localDate, getISOWeek, getWeekDates, getWeekLabel, formatMinutes } from '@/lib/date-utils'
 import { useDailyHabits } from '@/lib/use-daily-habits'
 import { isActiveHabit, type Habit } from '@/lib/habits'
+import { weeklyHabitScore } from '@/features/habits/habit-progress'
+import type { FounderHistoryEntry, WeeklyAudit } from '@/features/daily/weekly-audit'
+import { WEEKLY_SESSION_TARGET, WORKOUT_TYPES, normalizeSessions, sessionStats, completedSets, formatVolumeK, workoutTypeIndex } from '@/features/gym/domain/workout-sessions'
+import { dayNutritionTotals, hasLoggedFood } from '@/features/gym/domain/nutrition'
+import { MetricRows, MetricTiles, type StatsMetric } from './components/StatsMetrics'
 import {
-  ChevronLeft,
-  ChevronRight,
   Clock,
   Target,
   GitCommit,
@@ -57,16 +60,6 @@ interface SprintSession {
   completedAt: string
 }
 
-interface HistoryEntry {
-  date: string
-  commits: number
-  users: number
-  deploys: number
-  mrr: number
-  prsOpen: number
-  prsMerged: number
-}
-
 interface GtmDailyLog {
   date: string
   dmsSent: number
@@ -80,31 +73,7 @@ interface GtmDailyLog {
   notes: string
 }
 
-interface WeeklyAudit {
-  weekId: string
-  weekStart: string
-  weekEnd: string
-  sprintStats: { totalSessions: number; totalDeepWork: number; avgPerDay: number; bestDay: { date: string; sessions: number } }
-  habitStats: { consistency: number; perHabit: { id: string; name: string; completed: number; total: number }[] }
-  founderStats: { commits: number; users: number; mrr: number; deploys: number }
-  generatedAt: string
-}
-
 // --- Helpers ----------------------------------------------
-
-function getWeekDates(isoDate: string): string[] {
-  const d = new Date(isoDate + 'T00:00:00')
-  const day = d.getDay()
-  const monday = new Date(d)
-  monday.setDate(d.getDate() - ((day + 6) % 7))
-  const dates: string[] = []
-  for (let i = 0; i < 7; i++) {
-    const wd = new Date(monday)
-    wd.setDate(monday.getDate() + i)
-    dates.push(localDate(wd))
-  }
-  return dates
-}
 
 function formatDate(iso: string): string {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
@@ -112,27 +81,9 @@ function formatDate(iso: string): string {
 
 const weekDayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-const GYM_TYPES = ['PUSH', 'PULL', 'LEGS', 'SWIM'] as const
-
-function getNutritionTotals(n: DailyNutrition) {
-  let protein = 0, calories = 0
-  for (const m of n.meals ?? []) for (const f of m.foods ?? []) { protein += f.protein; calories += f.calories }
-  return { protein, calories, water: n.waterLiters }
-}
-
-function getSessionStats(s: WorkoutSession) {
-  const sets = s.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).length, 0)
-  const volume = s.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).reduce((v, set) => v + set.weight * set.reps, 0), 0)
-  return { sets, volume }
-}
-
 // Gym sessions are persisted as a 1-element array (`[session]`); collapse to a
 // single WorkoutSession so `.exercises` access is always valid.
-function firstWorkout(raw: unknown): WorkoutSession | null {
-  if (Array.isArray(raw)) return (raw[0] as WorkoutSession) ?? null
-  if (raw && typeof raw === 'object' && 'workoutDayId' in raw) return raw as WorkoutSession
-  return null
-}
+const firstWorkout = (raw: unknown): WorkoutSession | null => normalizeSessions(raw)[0] ?? null
 
 // --- Component --------------------------------------------
 
@@ -143,17 +94,15 @@ export function StatsPage() {
   // Chart palette from the live tokens (never inline hex) — workout types map
   // onto the standard 5-color chart family.
   const chartPalette = chartColors()
-  const gymColors: Record<string, string> = {
-    PUSH: chartPalette[0],
-    PULL: chartPalette[1],
-    LEGS: chartPalette[2],
-    SWIM: chartPalette[3],
+  const gymColor = (name: string) => {
+    const index = workoutTypeIndex(name)
+    return index >= 0 ? chartPalette[index] : undefined
   }
 
   // Shared stores
   const [habits] = useStore<Habit[]>('cortex-habits', [])
   const activeHabits = useMemo(() => habits.filter(isActiveHabit), [habits])
-  const [founderHistory] = useStore<HistoryEntry[]>('cortex-founder-history', [])
+  const [founderHistory] = useStore<FounderHistoryEntry[]>('cortex-founder-history', [])
 
   // Habits — single source of truth via shared hook (reactive, stays in sync)
   const { completedCount: habitsCompletedToday, isCompleted: isHabitDone, habitHistory } = useDailyHabits(selectedDate, habits)
@@ -200,7 +149,7 @@ export function StatsPage() {
       })))
       setWeekGtm(gtmLogs.filter((g): g is GtmDailyLog => g !== null && (g.dmsSent > 0 || g.xReplies > 0 || g.demoCalls > 0)))
       setWeekWorkouts(workouts.map(firstWorkout).filter((w): w is WorkoutSession => w !== null))
-      setWeekNutrition(nutrition.filter((n): n is DailyNutrition => n !== null && (n.meals ?? []).some(m => (m.foods?.length ?? 0) > 0)))
+      setWeekNutrition(nutrition.filter(hasLoggedFood))
     })
   }, [weekDates, view])
 
@@ -211,24 +160,8 @@ export function StatsPage() {
 
   // Week habit data — respects per-habit goals. Monthly-cadence habits are tracked
   // over the month, so they're excluded from this weekly view.
-  const weekHabitData = useMemo(() => {
-    return activeHabits
-      .filter(h => (h.cadence ?? 'weekly') !== 'monthly')
-      .map(h => {
-        const goal = h.weeklyGoal ?? 7
-        const completed = weekDates.filter(d => habitHistory[d]?.[h.id]).length
-        return { name: h.emoji + ' ' + h.name, completed, goal }
-      })
-  }, [activeHabits, habitHistory, weekDates])
-
-  const weekHabitConsistency = useMemo(() => {
-    // 0-goal habits are "not required this week" — exclude them from the average
-    // so they neither divide by zero nor count as a free 100%.
-    const scored = weekHabitData.filter(h => h.goal > 0)
-    if (scored.length === 0) return 0
-    const avgPct = scored.reduce((s, h) => s + Math.min(h.completed / h.goal, 1), 0) / scored.length
-    return Math.round(avgPct * 100)
-  }, [weekHabitData])
+  const weekHabits = useMemo(() => weeklyHabitScore(habits, habitHistory, weekDates), [habits, habitHistory, weekDates])
+  const weekHabitConsistency = weekHabits.score
 
   // --- Navigation -----------------------------------------
   const navigate = (dir: number) => {
@@ -250,17 +183,9 @@ export function StatsPage() {
           </TabsList>
         </Tabs>
 
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="icon-sm" onClick={() => navigate(-1)} aria-label={view === 'day' ? 'Previous day' : 'Previous week'}>
-            <ChevronLeft />
-          </Button>
-          <Button variant="secondary" size="sm" onClick={goToToday}>
-            Today
-          </Button>
-          <Button variant="secondary" size="icon-sm" onClick={() => navigate(1)} aria-label={view === 'day' ? 'Next day' : 'Next week'}>
-            <ChevronRight />
-          </Button>
-        </div>
+        <DateStepper label="Today" previousLabel={view === 'day' ? 'Previous day' : 'Previous week'}
+          nextLabel={view === 'day' ? 'Next day' : 'Next week'} onPrevious={() => navigate(-1)}
+          onNext={() => navigate(1)} onReset={goToToday} />
       </div>
 
       {/* Date label */}
@@ -313,43 +238,27 @@ export function StatsPage() {
           {/* Founder snapshot */}
           {dayFounder && (
             <WidgetCard title="Founder snapshot" delay={0.25} compact>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  { label: 'Commits', value: dayFounder.commits, icon: GitCommit },
-                  { label: 'Deploys', value: dayFounder.deploys, icon: Rocket },
-                  { label: 'Users', value: dayFounder.users, icon: Users },
-                  { label: 'MRR', value: `$${dayFounder.mrr}`, icon: DollarSign },
-                ].map((m) => (
-                  <div key={m.label} className="flex items-center gap-2">
-                    <m.icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-2xs text-muted-foreground">{m.label}</span>
-                    <span className="ml-auto font-mono text-sm font-medium tabular-nums">{m.value}</span>
-                  </div>
-                ))}
-              </div>
+              <MetricRows metrics={[
+                { label: 'Commits', value: dayFounder.commits, icon: GitCommit },
+                { label: 'Deploys', value: dayFounder.deploys, icon: Rocket },
+                { label: 'Users', value: dayFounder.users, icon: Users },
+                { label: 'MRR', value: `$${dayFounder.mrr}`, icon: DollarSign },
+              ]} />
             </WidgetCard>
           )}
 
           {/* GTM snapshot */}
           {dayGtm && (dayGtm.dmsSent > 0 || dayGtm.xReplies > 0 || dayGtm.demoCalls > 0) && (
             <WidgetCard title="GTM snapshot" delay={0.3} compact>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  { label: 'DMs sent', value: dayGtm.dmsSent, icon: MessageSquare },
-                  { label: 'Responses', value: dayGtm.dmResponses, icon: MessageCircle },
-                  { label: 'Demo calls', value: dayGtm.demoCalls, icon: Megaphone },
-                  { label: 'X replies', value: dayGtm.xReplies, icon: MessageCircle },
-                  { label: 'X followers', value: dayGtm.xFollowers, icon: Users },
-                  { label: 'Reddit', value: dayGtm.redditComments, icon: MessageSquare },
-                  { label: 'LinkedIn', value: dayGtm.linkedinMessages, icon: MessageSquare },
-                ].map((m) => (
-                  <div key={m.label} className="flex items-center gap-2">
-                    <m.icon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-2xs text-muted-foreground">{m.label}</span>
-                    <span className="ml-auto font-mono text-sm font-medium tabular-nums">{m.value}</span>
-                  </div>
-                ))}
-              </div>
+              <MetricRows metrics={[
+                { label: 'DMs sent', value: dayGtm.dmsSent, icon: MessageSquare },
+                { label: 'Responses', value: dayGtm.dmResponses, icon: MessageCircle },
+                { label: 'Demo calls', value: dayGtm.demoCalls, icon: Megaphone },
+                { label: 'X replies', value: dayGtm.xReplies, icon: MessageCircle },
+                { label: 'X followers', value: dayGtm.xFollowers, icon: Users },
+                { label: 'Reddit', value: dayGtm.redditComments, icon: MessageSquare },
+                { label: 'LinkedIn', value: dayGtm.linkedinMessages, icon: MessageSquare },
+              ]} />
               {dayGtm.notes && (
                 <div className="mt-3 rounded-md bg-secondary/30 px-3 py-2">
                   <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Notes</p>
@@ -360,66 +269,38 @@ export function StatsPage() {
           )}
 
           {/* Gym snapshot */}
-          {(dayWorkout || (dayNutrition && (dayNutrition.meals ?? []).some(m => (m.foods?.length ?? 0) > 0))) && (() => {
+          {(dayWorkout || hasLoggedFood(dayNutrition)) && (() => {
             const workout = dayWorkout
-            const stats = workout ? getSessionStats(workout) : null
-            const nutrition = dayNutrition && (dayNutrition.meals ?? []).some(m => (m.foods?.length ?? 0) > 0) ? getNutritionTotals(dayNutrition) : null
+            const nutrition = hasLoggedFood(dayNutrition) ? dayNutritionTotals(dayNutrition) : null
+            const metrics: StatsMetric[] = []
+            if (workout) {
+              const stats = sessionStats(workout)
+              metrics.push(
+                { label: 'Workout', value: <Chip size="sm">{workout.workoutName}</Chip>, icon: Dumbbell },
+                { label: 'Sets', value: stats.sets, icon: Activity },
+                { label: 'Volume', value: stats.volume > 0 ? `${formatVolumeK(stats.volume)} kg` : '0', icon: TrendingUp },
+                { label: 'Exercises', value: workout.exercises.length, icon: Target },
+              )
+            }
+            if (nutrition) {
+              metrics.push(
+                { label: 'Protein', value: `${nutrition.protein}g`, icon: Utensils, valueClassName: nutrition.protein >= PROTEIN_TARGET && 'text-success' },
+                { label: 'Calories', value: nutrition.calories, icon: Flame, valueClassName: nutrition.calories >= CALORIE_TARGET && 'text-success' },
+                { label: 'Water', value: `${nutrition.water}L`, icon: Droplets, valueClassName: nutrition.water >= WATER_TARGET && 'text-success' },
+              )
+            }
             return (
               <WidgetCard title="Gym snapshot" delay={0.35} compact>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {workout && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <Dumbbell className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-2xs text-muted-foreground">Workout</span>
-                        <Chip size="sm" className="ml-auto">{workout.workoutName}</Chip>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Activity className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-2xs text-muted-foreground">Sets</span>
-                        <span className="ml-auto font-mono text-sm font-medium tabular-nums">{stats!.sets}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-2xs text-muted-foreground">Volume</span>
-                        <span className="ml-auto font-mono text-sm font-medium tabular-nums">{stats!.volume > 0 ? `${Math.round(stats!.volume / 1000)}K kg` : '0'}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Target className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-2xs text-muted-foreground">Exercises</span>
-                        <span className="ml-auto font-mono text-sm font-medium tabular-nums">{workout.exercises.length}</span>
-                      </div>
-                    </>
-                  )}
-                  {nutrition && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <Utensils className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-2xs text-muted-foreground">Protein</span>
-                        <span className={cn('ml-auto font-mono text-sm font-medium tabular-nums', nutrition.protein >= PROTEIN_TARGET && 'text-success')}>{nutrition.protein}g</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Flame className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-2xs text-muted-foreground">Calories</span>
-                        <span className={cn('ml-auto font-mono text-sm font-medium tabular-nums', nutrition.calories >= CALORIE_TARGET && 'text-success')}>{nutrition.calories}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Droplets className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-2xs text-muted-foreground">Water</span>
-                        <span className={cn('ml-auto font-mono text-sm font-medium tabular-nums', nutrition.water >= WATER_TARGET && 'text-success')}>{nutrition.water}L</span>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <MetricRows metrics={metrics} />
                 {workout && workout.exercises.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {workout.exercises.map((ex, i) => {
-                      const completedSets = ex.sets.filter(s => s.completed).length
-                      const maxWeight = ex.sets.filter(s => s.completed).reduce((max, s) => Math.max(max, s.weight), 0)
+                      const done = completedSets(ex.sets)
+                      const maxWeight = done.reduce((max, s) => Math.max(max, s.weight), 0)
                       return (
                         <Chip key={i} className="gap-1.5">
                           <span>{ex.exerciseName}</span>
-                          <span className="text-foreground-faint">{completedSets}s{maxWeight > 0 ? ` · ${maxWeight}kg` : ''}</span>
+                          <span className="text-foreground-faint">{done.length}s{maxWeight > 0 ? ` · ${maxWeight}kg` : ''}</span>
                         </Chip>
                       )
                     })}
@@ -473,17 +354,17 @@ export function StatsPage() {
             {/* Habit consistency */}
             <WidgetCard title="Habit consistency" description={`${weekHabitConsistency}% this week`} delay={0.15}>
               <div className="flex flex-col gap-1.5">
-                {weekHabitData.map((h) => {
-                  const pct = h.goal > 0 ? Math.min(h.completed / h.goal, 1) * 100 : 0
-                  const met = h.goal > 0 && h.completed >= h.goal
+                {weekHabits.rows.map(({ habit, done, goal }) => {
+                  const pct = goal > 0 ? Math.min(done / goal, 1) * 100 : 0
+                  const met = goal > 0 && done >= goal
                   return (
-                    <div key={h.name} className="flex items-center gap-2">
-                      <span className="w-32 truncate text-xs sm:w-40">{h.name}</span>
+                    <div key={habit.id} className="flex items-center gap-2">
+                      <span className="w-32 truncate text-xs sm:w-40">{habit.emoji} {habit.name}</span>
                       <Progress
                         value={Math.round(pct)}
                         className={cn('flex-1', met && '[&_[data-slot=progress-indicator]]:bg-success')}
                       />
-                      <span className={cn('w-8 text-right font-mono text-2xs tabular-nums', met ? 'text-success' : 'text-muted-foreground')}>{h.completed}/{h.goal}</span>
+                      <span className={cn('w-8 text-right font-mono text-2xs tabular-nums', met ? 'text-success' : 'text-muted-foreground')}>{done}/{goal}</span>
                     </div>
                   )
                 })}
@@ -493,22 +374,12 @@ export function StatsPage() {
             {/* Founder weekly */}
             {weekFounder.length > 0 && (
               <WidgetCard title="Founder metrics" description="This week" delay={0.2}>
-                <div className="grid grid-cols-2 gap-4">
-                  {[
-                    { label: 'Commits', value: weekFounder.reduce((s, h) => s + h.commits, 0), icon: GitCommit },
-                    { label: 'Deploys', value: weekFounder.reduce((s, h) => s + h.deploys, 0), icon: Rocket },
-                    { label: 'Users (latest)', value: weekFounder[weekFounder.length - 1]?.users ?? 0, icon: Users },
-                    { label: 'MRR (latest)', value: `$${weekFounder[weekFounder.length - 1]?.mrr ?? 0}`, icon: DollarSign },
-                  ].map((m) => (
-                    <div key={m.label} className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
-                      <m.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div>
-                        <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{m.label}</p>
-                        <p className="font-mono text-lg font-medium tabular-nums">{m.value}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <MetricTiles metrics={[
+                  { label: 'Commits', value: weekFounder.reduce((s, h) => s + h.commits, 0), icon: GitCommit },
+                  { label: 'Deploys', value: weekFounder.reduce((s, h) => s + h.deploys, 0), icon: Rocket },
+                  { label: 'Users (latest)', value: weekFounder[weekFounder.length - 1]?.users ?? 0, icon: Users },
+                  { label: 'MRR (latest)', value: `$${weekFounder[weekFounder.length - 1]?.mrr ?? 0}`, icon: DollarSign },
+                ]} />
               </WidgetCard>
             )}
 
@@ -520,38 +391,26 @@ export function StatsPage() {
               const rateGood = totalDms > 0 && totalResponses / totalDms >= 0.1
               return (
                 <WidgetCard title="GTM metrics" description="This week" delay={0.25}>
-                  <div className="grid grid-cols-2 gap-4">
-                    {[
-                      { label: 'DMs sent', value: totalDms, icon: MessageSquare },
-                      { label: 'Response rate', value: responseRate, icon: MessageCircle, valueClass: rateGood ? 'text-success' : 'text-destructive' },
-                      { label: 'Demo calls', value: weekGtm.reduce((s, g) => s + g.demoCalls, 0), icon: Megaphone },
-                      { label: 'X replies', value: weekGtm.reduce((s, g) => s + g.xReplies, 0), icon: MessageCircle },
-                      { label: 'Reddit', value: weekGtm.reduce((s, g) => s + g.redditComments, 0), icon: MessageSquare },
-                      { label: 'LinkedIn', value: weekGtm.reduce((s, g) => s + g.linkedinMessages, 0), icon: MessageSquare },
-                    ].map((m) => (
-                      <div key={m.label} className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
-                        <m.icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div>
-                          <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">{m.label}</p>
-                          <p className={cn('font-mono text-lg font-medium tabular-nums', 'valueClass' in m && m.valueClass)}>{m.value}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <MetricTiles metrics={[
+                    { label: 'DMs sent', value: totalDms, icon: MessageSquare },
+                    { label: 'Response rate', value: responseRate, icon: MessageCircle, valueClassName: rateGood ? 'text-success' : 'text-destructive' },
+                    { label: 'Demo calls', value: weekGtm.reduce((s, g) => s + g.demoCalls, 0), icon: Megaphone },
+                    { label: 'X replies', value: weekGtm.reduce((s, g) => s + g.xReplies, 0), icon: MessageCircle },
+                    { label: 'Reddit', value: weekGtm.reduce((s, g) => s + g.redditComments, 0), icon: MessageSquare },
+                    { label: 'LinkedIn', value: weekGtm.reduce((s, g) => s + g.linkedinMessages, 0), icon: MessageSquare },
+                  ]} />
                 </WidgetCard>
               )
             })()}
 
             {/* Gym weekly */}
             {(weekWorkouts.length > 0 || weekNutrition.length > 0) && (() => {
-              const totalSets = weekWorkouts.reduce((s, w) => s + getSessionStats(w).sets, 0)
-              const totalVolume = weekWorkouts.reduce((s, w) => s + getSessionStats(w).volume, 0)
-              const avgNutrition = weekNutrition.length > 0
-                ? {
-                    protein: Math.round(weekNutrition.reduce((s, n) => s + getNutritionTotals(n).protein, 0) / weekNutrition.length),
-                    calories: Math.round(weekNutrition.reduce((s, n) => s + getNutritionTotals(n).calories, 0) / weekNutrition.length),
-                    water: Math.round(weekNutrition.reduce((s, n) => s + getNutritionTotals(n).water, 0) / weekNutrition.length * 10) / 10,
-                  }
+              const { sets: totalSets, volume: totalVolume } = sessionStats(weekWorkouts)
+              const weekNutritionTotals = weekNutrition.map(dayNutritionTotals)
+              const average = (key: 'protein' | 'water') =>
+                weekNutritionTotals.reduce((s, n) => s + n[key], 0) / weekNutritionTotals.length
+              const avgNutrition = weekNutritionTotals.length > 0
+                ? { protein: Math.round(average('protein')), water: Math.round(average('water') * 10) / 10 }
                 : null
 
               // Build workout schedule for the week bar chart
@@ -560,47 +419,25 @@ export function StatsPage() {
                 return {
                   day: weekDayNames[i],
                   type: w?.workoutName || '',
-                  sets: w ? getSessionStats(w).sets : 0,
-                  fill: w ? (gymColors[w.workoutName] || cssVar('--muted-foreground')) : cssVar('--muted'),
+                  sets: w ? sessionStats(w).sets : 0,
+                  fill: w ? (gymColor(w.workoutName) || cssVar('--muted-foreground')) : cssVar('--muted'),
                 }
               })
 
+              const metrics: StatsMetric[] = [
+                { label: 'Sessions', value: weekWorkouts.length, icon: Dumbbell },
+                { label: 'Volume', value: totalVolume > 0 ? `${formatVolumeK(totalVolume)} kg` : `${totalSets} sets`, icon: TrendingUp },
+              ]
+              if (avgNutrition) {
+                metrics.push(
+                  { label: 'Avg protein', value: `${avgNutrition.protein}g`, icon: Utensils, valueClassName: avgNutrition.protein >= PROTEIN_TARGET && 'text-success' },
+                  { label: 'Avg water', value: `${avgNutrition.water}L`, icon: Droplets, valueClassName: avgNutrition.water >= WATER_TARGET && 'text-success' },
+                )
+              }
+
               return (
-                <WidgetCard title="Gym metrics" description={`${weekWorkouts.length}/4 sessions this week`} delay={0.3}>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
-                      <Dumbbell className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div>
-                        <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Sessions</p>
-                        <p className="font-mono text-lg font-medium tabular-nums">{weekWorkouts.length}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
-                      <TrendingUp className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <div>
-                        <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Volume</p>
-                        <p className="font-mono text-lg font-medium tabular-nums">{totalVolume > 0 ? `${Math.round(totalVolume / 1000)}K kg` : `${totalSets} sets`}</p>
-                      </div>
-                    </div>
-                    {avgNutrition && (
-                      <>
-                        <div className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
-                          <Utensils className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <div>
-                            <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Avg protein</p>
-                            <p className={cn('font-mono text-lg font-medium tabular-nums', avgNutrition.protein >= PROTEIN_TARGET && 'text-success')}>{avgNutrition.protein}g</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2.5 rounded-md bg-secondary/30 px-3 py-2.5">
-                          <Droplets className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <div>
-                            <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Avg water</p>
-                            <p className={cn('font-mono text-lg font-medium tabular-nums', avgNutrition.water >= WATER_TARGET && 'text-success')}>{avgNutrition.water}L</p>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                <WidgetCard title="Gym metrics" description={`${weekWorkouts.length}/${WEEKLY_SESSION_TARGET} sessions this week`} delay={0.3}>
+                  <MetricTiles metrics={metrics} />
                   {/* Weekly workout schedule chart */}
                   {weekWorkouts.length > 0 && (
                     <div className="mt-4">
@@ -628,9 +465,9 @@ export function StatsPage() {
                         </ResponsiveContainer>
                       </div>
                       <div className="mt-2 flex justify-center gap-3">
-                        {GYM_TYPES.map((name) => (
+                        {WORKOUT_TYPES.map((name) => (
                           <div key={name} className="flex items-center gap-1">
-                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: gymColors[name] }} />
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: gymColor(name) }} />
                             <span className="font-mono text-2xs text-muted-foreground">{name}</span>
                           </div>
                         ))}

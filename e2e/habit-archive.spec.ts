@@ -75,8 +75,12 @@ test('Today shortcuts remain usable before the habits key has been created', asy
   await page.getByRole('button', { name: 'Workout', exact: true }).click()
 
   await expect.poll(() => backend.stores['cortex-habits-history']).toEqual({
-    '2026-09-19': { '1': true },
+    '2026-09-19': { h2: true },
   })
+
+  // Home and Habits share one default list, so the check shows on the Habits page.
+  await page.goto('/#/habits')
+  await expect(page.getByRole('button', { name: 'Workout — Sat', exact: true }).first()).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('all seven habit days stay inside a 320-pixel phone card', async ({ page }) => {

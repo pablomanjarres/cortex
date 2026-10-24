@@ -5,7 +5,8 @@ import type { SprintSession } from '@/lib/sprint-context'
 import type { Assignment } from '@/features/student/student-types'
 import type { HomeCalendarEvent } from '../home-model'
 import type { CalendarState } from './homePanelUtils'
-import { assignmentDay, dayName, dayNumber, eventOverlapsDay, formatMinutes, weekRangeLabel } from './homePanelUtils'
+import { formatMinutes } from '@/lib/date-utils'
+import { dayAgenda, dayName, dayNumber, weekRangeLabel } from './homePanelUtils'
 
 export function WeekMap({
   days,
@@ -32,9 +33,8 @@ export function WeekMap({
   onOpenCalendar: () => void
   onOpenStudent: () => void
 }) {
-  const selectedEvents = events.filter((event) => eventOverlapsDay(event, selectedDay))
-  const selectedSessions = sessionsByDay[selectedDay] ?? []
-  const selectedDeadlines = assignments.filter((assignment) => assignmentDay(assignment) === selectedDay && !assignment.done)
+  const sources = { events, sessionsByDay, assignments }
+  const { events: selectedEvents, sessions: selectedSessions, deadlines: selectedDeadlines } = dayAgenda(selectedDay, sources)
 
   return (
     <section className="surface rounded-[1.75rem] p-4 shadow-card md:p-5">
@@ -57,9 +57,7 @@ export function WeekMap({
       <div className="min-w-0 pb-1">
         <div className="grid grid-cols-7 gap-1 sm:gap-2">
           {days.map((day) => {
-            const dayEvents = events.filter((event) => eventOverlapsDay(event, day))
-            const daySessions = sessionsByDay[day] ?? []
-            const dayDeadlines = assignments.filter((assignment) => assignmentDay(assignment) === day && !assignment.done)
+            const { events: dayEvents, sessions: daySessions, deadlines: dayDeadlines } = dayAgenda(day, sources)
             const selected = day === selectedDay
             const summary = `${new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}: ${dayEvents.length} calendar event${dayEvents.length === 1 ? '' : 's'}, ${daySessions.length} focus session${daySessions.length === 1 ? '' : 's'}, ${dayDeadlines.length} deadline${dayDeadlines.length === 1 ? '' : 's'}`
             return (
