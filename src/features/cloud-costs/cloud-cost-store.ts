@@ -1,4 +1,11 @@
-import type { CloudCostCache, CloudCostSettings, CloudProviderFilter } from '../../../electron/cloud-cost-types.ts'
+import type {
+  CloudCostCache,
+  CloudCostSettings,
+  CloudCostSourceStatus,
+  CloudProvider,
+  CloudProviderFilter,
+} from '../../../electron/cloud-cost-types.ts'
+import { includesProvider, monthOf } from './analytics.ts'
 
 export const DEFAULT_CLOUD_COST_SETTINGS: CloudCostSettings = {
   awsProfile: '',
@@ -26,11 +33,28 @@ export function cloudUsageEmptyMessage(hasLiveSource: boolean, hasFailedSource: 
   return 'Waiting for the first billing snapshot.'
 }
 
+export const CLOUD_SOURCE_LABELS: Record<CloudProvider, string> = {
+  aws: 'AWS Cost Explorer',
+  gcp: 'GCP Billing Export',
+}
+
+/** The setting that identifies each provider's billing source, trimmed. */
+export function cloudSourceId(settings: CloudCostSettings, provider: CloudProvider): string {
+  return (provider === 'aws' ? settings.awsProfile : settings.gcpBillingTable).trim()
+}
+
+export type CloudSourceState = 'live' | 'stale' | 'off'
+
+/** Live only when the last successful snapshot came from the configured source. */
+export function cloudSourceState(sourceId: string, status: CloudCostSourceStatus): CloudSourceState {
+  if (!sourceId) return 'off'
+  return status.ok && status.sourceId === sourceId ? 'live' : 'stale'
+}
+
 export function cloudCostViewState(cache: CloudCostCache, provider: CloudProviderFilter, month: string) {
-  const includesProvider = (row: { provider: string }) => provider === 'all' || row.provider === provider
-  const showUsageAnalytics = cache.usageItems.some(includesProvider)
+  const showUsageAnalytics = cache.usageItems.some((row) => includesProvider(row, provider))
   const hasCurrentAdjustments = cache.accountAdjustments.some(
-    (row) => includesProvider(row) && row.date.startsWith(`${month}-`),
+    (row) => includesProvider(row, provider) && monthOf(row.date) === month,
   )
   return { showUsageAnalytics, showAccountEstimate: showUsageAnalytics || hasCurrentAdjustments }
 }

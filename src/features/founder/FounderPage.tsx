@@ -1,3 +1,4 @@
+import { RefreshButton } from '@/components/shared/RefreshButton'
 import { useEffect, useMemo, useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -5,7 +6,7 @@ import { StatTile } from '@/components/shared/StatTile'
 import { TrendBadge } from '@/components/shared/TrendBadge'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Skeleton } from '@/components/shared/Skeleton'
-import { Button } from '@/components/ui/button'
+import { SetupState, SetupStatusRow } from '@/components/shared/SetupState'
 import { Chip } from '@/components/ui/chip'
 import { useStore, readStore } from '@/lib/store'
 import { getLastNDays, timeAgo } from '@/lib/date-utils'
@@ -22,6 +23,7 @@ import {
   type SupabaseCache,
   type VercelCache,
 } from './founder-api'
+import { FOUNDER_HEALTH_LABELS, founderSourceHealth } from './founder-status'
 import {
   Cloud,
   Database,
@@ -30,7 +32,6 @@ import {
   GitCommit,
   GitPullRequest,
   Globe,
-  RefreshCw,
   Rocket,
   UserMinus,
   UserPlus,
@@ -187,7 +188,7 @@ export function FounderPage() {
   // CONNECT lists ONLY genuinely unconfigured sources. Erroring-but-configured
   // sources get a quiet warning chip in the meta row instead of a setup hint.
   const unconfigured = useMemo<FounderSource[]>(() => {
-    if (status) return FOUNDER_SOURCES.filter((s) => !status[s].configured)
+    if (status) return FOUNDER_SOURCES.filter((s) => founderSourceHealth(status[s]) === 'unconfigured')
     if (!api && probe === 'empty') return [...FOUNDER_SOURCES]
     if (!api && probe === 'has-data') {
       const present: Record<FounderSource, boolean> = { github: !!github, lemon: !!lemon, vercel: !!vercel, supabase: !!supabase }
@@ -197,7 +198,7 @@ export function FounderPage() {
   }, [status, api, probe, github, lemon, vercel, supabase])
 
   const erroring = useMemo(
-    () => (status ? FOUNDER_SOURCES.filter((s) => status[s].configured && !status[s].ok && status[s].consecutiveFailures > 0) : []),
+    () => (status ? FOUNDER_SOURCES.filter((s) => founderSourceHealth(status[s]) === 'failing') : []),
     [status],
   )
 
@@ -290,44 +291,23 @@ export function FounderPage() {
           </Chip>
         ))}
         {api && (
-          <Button variant="secondary" size="sm" className="ml-auto" onClick={refresh} disabled={refreshing}>
-            <RefreshCw className={refreshing ? 'motion-safe:animate-spin' : undefined} />
-            Refresh
-          </Button>
+          <RefreshButton className="ml-auto" onClick={refresh} busy={refreshing} />
         )}
       </div>
 
       {!hasAnyData && (
-        <section className="surface grid gap-6 rounded-xl p-5 sm:p-7 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]" aria-labelledby="founder-empty-title">
-          <div className="flex flex-col justify-center gap-4">
-            <span className="flex size-12 items-center justify-center rounded-xl bg-focus-surface text-accent" aria-hidden>
-              <Rocket className="size-6" />
-            </span>
-            <div className="space-y-2">
-              <h2 id="founder-empty-title" className="text-xl font-semibold text-foreground sm:text-2xl">
-                {!api ? 'Founder sources live in the desktop app' : erroring.length > 0 ? 'Sources need attention' : unconfigured.length > 0 ? 'Connect your founder sources' : 'Waiting for the first snapshot'}
-              </h2>
-              <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-                {!api ? 'This browser view cannot check integration settings. Open Cortex on your Mac to connect or refresh sources.' : erroring.length > 0 ? 'A configured source has not returned data. Check its connection in Settings, then refresh.' : unconfigured.length > 0 ? 'Add credentials in Settings, then refresh to bring real revenue, product, and development signals here.' : 'Connected sources have not returned data yet. Refresh to check for the first snapshot.'}
-              </p>
-            </div>
-          </div>
-          <div className="rounded-xl bg-secondary/40 p-4">
-            <h3 className="mb-3 text-sm font-semibold text-foreground">Source status</h3>
-            <div className="divide-y divide-border/60">
-              {FOUNDER_SOURCES.map((source) => {
-                const sourceStatus = status?.[source]
-                const label = !api ? 'Desktop only' : !sourceStatus ? 'Checking' : !sourceStatus.configured ? 'Not connected' : sourceStatus.ok ? 'Live' : sourceStatus.consecutiveFailures > 0 ? 'Refresh failed' : 'Waiting for refresh'
-                return (
-                  <div key={source} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                    <span className="text-foreground">{SOURCE_LABELS[source]}</span>
-                    <span className="shrink-0 text-muted-foreground">{label}</span>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </section>
+        <SetupState
+          icon={<Rocket />}
+          title={!api ? 'Founder sources live in the desktop app' : erroring.length > 0 ? 'Sources need attention' : unconfigured.length > 0 ? 'Connect your founder sources' : 'Waiting for the first snapshot'}
+          description={!api ? 'This browser view cannot check integration settings. Open Cortex on your Mac to connect or refresh sources.' : erroring.length > 0 ? 'A configured source has not returned data. Check its connection in Settings, then refresh.' : unconfigured.length > 0 ? 'Add credentials in Settings, then refresh to bring real revenue, product, and development signals here.' : 'Connected sources have not returned data yet. Refresh to check for the first snapshot.'}
+          statusTitle="Source status"
+        >
+          {FOUNDER_SOURCES.map((source) => (
+            <SetupStatusRow key={source} label={SOURCE_LABELS[source]}>
+              {!api ? 'Desktop only' : status ? FOUNDER_HEALTH_LABELS[founderSourceHealth(status[source])] : 'Checking'}
+            </SetupStatusRow>
+          ))}
+        </SetupState>
       )}
 
       {hasAnyData && (
