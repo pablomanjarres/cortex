@@ -216,6 +216,21 @@ accessible name; `TagInput` keeps a comma-separated draft until Enter or blur.
 and the Market budget. `SortableHeader` owns sort buttons and `aria-sort`. Use these owners instead of
 copying control markup or base classes into a feature.
 
+`Checkbox` owns native checkbox styling. `SegmentedControl` owns exclusive
+button choices and their pressed states. `FilterChips` owns a single optional
+filter and clears it when the active chip is selected again. `DateStepper` owns
+previous, current and next period navigation. `RecordDisclosure` owns the table
+row and mobile card triggers together with their detail regions.
+`Notice` owns warning and error banners;
+`SetupState` and `SetupStatusRow` own first-run connection panels and source rows.
+Use `RefreshButton` for an on-demand read and `SectionDisclosure` for collapsible
+sections, including the compact `inline` variant inside a card.
+
+`InlineTextInput` owns the focused text draft, Enter and blur commit, and Escape
+cancel. `MediaViewer` owns PDF and image dialogs; `lib/media.ts` owns attachment
+storage, legacy reads, size limits, file ids, links, and downloads.
+`useFileDropZone` owns drag-depth tracking for attachment targets.
+
 Keep compound behavior with its feature: Finance's `SettlementControl` owns the
 paid/received trigger, editor, and progress; `BookFields`, `ContactFields`, and
 `CrmContactFields` are shared by their desktop and mobile presentations.
@@ -225,3 +240,13 @@ keeps editable fields in `OpportunityEditor` and record rules in
 Automations loads HTTP/IPC data through `automation-api.ts`; its parsing and
 status helpers stay in `automation-runs.ts`. Projects loads scans through
 `project-api.ts` and shares the desktop bridge's `ProjectInfo` contract.
+`useProjectScan` owns request state; `ProjectCard` presents each result.
+
+Feature domain modules are the public interfaces for aggregate screens:
+Habits' `habit-progress.ts` owns cadence, goals, streaks, and weekly scoring;
+Gym's `domain/nutrition.ts` and `domain/workout-sessions.ts` own food totals and
+completed training metrics. Daily and Stats consume these rules. Student's
+`student-grades.ts` owns weighted grades and GPA. Goals uses `goal-model.ts`,
+`GoalCard`, and `GoalEditor`; Opportunities uses `opportunity-radar.ts` for radar
+status rules and `OpportunityRow` for results. Keep domain rules independent of
+page components and data access.
