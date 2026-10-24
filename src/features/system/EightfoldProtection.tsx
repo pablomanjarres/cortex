@@ -1,14 +1,16 @@
 import { useNavigate } from 'react-router-dom'
-import { CloudUpload, GitMerge, Laptop, Monitor, RefreshCw } from 'lucide-react'
+import { CloudUpload, GitMerge, Laptop, Monitor } from 'lucide-react'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { RefreshButton } from '@/components/shared/RefreshButton'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
 import { timeAgo } from '@/lib/date-utils'
 import { useKnowledgeHealth } from './useKnowledgeHealth'
+import { StatusHeadline } from './StatusHeadline'
 import { type CheckGroup, type ProtectionCheck, type ProtectionState, type Tone } from './eightfold-view'
 
 const TONE_CHIP: Record<Tone, 'success' | 'warning' | 'danger' | 'neutral'> = {
@@ -45,10 +47,7 @@ export function EightfoldProtection({ delay = 0 }: { delay?: number }) {
   const navigate = useNavigate()
 
   const refreshButton = (
-    <Button variant="secondary" size="sm" onClick={refresh} disabled={refreshing} aria-label="Refresh protection status">
-      <RefreshCw className={cn(refreshing && 'motion-safe:animate-spin')} />
-      {refreshing ? 'Checking…' : 'Refresh'}
-    </Button>
+    <RefreshButton onClick={refresh} busy={refreshing} busyLabel="Checking…" aria-label="Refresh protection status" />
   )
 
   return (
@@ -71,15 +70,12 @@ export function EightfoldProtection({ delay = 0 }: { delay?: number }) {
       ) : (
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1" role="status" aria-live="polite">
-              <div className="flex flex-wrap items-center gap-2">
-                <Chip variant={TONE_CHIP[STATE_TONE[view.state]]}>{view.headline}</Chip>
-                <span className="font-mono text-2xs text-foreground-faint">
-                  <When at={view.reportAt} prefix="Report " />
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground">{view.note}</p>
-            </div>
+            <StatusHeadline
+              tone={TONE_CHIP[STATE_TONE[view.state]]}
+              label={view.headline}
+              meta={<When at={view.reportAt} prefix="Report " />}
+              note={view.note}
+            />
             {refreshButton}
           </div>
 
