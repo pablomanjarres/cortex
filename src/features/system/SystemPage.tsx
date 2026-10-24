@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
 import { selectPrimaryDisk } from './mac-stats'
+import { systemApiUrl, usePolledJson, type HostKey } from './system-api'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
 
@@ -24,21 +25,12 @@ interface GlancesPayload {
   processlist: Array<{ pid: number; name: string; cpu_percent: number; memory_percent: number; username: string }>
 }
 
-type HostKey = 'mac'
-
 interface HostSpec {
   key: HostKey
   label: string
   path: string
   noteIfDown: string
 }
-
-// In Electron prod, the renderer is loaded from file:// — relative /api URLs
-// don't resolve to the local web server, so fall back to localhost:3456.
-// In browser/PWA over Tailscale, same-origin relative paths work directly.
-const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 'file:')
-  ? 'http://127.0.0.1:3456'
-  : ''
 
 const MAC: HostSpec = {
   key: 'mac', label: 'Mac mini', path: '/api/system/mac', noteIfDown: 'glances launchd service not running',
@@ -136,42 +128,13 @@ function TrendPanel({ label, value, values }: { label: string; value: number; va
 // ── Per-host card ─────────────────────────────────────────────────────────
 
 function HostCard({ host, delay }: { host: HostSpec; delay: number }) {
-  const [data, setData] = useState<GlancesPayload | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [stale, setStale] = useState(false)
   const [cpuHistory, setCpuHistory] = useState<number[]>([])
   const [memHistory, setMemHistory] = useState<number[]>([])
-
-  useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    const tick = async () => {
-      try {
-        const r = await fetch(`${API_BASE}${host.path}`, { cache: 'no-store' })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const json = (await r.json()) as GlancesPayload
-        if (cancelled) return
-        setData(json)
-        setError(null)
-        setStale(false)
-        setCpuHistory((history) => [...history, json.cpu?.total ?? 0].slice(-30))
-        setMemHistory((history) => [...history, json.mem?.percent ?? 0].slice(-30))
-      } catch (e: unknown) {
-        if (cancelled) return
-        setError(e instanceof Error ? e.message : 'fetch failed')
-        setStale(true)
-      } finally {
-        if (!cancelled) timer = setTimeout(tick, 2000)
-      }
-    }
-
-    tick()
-    return () => {
-      cancelled = true
-      if (timer) clearTimeout(timer)
-    }
-  }, [host.path])
+  const { data, error } = usePolledJson<GlancesPayload>(systemApiUrl(host.path), 2000, (json) => {
+    setCpuHistory((history) => [...history, json.cpu?.total ?? 0].slice(-30))
+    setMemHistory((history) => [...history, json.mem?.percent ?? 0].slice(-30))
+  })
+  const stale = Boolean(error)
 
   // ── Loading state ──
   if (!data && !error) {
