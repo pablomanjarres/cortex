@@ -8,7 +8,7 @@ export const acceptsDrag = (types: readonly string[]) =>
  * Drop-zone state for a panel. An enter/leave depth counter keeps `active`
  * from flickering while the pointer crosses child elements.
  */
-export function useFileDropZone(onDrop: (dt: DataTransfer) => void) {
+export function useFileDropZone(onDrop: (dt: DataTransfer) => void, accepts: (types: readonly string[]) => boolean = acceptsDrag) {
   const depth = useRef(0)
   const [active, setActive] = useState(false)
 
@@ -16,7 +16,7 @@ export function useFileDropZone(onDrop: (dt: DataTransfer) => void) {
 
   const bind = {
     onDragEnter: (e: DragEvent) => {
-      if (!acceptsDrag(Array.from(e.dataTransfer.types))) return
+      if (!accepts(Array.from(e.dataTransfer.types))) return
       e.preventDefault(); depth.current++; setActive(true)
     },
     onDragOver: (e: DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' },

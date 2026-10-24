@@ -20,6 +20,7 @@ import {
   saveFile, loadFile, deleteFile, fileToDataUrl, formatBytes, downloadDataUrl, mediaIdFor, readDraggedLink, uploadLimitError,
 } from '@/lib/media'
 import { useFileDropZone } from '@/lib/use-file-drop-zone'
+import { Notice } from '@/components/shared/Notice'
 import {
   CLASS_MATERIALS_KEY, STUDY_NOTES_KEY, matId, newStudyNote, normalizeMaterials, normalizeNotes,
   compareUnits, normText, getToday, daysUntil, fmtDate,
@@ -367,7 +368,7 @@ export function MaterialsTab() {
               }
             />
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <Notice tone="danger">{error}</Notice>}
 
             {/* Stat strip */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

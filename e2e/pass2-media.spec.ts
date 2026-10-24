@@ -117,6 +117,33 @@ test('captures reject oversized images without attaching or uploading them', asy
   expect(backend.writes.filter(write => write.key === 'cortex-captures')).toHaveLength(0)
 })
 
+test('capture drop highlight survives child crossings and ignores text drags', async ({ page }) => {
+  await mockStores(page, { 'cortex-captures': [] })
+  await page.goto('/#/library?kind=captures')
+  const zone = page.locator('.border-dashed').filter({ hasText: 'to paste screenshot' })
+  const fileDrag = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer()
+    transfer.items.add(new File(['image'], 'photo.png', { type: 'image/png' }))
+    return transfer
+  })
+  const textDrag = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer()
+    transfer.setData('text/plain', 'https://example.test')
+    return transfer
+  })
+  const highlighted = /(?:^|\s)border-accent\/40(?:\s|$)/
+  await zone.dispatchEvent('dragenter', { dataTransfer: textDrag })
+  await expect(zone).not.toHaveClass(highlighted)
+  await zone.dispatchEvent('dragenter', { dataTransfer: fileDrag })
+  await expect(zone).toHaveClass(highlighted)
+  const child = zone.locator('p')
+  await child.dispatchEvent('dragenter', { dataTransfer: fileDrag })
+  await child.dispatchEvent('dragleave', { dataTransfer: fileDrag })
+  await expect(zone).toHaveClass(highlighted)
+  await zone.dispatchEvent('dragleave', { dataTransfer: fileDrag })
+  await expect(zone).not.toHaveClass(highlighted)
+})
+
 test('course PDF viewer shows the filename and a Save download; the image lightbox steps and closes', async ({ page }) => {
   await mockStores(page, {
     'cortex-courses': [courseItem([

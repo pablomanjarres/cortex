@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { CalendarDays, RefreshCw } from 'lucide-react'
+import { DateStepper } from '@/components/shared/DateStepper'
 import { PageShell } from '@/components/shared/PageShell'
 import { SegmentedControl, type SegmentedOption } from '@/components/shared/SegmentedControl'
 import { Button } from '@/components/ui/button'
@@ -170,9 +171,8 @@ export function CalendarPage() {
         </div>
         <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:justify-start lg:w-auto lg:flex-nowrap">
           <SegmentedControl label="Calendar view" options={VIEW_OPTIONS} value={view} onChange={setView} optionClassName="min-h-11 min-w-11" />
-          <Button className="min-h-11 min-w-11" variant="secondary" size="icon-sm" aria-label="Previous week" onClick={() => moveWeek(-7)}><ChevronLeft /></Button>
-          <Button className="min-h-11 min-w-11" variant="secondary" size="sm" onClick={goToday}>Today</Button>
-          <Button className="min-h-11 min-w-11" variant="secondary" size="icon-sm" aria-label="Next week" onClick={() => moveWeek(7)}><ChevronRight /></Button>
+          <DateStepper label="Today" previousLabel="Previous week" nextLabel="Next week"
+            onPrevious={() => moveWeek(-7)} onNext={() => moveWeek(7)} onReset={goToday} size="touch" />
           <Button className="min-h-11 min-w-11" variant="ghost" size="icon-sm" aria-label="Retry Calendar load" onClick={() => { void fetchEvents() }}><RefreshCw /></Button>
         </div>
       </section>

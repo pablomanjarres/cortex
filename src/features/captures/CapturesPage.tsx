@@ -16,6 +16,7 @@ import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
 import { saveFile, loadFile, deleteFile, fileToDataUrl, dataUrlMime, mediaIdFor, uploadLimitError } from '@/lib/media'
 import { stepIndex, swipeStep } from '@/lib/media-navigation'
+import { useFileDropZone } from '@/lib/use-file-drop-zone'
 import {
   Plus,
   Trash2,
@@ -86,13 +87,11 @@ export function CapturesPage() {
   const [filterSource, setFilterSource] = useState<CaptureSource | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [imageCache, setImageCache] = useState<Record<string, string>>({})
-  const [dragOver, setDragOver] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState<Record<string, number>>({})
   const [lightbox, setLightbox] = useState<{ imageIds: string[]; index: number } | null>(null)
   const [uploading, setUploading] = useState<string | null>(null) // capture id being uploaded to
   const [uploadStatus, setUploadStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
-  const dropRef = useRef<HTMLDivElement>(null)
 
   // Auto-clear upload status after 3s
   useEffect(() => {
@@ -258,18 +257,17 @@ export function CapturesPage() {
   }, [addCapture, readImages])
 
   // Drop handlers
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
+  const onDrop = useCallback((dataTransfer: DataTransfer) => {
     const imageFiles: File[] = []
-    for (let i = 0; i < e.dataTransfer.files.length; i++) {
-      const file = e.dataTransfer.files[i]
+    for (let i = 0; i < dataTransfer.files.length; i++) {
+      const file = dataTransfer.files[i]
       if (file.type.startsWith('image/')) imageFiles.push(file)
     }
     if (imageFiles.length > 0) {
       void readImages(imageFiles).then(b64s => { if (b64s.length) return addCapture(b64s) })
     }
   }, [addCapture, readImages])
+  const dropZone = useFileDropZone(onDrop, types => types.includes('Files'))
 
   // Filter + search
   const filtered = useMemo(() => {
@@ -323,11 +321,8 @@ export function CapturesPage() {
 
       {/* Drop zone */}
       <div
-        ref={dropRef}
-        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
-        className={`flex items-center justify-center gap-3 rounded-xl border border-dashed py-6 transition-colors duration-150 ${dragOver ? 'border-accent/40 bg-accent/5' : 'border-border/60 hover:border-accent/40'}`}
+        {...dropZone.bind}
+        className={`flex items-center justify-center gap-3 rounded-xl border border-dashed py-6 transition-colors duration-150 ${dropZone.active ? 'border-accent/40 bg-accent/5' : 'border-border/60 hover:border-accent/40'}`}
       >
         <ClipboardPaste className="h-4 w-4 text-foreground-faint" />
         <p className="text-xs text-foreground-faint">
