@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import type { WorkoutDay, WorkoutSession, BodyStats } from '@/types/gym'
+import { WEEKLY_SESSION_TARGET, formatVolumeK, sessionStats } from '../domain/workout-sessions'
 
 interface WeeklyStatsProps {
   plans: WorkoutDay[]
@@ -13,7 +14,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 export function WeeklyStats({ weekSessions, weekDates, bodyStats }: WeeklyStatsProps) {
   const reduceMotion = useReducedMotion()
   const completed = weekSessions.length
-  const target = 4
+  const target = WEEKLY_SESSION_TARGET
   const pct = Math.min(100, Math.round((completed / target) * 100))
   const todayIdx = (new Date().getDay() + 6) % 7 // 0=Mon
 
@@ -24,14 +25,7 @@ export function WeeklyStats({ weekSessions, weekDates, bodyStats }: WeeklyStatsP
   })
 
   // Total volume this week
-  const totalSets = weekSessions.reduce(
-    (sum, s) => sum + s.exercises.reduce((es, ex) => es + ex.sets.filter(set => set.completed).length, 0), 0
-  )
-  const totalVolume = weekSessions.reduce(
-    (sum, s) => sum + s.exercises.reduce(
-      (es, ex) => es + ex.sets.filter(set => set.completed).reduce((vs, set) => vs + set.weight * set.reps, 0), 0
-    ), 0
-  )
+  const { sets: totalSets, volume: totalVolume } = sessionStats(weekSessions)
 
   // Latest weight
   const latestWeight = bodyStats.length > 0 ? bodyStats[bodyStats.length - 1].weight : null
@@ -70,7 +64,7 @@ export function WeeklyStats({ weekSessions, weekDates, bodyStats }: WeeklyStatsP
             <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Sets</p>
           </div>
           <div className="text-center">
-            <p className="font-mono text-lg font-medium tabular-nums">{totalVolume > 0 ? `${Math.round(totalVolume / 1000)}K` : '0'}</p>
+            <p className="font-mono text-lg font-medium tabular-nums">{formatVolumeK(totalVolume)}</p>
             <p className="font-mono text-2xs uppercase tracking-wider text-muted-foreground">Volume (kg)</p>
           </div>
           {latestWeight && (

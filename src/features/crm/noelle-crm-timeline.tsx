@@ -5,7 +5,7 @@ import type { NoelleCrmContact, NoelleCrmConversation, NoelleCrmMessage } from '
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { PLATFORM_LABELS, formatCrmTime } from './noelle-crm-model'
+import { formatCrmTime, noelleContactChannel, noelleContactName } from './noelle-crm-model'
 
 const PAGE_SIZE = 50
 
@@ -54,8 +54,8 @@ export function NoelleCrmTimeline({ contact, renderMessageSource }: {
     <div className="flex min-w-0 flex-col gap-4 border-t border-border/60 pt-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h4 className="break-words text-base font-semibold">{contact.name || contact.handle}</h4>
-          <p className="mt-1 text-xs text-muted-foreground">{PLATFORM_LABELS[contact.platform]}{contact.handle ? ` · ${contact.handle}` : ''}</p>
+          <h4 className="break-words text-base font-semibold">{noelleContactName(contact)}</h4>
+          <p className="mt-1 text-xs text-muted-foreground">{noelleContactChannel(contact)}</p>
         </div>
         <div className="flex flex-wrap gap-3 text-xs">
           {contact.profileUrl && <a href={contact.profileUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 text-accent">Open profile <ExternalLink className="h-3 w-3" /></a>}

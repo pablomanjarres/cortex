@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   /** Human-readable route name shown in the crash panel. */
@@ -36,13 +37,9 @@ export class RouteErrorBoundary extends Component<Props, State> {
             <div className="mt-2 max-h-32 overflow-y-auto break-words font-mono text-xs text-muted-foreground">
               {this.state.error.message || String(this.state.error)}
             </div>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="mt-4 rounded-md border border-border px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-secondary"
-            >
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => window.location.reload()}>
               Reload
-            </button>
+            </Button>
           </div>
         </div>
       )

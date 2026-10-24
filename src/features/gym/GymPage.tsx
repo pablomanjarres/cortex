@@ -23,15 +23,8 @@ import { WeeklyStats } from './components/WeeklyStats'
 import { HardBans } from './components/HardBans'
 import { MealPlan } from './components/MealPlan'
 import { resolveActivePlan } from './domain/active-plan'
+import { normalizeSessions } from './domain/workout-sessions'
 import { GymNavigation } from './components/GymNavigation'
-
-// Normalize stored session data: migrates old single-session format to array
-function normalizeSessions(data: unknown): WorkoutSession[] {
-  if (!data) return []
-  if (Array.isArray(data)) return data as WorkoutSession[]
-  if (typeof data === 'object' && data !== null && 'workoutDayId' in data) return [data as WorkoutSession]
-  return []
-}
 
 export function GymPage() {
   // Reactive day key: at midnight the key changes and the whole day-scoped

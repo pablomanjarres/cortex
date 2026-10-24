@@ -8,7 +8,9 @@ import { ThemedTooltip, axisProps, chartColors, cssVar, gridProps } from '@/lib/
 import { readStore } from '@/lib/store'
 import { getLastNDays, localDate } from '@/lib/date-utils'
 import type { WorkoutDay, WorkoutSession, BodyStats, DailyNutrition } from '@/types/gym'
-import { PROTEIN_TARGET, CALORIE_TARGET } from '@/types/gym'
+import { PROTEIN_TARGET, CALORIE_TARGET, WATER_TARGET } from '@/types/gym'
+import { WEEKLY_SESSION_TARGET, completedSets, formatVolumeK, normalizeSessions, sessionStats, workoutTypeIndex } from '../domain/workout-sessions'
+import { dayNutritionTotals, hasLoggedFood } from '../domain/nutrition'
 import {
   LineChart,
   Line,
@@ -32,9 +34,8 @@ interface AnalyticsProps {
 
 const RANGE_OPTIONS = [7, 14, 30, 90]
 // Workout types map onto the chart family in a fixed order (never inline hex).
-const TYPE_ORDER = ['PUSH', 'PULL', 'LEGS', 'SWIM']
 const typeColor = (name: string, colors: string[]) => {
-  const i = TYPE_ORDER.indexOf(name)
+  const i = workoutTypeIndex(name)
   return i >= 0 ? colors[i % colors.length] : colors[4]
 }
 
@@ -65,12 +66,7 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
       dates.map(d => readStore<unknown>(`cortex-gym-session-${d}`, null))
     ).then(results => {
       if (cancelled) return
-      const loaded: WorkoutSession[] = []
-      for (const r of results) {
-        if (!r) continue
-        if (Array.isArray(r)) loaded.push(...(r as WorkoutSession[]))
-        else if (typeof r === 'object' && 'workoutDayId' in r) loaded.push(r as WorkoutSession)
-      }
+      const loaded = results.flatMap(normalizeSessions)
       setSessions(loaded)
       const firstEx = loaded.find(s => s.exercises.length > 0)?.exercises[0]
       if (firstEx) setSelectedExercise(previous => previous || firstEx.exerciseName)
@@ -79,7 +75,7 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
       dates.map(d => readStore<DailyNutrition | null>(`cortex-nutrition-${d}`, null))
     ).then(results => {
       if (cancelled) return
-      setNutritionDays(results.filter((n): n is DailyNutrition => n !== null && n.meals.some(m => m.foods.length > 0)))
+      setNutritionDays(results.filter(hasLoggedFood))
     })
     return () => { cancelled = true }
   }, [range])
@@ -98,18 +94,17 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
       .filter(s => s.exercises.some(ex => ex.exerciseName === selectedExercise))
       .map(s => {
         const ex = s.exercises.find(e => e.exerciseName === selectedExercise)!
-        const completedSets = ex.sets.filter(set => set.completed)
-        const maxWeight = completedSets.length > 0 ? Math.max(...completedSets.map(set => set.weight)) : 0
-        const totalVolume = completedSets.reduce((sum, set) => sum + set.weight * set.reps, 0)
+        const done = completedSets(ex.sets)
+        const maxWeight = done.length > 0 ? Math.max(...done.map(set => set.weight)) : 0
+        const totalVolume = done.reduce((sum, set) => sum + set.weight * set.reps, 0)
         return { date: s.date.slice(5), weight: maxWeight, volume: totalVolume }
       })
   }, [sessions, selectedExercise])
 
   // Volume per session
   const volumeData = useMemo(() => sessions.map(s => {
-    const totalSets = s.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).length, 0)
-    const totalVolume = s.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).reduce((v, set) => v + set.weight * set.reps, 0), 0)
-    return { date: s.date.slice(5), sets: totalSets, volume: totalVolume, type: s.workoutName, fill: typeColor(s.workoutName, colors) }
+    const { sets, volume } = sessionStats(s)
+    return { date: s.date.slice(5), sets, volume, type: s.workoutName, fill: typeColor(s.workoutName, colors) }
   }), [sessions, colors])
 
   // Weight trend — compare YYYY-MM-DD strings directly: `new Date('YYYY-MM-DD')`
@@ -145,11 +140,7 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
 
   // Nutrition trend
   const nutritionData = useMemo(() => {
-    return nutritionDays.map(n => {
-      let protein = 0, calories = 0
-      for (const m of n.meals) for (const f of m.foods) { protein += f.protein; calories += f.calories }
-      return { date: n.date.slice(5), protein, calories, water: n.waterLiters }
-    })
+    return nutritionDays.map(n => ({ date: n.date.slice(5), ...dayNutritionTotals(n) }))
   }, [nutritionDays])
 
   // Avg nutrition
@@ -160,12 +151,11 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
   }, [nutritionData])
 
   // KPIs
-  const expectedPerWeek = 4
+  const expectedPerWeek = WEEKLY_SESSION_TARGET
   const weeks = Math.max(1, range / 7)
   const expectedSessions = Math.round(expectedPerWeek * weeks)
   const completionRate = expectedSessions > 0 ? Math.round((sessions.length / expectedSessions) * 100) : 0
-  const totalSets = sessions.reduce((s, sess) => s + sess.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).length, 0), 0)
-  const totalVolume = sessions.reduce((s, sess) => s + sess.exercises.reduce((sum, ex) => sum + ex.sets.filter(set => set.completed).reduce((v, set) => v + set.weight * set.reps, 0), 0), 0)
+  const { sets: totalSets, volume: totalVolume } = sessionStats(sessions)
 
   // Weekly streak — week boundaries as local YYYY-MM-DD strings, compared
   // against session date strings (avoids the UTC-midnight parse of new Date(s)).
@@ -204,7 +194,7 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
         <StatTile label="Completion" value={`${completionRate}%`} icon={<Target />} />
         <StatTile label={`Sessions (${range}d)`} value={sessions.length} icon={<Activity />} />
         <StatTile label="Total sets" value={totalSets} icon={<TrendingUp />} />
-        <StatTile label="Volume (kg)" value={totalVolume > 0 ? `${Math.round(totalVolume / 1000)}K` : '0'} icon={<Zap />} />
+        <StatTile label="Volume (kg)" value={formatVolumeK(totalVolume)} icon={<Zap />} />
         <StatTile label="Weight" value={bodyStats.length > 0 ? `${bodyStats[bodyStats.length - 1].weight}kg` : '-'} icon={<Scale />} />
         <StatTile label="Week streak" value={weeklyStreak} icon={<Flame />} />
       </div>
@@ -356,8 +346,8 @@ export function Analytics({ bodyStats }: AnalyticsProps) {
               <StatTile
                 label="Avg water"
                 value={`${avgNutrition.water}L`}
-                sub="of 2.5L target"
-                delta={<TargetPct value={avgNutrition.water} target={2.5} />}
+                sub={`of ${WATER_TARGET}L target`}
+                delta={<TargetPct value={avgNutrition.water} target={WATER_TARGET} />}
               />
             </div>
           )}

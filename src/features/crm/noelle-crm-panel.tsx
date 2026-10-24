@@ -6,14 +6,15 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { NoelleCrmSyncStatus } from './noelle-crm-sync-status'
 import { NoelleCrmContactList } from './noelle-crm-contact-list'
 import { NoelleCrmTimeline } from './noelle-crm-timeline'
+import { noelleContactKey } from './noelle-crm-model'
 
 export function NoelleCrmPanel() {
   const [snapshot] = useStore<NoelleCrmSnapshot | null>('cortex-noelle-crm', null)
   const [selected, setSelected] = useState<string | null>(null)
   const contacts = snapshot?.contacts ?? []
-  const contact = contacts.find((item) => `${item.platform}:${item.id}` === selected) ?? contacts[0]
-  const select = (item: NoelleCrmContact) => setSelected(`${item.platform}:${item.id}`)
-  const selectedKey = contact ? `${contact.platform}:${contact.id}` : null
+  const contact = contacts.find((item) => noelleContactKey(item) === selected) ?? contacts[0]
+  const select = (item: NoelleCrmContact) => setSelected(noelleContactKey(item))
+  const selectedKey = contact ? noelleContactKey(contact) : null
   return (
     <WidgetCard id="noelle-dm-crm" title="DM conversations" description="People we have sent DMs to on X and LinkedIn. Sends and replies update automatically.">
       <NoelleCrmSyncStatus snapshot={snapshot} />

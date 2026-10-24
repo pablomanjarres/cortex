@@ -1,5 +1,8 @@
+import { Trash2 } from 'lucide-react'
 import { Field } from '@/components/shared/Field'
 import { TagInput } from '@/components/shared/TagInput'
+import { Button } from '@/components/ui/button'
+import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -8,6 +11,24 @@ import { ALL_STATUSES, statusConfig, type CrmContact, type CrmStatus } from './c
 interface CrmContactFieldsProps {
   contact: CrmContact
   onChange: (patch: Partial<CrmContact>) => void
+}
+
+export function CrmStatusChip({ status, className }: { status: CrmStatus; className?: string }) {
+  return <Chip size="sm" variant={statusConfig[status].chip} className={className}>{statusConfig[status].label}</Chip>
+}
+
+/** The expanded record on both the mobile card and the desktop row: its fields and its delete action. */
+export function CrmContactEditor({ contact, onChange, onDelete }: CrmContactFieldsProps & { onDelete: () => void }) {
+  return (
+    <>
+      <CrmContactFields contact={contact} onChange={onChange} />
+      <div className="flex justify-end pt-4">
+        <Button variant="destructive" size="sm" className="w-full md:w-auto" onClick={onDelete}>
+          <Trash2 /> Delete contact
+        </Button>
+      </div>
+    </>
+  )
 }
 
 /** The CRM contact editor. Two columns on compact cards, three on wide table rows. */

@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { AreaChart, Area, Line, ComposedChart, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { Activity, Cpu, MemoryStick } from 'lucide-react'
 import { Chip } from '@/components/ui/chip'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { ThemedTooltip, axisProps, chartColors, cssVar } from '@/lib/chart-theme'
+import { systemApiUrl, usePolledJson, type HostKey } from './system-api'
 
-type HostKey = 'mac'
 type WindowKey = '15m' | '1h' | '6h' | '24h' | '3d' | '7d'
 
 interface HistoryBucket {
@@ -38,10 +38,6 @@ const WINDOWS: { key: WindowKey; label: string; ms: number }[] = [
   { key: '3d',  label: '3d',  ms: 3 * 24 * 3600 * 1000 },
   { key: '7d',  label: '7d',  ms: 7 * 24 * 3600 * 1000 },
 ]
-
-const API_BASE = (typeof window !== 'undefined' && window.location.protocol === 'file:')
-  ? 'http://127.0.0.1:3456'
-  : ''
 
 function fmtTime(t: number, windowMs: number): string {
   const d = new Date(t)
@@ -93,36 +89,7 @@ function StatRow({ icon: Icon, label, stat, format = fmtPct, color }: {
 
 export function HostHistory({ host }: { host: HostKey }) {
   const [windowKey, setWindowKey] = useState<WindowKey>('1h')
-  const [data, setData] = useState<HistoryPayload | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout> | null = null
-
-    const tick = async () => {
-      try {
-        const r = await fetch(`${API_BASE}/api/system/history?host=${host}&window=${windowKey}`, { cache: 'no-store' })
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        const json = (await r.json()) as HistoryPayload
-        if (cancelled) return
-        setData(json)
-        setError(null)
-      } catch (e: unknown) {
-        if (cancelled) return
-        setError(e instanceof Error ? e.message : 'fetch failed')
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-          timer = setTimeout(tick, 30_000)
-        }
-      }
-    }
-
-    tick()
-    return () => { cancelled = true; if (timer) clearTimeout(timer) }
-  }, [host, windowKey])
+  const { data, error } = usePolledJson<HistoryPayload>(systemApiUrl(`/api/system/history?host=${host}&window=${windowKey}`), 30_000)
 
   const samples = data?.samples ?? []
   const cores = data?.latest?.cores ?? 1
@@ -160,13 +127,7 @@ export function HostHistory({ host }: { host: HostKey }) {
               selectable
               size="sm"
               selected={windowKey === w.key}
-              onClick={() => {
-                if (windowKey === w.key) return
-                setLoading(true)
-                setData(null)
-                setError(null)
-                setWindowKey(w.key)
-              }}
+              onClick={() => setWindowKey(w.key)}
             >
               {w.label}
             </Chip>
@@ -175,7 +136,7 @@ export function HostHistory({ host }: { host: HostKey }) {
       </div>
 
       {/* Loading / empty / error states */}
-      {loading && !data && (
+      {!data && !error && (
         <div className="flex flex-col gap-2">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <Skeleton className="h-16 w-full" />

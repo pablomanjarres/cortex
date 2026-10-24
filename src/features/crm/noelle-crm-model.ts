@@ -2,6 +2,13 @@ import type { NoelleCrmContact } from '../../../electron/noelle-crm'
 
 export const PLATFORM_LABELS = { x: 'X', linkedin: 'LinkedIn' } as const
 
+/** Contact ids are only unique within a platform. */
+export const noelleContactKey = (contact: Pick<NoelleCrmContact, 'platform' | 'id'>) => `${contact.platform}:${contact.id}`
+export const noelleContactName = (contact: NoelleCrmContact) => contact.name || contact.handle
+/** "LinkedIn · handle", omitting a missing handle. */
+export const noelleContactChannel = (contact: NoelleCrmContact) =>
+  `${PLATFORM_LABELS[contact.platform]}${contact.handle ? ` · ${contact.handle}` : ''}`
+
 const dateTime = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Bogota', year: 'numeric', month: 'short', day: 'numeric',
   hour: 'numeric', minute: '2-digit',

@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Download, RefreshCw } from 'lucide-react'
+import { Download } from 'lucide-react'
+import { RefreshButton } from '@/components/shared/RefreshButton'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { Notice } from '@/components/shared/Notice'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
@@ -12,7 +15,7 @@ import {
   type WorkReport,
   type WorkSession,
 } from '../../../electron/work-hours-model'
-import { chipVariant, dateTime, downloadReport, duration, isHttpsUrl, money, prIdentity, unverifiedEvidence } from './work-hours-ui'
+import { chipVariant, dateTime, sessionTitle, downloadReport, duration, isHttpsUrl, money, prIdentity, unverifiedEvidence } from './work-hours-ui'
 import { billableSessions, chargeableWork } from '../../../electron/work-hours-billing'
 
 interface WorkHoursReportPanelProps {
@@ -54,6 +57,8 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
   const billableMs = selectedRows.reduce((sum, row) => sum + row.durationMs, 0)
   const charges = chargeableWork({ sessions }, project)
   const chargeableMs = selectedRows.reduce((sum, row) => sum + (charges.get(row.id) ?? 0), 0)
+  const canCheckEvidence = Boolean(chosenPr) && !invalidPr && !prConflict && !loadingEvidence
+  const canFinalize = !busy && !loadingEvidence && !invalidRange && !invalidPr && !prConflict && selectedRows.length > 0 && Boolean(task.trim())
   const projectReports = reports.filter((report) => report.projectId === project.id && billableSessions(report.rows).length > 0).slice().reverse()
 
   function toggle(id: string) {
@@ -61,7 +66,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
   }
 
   async function refreshEvidence() {
-    if (!chosenPr || invalidPr || prConflict || loadingEvidence) return
+    if (!canCheckEvidence) return
     setLoadingEvidence(true)
     setError('')
     try {
@@ -78,7 +83,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
   }
 
   async function finalize() {
-    if (busy || loadingEvidence || invalidRange || invalidPr || prConflict || selectedRows.length === 0 || !task.trim()) return
+    if (!canFinalize) return
     setError('')
     if (await onFinalize(selectedRows.map((row) => row.id), task.trim(), currentEvidence)) {
       setSelected([])
@@ -99,7 +104,7 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
           {(id) => <Input id={id} type="date" value={through} onChange={(event) => setThrough(event.target.value)} />}
         </Field>
       </div>
-      {invalidRange && <p role="alert" className="mt-2 text-sm text-destructive">The end date must be on or after the start date.</p>}
+      {invalidRange && <Notice tone="danger" className="mt-2">The end date must be on or after the start date.</Notice>}
       <p className="mt-2 text-xs text-muted-foreground">Sessions overlapping the dates are included at their full duration. Review any interrupted session in the history first.</p>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
@@ -115,8 +120,8 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
         <div className="mt-2 max-h-64 space-y-1 overflow-y-auto rounded-md border border-border/70 p-1">
           {eligible.map((row) => (
             <label key={row.id} className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 hover:bg-secondary/50">
-              <input type="checkbox" checked={selected.includes(row.id)} onChange={() => toggle(row.id)} aria-label={`Include session from ${dateTime(row.startedAt)}`} className="size-4 shrink-0 accent-accent" />
-              <span className="min-w-0 flex-1 truncate text-sm">{row.description || 'Untitled work session'}</span>
+              <Checkbox checked={selected.includes(row.id)} onChange={() => toggle(row.id)} aria-label={`Include session from ${dateTime(row.startedAt)}`} />
+              <span className="min-w-0 flex-1 truncate text-sm">{sessionTitle(row)}</span>
               <span className="shrink-0 font-mono text-xs text-muted-foreground">{duration(row.durationMs)}</span>
             </label>
           ))}
@@ -131,13 +136,12 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
           {(id) => <Input id={id} type="url" value={prUrl} onChange={(event) => setPrUrl(event.target.value)} placeholder={attachedUrls[0] || 'https://github.com/owner/repo/pull/123'} />}
         </Field>
       </div>
-      {prConflict && <p role="alert" className="mt-2 text-sm text-destructive">Selected sessions reference different PRs. Correct the links or choose one deliverable.</p>}
-      {invalidPr && <p role="alert" className="mt-2 text-sm text-destructive">Enter an HTTPS pull request URL.</p>}
+      {prConflict && <Notice tone="danger" className="mt-2">Selected sessions reference different PRs. Correct the links or choose one deliverable.</Notice>}
+      {invalidPr && <Notice tone="danger" className="mt-2">Enter an HTTPS pull request URL.</Notice>}
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <Button type="button" size="sm" variant="secondary" onClick={() => { void refreshEvidence() }} disabled={!chosenPr || invalidPr || prConflict || loadingEvidence}>
-          <RefreshCw className={loadingEvidence ? 'animate-spin' : ''} /> {loadingEvidence ? 'Checking…' : 'Refresh evidence'}
-        </Button>
+        <RefreshButton onClick={() => { void refreshEvidence() }} busy={loadingEvidence} disabled={!canCheckEvidence}
+          label="Refresh evidence" busyLabel="Checking…" />
         {currentEvidence.pr.checkedAt && <span className="text-xs text-muted-foreground">Checked {dateTime(currentEvidence.pr.checkedAt)}</span>}
       </div>
       <div className="mt-3 flex flex-wrap gap-2" aria-label="Delivery evidence">
@@ -154,11 +158,11 @@ export function WorkHoursReportPanel({ project, sessions, reports, busy, command
           {project.billing && <p className="mt-1">Additional work after included hours: <span className="font-mono text-foreground">{duration(chargeableMs)}</span></p>}
           <p className="mt-1">Billing: <span className="font-mono text-foreground">{project.ratePerHour === null ? 'Rate not set' : money(chargeableMs / 3_600_000 * project.ratePerHour)}</span></p>
         </div>
-        <Button type="button" onClick={() => { void finalize() }} disabled={busy || loadingEvidence || invalidRange || invalidPr || prConflict || selectedRows.length === 0 || !task.trim()}>
+        <Button type="button" onClick={() => { void finalize() }} disabled={!canFinalize}>
           Finalize report
         </Button>
       </div>
-      {(error || commandError) && <p role="alert" className="mt-2 text-sm text-destructive">{error || commandError}</p>}
+      {(error || commandError) && <Notice tone="danger" className="mt-2">{error || commandError}</Notice>}
 
       <div className="mt-6 border-t border-border/70 pt-4">
         <h4 className="text-sm font-semibold">Finalized reports</h4>

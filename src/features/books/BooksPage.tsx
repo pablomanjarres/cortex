@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
@@ -6,6 +6,8 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Select } from '@/components/ui/select'
+import { FilterChips } from '@/components/shared/FilterChips'
+import { DisclosureCard, DisclosureTableRow } from '@/components/shared/RecordDisclosure'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { SortableHeader } from '@/components/shared/SortableHeader'
 import {
@@ -103,13 +105,8 @@ export function BooksPage() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput label="Search books" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search books..." containerClassName="min-w-[200px] flex-1" className="h-8 text-xs" />
-        <div className="flex gap-1.5">
-          {ALL_STATUSES.map((s) => (
-            <Chip key={s} selectable selected={filterStatus === s} onClick={() => setFilterStatus(filterStatus === s ? null : s)}>
-              {s}
-            </Chip>
-          ))}
-        </div>
+        <FilterChips label="Filter by status" size="md" value={filterStatus} onChange={setFilterStatus} className="flex-nowrap"
+          options={ALL_STATUSES.map((s) => ({ value: s, label: s }))} />
         <Select aria-label="Filter by genre" value={filterGenre ?? ''} onChange={(e) => setFilterGenre(e.target.value || null)} className="h-8 w-auto cursor-pointer text-xs">
           <option value="">All genres</option>
           {ALL_GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
@@ -121,38 +118,19 @@ export function BooksPage() {
 
       {/* Mobile: Book cards */}
       <div className="flex flex-col gap-3 md:hidden">
-        {filtered.length === 0 ? emptyState : filtered.map((b) => {
-          const detailId = `book-card-${b.id}`
-          return (
-            <div key={b.id} className="surface rounded-xl p-4">
-              <div className="flex items-start justify-between gap-2">
-                <Button variant="ghost" size="sm" aria-label={`Details for ${b.title}`} aria-expanded={expanded === b.id} aria-controls={detailId}
-                  onClick={() => toggleExpanded(b.id)}
-                  className="h-auto min-h-11 min-w-0 flex-1 justify-start gap-2.5 p-0 text-left whitespace-normal">
-                  <span className="shrink-0">{statusIcon(b.status)}</span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{b.title}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{b.author}</span>
-                  </span>
-                </Button>
-                <div className="flex shrink-0 items-center gap-2">
-                  <Stars score={b.score} />
-                  <Button variant="ghost" size="icon-lg" aria-label="Delete book" className="active:text-destructive" onClick={() => deleteBook(b.id)}>
-                    <Trash2 />
-                  </Button>
-                </div>
-              </div>
-              {b.genre && <div className="mt-1.5"><Chip size="sm">{b.genre}</Chip></div>}
-              <div id={detailId} hidden={expanded !== b.id}>
-                {expanded === b.id && (
-                  <div className="mt-4 border-t border-border/60 pt-3">
-                    <BookFields book={b} onChange={(patch) => setField(b.id, patch)} />
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
+        {filtered.length === 0 ? emptyState : filtered.map((b) => (
+          <DisclosureCard key={b.id} name={b.title} detailsId={`book-card-${b.id}`} expanded={expanded === b.id} onToggle={() => toggleExpanded(b.id)}
+            icon={statusIcon(b.status)} subtitle={b.author}
+            aside={<>
+              <Stars score={b.score} />
+              <Button variant="ghost" size="icon-lg" aria-label="Delete book" className="active:text-destructive" onClick={() => deleteBook(b.id)}>
+                <Trash2 />
+              </Button>
+            </>}
+            meta={b.genre && <div className="mt-1.5"><Chip size="sm">{b.genre}</Chip></div>}>
+            <BookFields book={b} onChange={(patch) => setField(b.id, patch)} />
+          </DisclosureCard>
+        ))}
       </div>
 
       {/* Desktop: Table */}
@@ -171,31 +149,19 @@ export function BooksPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((b) => {
-                  const detailId = `book-row-${b.id}`
-                  return (
-                    <Fragment key={b.id}>
-                      <tr onClick={() => toggleExpanded(b.id)}
-                        className={`group cursor-pointer border-b border-border/60 transition-colors hover:bg-secondary/30 ${expanded === b.id ? 'bg-secondary/20' : ''}`}>
-                        <td className="px-4 py-2.5">{statusIcon(b.status)}</td>
-                        <td className="py-2.5 font-medium"><Button variant="ghost" size="xs" aria-label={`Details for ${b.title}`} aria-expanded={expanded === b.id} aria-controls={detailId}
-                          onClick={(e) => { e.stopPropagation(); toggleExpanded(b.id) }}
-                          className="min-h-7 px-0 text-left hover:text-accent">{b.title}</Button></td>
-                        <td className="py-2.5 text-muted-foreground">{b.author}</td>
-                        <td className="py-2.5">{b.genre ? <Chip size="sm">{b.genre}</Chip> : <span className="text-foreground-faint">—</span>}</td>
-                        <td className="py-2.5"><Stars score={b.score} /></td>
-                        <td className="py-2.5 pr-4"><Button variant="ghost" size="icon-xs" aria-label="Delete book" className="opacity-0 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }}><Trash2 /></Button></td>
-                      </tr>
-                      <tr id={detailId} hidden={expanded !== b.id}>
-                        {expanded === b.id && (
-                          <td colSpan={6} className="border-b border-border/60 bg-secondary/10 px-4 py-4">
-                            <BookFields book={b} onChange={(patch) => setField(b.id, patch)} />
-                          </td>
-                        )}
-                      </tr>
-                    </Fragment>
-                  )
-                })}
+                {filtered.map((b) => (
+                  <DisclosureTableRow key={b.id} name={b.title} detailsId={`book-row-${b.id}`} expanded={expanded === b.id} onToggle={() => toggleExpanded(b.id)}
+                    colSpan={6} details={<BookFields book={b} onChange={(patch) => setField(b.id, patch)} />}>
+                    {(toggle) => <>
+                      <td className="px-4 py-2.5">{statusIcon(b.status)}</td>
+                      <td className="py-2.5">{toggle}</td>
+                      <td className="py-2.5 text-muted-foreground">{b.author}</td>
+                      <td className="py-2.5">{b.genre ? <Chip size="sm">{b.genre}</Chip> : <span className="text-foreground-faint">—</span>}</td>
+                      <td className="py-2.5"><Stars score={b.score} /></td>
+                      <td className="py-2.5 pr-4"><Button variant="ghost" size="icon-xs" aria-label="Delete book" className="opacity-0 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100" onClick={(e) => { e.stopPropagation(); deleteBook(b.id) }}><Trash2 /></Button></td>
+                    </>}
+                  </DisclosureTableRow>
+                ))}
               </tbody>
             </table>
           </div>

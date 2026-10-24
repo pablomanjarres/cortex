@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
+import { CalendarDays, RefreshCw } from 'lucide-react'
+import { DateStepper } from '@/components/shared/DateStepper'
 import { PageShell } from '@/components/shared/PageShell'
+import { SegmentedControl, type SegmentedOption } from '@/components/shared/SegmentedControl'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -17,6 +19,11 @@ import {
 type CalendarEventFull = CalendarEventLike & { id: string; endDate: string; notes: string; lastModified: string; recurrence: string }
 type LoadState = 'loading' | 'ready' | 'empty' | 'error'
 type ViewMode = 'week' | 'day'
+
+const VIEW_OPTIONS: SegmentedOption<ViewMode>[] = [
+  { value: 'week', label: 'Week' },
+  { value: 'day', label: 'Day' },
+]
 
 const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 const weekFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
@@ -163,10 +170,9 @@ export function CalendarPage() {
           <div><p className="text-sm text-muted-foreground">Read-only Apple Calendar</p><h1 className="text-2xl font-semibold tracking-normal text-foreground">{dateLabel(week[0])} - {dateLabel(week[6])}</h1></div>
         </div>
         <div className="flex w-full flex-wrap items-center justify-between gap-2 sm:justify-start lg:w-auto lg:flex-nowrap">
-          {(['week', 'day'] as const).map((mode) => <Button key={mode} className="min-h-11 min-w-11" variant={view === mode ? 'default' : 'secondary'} size="sm" onClick={() => setView(mode)} aria-pressed={view === mode}>{mode === 'week' ? 'Week' : 'Day'}</Button>)}
-          <Button className="min-h-11 min-w-11" variant="secondary" size="icon-sm" aria-label="Previous week" onClick={() => moveWeek(-7)}><ChevronLeft /></Button>
-          <Button className="min-h-11 min-w-11" variant="secondary" size="sm" onClick={goToday}>Today</Button>
-          <Button className="min-h-11 min-w-11" variant="secondary" size="icon-sm" aria-label="Next week" onClick={() => moveWeek(7)}><ChevronRight /></Button>
+          <SegmentedControl label="Calendar view" options={VIEW_OPTIONS} value={view} onChange={setView} optionClassName="min-h-11 min-w-11" />
+          <DateStepper label="Today" previousLabel="Previous week" nextLabel="Next week"
+            onPrevious={() => moveWeek(-7)} onNext={() => moveWeek(7)} onReset={goToday} size="touch" />
           <Button className="min-h-11 min-w-11" variant="ghost" size="icon-sm" aria-label="Retry Calendar load" onClick={() => { void fetchEvents() }}><RefreshCw /></Button>
         </div>
       </section>

@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils'
-import { dayName, formatMinutes, type FactItem, type FactVisual } from './homePanelUtils'
+import { formatMinutes } from '@/lib/date-utils'
+import { dayName, type FactItem, type FactVisual } from './homePanelUtils'
 
 function WeekBars({ visual }: { visual: Extract<FactVisual, { kind: 'bars' }> }) {
   const max = Math.max(1, ...visual.values)

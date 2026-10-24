@@ -1,6 +1,7 @@
 import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { SetLog } from '@/types/gym'
+import { completedSets } from '../domain/workout-sessions'
 
 interface SetHistoryProps {
   sets: SetLog[]
@@ -11,7 +12,7 @@ interface SetHistoryProps {
 }
 
 export function SetHistory({ sets, currentIndex, onEdit, onRemove, onAdd }: SetHistoryProps) {
-  const completed = sets.filter((set) => set.completed).length
+  const completed = completedSets(sets).length
   return (
     <details className="mt-2 border-b border-border">
       <summary className="flex min-h-12 cursor-pointer items-center justify-between gap-3 py-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">

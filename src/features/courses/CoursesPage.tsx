@@ -1,11 +1,10 @@
 import { SearchInput } from '@/components/shared/SearchInput'
 import { Select } from '@/components/ui/select'
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Skeleton } from '@/components/shared/Skeleton'
-import { Modal } from '@/components/shared/Modal'
+import { ImageLightbox, PdfViewer } from '@/components/shared/MediaViewer'
 import { NotesField } from '@/components/shared/NotesField'
 import { Input } from '@/components/ui/input'
 import { Field } from '@/components/shared/Field'
@@ -15,10 +14,15 @@ import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/lib/store'
 import { timeAgo } from '@/lib/date-utils'
-import { saveFile, loadFile, deleteFile, fileToDataUrl, formatBytes, extFor } from '@/lib/media'
+import {
+  saveFile, loadFile, deleteFile, fileToDataUrl, formatBytes, extFor, dataUrlMime, downloadDataUrl, mediaIdFor,
+  readDraggedLink, uploadLimitError,
+} from '@/lib/media'
+import { useFileDropZone } from '@/lib/use-file-drop-zone'
+import { Notice } from '@/components/shared/Notice'
 import {
   Plus, Trash2, X, Link as LinkIcon, GraduationCap, FileText, Download,
-  Upload, Image as ImageIcon, ChevronLeft, ChevronRight, Minus, Paperclip, BookOpen,
+  Upload, Image as ImageIcon, Minus, Paperclip, BookOpen,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -68,22 +72,6 @@ function inferCategory(files: StoredFile[]): Category {
   return 'other'
 }
 
-/** Pull a URL + title out of a drag payload (dragging a link / article). */
-function readDraggedLink(dt: DataTransfer): { url: string; title: string } | null {
-  const uriList = dt.getData('text/uri-list')
-  const plain = dt.getData('text/plain')
-  const html = dt.getData('text/html')
-  const url = (uriList.split('\n').find(l => l && !l.startsWith('#')) || plain || '').trim()
-  if (!/^https?:\/\//i.test(url)) return null
-  let title = ''
-  if (html) {
-    const doc = new DOMParser().parseFromString(html, 'text/html')
-    title = (doc.querySelector('a')?.textContent || doc.body.textContent || '').trim()
-  }
-  if (!title) { try { title = new URL(url).hostname.replace(/^www\./, '') } catch { title = url } }
-  return { url, title: title.slice(0, 200) }
-}
-
 // ── File preview (renders the actual file, not just an icon) ──────────────────
 
 function FilePreview({ file, src, className }: { file: StoredFile; src?: string | null; className?: string }) {
@@ -121,12 +109,11 @@ export function CoursesPage() {
   const [filterCat, setFilterCat] = useState<Category | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [cache, setCache] = useState<Record<string, string>>({}) // media id -> data URL
-  const [pageDrag, setPageDrag] = useState(false)
   const [dragCard, setDragCard] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [lightbox, setLightbox] = useState<{ ids: string[]; index: number } | null>(null)
   const [pdfView, setPdfView] = useState<StoredFile | null>(null)
-  const dragDepth = useRef(0)
 
   // Load bytes for every referenced file.
   useEffect(() => {
@@ -138,18 +125,6 @@ export function CoursesPage() {
       if (Object.keys(next).length) setCache(prev => ({ ...prev, ...next }))
     })
   }, [items]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Lightbox keyboard nav
-  useEffect(() => {
-    if (!lightbox) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setLightbox(null)
-      if (e.key === 'ArrowLeft') setLightbox(p => p ? { ...p, index: (p.index - 1 + p.ids.length) % p.ids.length } : null)
-      if (e.key === 'ArrowRight') setLightbox(p => p ? { ...p, index: (p.index + 1) % p.ids.length } : null)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [lightbox])
 
   const setField = (id: string, patch: Partial<CourseItem>) =>
     updateItems(prev => prev.map(it => it.id === id ? { ...it, ...patch, updatedAt: new Date().toISOString() } : it))
@@ -164,17 +139,24 @@ export function CoursesPage() {
     setExpanded(id)
   }, [updateItems])
 
+  // Save each file that fits the upload cap; oversize and failed files are
+  // reported in `error` and left out instead of being silently dropped.
   const persistFiles = useCallback(async (itemId: string, fileList: File[]): Promise<StoredFile[]> => {
     const stored: StoredFile[] = []
+    const problems: string[] = []
     for (let i = 0; i < fileList.length; i++) {
       const f = fileList[i]
-      const dataUrl = await fileToDataUrl(f)
-      const mediaId = `${itemId}-${Date.now()}-${i}.${extFor(f.name, f.type)}`
-      const ok = await saveFile(mediaId, dataUrl)
-      if (!ok) throw new Error('save failed')
-      setCache(prev => ({ ...prev, [mediaId]: dataUrl }))
-      stored.push({ id: mediaId, name: f.name || mediaId, mime: f.type || 'application/octet-stream', size: f.size })
+      const tooLarge = uploadLimitError(f)
+      if (tooLarge) { problems.push(tooLarge); continue }
+      try {
+        const dataUrl = await fileToDataUrl(f)
+        const mediaId = mediaIdFor(itemId, i, f.name, f.type)
+        if (!await saveFile(mediaId, dataUrl)) throw new Error('save failed')
+        setCache(prev => ({ ...prev, [mediaId]: dataUrl }))
+        stored.push({ id: mediaId, name: f.name || mediaId, mime: f.type || 'application/octet-stream', size: f.size })
+      } catch { problems.push(`“${f.name}” couldn't be saved — try again`) }
     }
+    setError(problems.length ? problems.join(' · ') : null)
     return stored
   }, [])
 
@@ -184,8 +166,9 @@ export function CoursesPage() {
     setBusy(itemId)
     try {
       const stored = await persistFiles(itemId, fileList)
+      if (!stored.length) return
       updateItems(prev => prev.map(it => it.id === itemId ? { ...it, files: [...it.files, ...stored], updatedAt: new Date().toISOString() } : it))
-    } catch { /* ignore */ } finally { setBusy(null) }
+    } finally { setBusy(null) }
   }, [persistFiles, updateItems])
 
   // New item straight from dropped/pasted files
@@ -194,13 +177,14 @@ export function CoursesPage() {
     setBusy(id)
     try {
       const stored = await persistFiles(id, fileList)
+      if (!stored.length) return
       const item: CourseItem = {
         id, title: '', category: inferCategory(stored), subject: '', content: '', url: '',
         files: stored, createdAt: new Date().toISOString(),
       }
       updateItems(prev => [item, ...prev])
       setExpanded(id)
-    } catch { /* ignore */ } finally { setBusy(null) }
+    } finally { setBusy(null) }
   }, [persistFiles, updateItems])
 
   // New item straight from a dragged link / article
@@ -227,17 +211,20 @@ export function CoursesPage() {
 
   // Add images from the NotesField image picker (data URLs) → stored files
   const addInlineImages = useCallback(async (itemId: string, dataUrls: string[]): Promise<string[]> => {
-    const ids: string[] = []
+    const added: StoredFile[] = []
+    const stamp = Date.now()
     for (let i = 0; i < dataUrls.length; i++) {
-      const mediaId = `${itemId}-${Date.now()}-${i}.png`
-      await saveFile(mediaId, dataUrls[i])
+      const mime = dataUrlMime(dataUrls[i]) ?? 'image/png'
+      const mediaId = mediaIdFor(itemId, i, '', mime, stamp)
+      if (!await saveFile(mediaId, dataUrls[i])) continue
       setCache(prev => ({ ...prev, [mediaId]: dataUrls[i] }))
-      ids.push(mediaId)
+      added.push({ id: mediaId, name: mediaId, mime, size: 0 })
     }
+    if (added.length < dataUrls.length) setError("Some images couldn't be saved — try again")
     updateItems(prev => prev.map(it => it.id === itemId
-      ? { ...it, files: [...it.files, ...ids.map(id => ({ id, name: id, mime: 'image/png', size: 0 }))], updatedAt: new Date().toISOString() }
+      ? { ...it, files: [...it.files, ...added], updatedAt: new Date().toISOString() }
       : it))
-    return ids
+    return added.map(f => f.id)
   }, [updateItems])
 
   // Shared drop logic — drop on the page creates an item; drop on a card attaches.
@@ -280,23 +267,14 @@ export function CoursesPage() {
     return c
   }, [items])
 
-  // Page-level drag tracking (enter/leave counter avoids child-flicker)
-  const onPageDragEnter = (e: React.DragEvent) => {
-    if (!Array.from(e.dataTransfer.types).some(t => t === 'Files' || t === 'text/uri-list' || t === 'text/plain')) return
-    e.preventDefault(); dragDepth.current++; setPageDrag(true)
-  }
-  const onPageDragOver = (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
-  const onPageDragLeave = () => { dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setPageDrag(false) }
-  const resetDrag = () => { dragDepth.current = 0; setPageDrag(false); setDragCard(null) }
+  const dropZone = useFileDropZone(dt => { setDragCard(null); handleDrop(dt) })
+  const resetDrag = () => { dropZone.reset(); setDragCard(null) }
 
   return (
     <PageShell>
       <div
-        className={cn('relative flex flex-col gap-6 rounded-xl transition-all', pageDrag && 'ring-2 ring-accent/40 ring-offset-4 ring-offset-background')}
-        onDragEnter={onPageDragEnter}
-        onDragOver={onPageDragOver}
-        onDragLeave={onPageDragLeave}
-        onDrop={e => { e.preventDefault(); resetDrag(); handleDrop(e.dataTransfer) }}
+        className={cn('relative flex flex-col gap-6 rounded-xl transition-all', dropZone.active && 'ring-2 ring-accent/40 ring-offset-4 ring-offset-background')}
+        {...dropZone.bind}
       >
         {/* Section header (the topbar owns the route title) */}
         <PageHeader
@@ -319,6 +297,8 @@ export function CoursesPage() {
             </>
           }
         />
+
+        {error && <Notice tone="danger">{error}</Notice>}
 
         {/* Filters */}
         <div className="flex flex-col gap-3">
@@ -412,72 +392,23 @@ export function CoursesPage() {
         )}
 
         {/* Drop hint pill */}
-        {pageDrag && (
+        {dropZone.active && (
           <div className="pointer-events-none fixed bottom-8 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background shadow-lift">
             <Download className="h-3.5 w-3.5" /> {dragCard ? 'Drop to attach to this item' : 'Drop to file it here'}
           </div>
         )}
       </div>
 
-      {/* Lightbox */}
       {lightbox && (
-        <Modal
-          open
-          onOpenChange={o => { if (!o) setLightbox(null) }}
-          size="full"
-          className="grid-rows-[minmax(0,1fr)]"
-        >
-          <div className="relative flex h-full min-h-0 items-center justify-center">
-            {lightbox.ids.length > 1 && (
-              <span className="absolute left-1/2 top-1 -translate-x-1/2 font-mono text-2xs tabular-nums text-muted-foreground">
-                {lightbox.index + 1} / {lightbox.ids.length}
-              </span>
-            )}
-            <img src={cache[lightbox.ids[lightbox.index]]} alt="" className="max-h-full max-w-full rounded-md object-contain" />
-            {lightbox.ids.length > 1 && (
-              <>
-                <Button variant="ghost" size="icon-lg" aria-label="Previous image" className="absolute left-2 top-1/2 -translate-y-1/2" onClick={() => setLightbox(p => p ? { ...p, index: (p.index - 1 + p.ids.length) % p.ids.length } : null)}>
-                  <ChevronLeft className="size-5" />
-                </Button>
-                <Button variant="ghost" size="icon-lg" aria-label="Next image" className="absolute right-2 top-1/2 -translate-y-1/2" onClick={() => setLightbox(p => p ? { ...p, index: (p.index + 1) % p.ids.length } : null)}>
-                  <ChevronRight className="size-5" />
-                </Button>
-              </>
-            )}
-          </div>
-        </Modal>
+        <ImageLightbox
+          srcs={lightbox.ids.map(id => cache[id])}
+          index={lightbox.index}
+          onIndexChange={index => setLightbox(p => p ? { ...p, index } : null)}
+          onClose={() => setLightbox(null)}
+        />
       )}
 
-      {/* PDF viewer */}
-      {pdfView && (
-        <Modal
-          open
-          onOpenChange={o => { if (!o) setPdfView(null) }}
-          size="full"
-          className="grid-rows-[minmax(0,1fr)]"
-        >
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="flex items-center justify-between gap-3 border-b border-border pb-3 pr-8">
-              <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{pdfView.name}</span>
-              {cache[pdfView.id] && (
-                <a href={cache[pdfView.id]} download={pdfView.name} className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
-                  <Download /> Save
-                </a>
-              )}
-            </div>
-            <div className="min-h-0 flex-1 pt-3">
-              {cache[pdfView.id]
-                ? <iframe src={cache[pdfView.id]} title={pdfView.name} className="h-full w-full border-0" />
-                : (
-                  <div className="flex h-full flex-col gap-2">
-                    <Skeleton className="h-4 w-40" />
-                    <Skeleton className="min-h-0 flex-1 w-full" />
-                  </div>
-                )}
-            </div>
-          </div>
-        </Modal>
-      )}
+      {pdfView && <PdfViewer name={pdfView.name} src={cache[pdfView.id]} onClose={() => setPdfView(null)} />}
     </PageShell>
   )
 }
@@ -504,7 +435,7 @@ function ExpandedItem({
   const openFile = (f: StoredFile) => {
     if (isImage(f)) onOpenImage(images.findIndex(i => i.id === f.id))
     else if (isPdf(f)) onOpenPdf(f)
-    else if (cache[f.id]) { const a = document.createElement('a'); a.href = cache[f.id]; a.download = f.name; a.click() }
+    else if (cache[f.id]) downloadDataUrl(cache[f.id], f.name)
   }
 
   return (

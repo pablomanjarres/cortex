@@ -4,23 +4,12 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { cn } from '@/lib/utils'
-import type { Cadence, Habit } from '@/lib/habits'
-import { HabitAddForm, HabitEditFields } from './HabitForms'
+import type { Habit } from '@/lib/habits'
+import { HabitAddForm, HabitEditPanel } from './HabitForms'
 import type { HabitDraft } from './habitFormState'
 import { HabitNoteButton, HabitNoteEditor } from './HabitNotes'
-interface HabitEditState {
-  editingId: string | null
-  name: string
-  emoji: string
-  goal: string
-  cadence: Cadence
-  onNameChange: (value: string) => void
-  onEmojiChange: (value: string) => void
-  onGoalChange: (value: string) => void
-  onCadenceChange: (value: Cadence) => void
-  onSave: () => void
-  cancel: () => void
-}
+import { habitGoalLabel } from './habit-progress'
+import type { HabitEditor } from './useHabitEditor'
 
 interface OnHoldHabitsSectionProps {
   habits: Habit[]
@@ -30,62 +19,37 @@ interface OnHoldHabitsSectionProps {
   customCategory: boolean
   setCustomCategory: (value: boolean) => void
   categoryOptions: string[]
-  edit: HabitEditState
+  editor: HabitEditor
   expandedNoteId: string | null
   onAdd: () => void
   onActivate: (id: string) => void
-  onEdit: (habit: Habit) => void
   onDelete: (id: string) => void
   onToggleNote: (id: string) => void
   onContextChange: (id: string, value: string) => void
 }
-function getHabitCadenceLabel(habit: Habit) {
-  if ((habit.cadence ?? 'weekly') === 'monthly') return `${habit.monthlyGoal ?? 1}x/mo`
-  const goal = habit.weeklyGoal ?? 7
-  return goal < 7 ? `${goal}x/wk` : 'weekly'
-}
 function HeldHabitCard({
   habit,
   compact,
-  edit,
+  editor,
   expandedNoteId,
   onActivate,
-  onEdit,
   onDelete,
   onToggleNote,
   onContextChange,
 }: {
   habit: Habit
   compact: boolean
-  edit: HabitEditState
+  editor: HabitEditor
   expandedNoteId: string | null
   onActivate: (id: string) => void
-  onEdit: (habit: Habit) => void
   onDelete: (id: string) => void
   onToggleNote: (id: string) => void
   onContextChange: (id: string, value: string) => void
 }) {
   return (
     <div className={cn('rounded-md border border-border/60 bg-secondary/25', compact ? 'p-3' : 'p-2.5')}>
-      {edit.editingId === habit.id ? (
-        <div className="flex flex-col gap-2">
-          <HabitEditFields
-            name={edit.name}
-            emoji={edit.emoji}
-            goal={edit.goal}
-            cadence={edit.cadence}
-            onNameChange={edit.onNameChange}
-            onEmojiChange={edit.onEmojiChange}
-            onGoalChange={edit.onGoalChange}
-            onCadenceChange={edit.onCadenceChange}
-            onSave={edit.onSave}
-            compact={compact}
-          />
-          <div className="flex gap-2">
-            <Button size="sm" className="flex-1" onClick={edit.onSave}>Save</Button>
-            <Button variant="ghost" size="sm" onClick={edit.cancel}>Cancel</Button>
-          </div>
-        </div>
+      {editor.editingId === habit.id ? (
+        <HabitEditPanel editor={editor} compact={compact} size="sm" />
       ) : (
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -96,14 +60,14 @@ function HeldHabitCard({
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {habit.category && <Chip size="sm">{habit.category}</Chip>}
-              <Chip size="sm">{getHabitCadenceLabel(habit)}</Chip>
+              <Chip size="sm">{habitGoalLabel(habit) ?? 'weekly'}</Chip>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <Button variant="ghost" size={compact ? 'icon-sm' : 'icon-xs'} onClick={() => onActivate(habit.id)} aria-label="Activate habit">
               <Play />
             </Button>
-            <Button variant="ghost" size={compact ? 'icon-sm' : 'icon-xs'} onClick={() => onEdit(habit)} aria-label="Edit held habit">
+            <Button variant="ghost" size={compact ? 'icon-sm' : 'icon-xs'} onClick={() => editor.start(habit)} aria-label="Edit held habit">
               <Pencil />
             </Button>
             <Button variant="ghost" size={compact ? 'icon-sm' : 'icon-xs'} onClick={() => onDelete(habit.id)} aria-label="Delete held habit" className="hover:text-destructive active:text-destructive">
@@ -128,11 +92,10 @@ function OnHoldHabitsContent({
   customCategory,
   setCustomCategory,
   categoryOptions,
-  edit,
+  editor,
   expandedNoteId,
   onAdd,
   onActivate,
-  onEdit,
   onDelete,
   onToggleNote,
   onContextChange,
@@ -146,10 +109,9 @@ function OnHoldHabitsContent({
               key={habit.id}
               habit={habit}
               compact={compact}
-              edit={edit}
+              editor={editor}
               expandedNoteId={expandedNoteId}
               onActivate={onActivate}
-              onEdit={onEdit}
               onDelete={onDelete}
               onToggleNote={onToggleNote}
               onContextChange={onContextChange}

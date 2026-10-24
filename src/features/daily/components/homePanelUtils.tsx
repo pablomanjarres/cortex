@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react'
 import { CalendarDays, CheckCircle2, ClipboardList, TimerReset } from 'lucide-react'
 import type { Assignment } from '@/features/student/student-types'
-import type { HomeCalendarEvent } from '../home-model'
+import { formatMinutes } from '@/lib/date-utils'
+import { isActiveHabit } from '@/lib/habits'
+import type { SprintSession } from '@/lib/sprint-context'
+import { parseDateOnly, type HomeCalendarEvent } from '../home-model'
 
 export type CalendarState = 'loading' | 'ready' | 'error' | 'empty' | 'ambiguous'
 
@@ -56,17 +59,9 @@ export const shortTime = (date: Date) =>
 export const dueDateLabel = (day: string) =>
   `Due ${new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
 
-export const formatMinutes = (minutes: number) =>
-  minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60 ? `${minutes % 60}m` : ''}`.trim() : `${minutes}m`
-
 export const assignmentDay = (assignment: Assignment) => assignment.deadline?.slice(0, 10)
 
-const validLocalDay = (day: string | undefined) => {
-  if (!day || !dateOnlyPattern.test(day)) return false
-  const date = new Date(`${day}T12:00:00`)
-  return !Number.isNaN(date.getTime()) &&
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` === day
-}
+const validLocalDay = (day: string | undefined) => !!day && parseDateOnly(day) !== null
 
 export function openWorkBreakdown(assignments: Assignment[], today: string, weekEnd: string): WorkBreakdown {
   const breakdown = { overdue: 0, thisWeek: 0, later: 0, undated: 0 }
@@ -104,6 +99,16 @@ export const eventOverlapsDay = (event: HomeCalendarEvent, day: string) => {
 
   return start < nextDay && end > dayStart
 }
+
+/** Everything Home shows for one day: overlapping events, completed focus sessions, and open deadlines. */
+export const dayAgenda = (
+  day: string,
+  { events, sessionsByDay, assignments }: { events: HomeCalendarEvent[]; sessionsByDay: Record<string, SprintSession[]>; assignments: Assignment[] },
+) => ({
+  events: events.filter((event) => eventOverlapsDay(event, day)),
+  sessions: sessionsByDay[day] ?? [],
+  deadlines: assignments.filter((assignment) => assignmentDay(assignment) === day && !assignment.done),
+})
 
 export const weeklyEventCounts = (days: string[], events: HomeCalendarEvent[]) =>
   days.map((day) => events.filter((event) => eventOverlapsDay(event, day)).length)
@@ -168,7 +173,7 @@ export function buildShortcutHabits<T extends { id: string; name: string; emoji:
   toggle: (habitId: string) => void,
 ): HabitChip[] {
   return habits
-    .filter((habit) => !habit.onHold)
+    .filter(isActiveHabit)
     .map((habit) => ({
       id: habit.id,
       name: habit.name,

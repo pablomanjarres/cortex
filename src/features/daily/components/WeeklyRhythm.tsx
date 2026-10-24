@@ -1,5 +1,6 @@
 import { BarChart3 } from 'lucide-react'
-import { dayName, formatMinutes } from './homePanelUtils'
+import { formatMinutes } from '@/lib/date-utils'
+import { dayName } from './homePanelUtils'
 
 export function WeeklyRhythm({ days, minutes }: { days: string[]; minutes: number[] }) {
   const max = Math.max(60, ...minutes)

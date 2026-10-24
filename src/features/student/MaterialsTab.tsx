@@ -1,11 +1,11 @@
 import { parseTags } from '@/lib/tags'
 import { Textarea } from '@/components/ui/textarea'
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { Skeleton } from '@/components/shared/Skeleton'
 import { Modal } from '@/components/shared/Modal'
+import { ImageLightbox, PdfViewer } from '@/components/shared/MediaViewer'
 import { StatTile } from '@/components/shared/StatTile'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { Input } from '@/components/ui/input'
@@ -16,39 +16,24 @@ import { Chip } from '@/components/ui/chip'
 import { cn } from '@/lib/utils'
 import { useStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
-import { saveFile, loadFile, deleteFile, fileToDataUrl, formatBytes, extFor } from '@/lib/media'
 import {
-  CLASS_MATERIALS_KEY, STUDY_NOTES_KEY, matId, noteId, normalizeMaterials, normalizeNotes,
+  saveFile, loadFile, deleteFile, fileToDataUrl, formatBytes, downloadDataUrl, mediaIdFor, readDraggedLink, uploadLimitError,
+} from '@/lib/media'
+import { useFileDropZone } from '@/lib/use-file-drop-zone'
+import { Notice } from '@/components/shared/Notice'
+import {
+  CLASS_MATERIALS_KEY, STUDY_NOTES_KEY, matId, newStudyNote, normalizeMaterials, normalizeNotes,
   compareUnits, normText, getToday, daysUntil, fmtDate,
   type Assignment, type ClassMaterial, type Course, type MaterialFile, type StudyNote,
 } from './student-types'
 import { ICONS } from './course-icons'
+import { termCourses } from './student-overview'
 import {
   GraduationCap, Upload, Link2, StickyNote, FileText, Image as ImageIcon, Eye,
-  ExternalLink, Pencil, Trash2, Download, CalendarDays, Layers, ClipboardList, Pin,
+  ExternalLink, Pencil, Trash2, CalendarDays, Layers, ClipboardList, Pin,
 } from 'lucide-react'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-// Size caps: 50 MB per file through the Electron IPC media backend, 15 MB
-// through the HTTP fallback (the server body cap is 25 MB incl. base64 overhead).
-const maxUploadBytes = () => (window.electronAPI?.media ? 50 : 15) * 1024 * 1024
-
-/** Pull a URL + title out of a drag payload (dragging a link / article). */
-function readDraggedLink(dt: DataTransfer): { url: string; title: string } | null {
-  const uriList = dt.getData('text/uri-list')
-  const plain = dt.getData('text/plain')
-  const html = dt.getData('text/html')
-  const url = (uriList.split('\n').find(l => l && !l.startsWith('#')) || plain || '').trim()
-  if (!/^https?:\/\//i.test(url)) return null
-  let title = ''
-  if (html) {
-    const doc = new DOMParser().parseFromString(html, 'text/html')
-    title = (doc.querySelector('a')?.textContent || doc.body.textContent || '').trim()
-  }
-  if (!title) { try { title = new URL(url).hostname.replace(/^www\./, '') } catch { title = url } }
-  return { url, title: title.slice(0, 200) }
-}
 
 /** Default display name for a link material: host + path. */
 function linkName(url: string): string {
@@ -100,20 +85,15 @@ export function MaterialsTab() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [unitFilter, setUnitFilter] = useState<string | null>(null) // normText key
   const [cache, setCache] = useState<Record<string, string>>({}) // media id → data URL
-  const [pageDrag, setPageDrag] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [lightbox, setLightbox] = useState<ClassMaterial | null>(null)
   const [pdfView, setPdfView] = useState<ClassMaterial | null>(null)
   const [quickNote, setQuickNote] = useState('')
-  const dragDepth = useRef(0)
 
   // Rail = active-semester courses; fall back to all when the filter matches none.
-  const railCourses = useMemo(() => {
-    const inTerm = courses.filter((c) => c.semester === activeSemester)
-    return inTerm.length ? inTerm : courses
-  }, [courses, activeSemester])
+  const railCourses = useMemo(() => termCourses(courses, activeSemester), [courses, activeSemester])
 
   const course = railCourses.find((c) => c.id === selectedId) ?? railCourses[0] ?? null
 
@@ -183,20 +163,17 @@ export function MaterialsTab() {
 
   const addFiles = useCallback(async (files: File[]) => {
     if (!course) return
-    const cap = maxUploadBytes()
     const problems: string[] = []
     setBusy(true)
     try {
       for (let i = 0; i < files.length; i++) {
         const f = files[i]
-        if (f.size > cap) { problems.push(`“${f.name}” is over ${formatBytes(cap)} — skipped`); continue }
+        const tooLarge = uploadLimitError(f)
+        if (tooLarge) { problems.push(tooLarge); continue }
         try {
           const dataUrl = await fileToDataUrl(f)
           const id = matId()
-          // Sanitize the extension so the id satisfies the media backend's
-          // /^[A-Za-z0-9._-]{1,200}$/ contract (matches the MCP tool's scheme).
-          const ext = extFor(f.name, f.type).replace(/[^a-z0-9]/g, '') || 'bin'
-          const mediaId = `${id}-${Date.now()}-${i}.${ext}`
+          const mediaId = mediaIdFor(id, i, f.name, f.type)
           const ok = await saveFile(mediaId, dataUrl)
           if (!ok) throw new Error('save failed')
           setCache((prev) => ({ ...prev, [mediaId]: dataUrl }))
@@ -242,14 +219,7 @@ export function MaterialsTab() {
     if (link) addDroppedLink(link.url, link.title)
   }, [addFiles, addDroppedLink])
 
-  // Panel-level drag tracking (enter/leave counter avoids child-flicker)
-  const onDragEnter = (e: React.DragEvent) => {
-    if (!Array.from(e.dataTransfer.types).some(t => t === 'Files' || t === 'text/uri-list' || t === 'text/plain')) return
-    e.preventDefault(); dragDepth.current++; setPageDrag(true)
-  }
-  const onDragOver = (e: React.DragEvent) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }
-  const onDragLeave = () => { dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setPageDrag(false) }
-  const resetDrag = () => { dragDepth.current = 0; setPageDrag(false) }
+  const dropZone = useFileDropZone(handleDrop)
 
   // ── CRUD ──
 
@@ -312,8 +282,7 @@ export function MaterialsTab() {
       // Other binaries: download via a data-URL anchor once the bytes arrive.
       void (async () => {
         const src = cache[f.mediaId] ?? await loadFile(f.mediaId, f.mime)
-        if (!src) return
-        const a = document.createElement('a'); a.href = src; a.download = f.name; a.click()
+        if (src) downloadDataUrl(src, f.name)
       })()
     }
   }
@@ -321,10 +290,7 @@ export function MaterialsTab() {
   const addQuickNote = () => {
     const text = quickNote.trim()
     if (!text || !course) return
-    const note: StudyNote = {
-      id: noteId(), courseId: course.id, courseName: course.name,
-      text, tags: [], pinned: false, source: 'manual', createdAt: new Date().toISOString(),
-    }
+    const note = newStudyNote(text, course)
     updateNotes((prev) => [note, ...prev])
     setQuickNote('')
   }
@@ -378,12 +344,9 @@ export function MaterialsTab() {
           <div
             className={cn(
               'relative flex min-w-0 flex-col gap-6 rounded-xl transition-all',
-              pageDrag && 'ring-2 ring-accent/40 ring-offset-4 ring-offset-background',
+              dropZone.active && 'ring-2 ring-accent/40 ring-offset-4 ring-offset-background',
             )}
-            onDragEnter={onDragEnter}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={(e) => { e.preventDefault(); resetDrag(); handleDrop(e.dataTransfer) }}
+            {...dropZone.bind}
           >
             <PageHeader
               kicker={course.semester}
@@ -405,7 +368,7 @@ export function MaterialsTab() {
               }
             />
 
-            {error && <p className="text-xs text-destructive">{error}</p>}
+            {error && <Notice tone="danger">{error}</Notice>}
 
             {/* Stat strip */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -503,7 +466,7 @@ export function MaterialsTab() {
             </div>
 
             {/* Drag-over overlay */}
-            {pageDrag && (
+            {dropZone.active && (
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl border border-accent/40 bg-accent/5">
                 <p className="font-serif italic text-lg text-muted-foreground">Drop to file under {course.name}</p>
               </div>
@@ -570,51 +533,18 @@ export function MaterialsTab() {
         )}
       </Modal>
 
-      {/* Image lightbox */}
       {lightbox?.file && (
-        <Modal
-          open
-          onOpenChange={(o) => { if (!o) setLightbox(null) }}
-          size="full"
-          className="grid-rows-[minmax(0,1fr)]"
-        >
-          <div className="flex h-full min-h-0 items-center justify-center">
-            {cache[lightbox.file.mediaId]
-              ? <img src={cache[lightbox.file.mediaId]} alt={lightbox.name} className="max-h-full max-w-full rounded-md object-contain" />
-              : <Skeleton className="h-2/3 w-2/3" />}
-          </div>
-        </Modal>
+        <ImageLightbox
+          srcs={[cache[lightbox.file.mediaId]]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => setLightbox(null)}
+          alt={lightbox.name}
+        />
       )}
 
-      {/* PDF viewer */}
       {pdfView?.file && (
-        <Modal
-          open
-          onOpenChange={(o) => { if (!o) setPdfView(null) }}
-          size="full"
-          className="grid-rows-[minmax(0,1fr)]"
-        >
-          <div className="flex h-full min-h-0 flex-col">
-            <div className="flex items-center justify-between gap-3 border-b border-border pb-3 pr-8">
-              <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">{pdfView.file.name}</span>
-              {cache[pdfView.file.mediaId] && (
-                <a href={cache[pdfView.file.mediaId]} download={pdfView.file.name} className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }))}>
-                  <Download /> Save
-                </a>
-              )}
-            </div>
-            <div className="min-h-0 flex-1 pt-3">
-              {cache[pdfView.file.mediaId]
-                ? <iframe src={cache[pdfView.file.mediaId]} title={pdfView.file.name} className="h-full w-full border-0" />
-                : (
-                  <div className="flex h-full flex-col gap-2">
-                    <Skeleton className="h-4 w-40" />
-                    <Skeleton className="min-h-0 w-full flex-1" />
-                  </div>
-                )}
-            </div>
-          </div>
-        </Modal>
+        <PdfViewer name={pdfView.file.name} src={cache[pdfView.file.mediaId]} onClose={() => setPdfView(null)} />
       )}
     </PageShell>
   )
