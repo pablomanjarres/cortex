@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
+import { Field } from '@/components/shared/Field'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
@@ -7,6 +8,15 @@ import { formatCrmTime } from '@/features/crm/noelle-crm-model'
 import { ResearchNotes, type ResearchActions } from './research-notes'
 import { researchExportUrl } from './research-api'
 import { RESEARCH_BRIEF_LIMITS, type ResearchBriefDraft, type ResearchView } from '../../../electron/founder-research-model'
+
+type BriefTextField = 'title' | 'audience' | 'objective' | 'invitationGuidance'
+
+const BRIEF_LABELS: Record<BriefTextField, string> = {
+  title: 'Title',
+  audience: 'Audience',
+  objective: 'Objective',
+  invitationGuidance: 'Invitation guidance',
+}
 
 export function ResearchBrief({ view, busy, act }: ResearchActions & { view: ResearchView }) {
   const [editing, setEditing] = useState(false)
@@ -21,6 +31,9 @@ export function ResearchBrief({ view, busy, act }: ResearchActions & { view: Res
     setEdited({ ...draft, [field]: value })
     setBaseUpdatedAt(edited === null ? view.campaign.draftUpdatedAt : baseUpdatedAt ?? view.campaign.draftUpdatedAt)
   }
+  const textField = (field: BriefTextField) => (
+    <Field label={BRIEF_LABELS[field]}>{id => <Input id={id} value={draft[field]} maxLength={RESEARCH_BRIEF_LIMITS[field]} onChange={event => change(field, event.target.value)} />}</Field>
+  )
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(280px,1fr)]">
       <WidgetCard title="Research brief" description="The working draft can change. Published versions stay fixed for every invitation.">
@@ -31,9 +44,9 @@ export function ResearchBrief({ view, busy, act }: ResearchActions & { view: Res
         </div>
         {editing ? (
           <form className="flex flex-col gap-4" onSubmit={event => event.preventDefault()} aria-label="Working research brief">
-            <label className="flex flex-col gap-2 text-sm font-medium">Title<Input value={draft.title} maxLength={RESEARCH_BRIEF_LIMITS.title} onChange={event => change('title', event.target.value)} /></label>
-            <label className="flex flex-col gap-2 text-sm font-medium">Audience<Input value={draft.audience} maxLength={RESEARCH_BRIEF_LIMITS.audience} onChange={event => change('audience', event.target.value)} /></label>
-            <label className="flex flex-col gap-2 text-sm font-medium">Objective<Input value={draft.objective} maxLength={RESEARCH_BRIEF_LIMITS.objective} onChange={event => change('objective', event.target.value)} /></label>
+            {textField('title')}
+            {textField('audience')}
+            {textField('objective')}
             <fieldset className="flex flex-col gap-2">
               <legend className="mb-2 text-sm font-medium">Interview questions</legend>
               {draft.questions.map((question, index) => <div key={index} className="flex items-center gap-2">
@@ -42,7 +55,7 @@ export function ResearchBrief({ view, busy, act }: ResearchActions & { view: Res
               </div>)}
               <Button variant="secondary" className="self-start" disabled={draft.questions.length >= RESEARCH_BRIEF_LIMITS.questions} onClick={() => change('questions', [...draft.questions, ''])}>Add question</Button>
             </fieldset>
-            <label className="flex flex-col gap-2 text-sm font-medium">Invitation guidance<Input value={draft.invitationGuidance} maxLength={RESEARCH_BRIEF_LIMITS.invitationGuidance} onChange={event => change('invitationGuidance', event.target.value)} /></label>
+            {textField('invitationGuidance')}
             <div className="flex flex-wrap gap-2">
               <Button disabled={!dirty || busy} onClick={async () => {
                 const saved = await act({ type: 'save_draft', draft, expectedUpdatedAt: baseUpdatedAt ?? view.campaign.draftUpdatedAt })
@@ -56,10 +69,10 @@ export function ResearchBrief({ view, busy, act }: ResearchActions & { view: Res
           </form>
         ) : (
           <div className="flex flex-col gap-4 text-sm">
-            <div><p className="mb-1 font-medium">Audience</p><p className="text-muted-foreground">{draft.audience}</p></div>
-            <div><p className="mb-1 font-medium">Objective</p><p className="text-muted-foreground">{draft.objective}</p></div>
+            <BriefValue label={BRIEF_LABELS.audience}>{draft.audience}</BriefValue>
+            <BriefValue label={BRIEF_LABELS.objective}>{draft.objective}</BriefValue>
             <ol className="list-decimal space-y-3 pl-5" aria-label="Interview questions">{draft.questions.map((question, index) => <li key={index}>{question}</li>)}</ol>
-            <div><p className="mb-1 font-medium">Invitation guidance</p><p className="text-muted-foreground">{draft.invitationGuidance}</p></div>
+            <BriefValue label={BRIEF_LABELS.invitationGuidance}>{draft.invitationGuidance}</BriefValue>
           </div>
         )}
         <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4">
@@ -82,4 +95,8 @@ export function ResearchBrief({ view, busy, act }: ResearchActions & { view: Res
       </div>
     </div>
   )
+}
+
+function BriefValue({ label, children }: { label: string; children: string }) {
+  return <div><p className="mb-1 font-medium">{label}</p><p className="text-muted-foreground">{children}</p></div>
 }

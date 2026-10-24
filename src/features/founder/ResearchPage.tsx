@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { Notice } from '@/components/shared/Notice'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { StatTile } from '@/components/shared/StatTile'
 import { Button } from '@/components/ui/button'
@@ -61,8 +62,8 @@ export function ResearchPage() {
         <StatTile label="Interviews booked" value={Object.entries(view.meetings).filter(([id, meeting]) => verifiedIds.has(id) && meeting.status === 'booked').length} sub="Marked manually" />
         <StatTile label="Interviews completed" value={Object.entries(view.meetings).filter(([id, meeting]) => verifiedIds.has(id) && meeting.status === 'completed').length} sub="Marked manually" />
       </div>
-      {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
-      {view.sync.error && <p role="alert" className="rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning">{view.sync.error} Saved research is retained.</p>}
+      {error && <Notice tone="danger">{error}</Notice>}
+      {view.sync.error && <Notice tone="warning">{view.sync.error} Saved research is retained.</Notice>}
       <Tabs value={tab} onValueChange={value => setTab(String(value))}>
         <TabsList variant="line" aria-label="Research views"><TabsTrigger value="brief">Brief</TabsTrigger><TabsTrigger value="outreach">Outreach</TabsTrigger><TabsTrigger value="evidence">Evidence</TabsTrigger></TabsList>
         <TabsContent value="brief" className="pt-3"><ResearchBrief view={view} busy={busy} act={act} /></TabsContent>
