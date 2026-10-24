@@ -12,10 +12,12 @@ import { deleteFile } from '@/lib/media'
 import { syncAssignmentToCalendar } from '@/lib/calendar-sync'
 import { ClassSchedule } from './ClassSchedule'
 import { InlineNumberEditor } from '@/components/shared/InlineNumberEditor'
+import { InlineTextInput } from '@/components/shared/InlineTextInput'
 import { OptionSelect } from './OptionSelect'
 import { formatNumberDraft, parseNumberDraft, type NumberRule } from '@/lib/number-draft'
 import { StudentOverviewCards } from './StudentOverviewCards'
-import { includeAssignmentType, studentOverview } from './student-overview'
+import { includeAssignmentType, studentOverview, termCourses } from './student-overview'
+import { courseGrades, semesterGpa, MAX_GRADE, type CourseGrades } from './student-grades'
 import { DEFAULT_ASSIGNMENTS, DEFAULT_COURSES, DEFAULT_SEMESTERS, DEFAULT_TOPICS } from './student-defaults'
 import { ICONS, ICON_CYCLE, ICON_OPTIONS } from './course-icons'
 import {
@@ -168,29 +170,17 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
   const [addingTopic, setAddingTopic] = useState(false)
   const [newTopicName, setNewTopicName] = useState('')
   const [editingName, setEditingName] = useState(false)
-  const [draftName, setDraftName] = useState(course.name)
   const newRef = useRef<HTMLInputElement>(null)
-  const nameRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (addingTopic) newRef.current?.focus() }, [addingTopic])
-  useEffect(() => { if (editingName) nameRef.current?.focus() }, [editingName])
 
   const Icon = ICONS[course.iconKey] ?? GraduationCap
-  const mine = assignments.filter((a) => a.courseId === course.id)
   const myTopics = topics.filter((t) => t.courseId === course.id)
-  const totalWeight = mine.reduce((s, a) => s + a.weight, 0)
-  const graded = mine.filter((a) => a.grade !== undefined)
-  const gradedWeight = graded.reduce((s, a) => s + a.weight, 0)
-  const gradedPct = totalWeight > 0 ? (gradedWeight / totalWeight) * 100 : 0
-  const currentGrade = gradedWeight > 0 ? graded.reduce((s, a) => s + a.grade! * a.weight, 0) / gradedWeight : undefined
-  const ungradedWeight = mine.filter((a) => a.grade === undefined).reduce((s, a) => s + a.weight, 0)
-  const gradedSum = graded.reduce((s, a) => s + a.grade! * a.weight, 0)
-  const maxGrade = totalWeight > 0 ? (gradedSum + 5.0 * ungradedWeight) / totalWeight : 5.0
-  const minGrade = totalWeight > 0 ? gradedSum / totalWeight : 0
+  const grades = courseGrades(assignments, course.id)
+  const gradedPct = grades.gradedShare * 100
 
-  const commitName = () => {
+  const commitName = (name: string) => {
     setEditingName(false)
-    if (draftName.trim() && draftName.trim() !== course.name) onUpdateCourse({ name: draftName.trim() })
-    else setDraftName(course.name)
+    if (name && name !== course.name) onUpdateCourse({ name })
   }
 
   const cycleIcon = () => {
@@ -228,19 +218,16 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
           <Icon className="size-4 text-accent" />
         </Button>
         {editingName ? (
-          <Input
-            ref={nameRef}
-            variant="inline"
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            onBlur={commitName}
-            onKeyDown={(e) => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') { setDraftName(course.name); setEditingName(false) } }}
+          <InlineTextInput
+            initialValue={course.name}
+            onCommit={commitName}
+            onCancel={() => setEditingName(false)}
             aria-label="Course name"
             className="w-auto text-base font-semibold"
           />
         ) : (
           /* Click-to-edit title — documented compact pattern (bare text button). */
-          <button onClick={() => { setDraftName(course.name); setEditingName(true) }} className="cursor-pointer text-base font-semibold transition-colors hover:text-muted-foreground">{course.name}</button>
+          <button onClick={() => setEditingName(true)} aria-label={`Rename ${course.name}`} className="cursor-pointer text-base font-semibold transition-colors hover:text-muted-foreground">{course.name}</button>
         )}
         <Chip variant={diffVariant[course.difficulty]} size="sm">{course.difficulty}</Chip>
         <Button variant="secondary" size="sm" onClick={onAddAssignment} className="ml-auto">
@@ -269,14 +256,14 @@ function CourseDetail({ course, assignments, topics, semesters, onUpdateTopics, 
             <OptionSelect value={course.difficulty} options={ALL_DIFFICULTIES} onChange={(difficulty) => onUpdateCourse({ difficulty })} label="Difficulty" className={diffInk[course.difficulty]} />
           </Prop>
           <Prop label="Current Grade">
-            {currentGrade !== undefined ? (
-              <span className={`font-mono text-sm font-medium tabular-nums ${gradeInk(currentGrade)}`}>{currentGrade.toFixed(2)}/5.0</span>
+            {grades.current !== undefined ? (
+              <span className={`font-mono text-sm font-medium tabular-nums ${gradeInk(grades.current)}`}>{grades.current.toFixed(2)}/5.0</span>
             ) : (
               <span className="text-muted-foreground">No grades yet</span>
             )}
           </Prop>
-          <Prop label="Best Possible"><span className="font-mono font-medium tabular-nums text-success">{maxGrade.toFixed(2)}/5.0</span></Prop>
-          <Prop label="Worst Possible"><span className={`font-mono font-medium tabular-nums ${gradeInk(minGrade)}`}>{minGrade.toFixed(2)}/5.0</span></Prop>
+          <Prop label="Best Possible"><span className="font-mono font-medium tabular-nums text-success">{grades.best.toFixed(2)}/5.0</span></Prop>
+          <Prop label="Worst Possible"><span className={`font-mono font-medium tabular-nums ${gradeInk(grades.worst)}`}>{grades.worst.toFixed(2)}/5.0</span></Prop>
           <Prop label="Graded">
             <div className="flex items-center gap-2">
               <span className="font-mono tabular-nums">{gradedPct.toFixed(0)}%</span>
@@ -371,15 +358,9 @@ export function StudentPage() {
   const [sortAsc, setSortAsc] = useState(true)
   const [adding, setAdding] = useState(false)
   const [addingCourse, setAddingCourse] = useState(false)
-  const [newCourseName, setNewCourseName] = useState('')
   const [addingSemester, setAddingSemester] = useState(false)
-  const [newSemesterName, setNewSemesterName] = useState('')
 
   const update = updateAssignments
-  const courseAddRef = useRef<HTMLInputElement>(null)
-  const semAddRef = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (addingCourse) courseAddRef.current?.focus() }, [addingCourse])
-  useEffect(() => { if (addingSemester) semAddRef.current?.focus() }, [addingSemester])
 
   const courseMap = useMemo(() => Object.fromEntries(courses.map((c) => [c.id, c])) as Record<string, Course>, [courses])
 
@@ -399,10 +380,8 @@ export function StudentPage() {
   }
 
   // ── Semester management ──
-  const addSemester = () => {
-    const n = newSemesterName.trim()
+  const addSemester = (n: string) => {
     setAddingSemester(false)
-    setNewSemesterName('')
     if (!n) return
     updateSemesters((p) => (p.includes(n) ? p : [n, ...p]))
     changeSemester(n)
@@ -419,10 +398,8 @@ export function StudentPage() {
   // ── Course management ──
   const updateCourse = (id: string, patch: Partial<Course>) =>
     updateCourses((p) => p.map((c) => (c.id === id ? { ...c, ...patch } : c)))
-  const addCourse = () => {
-    const n = newCourseName.trim()
+  const addCourse = (n: string) => {
     setAddingCourse(false)
-    setNewCourseName('')
     if (!n) return
     const idx = courses.length
     const iconKey = ICON_CYCLE[idx % ICON_CYCLE.length]
@@ -494,43 +471,12 @@ export function StudentPage() {
   )
 
   const gradesByCourse = useMemo(() => {
-    const m: Record<string, { gradedWeight: number; gradeSum: number; totalWeight: number }> = {}
-    for (const a of assignments) {
-      if (!m[a.courseId]) m[a.courseId] = { gradedWeight: 0, gradeSum: 0, totalWeight: 0 }
-      m[a.courseId].totalWeight += a.weight
-      if (a.grade !== undefined) {
-        m[a.courseId].gradedWeight += a.weight
-        m[a.courseId].gradeSum += a.grade * a.weight
-      }
-    }
+    const m: Record<string, CourseGrades> = {}
+    for (const c of courses) m[c.id] = courseGrades(assignments, c.id)
     return m
-  }, [assignments])
-
-  const overallGPA = useMemo(() => {
-    let totalCredits = 0, weightedSum = 0
-    for (const c of activeCourses) {
-      const g = gradesByCourse[c.id]
-      if (g && g.gradedWeight > 0) {
-        const courseGrade = g.gradeSum / g.gradedWeight
-        weightedSum += courseGrade * c.credits
-        totalCredits += c.credits
-      }
-    }
-    return totalCredits > 0 ? weightedSum / totalCredits : undefined
-  }, [gradesByCourse, activeCourses])
-
-  const maxOverallGPA = useMemo(() => {
-    let totalCredits = 0, weightedSum = 0
-    for (const c of activeCourses) {
-      const g = gradesByCourse[c.id]
-      if (!g) { weightedSum += 5.0 * c.credits; totalCredits += c.credits; continue }
-      const ungradedW = g.totalWeight - g.gradedWeight
-      const maxCourseGrade = g.totalWeight > 0 ? (g.gradeSum + 5.0 * ungradedW) / g.totalWeight : 5.0
-      weightedSum += maxCourseGrade * c.credits
-      totalCredits += c.credits
-    }
-    return totalCredits > 0 ? weightedSum / totalCredits : 5.0
-  }, [gradesByCourse, activeCourses])
+  }, [courses, assignments])
+  const gradesOf = (courseId: string) => gradesByCourse[courseId] ?? courseGrades(assignments, courseId)
+  const gpa = semesterGpa(activeCourses, gradesOf)
 
   const selected = selectedCourse ? courseMap[selectedCourse] : undefined
   const activeIsEmpty = activeCourses.length === 0
@@ -565,20 +511,16 @@ export function StudentPage() {
         })}
         {addingSemester ? (
           <div className="flex items-center rounded-full border border-input px-2.5 py-1.5">
-            <Input
-              ref={semAddRef}
-              variant="inline"
-              value={newSemesterName}
-              onChange={(e) => setNewSemesterName(e.target.value)}
-              onBlur={addSemester}
-              onKeyDown={(e) => { if (e.key === 'Enter') addSemester(); if (e.key === 'Escape') { setAddingSemester(false); setNewSemesterName('') } }}
+            <InlineTextInput
+              onCommit={addSemester}
+              onCancel={() => setAddingSemester(false)}
               aria-label="New semester name"
               placeholder="5th Semester..."
               className="w-28 border-b-0 py-0 font-mono text-2xs"
             />
           </div>
         ) : (
-          <Button variant="ghost" size="xs" onClick={() => setAddingSemester(true)}>
+          <Button variant="ghost" size="xs" onClick={() => setAddingSemester(true)} aria-label="Add semester">
             <Plus /> Semester
           </Button>
         )}
@@ -621,7 +563,7 @@ export function StudentPage() {
           const Icon = ICONS[c.iconKey] ?? GraduationCap
           const count = assignments.filter((a) => a.courseId === c.id).length
           const done = assignments.filter((a) => a.courseId === c.id && a.done).length
-          const g = gradesByCourse[c.id]
+          const grade = gradesOf(c.id).current
           const sel = selectedCourse === c.id
           return (
             /* Selectable course card — documented compact pattern (card-shaped
@@ -642,8 +584,8 @@ export function StudentPage() {
               <p className="text-sm font-semibold leading-snug">{c.name}</p>
               <div className="mt-auto flex items-end justify-between gap-2">
                 <span className="text-xs text-muted-foreground">{count ? `${done} of ${count} done` : 'No assignments'}</span>
-                {g && g.gradedWeight > 0 && (
-                  <span className={`font-mono text-xs font-semibold tabular-nums ${gradeInk(g.gradeSum / g.gradedWeight)}`}>{(g.gradeSum / g.gradedWeight).toFixed(1)}</span>
+                {grade !== undefined && (
+                  <span className={`font-mono text-xs font-semibold tabular-nums ${gradeInk(grade)}`}>{grade.toFixed(1)}</span>
                 )}
               </div>
             </button>
@@ -654,13 +596,9 @@ export function StudentPage() {
         {addingCourse ? (
           <div className="flex flex-col gap-2 rounded-xl border border-dashed border-input bg-muted/20 px-4 py-3">
             <Plus className="h-4 w-4 text-muted-foreground" />
-            <Input
-              ref={courseAddRef}
-              variant="inline"
-              value={newCourseName}
-              onChange={(e) => setNewCourseName(e.target.value)}
-              onBlur={addCourse}
-              onKeyDown={(e) => { if (e.key === 'Enter') addCourse(); if (e.key === 'Escape') { setAddingCourse(false); setNewCourseName('') } }}
+            <InlineTextInput
+              onCommit={addCourse}
+              onCancel={() => setAddingCourse(false)}
               aria-label="New course name"
               placeholder="Course name..."
               className="font-medium"
@@ -744,20 +682,19 @@ export function StudentPage() {
               <div className="flex items-center gap-3">
                 <GraduationCap className="h-5 w-5 text-muted-foreground" />
                 <div>
-                  <p className={`font-mono text-2xl font-medium tabular-nums leading-none ${overallGPA !== undefined ? gradeInk(overallGPA) : 'text-foreground'}`}>
-                    {overallGPA !== undefined ? overallGPA.toFixed(2) : '—'}
+                  <p className={`font-mono text-2xl font-medium tabular-nums leading-none ${gpa.current !== undefined ? gradeInk(gpa.current) : 'text-foreground'}`}>
+                    {gpa.current !== undefined ? gpa.current.toFixed(2) : '—'}
                   </p>
                   <p className="mt-1.5 font-mono text-2xs text-muted-foreground">
                     Overall GPA · {activeCourses.reduce((s, c) => s + c.credits, 0)} credits
-                    {maxOverallGPA < 5.0 && <span className="ml-1">· max {maxOverallGPA.toFixed(2)}</span>}
+                    {gpa.best < MAX_GRADE && <span className="ml-1">· max {gpa.best.toFixed(2)}</span>}
                   </p>
                 </div>
               </div>
               <div className="flex flex-col gap-2 border-t border-border/60 pt-3">
                 {activeCourses.map((c) => {
-                  const g = gradesByCourse[c.id]
-                  const courseGrade = g && g.gradedWeight > 0 ? g.gradeSum / g.gradedWeight : undefined
-                  const pct = g && g.totalWeight > 0 ? Math.round((g.gradedWeight / g.totalWeight) * 100) : 0
+                  const { current: courseGrade, gradedShare } = gradesOf(c.id)
+                  const pct = Math.round(gradedShare * 100)
                   return (
                     <div key={c.id} className="flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-xs">{c.name}</span>
@@ -916,10 +853,7 @@ export function StudentPage() {
       </WidgetCard>
 
       <ClassSchedule
-        courses={(() => {
-          const inTerm = courses.filter((c) => c.semester === activeSemester)
-          return (inTerm.length ? inTerm : courses).map((c) => ({ id: c.id, name: c.name }))
-        })()}
+        courses={termCourses(courses, activeSemester).map((c) => ({ id: c.id, name: c.name }))}
       />
     </PageShell>
   )

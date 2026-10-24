@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils'
 import { useStore } from '@/lib/store'
 import { localDate } from '@/lib/date-utils'
 import {
-  STUDY_NOTES_KEY, noteId, normalizeNotes, normText, getToday, fmtDate,
+  STUDY_NOTES_KEY, newStudyNote, normalizeNotes, normText, getToday, fmtDate,
   type Course, type StudyNote,
 } from './student-types'
 import { Pin, PinOff, Pencil, Trash2 } from 'lucide-react'
@@ -57,16 +57,7 @@ export function NotesTab() {
   const save = () => {
     const text = draft.trim()
     if (!text) return
-    const course = courseMap[courseSel]
-    const note: StudyNote = {
-      id: noteId(),
-      ...(course ? { courseId: course.id, courseName: course.name } : {}),
-      text,
-      tags: parseTags(tagsInput),
-      pinned: pinDraft,
-      source: 'manual',
-      createdAt: new Date().toISOString(),
-    }
+    const note = newStudyNote(text, courseMap[courseSel], { tags: parseTags(tagsInput), pinned: pinDraft })
     updateNotes((prev) => [note, ...prev])
     setDraft('')
     setTagsInput('')
