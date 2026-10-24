@@ -12,6 +12,7 @@ import { Field } from '@/components/shared/Field'
 import { Textarea } from '@/components/ui/textarea'
 import { Plus, Trash2, Star, Lightbulb, BookOpen } from 'lucide-react'
 import { useStore } from '@/lib/store'
+import { DEFAULT_BOOKS, type Book } from '@/features/books/book-model'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,16 +94,6 @@ const DEFAULT_THOUGHTS: Thought[] = [
   { id: 't53', name: 'Use the towel method while working to improve your jawline', subline: '', topic: 'Health', book: '', highValue: false },
 ]
 
-// ── Books type (from shared store) ───────────────────────────────────────────
-
-interface Book {
-  id: string
-  title: string
-  author: string
-}
-
-const defaultBooks: Book[] = []
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const ALL_TOPICS: Topic[] = ['Personal', 'Finance', 'Business', 'Study', 'Health', 'Programming', 'Love', 'TODO', 'Digital Marketing', 'Job']
@@ -111,7 +102,7 @@ const ALL_TOPICS: Topic[] = ['Personal', 'Finance', 'Business', 'Study', 'Health
 
 export function ThoughtsPage() {
   const [thoughts, updateThoughts] = useStore<Thought[]>('cortex-thoughts', DEFAULT_THOUGHTS)
-  const [books] = useStore<Book[]>('cortex-books', defaultBooks)
+  const [books] = useStore<Book[]>('cortex-books', DEFAULT_BOOKS)
   const [search, setSearch] = useState('')
   const [filterTopic, setFilterTopic] = useState<string | null>(null)
   const [filterBook, setFilterBook] = useState<string | null>(null)
@@ -241,37 +232,39 @@ export function ThoughtsPage() {
                       variant="ghost"
                       size="icon-xs"
                       aria-label="Delete thought"
-                      className="opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                      className="opacity-0 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
                       onClick={(e) => { e.stopPropagation(); deleteThought(t.id) }}
                     >
                       <Trash2 />
                     </Button>
                   </div>
                 </div>
-                {expanded === t.id && (
-                  <div id={`thought-details-${t.id}`} className="mb-1 ml-6 border-l border-border/60 px-3 py-3">
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                      <div className="flex flex-col gap-2">
-                        <Field label="Thought">{id => <Input id={id} variant="inline" value={t.name} onChange={(e) => setField(t.id, { name: e.target.value })} placeholder="Thought..." className="pb-1 text-sm font-medium" />}</Field>
-                        <Field label="Details">{id => <Textarea id={id} value={t.subline} onChange={(e) => setField(t.id, { subline: e.target.value })} rows={3} placeholder="Details..." className="resize-none p-2 text-xs" />}</Field>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Field label="Topic">{id => <Select id={id} value={t.topic} onChange={(e) => setField(t.id, { topic: e.target.value as Topic })} className="h-8 px-2 text-xs">
-                            <option value="">None</option>
-                            {ALL_TOPICS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
-                          </Select>}</Field>
-                        <Field label="Book source">{id => <Select id={id} value={t.book} onChange={(e) => setField(t.id, { book: e.target.value })} className="h-8 px-2 text-xs">
-                            <option value="">No book</option>
-                            {books.map((b) => <option key={b.id} value={b.title}>{b.title}</option>)}
-                            {/* Show current value if not in books list */}
-                            {t.book && !books.some((b) => b.title === t.book) && (
-                              <option value={t.book}>{t.book}</option>
-                            )}
-                          </Select>}</Field>
+                <div id={`thought-details-${t.id}`} hidden={expanded !== t.id}>
+                  {expanded === t.id && (
+                    <div className="mb-1 ml-6 border-l border-border/60 px-3 py-3">
+                      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                        <div className="flex flex-col gap-2">
+                          <Field label="Thought">{id => <Input id={id} variant="inline" value={t.name} onChange={(e) => setField(t.id, { name: e.target.value })} placeholder="Thought..." className="pb-1 text-sm font-medium" />}</Field>
+                          <Field label="Details">{id => <Textarea id={id} value={t.subline} onChange={(e) => setField(t.id, { subline: e.target.value })} rows={3} placeholder="Details..." className="resize-none p-2 text-xs" />}</Field>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Field label="Topic">{id => <Select id={id} value={t.topic} onChange={(e) => setField(t.id, { topic: e.target.value as Topic })} className="h-8 px-2 text-xs">
+                              <option value="">None</option>
+                              {ALL_TOPICS.map((tp) => <option key={tp} value={tp}>{tp}</option>)}
+                            </Select>}</Field>
+                          <Field label="Book source">{id => <Select id={id} value={t.book} onChange={(e) => setField(t.id, { book: e.target.value })} className="h-8 px-2 text-xs">
+                              <option value="">No book</option>
+                              {books.map((b) => <option key={b.id} value={b.title}>{b.title}</option>)}
+                              {/* Show current value if not in books list */}
+                              {t.book && !books.some((b) => b.title === t.book) && (
+                                <option value={t.book}>{t.book}</option>
+                              )}
+                            </Select>}</Field>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             ))}
           </div>
