@@ -6,6 +6,7 @@ import { StatTile } from '@/components/shared/StatTile'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
+import { ScreenBlackout } from './ScreenBlackout'
 import { selectPrimaryDisk } from './mac-stats'
 import { systemApiUrl, usePolledJson, type HostKey } from './system-api'
 
@@ -341,7 +342,8 @@ export function SystemPage() {
       <p className="font-mono text-2xs text-foreground-faint">
         Live Mac metrics · polled every 2s · history sampled every 5s · powered by Glances
       </p>
-      <HostCard host={MAC} delay={0} />
+      <ScreenBlackout />
+      <HostCard host={MAC} delay={0.03} />
     </PageShell>
   )
 }

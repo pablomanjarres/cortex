@@ -16,7 +16,7 @@
     "test:cloud": "tsx --test scripts/cloud-cost-*.test.mts",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:compile": "tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
+    "electron:compile": "node scripts/build-screen-blackout.mjs && tsc -p electron/tsconfig.json && tsc -p electron/tsconfig.preload.json",
     "electron:dev": "npm run electron:compile && concurrently \"vite --host\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "npm run build && npm run electron:compile && electron-builder",
     "cortex:install": "npm run electron:build && rm -rf /Applications/Cortex.app && cp -R release/mac-arm64/Cortex.app /Applications/Cortex.app && xattr -cr /Applications/Cortex.app && codesign --force --deep --sign - /Applications/Cortex.app && codesign --verify --deep --strict /Applications/Cortex.app && open /Applications/Cortex.app"
@@ -41,6 +41,14 @@
       {
         "from": "build/trayTemplate@2x.png",
         "to": "build/trayTemplate@2x.png"
+      },
+      {
+        "from": "build/helpers/cortex-blackout",
+        "to": "helpers/cortex-blackout"
+      },
+      {
+        "from": "scripts/screen-blackout-windows.ps1",
+        "to": "scripts/screen-blackout-windows.ps1"
       }
     ],
     "icon": "build/icon.icns",
