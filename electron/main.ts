@@ -27,6 +27,9 @@ import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
 import { GymRestAlerts, GYM_REST_RECEIPTS_KEY, gymRestUrl, sendGymRestAlert } from './gym-rest-alerts.js'
 import { NOELLE_CRM_KEY, NoelleCrmService, NoelleCrmValidationError, isLoopbackAddress, parseStoredNoelleCrmSnapshot } from './noelle-crm.js'
 import { FOUNDER_RESEARCH_KEY, FounderResearchService, ResearchValidationError, ResearchConflictError, parseResearchState, researchArchiveFiles } from './founder-research.js'
+import { ScreenBlackoutService, BlackoutValidationError, BlackoutBusyError } from './screen-blackout-service.js'
+import { createNativeBlackoutAdapter } from './screen-blackout-native.js'
+import { blackoutOriginAllowed } from './screen-blackout-contract.js'
 
 interface StoredAutomationRun {
   id: string
@@ -36,6 +39,10 @@ interface StoredAutomationRun {
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const blackoutService = new ScreenBlackoutService(createNativeBlackoutAdapter({
+  helper: app.isPackaged ? path.join(process.resourcesPath, 'helpers/cortex-blackout') : path.join(__dirname, '../build/helpers/cortex-blackout'),
+  windowsScript: app.isPackaged ? path.join(process.resourcesPath, 'scripts/screen-blackout-windows.ps1') : path.join(__dirname, '../scripts/screen-blackout-windows.ps1'),
+}))
 
 /** Local YYYY-MM-DD (avoids UTC shift from toISOString) */
 function localDate(d: Date = new Date()): string {
@@ -750,6 +757,7 @@ const mimeTypes: Record<string, string> = {
 
 function getAllowedOrigin(req: http.IncomingMessage): string {
   const origin = req.headers.origin || ''
+  if (origin === 'null' && isLoopbackAddress(req.socket.remoteAddress ?? '')) return origin
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin
   if (/^https?:\/\/(192\.168\.|10\.|100\.)/.test(origin)) return origin
   if (/^https?:\/\/[a-z0-9-]+\.ts\.net(:\d+)?$/i.test(origin)) return origin
@@ -1212,6 +1220,32 @@ function startWebServer() {
         const stats = vaultStats()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
       } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
+      return
+    }
+
+    if (url.pathname === '/api/system/blackout') {
+      const headers = { ...corsHeaders, 'Cache-Control': 'no-store' }
+      try {
+        if (req.method === 'GET') {
+          res.writeHead(200, headers); res.end(JSON.stringify(await blackoutService.read()))
+        } else if (req.method === 'POST') {
+          const origin = req.headers.origin
+          if (!blackoutOriginAllowed(origin, req.headers.host, isLoopbackAddress(remote))) {
+            res.writeHead(403, headers); res.end(JSON.stringify({ error: 'Screen controls require a Cortex connection' })); return
+          }
+          const body = await readBody(req, res)
+          if (body === null) return
+          let command: unknown
+          try { command = JSON.parse(body) } catch { throw new BlackoutValidationError('Invalid JSON') }
+          const state = await blackoutService.set(command)
+          res.writeHead(200, headers); res.end(JSON.stringify(state))
+        } else {
+          res.writeHead(405, { ...headers, Allow: 'GET, POST' }); res.end(JSON.stringify({ error: 'Method not allowed' }))
+        }
+      } catch (error) {
+        const status = error instanceof BlackoutValidationError ? 400 : error instanceof BlackoutBusyError ? 409 : 502
+        res.writeHead(status, headers); res.end(JSON.stringify({ error: errorMessage(error) }))
+      }
       return
     }
 
