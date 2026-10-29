@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { NoelleCrmSnapshot } from './noelle-crm.js'
 import { RESEARCH_BRIEF_LIMITS } from './founder-research-model.js'
 
-import type { ResearchBriefDraft, ResearchEvent, ResearchGeneration, ResearchSource, ResearchState, ResearchView } from './founder-research-model.js'
+import type { PublishedResearchBrief, ResearchBriefDraft, ResearchEvent, ResearchGeneration, ResearchSource, ResearchState, ResearchView } from './founder-research-model.js'
 export * from './founder-research-model.js'
 
 export class ResearchValidationError extends Error {}
@@ -157,7 +157,14 @@ export function researchView(state: ResearchState, crm: NoelleCrmSnapshot | null
   return { ...state, events, crmContacts: [...associated].map(key => contacts.get(key)!), sources: [...sources.values()] }
 }
 
-type ResearchDeps = { read(): Promise<ResearchState | null>; readCrm(): Promise<NoelleCrmSnapshot | null>; write(state: ResearchState): Promise<void>; now?(): string }
+type ResearchDeps = {
+  read(): Promise<ResearchState | null>
+  /** Stored campaign authority, without the full view's vault narrative and CRM reads. */
+  readCampaign?(): Promise<ResearchState | null>
+  readCrm(): Promise<NoelleCrmSnapshot | null>
+  write(state: ResearchState): Promise<void>
+  now?(): string
+}
 export class FounderResearchService {
   private queue: Promise<unknown> = Promise.resolve()
   private deps: ResearchDeps
@@ -166,6 +173,12 @@ export class FounderResearchService {
   private now(): string { return this.deps.now?.() ?? new Date().toISOString() }
   private async load(): Promise<ResearchState> { const current = await this.deps.read(); if (current) return parseResearchState(current); const initial = createResearchState(this.now()); await this.deps.write(initial); return initial }
   read(): Promise<ResearchView> { return this.serial(async () => researchView(await this.load(), await this.deps.readCrm())) }
+  readPublishedBrief(): Promise<PublishedResearchBrief | null> {
+    return this.serial(async () => {
+      const state = await (this.deps.readCampaign ?? this.deps.read)()
+      return state ? parseResearchState(state).campaign.revisions.at(-1) ?? null : null
+    })
+  }
   /** Run work (such as a storage migration) without interleaving with reads, actions or imports. */
   exclusive<T>(fn: () => Promise<T>): Promise<T> { return this.serial(fn) }
   action(raw: unknown): Promise<ResearchView> {

@@ -884,8 +884,8 @@ function startWebServer() {
           json(200, await founderResearchService.read())
         } else if (req.method === 'GET' && url.pathname === '/api/founder-research/brief') {
           if ((url.searchParams.get('campaignId') ?? 'small-software') !== 'small-software') { json(404, { error: 'Research campaign not found' }); return }
-          const view = await founderResearchService.read(), brief = view.campaign.revisions.at(-1)
-          json(brief ? 200 : 404, brief ?? { error: 'Research brief is not published', campaignId: view.campaign.id })
+          const brief = await founderResearchService.readPublishedBrief()
+          json(brief ? 200 : 404, brief ?? { error: 'Research brief is not published', campaignId: 'small-software' })
         } else if (req.method === 'GET' && url.pathname === '/api/founder-research/export') {
           const file = url.searchParams.get('file') ?? 'notes.md'
           const view = await founderResearchService.read()
@@ -1883,6 +1883,7 @@ const researchStore = {
 
 const founderResearchService = new FounderResearchService({
   ...vaultBackedResearch(researchStore, researchNarrative, { afterWrite: writeResearchArchive }),
+  readCampaign: researchStore.read,
   readCrm: readResearchCrm,
 })
 
