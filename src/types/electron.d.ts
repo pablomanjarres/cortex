@@ -1,7 +1,6 @@
 import type { GitHubStats, LemonStats, VercelStats, SupabaseStats } from './metrics'
 import type { CloudCostCache, CloudCostSettings, CloudCostSourceStatus, CloudProvider } from '../../electron/cloud-cost-types'
 import type { WorkEvidence, WorkHoursCommand, WorkHoursState } from '../../electron/work-hours-model'
-import type { KnowledgeLinkResult } from '../../electron/knowledge/refs'
 
 export interface ProjectInfo {
   name: string
@@ -106,10 +105,6 @@ interface ElectronAPI {
   }
   projects: {
     scan: () => Promise<ProjectInfo[]>
-  }
-  /** Absent in builds that predate the knowledge vault integration. */
-  knowledge?: {
-    open: (ref: string) => Promise<KnowledgeLinkResult>
   }
   workHours: {
     command: (command: WorkHoursCommand) => Promise<{ ok: true; state: WorkHoursState } | { ok: false; error: string }>

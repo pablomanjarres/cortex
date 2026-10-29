@@ -24,6 +24,7 @@ export interface FinanceData {
   year: number
   items: FinanceItem[]
   oneTimePayments?: OneTimePayment[]
+  accountFeePayments?: Record<string, Record<string, number>>
 }
 
 export const FINANCE_CATEGORIES = ['AI', 'Infrastructure', 'Creative', 'Productivity', 'Apps', 'Food', 'Personal Care', 'Home', 'Debt', 'Health', 'Transport', 'Education', 'Entertainment', 'Other'] as const

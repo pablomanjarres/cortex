@@ -1,0 +1,228 @@
+import { test, expect, mockStores } from './fixtures'
+
+test('accounts and cards persist together, keep cash separate from debt, and survive reload', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-24T15:00:00Z'))
+  const backend = await mockStores(page, { 'cortex-financial-accounts': { version: 1, accounts: [] } })
+  await page.goto('/#/finance?view=accounts')
+  await expect(page.getByRole('tab', { name: 'Accounts & cards' })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Add account', exact: true }).first().click()
+  const form = page.getByRole('dialog')
+  await form.getByLabel('Name', { exact: true }).fill('Everyday savings')
+  await form.getByLabel('Institution').fill('Test bank')
+  await form.getByLabel('Balance').fill('1.500.000')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect(page.getByRole('heading', { name: 'Everyday savings' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add account', exact: true }).first().click()
+  await form.getByLabel('Type', { exact: true }).selectOption('credit')
+  await form.getByLabel('Name', { exact: true }).fill('Travel Visa')
+  await form.getByLabel('Institution').fill('Test bank')
+  await form.getByLabel('Last 4 digits').fill('1234')
+  await form.getByLabel('Current debt').fill('300000')
+  await form.getByLabel('Credit limit').fill('2000000')
+  await form.getByLabel('Payment due day').fill('5')
+  await form.getByLabel('Statement closing day').fill('25')
+  await form.getByRole('button', { name: 'Add fee' }).click()
+  await form.getByLabel('Fee name').fill('Management fee')
+  await form.getByLabel('Fee amount').fill('12.000')
+  await form.getByLabel('First charge date').fill('2026-10-28')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect(page.getByRole('heading', { name: 'Travel Visa' })).toBeVisible()
+  await expect(page.getByText('Payment due · Travel Visa')).toBeVisible()
+  await expect(page.getByText('Statement closes · Travel Visa')).toBeVisible()
+  await expect(page.getByText('Management fee · Travel Visa')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add account', exact: true }).first().click()
+  await form.getByLabel('Type', { exact: true }).selectOption('debit')
+  await form.getByLabel('Name', { exact: true }).fill('Everyday debit')
+  await form.getByLabel('Institution').fill('Test bank')
+  await form.getByLabel('Linked bank account').selectOption({ label: 'Everyday savings' })
+  await expect(form.getByLabel('Balance', { exact: true })).toHaveCount(0)
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect.poll(() => (backend.stores['cortex-financial-accounts'] as { accounts: unknown[] }).accounts.length).toBe(3)
+  const summary = page.getByRole('region', { name: 'COP summary' })
+  await expect(summary).toContainText('1.500.000')
+  await expect(summary).toContainText('300.000')
+  await expect(summary).toContainText('12.000')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Everyday debit' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit Travel Visa' }).click()
+  await form.getByLabel('Notes').fill('Keep for travel')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect(page.getByText('Keep for travel')).toBeVisible()
+  await page.getByRole('button', { name: 'Archive Travel Visa' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Archive account' }).click()
+  await expect(page.getByRole('heading', { name: 'Travel Visa' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Show archived' }).click()
+  await page.getByRole('button', { name: 'Restore Travel Visa' }).click()
+  await expect(page.getByRole('heading', { name: 'Travel Visa' })).toBeVisible()
+  expect(backend.writes.some((write) => write.key === 'cortex-finances')).toBe(false)
+})
+
+test('a future first cycle stays consistent in the editor, card, and upcoming dates after reload', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-24T15:00:00Z'))
+  const backend = await mockStores(page, { 'cortex-financial-accounts': { version: 1, accounts: [] } })
+  await page.goto('/#/finance?view=accounts')
+  await page.getByRole('button', { name: 'Add account', exact: true }).first().click()
+  const form = page.getByRole('dialog')
+  await form.getByLabel('Type', { exact: true }).selectOption('credit')
+  await form.getByLabel('Name', { exact: true }).fill('Example card')
+  await form.getByLabel('Institution').fill('Test bank')
+  await form.getByLabel('Payment due day').fill('24')
+  await form.getByLabel('First payment month').fill('2026-11')
+  await form.getByLabel('Statement closing day').fill('4')
+  await form.getByLabel('First statement month').fill('2026-11')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect.poll(() => (backend.stores['cortex-financial-accounts'] as { accounts: { dueStartMonth?: string }[] }).accounts[0]?.dueStartMonth).toBe('2026-11')
+  await page.reload()
+  await expect(page.getByText('Nov 24, 2026 · day 24')).toBeVisible()
+  await expect(page.getByText('Nov 4, 2026 · day 4')).toBeVisible()
+  await expect(page.getByText('Oct 24, 2026', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Edit Example card' }).click()
+  await expect(form.getByLabel('First payment month')).toHaveValue('2026-11')
+  await form.getByLabel('Notes').fill('Updated without changing the cycle')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect(page.getByText('Nov 24, 2026 · day 24')).toBeVisible()
+})
+
+test('account fees project into their own budget rows and month focus keeps management available', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-24T15:00:00Z'))
+  const backend = await mockStores(page, {
+    'cortex-finances': { year: 2026, items: [
+      { id: 'rent', name: 'Rent', type: 'Expense', category: 'Home', months: Array(12).fill(100000) },
+      { id: 'inactive', name: 'Old membership', type: 'Subscription', months: Array(12).fill(0) },
+    ] },
+    'cortex-financial-accounts': { version: 1, accounts: [
+      { id: 'card', name: 'Travel Visa', institution: 'Test bank', kind: 'credit', currency: 'COP', archived: false, fees: [
+        { id: 'management', name: 'Management fee', amount: 12000, cadence: 'monthly', nextChargeDate: '2026-10-28' },
+      ] },
+    ] },
+  })
+  await page.goto('/#/finance')
+  const feeRow = page.getByRole('row').filter({ hasText: 'Travel Visa · Management fee' })
+  await expect(feeRow).toBeVisible()
+  await expect(feeRow).toContainText('$12.000')
+  await expect(page.getByRole('row').filter({ has: page.getByLabel('Item name for Old membership') })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Manage all', exact: true }).click()
+  await expect(page.getByLabel('Item name for Old membership')).toBeVisible()
+  await page.getByRole('button', { name: 'Month focus', exact: true }).click()
+  await page.getByRole('tab', { name: 'Sep', exact: true }).click()
+  await expect(feeRow).toHaveCount(0)
+  await page.getByRole('tab', { name: /Oct/ }).click()
+  await expect(feeRow).toBeVisible()
+  await page.getByRole('button', { name: 'Set paid amount for Travel Visa · Management fee' }).click()
+  const paid = page.getByRole('textbox', { name: 'Paid amount for Travel Visa · Management fee' })
+  await paid.fill('12000')
+  await paid.press('Tab')
+  await expect.poll(() => (backend.stores['cortex-finances'] as { accountFeePayments?: Record<string, Record<string, number>> }).accountFeePayments?.['account-fee:card:management']?.['2026-10']).toBe(12000)
+  await page.getByRole('tab', { name: 'Accounts & cards' }).click()
+  await page.getByRole('button', { name: 'Edit Travel Visa' }).click()
+  await page.getByRole('dialog').getByLabel('Fee amount').fill('15000')
+  await page.getByRole('button', { name: 'Save account' }).click()
+  await page.getByRole('tab', { name: 'Budget', exact: true }).click()
+  await expect(feeRow).toContainText('$15.000')
+  await expect(feeRow).toContainText('$12K/$15K')
+  await page.reload()
+  await expect(page.getByRole('row').filter({ hasText: 'Travel Visa · Management fee' })).toContainText('$15.000')
+  expect((backend.stores['cortex-finances'] as {items: unknown[]}).items).toHaveLength(2)
+  await page.getByRole('tab', { name: 'Accounts & cards' }).click()
+  await page.getByRole('button', { name: 'Archive Travel Visa' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Archive account' }).click()
+  await page.getByRole('tab', { name: 'Budget', exact: true }).click()
+  await expect(feeRow).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Accounts & cards' }).click()
+  await page.getByRole('button', { name: 'Show archived' }).click()
+  await page.getByRole('button', { name: 'Restore Travel Visa' }).click()
+  await page.getByRole('tab', { name: 'Budget', exact: true }).click()
+  await expect(feeRow).toContainText('$12K/$15K')
+})
+
+test('foreign fees remain separate until a COP budget amount is entered', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-24T15:00:00Z'))
+  await mockStores(page, {
+    'cortex-finances': { year: 2026, items: [] },
+    'cortex-financial-accounts': { version: 1, accounts: [
+      { id: 'usd', name: 'Dollar card', institution: 'Bank', kind: 'credit', currency: 'USD', archived: false, fees: [
+        { id: 'annual', name: 'Annual fee', amount: 20, cadence: 'yearly', nextChargeDate: '2026-10-28' },
+      ] },
+    ] },
+  })
+  await page.goto('/#/finance')
+  const row = page.getByRole('row').filter({ hasText: 'Dollar card · Annual fee' })
+  await expect(row).toContainText('USD')
+  await expect(row).toContainText('set COP amount')
+  await expect(page.getByText('Expenses', { exact: true }).first().locator('..').locator('..')).toContainText('$0')
+  await page.getByRole('tab', { name: 'Accounts & cards' }).click()
+  await page.getByRole('button', { name: 'Edit Dollar card' }).click()
+  await page.getByRole('dialog').getByLabel('Budget amount (COP)').fill('80.000')
+  await page.getByRole('button', { name: 'Save account' }).click()
+  await page.getByRole('tab', { name: 'Budget', exact: true }).click()
+  await expect(row).toContainText('$80.000')
+  await expect(row).not.toContainText('set COP amount')
+  await expect(page.getByText('Expenses', { exact: true }).first().locator('..').locator('..')).toContainText('$80K')
+})
+
+test('fees can start in a budget month while the exact charge date remains unknown', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-10-24T15:00:00Z'))
+  const backend = await mockStores(page, { 'cortex-finances': {year: 2026, items: []} })
+  await page.goto('/#/finance?view=accounts')
+  await page.getByRole('button', {name: 'Add account', exact: true}).click()
+  const form = page.getByRole('dialog')
+  await form.getByLabel('Type', {exact: true}).selectOption('credit')
+  await form.getByLabel('Name', {exact: true}).fill('Example card')
+  await form.getByLabel('Institution').fill('Example Bank')
+  await form.getByRole('button', {name: 'Add fee'}).click()
+  await form.getByLabel('Fee name').fill('Management fee')
+  await form.getByLabel('Fee amount').fill('12.000')
+  await expect(form.getByLabel('First charge date')).toHaveValue('')
+  await expect(form.getByLabel('Budget start month')).toHaveValue('2026-10')
+  await form.getByRole('button', {name: 'Save account'}).click()
+  await expect.poll(() => (backend.stores['cortex-financial-accounts'] as {accounts: {fees: {budgetStartMonth: string}[]}[]}|undefined)?.accounts?.[0]?.fees?.[0]?.budgetStartMonth).toBe('2026-10')
+  await expect(page.getByText('Management fee · Example card', {exact: true})).toHaveCount(0)
+  await page.getByRole('tab', {name: 'Budget', exact: true}).click()
+  await expect(page.getByRole('row').filter({hasText: 'Example card · Management fee'})).toContainText('$12.000')
+})
+
+test('a conflicting account update reports the rejection and later saves still persist', async ({ page }) => {
+  const bank = { id: 'bank', name: 'Savings', institution: 'Bank', kind: 'bank', currency: 'COP', archived: false, fees: [] }
+  const backend = await mockStores(page, { 'cortex-financial-accounts': { version: 1, accounts: [bank] } })
+  await page.goto('/#/finance?view=accounts')
+  await page.getByRole('button', { name: 'Archive Savings' }).click()
+  let conflict = true
+  await page.route('**/api/data', async (route) => {
+    if (conflict && route.request().method() === 'POST' && route.request().postDataJSON().key === 'cortex-financial-accounts') {
+      conflict = false
+      backend.set('cortex-financial-accounts', { version: 1, accounts: [bank, { ...bank, id: 'debit', name: 'Debit', kind: 'debit', linkedAccountId: 'bank' }] })
+    }
+    await route.fallback()
+  })
+  await page.getByRole('dialog').getByRole('button', { name: 'Archive account' }).click()
+  await expect(page.getByRole('alert')).toContainText(/debit|linked/i)
+  await page.getByRole('button', { name: 'Edit Savings' }).click()
+  await page.getByRole('dialog').getByLabel('Name', { exact: true }).fill('Updated savings')
+  await page.getByRole('button', { name: 'Save account' }).click()
+  await expect.poll(() => (backend.stores['cortex-financial-accounts'] as { accounts: { name: string }[] }).accounts[0].name).toBe('Updated savings')
+})
+
+test('mobile forms and account cards fit, validate digits, and protect linked bank accounts', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await mockStores(page, { 'cortex-financial-accounts': { version: 1, accounts: [
+    { id: 'bank', name: 'Savings', institution: 'Bank', kind: 'bank', currency: 'COP', balance: 1000, archived: false, fees: [] },
+    { id: 'debit', name: 'Debit', institution: 'Bank', kind: 'debit', currency: 'COP', linkedAccountId: 'bank', archived: false, fees: [] },
+  ] } })
+  await page.goto('/#/finance?view=accounts')
+  await page.getByRole('button', { name: 'Archive Savings' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Archive account' }).click()
+  await expect(page.getByRole('alert')).toContainText(/debit|linked/i)
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
+  await page.getByRole('button', { name: 'Edit Debit' }).click()
+  const form = page.getByRole('dialog')
+  await form.getByLabel('Last 4 digits').fill('12')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect(form.getByRole('alert')).toContainText(/four|4/)
+  await form.getByLabel('Last 4 digits').fill('4321')
+  await form.getByRole('button', { name: 'Save account' }).click()
+  await expect(page.getByText('•••• 4321')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})

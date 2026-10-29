@@ -1,5 +1,3 @@
-import { useOpenOnce, useScrollIntoView, useUrlParam } from '@/lib/use-url-param'
-import { projectRefId } from '../../../electron/knowledge/refs'
 import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
@@ -29,14 +27,6 @@ export function ProjectsPage() {
   const isElectron = !!window.electronAPI?.projects
 
   const projects = scannedProjects ?? (!isElectron && cachedProjects ? cachedProjects.data : EMPTY_PROJECTS)
-
-  // `?project=<ref id>` (see projectRefId) expands that project and scrolls to it.
-  const [linkedProject] = useUrlParam('project', '')
-  const linkedMatch = linkedProject ? projects.find((p) => projectRefId(p.name) === linkedProject) : undefined
-  const openedProject = useOpenOnce(linkedMatch ? linkedProject : null, () => {
-    if (linkedMatch) setExpanded((prev) => new Set(prev).add(linkedMatch.name))
-  })
-  useScrollIntoView(openedProject && `project-${openedProject}`)
 
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {

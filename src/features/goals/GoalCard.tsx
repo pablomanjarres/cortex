@@ -17,7 +17,7 @@ export interface GoalCardActions {
 }
 
 /** A goal with its status, progress, steps, and row actions. */
-export function GoalCard({ goal: g, highlighted = false, ...actions }: { goal: Goal; highlighted?: boolean } & GoalCardActions) {
+export function GoalCard({ goal: g, ...actions }: { goal: Goal } & GoalCardActions) {
   const [stepDraft, setStepDraft] = useState('')
   const pct = goalProgress(g)
   const isDone = g.status === 'done'
@@ -33,7 +33,7 @@ export function GoalCard({ goal: g, highlighted = false, ...actions }: { goal: G
   }
 
   return (
-    <div id={`goal-${g.id}`} className={`group surface rounded-xl p-4 transition-opacity ${highlighted ? 'ring-1 ring-accent/40' : ''} ${archived ? 'opacity-50' : ''}`}>
+    <div className={`group surface rounded-xl p-4 transition-opacity ${archived ? 'opacity-50' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <Button

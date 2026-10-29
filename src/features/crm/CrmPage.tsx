@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { PageShell } from '@/components/shared/PageShell'
 import { WidgetCard } from '@/components/widgets/WidgetCard'
 import { StatTile } from '@/components/shared/StatTile'
@@ -12,7 +12,6 @@ import { SearchInput } from '@/components/shared/SearchInput'
 import { SortableHeader, tableHeaderClassName } from '@/components/shared/SortableHeader'
 import { useStore } from '@/lib/store'
 import { NoelleCrmPanel } from './noelle-crm-panel'
-import { useOpenOnce, useRecordParam } from '@/lib/use-url-param'
 import {
   Plus,
   Trash2,
@@ -45,14 +44,6 @@ export function CrmPage() {
   const contacts = activeOrg?.contacts ?? EMPTY_CONTACTS
 
   const setActiveOrg = (id: string) => updateData((p) => ({ ...p, activeOrg: id }))
-
-  // `?record=crm:<id>` opens that contact, switching to its org when needed.
-  const recordId = useRecordParam('crm')
-  const recordOrg = recordId ? data.orgs.find((o) => o.contacts.some((c) => c.id === recordId))?.id ?? null : null
-  useOpenOnce(recordOrg ? recordId : null, setExpanded)
-  useEffect(() => {
-    if (recordOrg) updateData((p) => (p.activeOrg === recordOrg ? p : { ...p, activeOrg: recordOrg }))
-  }, [recordOrg, updateData])
 
   const updateContacts = (fn: (prev: CrmContact[]) => CrmContact[]) =>
     updateData((p) => ({

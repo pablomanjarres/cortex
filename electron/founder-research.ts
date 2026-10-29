@@ -179,8 +179,6 @@ export class FounderResearchService {
       return state ? parseResearchState(state).campaign.revisions.at(-1) ?? null : null
     })
   }
-  /** Run work (such as a storage migration) without interleaving with reads, actions or imports. */
-  exclusive<T>(fn: () => Promise<T>): Promise<T> { return this.serial(fn) }
   action(raw: unknown): Promise<ResearchView> {
     return this.serial(async () => {
       const action = record(raw, 'action'), state = await this.load(), now = this.now()

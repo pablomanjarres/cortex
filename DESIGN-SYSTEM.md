@@ -242,6 +242,24 @@ status helpers stay in `automation-runs.ts`. Projects loads scans through
 `project-api.ts` and shares the desktop bridge's `ProjectInfo` contract.
 `useProjectScan` owns request state; `ProjectCard` presents each result.
 
+Finance's `accounts/account-model.ts` owns account validation, credit availability, links, fees,
+per-currency totals, and recurring dates with optional first-cycle months.
+`AccountCycleFields` presents the statement and payment schedules using shared fields.
+`AccountsSection` owns the account
+store and composes the editor, account cards, summaries, and date list.
+`FinancePage` owns section navigation; `FinanceBudget` owns the existing budget.
+`accounts/account-budget.ts` projects account fees into budget rows and owns their
+payment records. Generated rows are never stored as duplicate budget items.
+`budget-view.ts` defines which rows belong in a selected month's focus view.
+It also owns display grouping: Income, Credit (projected account fees), Expense,
+and Subscription. `BudgetSection` provides the shared table group heading;
+Credit rows retain expense accounting and are never counted twice.
+`accounts/account-input.ts` shares numeric draft parsing; `account-update.ts`
+rejects conflicting account changes without blocking the store's rebase queue.
+`accounts/account-reminders.ts` plans payment reminders from the same account
+calendar rules; the scheduled runner and its installation are described in
+`docs/payment-reminders.md`.
+
 Feature domain modules are the public interfaces for aggregate screens:
 Habits' `habit-progress.ts` owns cadence, goals, streaks, and weekly scoring;
 Gym's `domain/nutrition.ts` and `domain/workout-sessions.ts` own food totals and

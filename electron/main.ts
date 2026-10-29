@@ -26,11 +26,10 @@ import { WorkHoursService } from './work-hours-service.js'
 import { fetchWorkHoursEvidence } from './work-hours-evidence.js'
 import { GymRestAlerts, GYM_REST_RECEIPTS_KEY, gymRestUrl, sendGymRestAlert } from './gym-rest-alerts.js'
 import { NOELLE_CRM_KEY, NoelleCrmService, NoelleCrmValidationError, isLoopbackAddress, parseStoredNoelleCrmSnapshot } from './noelle-crm.js'
-import { FOUNDER_RESEARCH_KEY, FounderResearchService, ResearchValidationError, ResearchConflictError, parseResearchState, researchArchiveFiles, type ResearchState } from './founder-research.js'
-import { KnowledgeVaultService } from './knowledge/vault.js'
-import { ResearchNarrativeStore, vaultBackedResearch } from './knowledge/research-narrative.js'
-import { handleKnowledgeRequest, resolveKnowledgeLink } from './knowledge/http.js'
-import { selectPrimaryDisk, type MacDisk } from './mac-stats.js'
+import { FOUNDER_RESEARCH_KEY, FounderResearchService, ResearchValidationError, ResearchConflictError, parseResearchState, researchArchiveFiles } from './founder-research.js'
+import { ScreenBlackoutService, BlackoutValidationError, BlackoutBusyError } from './screen-blackout-service.js'
+import { createNativeBlackoutAdapter } from './screen-blackout-native.js'
+import { blackoutOriginAllowed } from './screen-blackout-contract.js'
 
 interface StoredAutomationRun {
   id: string
@@ -40,6 +39,10 @@ interface StoredAutomationRun {
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+const blackoutService = new ScreenBlackoutService(createNativeBlackoutAdapter({
+  helper: app.isPackaged ? path.join(process.resourcesPath, 'helpers/cortex-blackout') : path.join(__dirname, '../build/helpers/cortex-blackout'),
+  windowsScript: app.isPackaged ? path.join(process.resourcesPath, 'scripts/screen-blackout-windows.ps1') : path.join(__dirname, '../scripts/screen-blackout-windows.ps1'),
+}))
 
 /** Local YYYY-MM-DD (avoids UTC shift from toISOString) */
 function localDate(d: Date = new Date()): string {
@@ -86,7 +89,7 @@ let cachedWorkHours: WorkHoursState = emptyWorkHoursState()
 interface HostStats {
   cpu: number; mem: number; memUsed: number; memTotal: number
   swap: number; load1: number; cores: number; uptime: string
-  rootFsPct?: number; rootFsUsed?: number; rootFsSize?: number; diskMount?: string
+  rootFsPct?: number; rootFsUsed?: number; rootFsSize?: number
   rxBps?: number; txBps?: number
 }
 let cachedMacStats: HostStats | null = null
@@ -219,8 +222,8 @@ async function fetchHostStats(host: string): Promise<HostStats> {
   if (swR && swR.ok) {
     try { const s = await swR.json(); swap = s?.percent ?? 0 } catch { /* ignore */ }
   }
-  const fsList = fsR.ok ? (await fsR.json()) as MacDisk[] : []
-  const root = selectPrimaryDisk(fsList)
+  const fsList = fsR.ok ? (await fsR.json()) as Array<{ mnt_point: string; percent: number; used: number; size: number }> : []
+  const root = fsList.find((f) => f.mnt_point === '/')
   let rxBps: number | undefined
   let txBps: number | undefined
   if (netR && netR.ok) {
@@ -248,7 +251,6 @@ async function fetchHostStats(host: string): Promise<HostStats> {
     load1: load.min1 ?? 0,
     cores: load.cpucore ?? 1,
     uptime,
-    diskMount: root?.mnt_point,
     rootFsPct: root?.percent,
     rootFsUsed: root?.used,
     rootFsSize: root?.size,
@@ -539,7 +541,7 @@ function buildHostStatsItems(label: string, s: HostStats | null, err: string | n
   )
   if (s.swap > 0) items.push({ label: `· Swap ${s.swap.toFixed(1)}%`, enabled: false })
   if (s.rootFsPct != null && s.rootFsSize != null && s.rootFsUsed != null) {
-    items.push({ label: `· Disk ${s.diskMount === '/System/Volumes/Data' ? 'Data' : (s.diskMount ?? '/')}  ${s.rootFsPct.toFixed(1)}%  ${fmtBytesShort(s.rootFsUsed)} / ${fmtBytesShort(s.rootFsSize)}`, enabled: false })
+    items.push({ label: `· Disk /  ${s.rootFsPct.toFixed(1)}%  ${fmtBytesShort(s.rootFsUsed)} / ${fmtBytesShort(s.rootFsSize)}`, enabled: false })
   }
   if (s.uptime) items.push({ label: `· Uptime ${s.uptime}`, enabled: false })
   return items
@@ -755,6 +757,7 @@ const mimeTypes: Record<string, string> = {
 
 function getAllowedOrigin(req: http.IncomingMessage): string {
   const origin = req.headers.origin || ''
+  if (origin === 'null' && isLoopbackAddress(req.socket.remoteAddress ?? '')) return origin
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return origin
   if (/^https?:\/\/(192\.168\.|10\.|100\.)/.test(origin)) return origin
   if (/^https?:\/\/[a-z0-9-]+\.ts\.net(:\d+)?$/i.test(origin)) return origin
@@ -910,8 +913,6 @@ function startWebServer() {
       }
       return
     }
-
-    if (await handleKnowledgeRequest(req, res, url, remote, knowledgeHttpDeps)) return
 
     // ─── JSON API for data sync (used by browser/iPhone) ──────
     if (url.pathname === '/api/data' && req.method === 'GET') {
@@ -1219,6 +1220,32 @@ function startWebServer() {
         const stats = vaultStats()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(stats))
       } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
+      return
+    }
+
+    if (url.pathname === '/api/system/blackout') {
+      const headers = { ...corsHeaders, 'Cache-Control': 'no-store' }
+      try {
+        if (req.method === 'GET') {
+          res.writeHead(200, headers); res.end(JSON.stringify(await blackoutService.read()))
+        } else if (req.method === 'POST') {
+          const origin = req.headers.origin
+          if (!blackoutOriginAllowed(origin, req.headers.host, isLoopbackAddress(remote))) {
+            res.writeHead(403, headers); res.end(JSON.stringify({ error: 'Screen controls require a Cortex connection' })); return
+          }
+          const body = await readBody(req, res)
+          if (body === null) return
+          let command: unknown
+          try { command = JSON.parse(body) } catch { throw new BlackoutValidationError('Invalid JSON') }
+          const state = await blackoutService.set(command)
+          res.writeHead(200, headers); res.end(JSON.stringify(state))
+        } else {
+          res.writeHead(405, { ...headers, Allow: 'GET, POST' }); res.end(JSON.stringify({ error: 'Method not allowed' }))
+        }
+      } catch (error) {
+        const status = error instanceof BlackoutValidationError ? 400 : error instanceof BlackoutBusyError ? 409 : 502
+        res.writeHead(status, headers); res.end(JSON.stringify({ error: errorMessage(error) }))
+      }
       return
     }
 
@@ -1859,16 +1886,6 @@ async function readResearchCrm() {
   return text === null ? null : parseStoredNoelleCrmSnapshot(JSON.parse(text))
 }
 
-// ─── Knowledge vault (Obsidian) ─────────────────────────────
-// One vault service for HTTP, MCP and research narrative. CORTEX_VAULT_ROOT
-// (absolute) overrides the default ~/Knowledge/Eightfold primary vault.
-const knowledgeVault = new KnowledgeVaultService({
-  configuredRoot: process.env.CORTEX_VAULT_ROOT && path.isAbsolute(process.env.CORTEX_VAULT_ROOT) ? process.env.CORTEX_VAULT_ROOT : undefined,
-})
-const researchNarrative = new ResearchNarrativeStore(knowledgeVault)
-
-// Stored research state (operational authority). Narrative fields are routed
-// to the vault by vaultBackedResearch once a campaign has been migrated.
 const researchStore = {
   read: async () => {
     const { text, rev } = await readDataFile(FOUNDER_RESEARCH_KEY)
@@ -1878,60 +1895,22 @@ const researchStore = {
   write: async (state: ResearchState) => {
     const result = await writeDataKey(FOUNDER_RESEARCH_KEY, state, { source: 'main' })
     if (!result.ok) throw new Error('Research data could not be saved')
+    const directory = path.join(dataDir, 'founder-research', state.campaign.id)
+    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 })
+    await fs.promises.chmod(directory, 0o700)
+    for (const [name, contents] of Object.entries(researchArchiveFiles(state, await readResearchCrm()))) {
+      const file = path.join(directory, name), temporary = `${file}.tmp`
+      await fs.promises.writeFile(temporary, contents, { mode: 0o600 })
+      await fs.promises.chmod(temporary, 0o600)
+      await fs.promises.rename(temporary, file)
+    }
   },
 }
 
 const founderResearchService = new FounderResearchService({
-  ...vaultBackedResearch(researchStore, researchNarrative, { afterWrite: writeResearchArchive }),
+  ...researchStore,
   readCampaign: researchStore.read,
   readCrm: readResearchCrm,
-})
-
-/** Local archive mirror of the merged research view (narrative from wherever it is authoritative). */
-async function writeResearchArchive(state: ResearchState): Promise<void> {
-  const directory = path.join(dataDir, 'founder-research', state.campaign.id)
-  await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 })
-  await fs.promises.chmod(directory, 0o700)
-  for (const [name, contents] of Object.entries(researchArchiveFiles(state, await readResearchCrm()))) {
-    const file = path.join(directory, name), temporary = `${file}.tmp`
-    await fs.promises.writeFile(temporary, contents, { mode: 0o600 })
-    await fs.promises.chmod(temporary, 0o600)
-    await fs.promises.rename(temporary, file)
-  }
-}
-
-const knowledgeHttpDeps = {
-  vault: knowledgeVault,
-  isLoopback: isLoopbackAddress,
-  readBody,
-  origin: () => `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}`,
-  summaryInputs: knowledgeSummaryInputs,
-  migrateResearch: (dryRun: boolean) => founderResearchService.exclusive(async () => {
-    const state = await researchStore.read()
-    if (!state) return { dryRun, migrated: false, reason: 'No saved research campaign yet' }
-    return researchNarrative.migrate(state, { dryRun, now: new Date().toISOString() })
-  }),
-}
-
-/** Bounded inputs for GET /api/knowledge/summary; see knowledge/summary.ts for what is exposed. */
-async function knowledgeSummaryInputs() {
-  const from = localDate(), to = localDate(new Date(Date.now() + 7 * 86400000))
-  let calendar: { events: unknown; from: string; to: string } | { error: string }
-  try { calendar = { events: await getEventsInRange(from, to), from, to } } catch { calendar = { error: 'Calendar is unavailable' } }
-  let research: unknown = null
-  try { research = await founderResearchService.read() } catch { research = null }
-  const [projectMeta, goals, finances, crm, contacts, founderHistory] = await Promise.all(
-    ['cortex-project-meta', 'cortex-goals', 'cortex-finances', 'cortex-crm', 'cortex-contacts', 'cortex-founder-history'].map(key => readDataKeyParsed<unknown>(key, null)),
-  )
-  let noelleCrm: unknown = null
-  try { noelleCrm = await readResearchCrm() } catch { noelleCrm = null }
-  return { projectMeta, goals, calendar, finances, crm, contacts, noelleCrm, founderHistory, research }
-}
-
-ipcMain.handle('knowledge:open', async (_event, ref: unknown) => {
-  const link = resolveKnowledgeLink(knowledgeVault, String(ref), knowledgeHttpDeps.origin())
-  if (link.uri) await shell.openExternal(link.uri)
-  return link
 })
 
 ipcMain.handle('founder-research:read', async () => founderResearchService.read())

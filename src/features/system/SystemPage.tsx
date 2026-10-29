@@ -6,8 +6,8 @@ import { StatTile } from '@/components/shared/StatTile'
 import { Skeleton } from '@/components/shared/Skeleton'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
-import { selectPrimaryDisk } from '../../../electron/mac-stats'
-import { EightfoldProtection } from './EightfoldProtection'
+import { ScreenBlackout } from './ScreenBlackout'
+import { selectPrimaryDisk } from './mac-stats'
 import { systemApiUrl, usePolledJson, type HostKey } from './system-api'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
@@ -50,7 +50,6 @@ function fmtRate(bytesPerSec: number): string {
   return `${fmtBytes(bytesPerSec, 1)}/s`
 }
 
-/** Sparkline stroke tone — accent at rest, semantic past thresholds. */
 /** Gauge text tone — semantic thresholds only (warning >70%, destructive >90%). */
 function pctTone(pct: number): string {
   if (pct > 90) return 'text-destructive'
@@ -58,11 +57,10 @@ function pctTone(pct: number): string {
   return ''
 }
 
+/** Sparkline stroke tone — accent at rest, semantic past thresholds. */
 function sparkTone(pct: number): string {
   return pctTone(pct) || 'text-accent'
 }
-
-// ── Sub-components ────────────────────────────────────────────────────────
 
 /** Gauge fill — accent at rest, semantic past thresholds (meter convention). */
 function barTone(pct: number): string {
@@ -70,6 +68,8 @@ function barTone(pct: number): string {
   if (pct > 70) return 'bg-warning'
   return 'bg-accent'
 }
+
+// ── Sub-components ────────────────────────────────────────────────────────
 
 function Bar({ pct, label, right }: { pct: number; label: string; right?: string }) {
   const clamped = Math.max(0, Math.min(100, pct))
@@ -342,8 +342,8 @@ export function SystemPage() {
       <p className="font-mono text-2xs text-foreground-faint">
         Live Mac metrics · polled every 2s · history sampled every 5s · powered by Glances
       </p>
-      <HostCard host={MAC} delay={0} />
-      <EightfoldProtection delay={0.05} />
+      <ScreenBlackout />
+      <HostCard host={MAC} delay={0.03} />
     </PageShell>
   )
 }

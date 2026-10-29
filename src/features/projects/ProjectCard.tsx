@@ -1,6 +1,3 @@
-import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
-import { recordRefs } from '@/lib/knowledge'
-import { projectRefId } from '../../../electron/knowledge/refs'
 import type { ReactNode } from 'react'
 import {
   AlertTriangle, ChevronDown, ChevronRight, Clock, ExternalLink, FileCode, GitBranch, Info, Plug, Power,
@@ -47,7 +44,7 @@ export function ProjectCard({ project, meta: m, expanded, onToggle }: {
   const title = projectTitle(project, m)
   const ghUrl = project.gitRemote ? getGitHubUrl(project.gitRemote) : null
   const stCfg = m ? statusConfig[m.status] : null
-  const slug = projectRefId(project.name)
+  const slug = encodeURIComponent(project.name)
   const detailsId = `project-details-${slug}`
 
   return (
@@ -128,7 +125,6 @@ export function ProjectCard({ project, meta: m, expanded, onToggle }: {
 
       {expanded && (
         <div id={detailsId} className="ml-8 space-y-3 border-t border-border/60 px-4 pb-4 pt-3">
-          <div className="flex justify-end"><KnowledgeLink cortexRef={recordRefs.project(project.name)} /></div>
           {m?.why && <DetailNote icon={AlertTriangle} title="Why this exists" className="text-foreground">{m.why}</DetailNote>}
           {m?.notes && <DetailNote icon={Info} title="Notes">{m.notes}</DetailNote>}
 
