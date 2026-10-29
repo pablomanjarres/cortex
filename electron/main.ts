@@ -887,8 +887,8 @@ function startWebServer() {
           json(200, await founderResearchService.read())
         } else if (req.method === 'GET' && url.pathname === '/api/founder-research/brief') {
           if ((url.searchParams.get('campaignId') ?? 'small-software') !== 'small-software') { json(404, { error: 'Research campaign not found' }); return }
-          const view = await founderResearchService.read(), brief = view.campaign.revisions.at(-1)
-          json(brief ? 200 : 404, brief ?? { error: 'Research brief is not published', campaignId: view.campaign.id })
+          const brief = await founderResearchService.readPublishedBrief()
+          json(brief ? 200 : 404, brief ?? { error: 'Research brief is not published', campaignId: 'small-software' })
         } else if (req.method === 'GET' && url.pathname === '/api/founder-research/export') {
           const file = url.searchParams.get('file') ?? 'notes.md'
           const view = await founderResearchService.read()
@@ -1886,14 +1886,13 @@ async function readResearchCrm() {
   return text === null ? null : parseStoredNoelleCrmSnapshot(JSON.parse(text))
 }
 
-const founderResearchService = new FounderResearchService({
+const researchStore = {
   read: async () => {
     const { text, rev } = await readDataFile(FOUNDER_RESEARCH_KEY)
     if (text === null && rev !== null) throw new Error('Saved research could not be read')
     return text === null ? null : parseResearchState(JSON.parse(text))
   },
-  readCrm: readResearchCrm,
-  write: async (state) => {
+  write: async (state: ResearchState) => {
     const result = await writeDataKey(FOUNDER_RESEARCH_KEY, state, { source: 'main' })
     if (!result.ok) throw new Error('Research data could not be saved')
     const directory = path.join(dataDir, 'founder-research', state.campaign.id)
@@ -1906,6 +1905,12 @@ const founderResearchService = new FounderResearchService({
       await fs.promises.rename(temporary, file)
     }
   },
+}
+
+const founderResearchService = new FounderResearchService({
+  ...researchStore,
+  readCampaign: researchStore.read,
+  readCrm: readResearchCrm,
 })
 
 ipcMain.handle('founder-research:read', async () => founderResearchService.read())

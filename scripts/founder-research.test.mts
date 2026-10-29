@@ -68,6 +68,79 @@ test('publishing creates an immutable canonical revision and identical publish i
   assert.notEqual(two.campaign.revisions[1].hash, brief.hash)
 })
 
+test('published brief reads only the stored campaign while vault and CRM readers are unavailable', async () => {
+  const h = harness(); await h.service.action({ type: 'publish' })
+  let stored = structuredClone(h.state())
+  const service = new FounderResearchService({
+    read: async () => { throw new Error('Vault note is unavailable') },
+    readCampaign: async () => structuredClone(stored),
+    readCrm: async () => { throw new Error('CRM is unavailable') },
+    write: async () => { throw new Error('Unexpected brief write') },
+  })
+  const brief = await service.readPublishedBrief()
+  assert.equal(brief?.version, 1)
+  assert.equal(brief?.title, 'Small Software')
+  assert.deepEqual(brief, h.state().campaign.revisions[0])
+  stored = structuredClone(stored)
+  stored.campaign.revisions[0].hash = 'f'.repeat(64)
+  await assert.rejects(service.readPublishedBrief(), /Invalid research published revision/)
+})
+
+test('a missing stored campaign has no published brief and does not initialize the full research store', async () => {
+  const service = new FounderResearchService({
+    read: async () => { throw new Error('Vault is unavailable') }, readCampaign: async () => null,
+    readCrm: async () => { throw new Error('CRM is unavailable') }, write: async () => { throw new Error('Unexpected brief write') },
+  })
+  assert.equal(await service.readPublishedBrief(), null)
+})
+
+test('published brief is absent until published and observes a queued publish after its durable write', async () => {
+  const h = harness()
+  assert.equal(await h.service.readPublishedBrief(), null)
+  await h.service.action({ type: 'publish' })
+  let stored = structuredClone(h.state())
+  stored.campaign.draft.objective = 'Updated research objective.'
+  let started!: () => void, release!: () => void
+  const writing = new Promise<void>(resolve => { started = resolve })
+  const blocked = new Promise<void>(resolve => { release = resolve })
+  const service = new FounderResearchService({
+    read: async () => structuredClone(stored), readCampaign: async () => structuredClone(stored), readCrm: async () => null,
+    write: async next => { started(); await blocked; stored = structuredClone(next) }, now: () => now,
+  })
+  const publish = service.action({ type: 'publish' })
+  await writing
+  let returned = false
+  const reading = service.readPublishedBrief().then(value => { returned = true; return value })
+  await Promise.resolve()
+  assert.equal(returned, false)
+  release()
+  await publish
+  const brief = await reading
+  assert.equal(brief?.version, 2)
+  assert.equal(brief?.objective, 'Updated research objective.')
+  assert.deepEqual(brief, stored.campaign.revisions[1])
+})
+
+test('desktop research service wires its brief reader to stored campaign state instead of vault narrative', async () => {
+  const h = harness(); await h.service.action({ type: 'publish' })
+  const source = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
+  const tree = ts.createSourceFile('main.ts', source, ts.ScriptTarget.Latest, true)
+  const declaration = tree.statements.find(item => ts.isVariableStatement(item)
+    && item.declarationList.declarations.some(value => ts.isIdentifier(value.name) && value.name.text === 'founderResearchService'))
+  assert.ok(declaration)
+  const context = vm.createContext({
+    FounderResearchService,
+    researchStore: { read: async () => structuredClone(h.state()), write: async () => {} },
+    researchNarrative: {}, writeResearchArchive: async () => {},
+    vaultBackedResearch: () => ({ read: async () => { throw new Error('Vault is unavailable') }, write: async () => {} }),
+    readResearchCrm: async () => { throw new Error('CRM is unavailable') },
+  })
+  const javascript = ts.transpileModule(declaration.getText(tree), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
+  vm.runInContext(`${javascript}\nglobalThis.researchService = founderResearchService;`, context)
+  const service = context.researchService as FounderResearchService
+  assert.deepEqual(await service.readPublishedBrief(), h.state().campaign.revisions[0])
+})
+
 test('stale brief edits are rejected instead of overwriting another edit', async () => {
   const h = harness(), original = await h.service.read()
   h.tick()
@@ -409,6 +482,15 @@ test('HTTP exposes a clear unpublished brief, then the exact canonical published
   const transport = await fetch(`${api.url}/brief?campaignId=small-software`); assert.equal(transport.status, 200)
   assert.deepEqual(await transport.json(), api.state().campaign.revisions[0])
   assert.equal(transport.headers.get('cache-control'), 'no-store')
+})
+
+test('HTTP published brief remains available when the full research view cannot read the vault', async t => {
+  const api = await apiHarness(); t.after(() => api.close())
+  await api.service.action({ type: 'publish' })
+  api.service.read = async () => { throw new Error('Vault is unavailable') }
+  const response = await fetch(`${api.url}/brief?campaignId=small-software`)
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), api.state().campaign.revisions[0])
 })
 
 test('HTTP validates research imports and refuses non-loopback writers', async t => {
