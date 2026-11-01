@@ -1,6 +1,7 @@
 import type { ResearchDmDecision, ResearchEventView } from './founder-research-model.js'
 
-const OUTCOME_STATUSES = ['waiting', 'applied', 'failed'] as const
+export const DM_DECISION_OUTCOMES = ['waiting', 'applied', 'failed'] as const
+const OUTCOME_STATUSES = DM_DECISION_OUTCOMES
 const MAX_ACK_RESULTS = 500
 
 type Result<T> = { ok: true; value: T } | { ok: false; reason: string }
@@ -52,29 +53,4 @@ export function acknowledgeDmDecisions(decisions: Record<string, ResearchDmDecis
     applied++
   }
   return { ok: true, value: applied }
-}
-
-export function parseDmDecisions(raw: unknown, fail: (field: string) => never): Record<string, ResearchDmDecision> {
-  if (raw === undefined) return {}
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail('DM decisions')
-  const entries = Object.entries(raw as Record<string, unknown>)
-  if (entries.length > 5_000) return fail('DM decisions')
-  const out: Record<string, ResearchDmDecision> = {}
-  const str = (value: unknown, field: string, max: number) => typeof value === 'string' && value.length <= max && value.trim() ? value : fail(field)
-  for (const [eventId, value] of entries) {
-    const item = value && typeof value === 'object' ? value as Record<string, unknown> : fail('DM decision')
-    const outcome = item.outcome == null ? null : item.outcome as Record<string, unknown>
-    if (item.eventId !== eventId || !['approve', 'skip'].includes(item.decision as string) || !['x', 'linkedin'].includes(item.platform as string))
-      fail('DM decision')
-    if (outcome && (!OUTCOME_STATUSES.includes(outcome.status as typeof OUTCOME_STATUSES[number]) || typeof outcome.at !== 'string'
-      || (outcome.reason != null && typeof outcome.reason !== 'string'))) fail('DM decision outcome')
-    out[eventId] = {
-      eventId, approvalId: str(item.approvalId, 'DM decision approval', 500), draftId: str(item.draftId, 'DM decision draft', 500),
-      platform: item.platform as ResearchDmDecision['platform'], decision: item.decision as ResearchDmDecision['decision'],
-      exactBody: str(item.exactBody, 'DM decision body', 100_000), recipientHandle: str(item.recipientHandle, 'DM decision recipient', 500),
-      decidedAt: str(item.decidedAt, 'DM decision time', 100),
-      outcome: outcome ? { status: outcome.status as typeof OUTCOME_STATUSES[number], reason: (outcome.reason as string | null | undefined) ?? null, at: outcome.at as string } : null,
-    }
-  }
-  return out
 }

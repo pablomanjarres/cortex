@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { NoelleCrmSnapshot } from './noelle-crm.js'
 import { RESEARCH_BRIEF_LIMITS } from './founder-research-model.js'
-import { acknowledgeDmDecisions, decideDm, parseDmDecisions, unappliedDmDecisions } from './founder-research-dm-decisions.js'
+import { DM_DECISION_OUTCOMES, acknowledgeDmDecisions, decideDm, unappliedDmDecisions } from './founder-research-dm-decisions.js'
 
 import type { PublishedResearchBrief, ResearchBriefDraft, ResearchDmDecision, ResearchEvent, ResearchGeneration, ResearchSource, ResearchState, ResearchView } from './founder-research-model.js'
 export * from './founder-research-model.js'
@@ -95,6 +95,24 @@ export function parseResearchEvent(raw: unknown): ResearchEvent {
     crmContactId: nullableText(row.crmContactId, 'CRM contact id'), conversationId: nullableText(row.conversationId, 'conversation id'), updatedAt: iso(row.updatedAt, 'event updated at'),
   }
 }
+function parseDmDecisions(raw: unknown): Record<string, ResearchDmDecision> {
+  const out: Record<string, ResearchDmDecision> = {}
+  if (raw === undefined) return out
+  const entries = Object.entries(record(raw, 'DM decisions'))
+  if (entries.length > 5_000) fail('DM decisions')
+  for (const [eventId, value] of entries) {
+    const item = record(value, 'DM decision'), outcome = item.outcome == null ? null : record(item.outcome, 'DM decision outcome')
+    if (item.eventId !== eventId) fail('DM decision')
+    out[eventId] = {
+      eventId, approvalId: text(item.approvalId, 'DM decision approval', 500, true), draftId: text(item.draftId, 'DM decision draft', 500, true),
+      platform: choice(item.platform, ['x', 'linkedin'], 'DM decision platform'), decision: choice(item.decision, ['approve', 'skip'], 'DM decision'),
+      exactBody: text(item.exactBody, 'DM decision body', 100_000, true), recipientHandle: text(item.recipientHandle, 'DM decision recipient', 500, true),
+      decidedAt: iso(item.decidedAt, 'DM decision time'),
+      outcome: outcome ? { status: choice(outcome.status, DM_DECISION_OUTCOMES, 'DM decision outcome'), reason: outcome.reason == null ? null : text(outcome.reason, 'DM decision reason', 500), at: iso(outcome.at, 'DM decision outcome time') } : null,
+    }
+  }
+  return out
+}
 export function parseResearchState(raw: unknown): ResearchState {
   const row = record(raw, 'state'), campaign = record(row.campaign, 'campaign')
   if (row.schemaVersion !== 1 || campaign.id !== 'small-software') fail('schema/campaign')
@@ -115,7 +133,7 @@ export function parseResearchState(raw: unknown): ResearchState {
   const meetings: ResearchState['meetings'] = {}
   for (const [id, value] of Object.entries(record(row.meetings, 'meetings'))) { const item = record(value, 'meeting'); if (item.source !== 'manual') fail('meeting source'); meetings[id] = { status: choice(item.status, ['booked', 'completed'], 'meeting status'), source: 'manual', updatedAt: iso(item.updatedAt, 'meeting updated at') } }
   const sync = record(row.sync, 'sync')
-  const dmDecisions = parseDmDecisions(row.dmDecisions, fail)
+  const dmDecisions = parseDmDecisions(row.dmDecisions)
   return { schemaVersion: 1, campaign: { id: 'small-software', draft, draftUpdatedAt: iso(campaign.draftUpdatedAt, 'draft updated at'), revisions }, events: list(row.events, 'events', 5_000).map(parseResearchEvent), notes, findings, decisions, meetings, dmDecisions, sync: { syncedAt: nullableIso(sync.syncedAt, 'synced at'), lastAttemptAt: nullableIso(sync.lastAttemptAt, 'last attempt'), lastSuccessfulSyncAt: nullableIso(sync.lastSuccessfulSyncAt, 'successful sync'), ...(sync.error ? { error: text(sync.error, 'sync error') } : {}), ...(sync.generation !== undefined ? { generation: parseGeneration(sync.generation) } : {}) } }
 }
 export function researchView(state: ResearchState, crm: NoelleCrmSnapshot | null): ResearchView {
