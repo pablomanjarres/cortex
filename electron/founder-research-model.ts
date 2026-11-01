@@ -36,6 +36,12 @@ export interface ResearchSource {
   id: string; kind: 'context' | 'draft' | 'reply'; label: string; preview: string
   platform?: ResearchEvent['platform']; crmContactId?: string; conversationId?: string; messageId?: string
 }
+/** The operator's own send decision for one staged DM, applied by Noelle's approval writer. */
+export interface ResearchDmDecision {
+  eventId: string; approvalId: string; draftId: string; platform: ResearchEvent['platform']
+  decision: 'approve' | 'skip'; exactBody: string; recipientHandle: string; decidedAt: string
+  outcome: { status: 'waiting' | 'applied' | 'failed'; reason: string | null; at: string } | null
+}
 export interface ResearchState {
   schemaVersion: 1
   campaign: { id: string; draft: ResearchBriefDraft; draftUpdatedAt: string; revisions: PublishedResearchBrief[] }
@@ -43,6 +49,7 @@ export interface ResearchState {
   notes: Record<string, { text: string; updatedAt: string }>
   findings: ResearchFinding[]; decisions: ResearchDecision[]
   meetings: Record<string, { status: 'booked' | 'completed'; source: 'manual'; updatedAt: string }>
+  dmDecisions: Record<string, ResearchDmDecision>
   sync: { syncedAt: string | null; lastAttemptAt: string | null; lastSuccessfulSyncAt: string | null; error?: string; generation?: ResearchGeneration[] }
 }
 export interface ResearchEventView extends ResearchEvent {
@@ -58,3 +65,4 @@ export type ResearchAction =
   | { type: 'review_finding'; id: string; reviewStatus: ResearchFinding['reviewStatus'] }
   | { type: 'review_decision'; id: string; reviewStatus: ResearchDecision['reviewStatus'] }
   | { type: 'set_meeting'; eventId: string; status: 'booked' | 'completed' }
+  | { type: 'decide_dm'; eventId: string; decision: ResearchDmDecision['decision'] }
