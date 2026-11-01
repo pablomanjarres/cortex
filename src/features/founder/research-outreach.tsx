@@ -8,6 +8,8 @@ import { NoelleCrmTimeline } from '@/features/crm/noelle-crm-timeline'
 import { PLATFORM_LABELS, formatCrmTime } from '@/features/crm/noelle-crm-model'
 import { ResearchNotes, type ResearchActions } from './research-notes'
 import { ReviewStatusChip } from './research-review'
+import { ResearchDmDecisionControls } from './research-dm-decision'
+import { dmDecisionLabel } from './research-dm-decision-label'
 import type { ResearchEventView, ResearchView } from '../../../electron/founder-research-model'
 
 function ResearchProvenance({ event }: { event: ResearchEventView }) {
@@ -42,17 +44,18 @@ export function ResearchOutreach({ view, busy, act, onUseSource }: ResearchActio
   const participant = participantEvents[0]
   return (
     <div className="flex flex-col gap-5">
-      <WidgetCard title="Prospect staging" description="Requests and draft previews stay here until an exact native send is verified in the CRM. Delivery is handled in Noelle.">
+      <WidgetCard title="Prospect staging" description="Nothing is sent until you approve the person. Skip anyone you already know. Noelle applies your choice within 15 minutes.">
         {staged.length === 0 ? <EmptyState message="No research prospects staged yet." hint="Noelle research requests appear here with their published brief and source evidence." /> : <div className="grid gap-5 lg:grid-cols-[minmax(220px,0.8fr)_minmax(0,1.7fr)]">
           <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1" aria-label="Research prospects">
             {staged.slice(0, visible).map(event => <Button key={event.id} variant={stage?.id === event.id ? 'accent-outline' : 'ghost'} aria-pressed={stage?.id === event.id} className="h-auto min-h-16 justify-start px-3 py-3 text-left whitespace-normal" onClick={() => setSelectedStage(event.id)}>
-              <span className="flex min-w-0 flex-col gap-1"><span className="break-words">{event.recipient.name || event.recipient.handle || 'Research prospect'}</span><span className="text-xs font-normal text-muted-foreground">{PLATFORM_LABELS[event.platform]} · {event.status.replaceAll('_', ' ')}{event.requiresReview ? ' · needs re-review' : ''}</span></span>
+              <span className="flex min-w-0 flex-col gap-1"><span className="break-words">{event.recipient.name || event.recipient.handle || 'Research prospect'}</span><span className="text-xs font-normal text-muted-foreground">{PLATFORM_LABELS[event.platform]} · {event.status.replaceAll('_', ' ')}{event.requiresReview ? ' · needs re-review' : ''}{dmDecisionLabel(view.dmDecisions[event.id]) ? ` · ${dmDecisionLabel(view.dmDecisions[event.id])}` : ''}</span></span>
             </Button>)}
             {staged.length > visible && <Button variant="secondary" onClick={() => setVisible(visible + 25)}>Show more prospects</Button>}
           </div>
           {stage && <div className="flex min-w-0 flex-col gap-4 border-t border-border pt-4 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-5">
             <div className="flex flex-wrap items-center gap-3"><h4 className="text-base font-semibold">{stage.recipient.name || stage.recipient.handle}</h4><Chip>{stage.status.replaceAll('_', ' ')}</Chip>{stage.recipient.profileUrl && <a className="text-xs text-accent" href={stage.recipient.profileUrl} target="_blank" rel="noreferrer">Open profile</a>}</div>
             <div className="rounded-md border border-border bg-secondary/40 p-4"><p className="mb-2 text-xs font-medium text-muted-foreground">Draft preview · send not verified</p><p className="whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{stage.body || 'A draft has not been created for this request.'}</p></div>
+            <ResearchDmDecisionControls event={stage} decision={view.dmDecisions[stage.id]} busy={busy} act={act} />
             <ResearchProvenance event={stage} />
             <ResearchNotes key={stage.id} value={view.notes[`event:${stage.id}`]?.text ?? ''} scope={`event:${stage.id}`} busy={busy} act={act} />
           </div>}
