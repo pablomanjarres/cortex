@@ -521,3 +521,17 @@ test('durable write errors do not acknowledge saved imports and do not poison th
   await assert.rejects(service.import(snapshot([event(state)])), /write failed/); assert.equal(stored.events.length, 0)
   broken = false; assert.equal((await service.import(snapshot([event(state)]))).events, 1)
 })
+
+test('HTTP serves DM decisions and their acknowledgements to local Noelle only', async t => {
+  const local = await apiHarness(); t.after(() => local.close()); await local.service.action({ type: 'publish' })
+  await fetch(`${local.url}/import`, { method: 'POST', body: JSON.stringify(snapshot([event(local.state(), { platform: 'linkedin', status: 'pending_review', review: { status: 'pending', id: 'approval-1' }, recipient: { name: 'Fixture participant', handle: 'fixture', profileUrl: 'https://www.linkedin.com/in/fixture/' } })])) })
+  await local.service.action({ type: 'decide_dm', eventId: 'draft-1', decision: 'approve' })
+  const listed = await (await fetch(`${local.url}/dm-decisions`)).json() as { decisions: { eventId: string; decidedAt: string }[] }
+  assert.deepEqual(listed.decisions.map(item => item.eventId), ['draft-1'])
+  assert.equal((await fetch(`${local.url}/dm-decisions/ack`, { method: 'POST', body: '{' })).status, 400)
+  const ack = { results: [{ eventId: 'draft-1', decidedAt: listed.decisions[0].decidedAt, status: 'applied' }] }
+  assert.deepEqual(await (await fetch(`${local.url}/dm-decisions/ack`, { method: 'POST', body: JSON.stringify(ack) })).json(), { ok: true, updated: 1 })
+  const remote = await apiHarness('100.70.1.2'); t.after(() => remote.close())
+  assert.equal((await fetch(`${remote.url}/dm-decisions`)).status, 403)
+  assert.equal((await fetch(`${remote.url}/dm-decisions/ack`, { method: 'POST', body: JSON.stringify(ack) })).status, 403)
+})

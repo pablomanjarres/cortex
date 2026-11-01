@@ -897,6 +897,16 @@ function startWebServer() {
           if (!Object.hasOwn(files, file)) { json(404, { error: 'Research export not found' }); return }
           res.writeHead(200, { 'Content-Type': file.endsWith('.json') ? 'application/json' : file.endsWith('.csv') ? 'text/csv; charset=utf-8' : 'text/markdown; charset=utf-8', 'Content-Disposition': `attachment; filename="${file}"`, 'Cache-Control': 'no-store' })
           res.end(files[file])
+        } else if (url.pathname === '/api/founder-research/dm-decisions' || url.pathname === '/api/founder-research/dm-decisions/ack') {
+          // Noelle reads and acknowledges send decisions on this machine only.
+          if (!isLoopbackAddress(remote)) { json(403, { error: 'DM decisions require a local connection' }); return }
+          if (req.method === 'GET' && url.pathname === '/api/founder-research/dm-decisions') { json(200, await founderResearchService.pendingDmDecisions()); return }
+          if (req.method !== 'POST' || !url.pathname.endsWith('/ack')) { json(404, { error: 'Research route not found' }); return }
+          const body = await readBody(req, res)
+          if (body === null) return
+          let input: unknown
+          try { input = JSON.parse(body) } catch { json(400, { error: 'Invalid JSON' }); return }
+          json(200, await founderResearchService.acknowledgeDmDecisions(input))
         } else if (req.method === 'POST' && ['/api/founder-research/action', '/api/founder-research/import'].includes(url.pathname)) {
           const importing = url.pathname.endsWith('/import')
           if (importing && !isLoopbackAddress(remote)) { json(403, { error: 'Research imports require a local connection' }); return }
