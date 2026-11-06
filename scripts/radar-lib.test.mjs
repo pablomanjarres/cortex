@@ -199,6 +199,13 @@ test("mergeClassified: a year-stripped title collision REFRESHES instead of drop
   assert.equal(it.status, "pursuing")
 })
 
+test("mergeClassified: an explicit local day overrides the UTC day in the runId", () => {
+  const edge = { ...storedThiel, id: "opp-edge", title: "Edge Hack", host: "X", url: "https://edge.example.com", sourceRef: "https://edge.example.com", status: "new", deadline: "2026-10-30", rolling: false }
+  // 01:00 UTC Nov 7 is still Nov 6 in Bogotá: 7 days past, not 8 — keep it.
+  assert.equal(mergeClassified({ items: [edge], lastRun: null }, [], "2026-11-07T01:00:00Z", undefined, "2026-11-06").archived, 0)
+  assert.equal(mergeClassified({ items: [edge], lastRun: null }, [], "2026-11-07T01:00:00Z", undefined).archived, 1)
+})
+
 test("mergeClassified: auto-archives stale fixed items and counts them", () => {
   const stale = { ...storedThiel, id: "opp-old", title: "Old Hack Week", host: "X", url: "https://oldhack.example.com", sourceRef: "https://oldhack.example.com", status: "new", deadline: "2026-06-01", rolling: false }
   const { merged, archived } = mergeClassified({ items: [stale], lastRun: null }, [], "2026-07-10T09:00:00Z", undefined)

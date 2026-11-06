@@ -162,8 +162,7 @@ export async function readStoreWithRev(api = API, key = KEY) {
 //     while user-owned fields (status/priority/notes/edits) are preserved. This is how
 //     "Thiel Fellowship 2027" refreshes the stale 2026 entry instead of vanishing.
 //   - fixed-deadline items that closed >7d ago and are still status 'new' auto-archive.
-export function mergeClassified(existing, classified, runId, report) {
-  const today = String(runId).slice(0, 10)
+export function mergeClassified(existing, classified, runId, report, today = String(runId).slice(0, 10)) {
   const seen = new Map() // identity key -> index in existingKept
 
   // pass 1: keep existing, dropping any pre-existing self-duplicates (cleans old dupes)

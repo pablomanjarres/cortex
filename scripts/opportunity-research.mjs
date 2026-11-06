@@ -58,9 +58,10 @@ const daysOld = (iso, today) => (Date.parse(`${today}T00:00:00Z`) - Date.parse(i
  */
 export function researchInputs(store, today) {
   const items = Array.isArray(store?.items) ? store.items : []
+  const scored = new Map(items.map((o) => [o, scoreOpportunity(o, today)]))
   const live = items
-    .filter((o) => o.status === "pursuing" || o.status === "applied" || (o.status === "new" && scoreOpportunity(o, today).keep))
-    .sort((a, b) => scoreOpportunity(b, today).score - scoreOpportunity(a, today).score)
+    .filter((o) => o.status === "pursuing" || o.status === "applied" || (o.status === "new" && scored.get(o).keep))
+    .sort((a, b) => scored.get(b).score - scored.get(a).score)
   const catalog = items.filter((o) => o.source === "catalog" && !live.includes(o) && (o.status === "new" || o.hiddenReason))
   const tracked = [...live, ...catalog]
     .slice(0, MAX_TRACKED)
@@ -121,7 +122,7 @@ export function applyVisibility(store, today) {
 
 /** Merge this run's records, re-apply visibility, prune stale junk, write a one-line report. */
 export function buildStore(existing, records, runId, today) {
-  const { merged } = mergeClassified(existing, records, runId, undefined)
+  const { merged } = mergeClassified(existing, records, runId, undefined, today)
   const { store, hidden, restored } = applyVisibility(merged, today)
   const items = store.items.filter((o) => !shouldPrune(o, today))
   const kept = items.filter((o) => o.runId === runId && o.status !== "archived").length
@@ -150,6 +151,7 @@ function runCodex(prompt, schemaPath, outPath, cwd) {
       if (code === 0) resolve()
       else reject(new Error(`codex exited ${code}: ${tail.split("\n").filter((l) => /error/i.test(l)).slice(-2).join(" | ").slice(0, 300)}`))
     })
+    child.stdin.on("error", () => {}) // codex died early; its exit code reports why
     child.stdin.end(prompt)
   })
 }
