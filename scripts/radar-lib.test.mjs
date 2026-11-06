@@ -2,17 +2,12 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
-  inferSource, hostOf, deburr, selectHits,
-  deadlineTypeOf, rollingFromDeadlineType, mergeOpportunity, shouldAutoArchive,
+  inferSource, hostOf,
+  deadlineTypeOf, rollingFromDeadlineType, mergeOpportunity, shouldAutoArchive, shouldPrune,
   addDays, stableId,
 } from "./radar-lib.mjs"
 import { mergeClassified, normalizeRecord } from "./radar-ingest.mjs"
 import { mapCatalogEntry } from "./radar-seed-programs.mjs"
-
-test("deburr strips accents + lowercases", () => {
-  assert.equal(deburr("Medellín"), "medellin")
-  assert.equal(deburr("BOGOTÁ"), "bogota")
-})
 
 test("hostOf handles urls, subdomains, bare hosts", () => {
   assert.equal(hostOf("https://www.devpost.com/x"), "devpost.com")
@@ -42,60 +37,6 @@ test("inferSource: post host (sourceRef) wins over apply host (url)", () => {
 test("inferSource falls back when host is unknown/absent", () => {
   assert.equal(inferSource("https://example.org/apply", "", "web"), "web")
   assert.equal(inferSource("", "", "manual"), "manual")
-})
-
-// ── selectHits ────────────────────────────────────────────────────────────────
-
-function make(source, n, prefix = "") {
-  return Array.from({ length: n }, (_, i) => ({ source, text: `${prefix}${source} post ${i}`, urls: [] }))
-}
-
-test("selectHits: returns all when under the cap", () => {
-  const hits = make("x", 5)
-  assert.deepEqual(selectHits(hits, [], 180), hits)
-})
-
-test("selectHits: X firehose no longer starves the other lanes", () => {
-  // Mirror a real run: X dwarfs everything, LinkedIn/Reddit/IG are the minority.
-  const hits = [
-    ...make("x", 224), ...make("web", 113), ...make("github", 56),
-    ...make("reddit", 58), ...make("linkedin", 40), ...make("instagram", 16),
-  ]
-  const picked = selectHits(hits, [], 180)
-  assert.equal(picked.length, 180)
-  const bySrc = picked.reduce((m, h) => ((m[h.source] = (m[h.source] || 0) + 1), m), {})
-  // Every scraped lane must reach the classifier — this was the whole bug.
-  for (const lane of ["x", "web", "github", "reddit", "linkedin", "instagram"]) {
-    assert.ok(bySrc[lane] > 0, `lane ${lane} missing from selection`)
-  }
-  // Smallest lane is taken in full; the rest get a fair, comparable share.
-  assert.equal(bySrc.instagram, 16)
-  assert.ok(bySrc.linkedin >= 30, `linkedin got a fair share (was ${bySrc.linkedin}, used to be 0)`)
-  // X must NOT devour the budget anymore — round-robin caps it near the fair share.
-  assert.ok(bySrc.x <= 40, `X capped by round-robin (got ${bySrc.x}, firehose was 224)`)
-  // No lane should be starved below the shared floor.
-  for (const lane of ["x", "web", "github", "reddit", "linkedin"]) {
-    assert.ok(bySrc[lane] >= 16, `lane ${lane} under fair floor: ${bySrc[lane]}`)
-  }
-})
-
-test("selectHits: order-matching hits survive the cap first", () => {
-  const hits = [
-    ...make("x", 224),
-    { source: "linkedin", text: "Hackathon in Medellín, Colombia this month", urls: [] },
-  ]
-  const picked = selectHits(hits, ["medellin", "colombia"], 180)
-  assert.ok(picked.some((h) => /Medell/.test(h.text)), "the Medellín hit must be kept")
-})
-
-test("selectHits: order match is accent-insensitive", () => {
-  const hits = [
-    ...make("x", 200),
-    { source: "web", text: "Bogota hackathon, sedes regionales", urls: [] }, // no accent in post
-  ]
-  // order stores the accented form
-  const picked = selectHits(hits, ["Bogotá"], 180)
-  assert.ok(picked.some((h) => /Bogota/.test(h.text)), "accent-insensitive match failed")
 })
 
 // ── deadlineType derivation ───────────────────────────────────────────────────
@@ -152,7 +93,6 @@ test("mergeOpportunity: user-owned fields are preserved", () => {
   assert.equal(m.status, "pursuing")
   assert.equal(m.priority, "high")
   assert.equal(m.leverageScore, 5)
-  assert.equal(m.leverageNote, "my edited note")
   assert.equal(m.title, "Thiel Fellowship 2026")
   assert.equal(m.discoveredAt, "2025-11-01T00:00:00Z") // original kept
 })
@@ -169,7 +109,22 @@ test("mergeOpportunity: radar-owned fields refresh from the new sighting", () =>
   assert.equal(m.url, "https://thielfellowship.org/apply")
   assert.equal(m.officialUrl, "https://thielfellowship.org")
   assert.deepEqual(m.tags, ["fellowship", "2027"])
+  assert.equal(m.leverageNote, "classifier note") // the research "why" is radar-owned
   assert.equal(m.runId, "2026-07-10T09:00:00Z") // new run stamp
+})
+
+test("mergeOpportunity: research facts and verification refresh; hidden state stays", () => {
+  const stored = { ...storedThiel, intel: { prestige: 5 }, lastVerified: "2026-06-01", hiddenReason: "low score (30)" }
+  const fresh = mergeOpportunity(stored, { ...incomingThiel, intel: { prestige: 10 }, lastVerified: "2026-07-10" },
+    { runId: "2026-07-10T09:00:00Z", today: "2026-07-10" })
+  assert.deepEqual(fresh.intel, { prestige: 10 })
+  assert.equal(fresh.lastVerified, "2026-07-10")
+  assert.equal(fresh.hiddenReason, "low score (30)")
+  const seeded = mergeOpportunity(stored, { ...incomingThiel, leverageNote: "", lastVerified: null },
+    { runId: "2026-07-10T09:00:00Z", today: "2026-07-10" })
+  assert.deepEqual(seeded.intel, { prestige: 5 })
+  assert.equal(seeded.lastVerified, "2026-06-01")
+  assert.equal(seeded.leverageNote, "my edited note")
 })
 
 test("mergeOpportunity: appends a refresh note ONLY when the deadline changed", () => {
@@ -219,6 +174,16 @@ test("shouldAutoArchive: never touches engaged statuses or non-fixed types", () 
   assert.equal(shouldAutoArchive({ status: "new", deadline: "2026-01-01", rolling: false }, today), true)
 })
 
+test("shouldPrune: drops only auto-hidden junk unseen for 90+ days", () => {
+  const today = "2026-12-01"
+  const junk = { status: "archived", hiddenReason: "off-field", source: "devpost", runId: "2026-08-31T14:00:00Z" }
+  assert.equal(shouldPrune(junk, today), true)
+  assert.equal(shouldPrune({ ...junk, runId: "2026-09-02T00:00:00Z" }, today), false) // 90 days, not more
+  assert.equal(shouldPrune({ ...junk, source: "catalog" }, today), false)
+  assert.equal(shouldPrune({ ...junk, hiddenReason: null }, today), false) // archived by Pablo
+  assert.equal(shouldPrune({ ...junk, status: "new" }, today), false)
+})
+
 // ── mergeClassified (ingest integration: merge-not-drop) ─────────────────────
 
 test("mergeClassified: a year-stripped title collision REFRESHES instead of dropping", () => {
@@ -261,6 +226,15 @@ test("normalizeRecord: defaults + derives deadlineType and keeps rolling in sync
   // amountUsd accepts numeric strings, rejects junk
   assert.equal(normalizeRecord({ title: "A", url: "https://a.example.com", amountUsd: "50000" }, runId).amountUsd, 50000)
   assert.equal(normalizeRecord({ title: "B", url: "https://b.example.com", amountUsd: "lots" }, runId).amountUsd, null)
+  // deadlines must be real calendar dates
+  assert.equal(normalizeRecord({ title: "D", url: "https://d.example.com", deadline: "2026-11-07 23:59 IST" }, runId).deadline, "2026-11-07")
+  assert.equal(normalizeRecord({ title: "E", url: "https://e.example.com", deadline: "Nov 7" }, runId).deadline, null)
+  assert.equal(normalizeRecord({ title: "F", url: "https://f.example.com", deadline: "2026-02-30" }, runId).deadline, null)
+  // research facts are validated, not trusted
+  const researched = normalizeRecord({ title: "G", url: "https://g2.example.com", intel: { prestige: 42, fields: ["ai", "x"] }, lastVerified: "2026-07-10" }, runId)
+  assert.equal(researched.intel.prestige, 10)
+  assert.deepEqual(researched.intel.fields, ["ai"])
+  assert.equal(researched.lastVerified, "2026-07-10")
   // new categories pass the whitelist
   assert.equal(normalizeRecord({ title: "P", url: "https://p.example.com", category: "program" }, runId).category, "program")
   assert.equal(normalizeRecord({ title: "R", url: "https://r.example.com", category: "residency" }, runId).category, "residency")

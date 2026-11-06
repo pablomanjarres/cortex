@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// radar-control-watcher — always-on (launchd KeepAlive) daemon that lets the "Run radar"
+// radar-control-watcher — always-on (launchd KeepAlive) daemon that lets the "Run research"
 // button in the Cortex Opportunities page trigger the pipeline. It polls the store; when
 // the button sets runStatus:"requested", it runs opportunity-radar-weekly.sh and reflects
 // progress back into the store (running → done/error). Fully decoupled from the Electron
@@ -7,15 +7,14 @@
 
 import { spawn } from "node:child_process"
 import { readFile } from "node:fs/promises"
-import { processPendingObjectives } from "./radar-objectives.mjs"
 
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
 const KEY = "cortex-opportunities"
 const WRAPPER = "/Users/pablo/projects/cortex/scripts/opportunity-radar-weekly.sh"
 const LOG = `${process.env.HOME}/Library/Logs/opportunity-radar.log`
 const POLL_MS = 5000
-const RUN_TIMEOUT_MS = 40 * 60 * 1000
-const STALE_MS = 45 * 60 * 1000
+const RUN_TIMEOUT_MS = 60 * 60 * 1000
+const STALE_MS = 65 * 60 * 1000
 
 let busy = false
 
@@ -107,19 +106,6 @@ async function tick() {
   }
 }
 
-// Hunt orders ("talk to radar"): read plain-language objectives the user typed and let a
-// tool-less Claude call reply + structure them. Guarded independently of the run `busy`
-// flag so a slow model response never delays run detection.
-let objBusy = false
-async function objTick() {
-  if (objBusy) return
-  objBusy = true
-  try { await processPendingObjectives(API, KEY) } catch { /* ignore */ }
-  finally { objBusy = false }
-}
-
 console.error(`[radar-control] watching ${API} every ${POLL_MS}ms`)
 setInterval(() => { tick().catch(() => {}) }, POLL_MS)
-setInterval(() => { objTick().catch(() => {}) }, POLL_MS)
 tick().catch(() => {})
-objTick().catch(() => {})

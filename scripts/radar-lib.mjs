@@ -1,31 +1,20 @@
 // radar-lib — pure, deterministic helpers shared by the radar scripts.
 //
 // Jobs (all root-cause fixes, all unit-tested in radar-lib.test.mjs):
-//   1. selectHits — pick which scraped hits reach the (capped) classifier. The scraper
-//      pulls every lane (x/linkedin/reddit/instagram/github/web), but X alone routinely
-//      out-numbers the whole MAX_HITS budget, so a naive slice(0, MAX_HITS) starves the
-//      other platforms before the model ever sees them. We keep order-matching hits (e.g.
-//      a Colombia city order) first, then ROUND-ROBIN the rest across platforms so each
-//      lane gets fair representation.
-//   2. inferSource — the scraper/classifier tags Devpost hits as the generic "web" (there
+//   1. inferSource — the scraper/classifier tags Devpost hits as the generic "web" (there
 //      was no devpost enum value), so the UI showed "Web" for real Devpost hackathons.
 //      Derive the true platform from the post/apply host instead.
-//   3. Deadline intelligence — deadlineTypeOf / rollingFromDeadlineType normalize the
+//   2. Deadline intelligence — deadlineTypeOf / rollingFromDeadlineType normalize the
 //      optional deadlineType field over legacy {deadline, rolling} records;
 //      mergeOpportunity refreshes a stored record from a new radar sighting WITHOUT
 //      losing user edits (the old behavior silently DROPPED the incoming record, so
 //      "Thiel Fellowship 2027" could never refresh a stale 2026 entry);
 //      shouldAutoArchive expires fixed-deadline items that closed >7 days ago.
-//   4. stableId — the one content-hash id helper (ingest + catalog seed share it).
+//   3. stableId — the one content-hash id helper (ingest + catalog seed share it).
 //
 // Kept dependency-free and side-effect-free so scripts/radar-lib.test.mjs can `node --test`.
 
 import { createHash } from "node:crypto"
-
-/** Strip diacritics + lowercase so "Medellín" matches "Medellin". */
-export function deburr(s) {
-  return String(s || "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
-}
 
 // host substring → canonical source. Order matters only for readability; matches are
 // by domain suffix so subdomains (foo.devpost.com, eventbrite.co.uk) resolve correctly.
@@ -65,56 +54,6 @@ export function inferSource(url, sourceRef, fallback = "web") {
     }
   }
   return fallback
-}
-
-/** Text of a hit that an order term could match against. */
-function hitHaystack(h) {
-  const urls = Array.isArray(h?.urls) ? h.urls.join(" ") : ""
-  return deburr(`${h?.text || ""} ${h?.videoTranscript || ""} ${(h?.matchedKeywords || []).join(" ")} ${urls} ${h?.author || ""}`)
-}
-
-/**
- * Choose up to `maxHits` from `hits` for classification.
- * - Hits matching any active-order term (city/keyword) come FIRST (never truncated away).
- * - The remaining budget is filled ROUND-ROBIN across `source` lanes so LinkedIn/Reddit/
- *   Instagram aren't crowded out by a firehose lane (X). Within a lane, original order
- *   (recency from the scraper) is preserved.
- * Deterministic: no Date/Math.random; stable given the same input.
- */
-export function selectHits(hits, orderTerms = [], maxHits = 180) {
-  const list = Array.isArray(hits) ? hits : []
-  if (list.length <= maxHits) return list.slice()
-
-  const terms = (orderTerms || []).map((t) => deburr(t)).filter((t) => t.length >= 3)
-  const matched = []
-  const rest = []
-  for (const h of list) {
-    if (terms.length && terms.some((t) => hitHaystack(h).includes(t))) matched.push(h)
-    else rest.push(h)
-  }
-
-  const out = matched.slice(0, maxHits)
-  if (out.length >= maxHits) return out.slice(0, maxHits)
-
-  // Bucket the remainder by lane, preserving order, then round-robin.
-  const buckets = new Map()
-  for (const h of rest) {
-    const src = (h && h.source) || "web"
-    if (!buckets.has(src)) buckets.set(src, [])
-    buckets.get(src).push(h)
-  }
-  const lanes = [...buckets.values()]
-  let added = true
-  while (out.length < maxHits && added) {
-    added = false
-    for (const lane of lanes) {
-      if (!lane.length) continue
-      out.push(lane.shift())
-      added = true
-      if (out.length >= maxHits) break
-    }
-  }
-  return out
 }
 
 // ── Shared schema vocab ───────────────────────────────────────────────────────
@@ -182,6 +121,18 @@ export function shouldAutoArchive(item, today) {
   return String(o.deadline).slice(0, 10) < addDays(today, -7)
 }
 
+/**
+ * Retention rule (applied by the research run): an item the profile auto-hid
+ * (hiddenReason set) and no run has re-sighted for 90 days is dropped, so junk can't
+ * pile up in the one-blob store. The curated catalog and anything Pablo touched stay.
+ */
+export function shouldPrune(item, today) {
+  const o = item || {}
+  if (!o.hiddenReason || o.status !== "archived" || o.source === "catalog") return false
+  const lastSeen = String(o.runId || o.discoveredAt || "").slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(lastSeen) && lastSeen < addDays(today, -90)
+}
+
 // Radar-owned string fields refresh from the incoming sighting when it carries a
 // meaningful value; blank incoming values never erase existing intel.
 const refreshStr = (incoming, existing) => {
@@ -196,10 +147,11 @@ const refreshStr = (incoming, existing) => {
  *
  *   radar-owned  : deadline, deadlineType(+rolling sync), recurrence, nextWindowExpected,
  *                  amountUsd, reward, url, officialUrl, location, modality, eligibility,
- *                  tags — refreshed from `incoming` (blank/unknown never overwrite),
+ *                  tags, leverageNote (the research "why"), intel, lastVerified —
+ *                  refreshed from `incoming` (blank/unknown never overwrite),
  *                  runId -> the new run, discoveredAt -> kept from the original.
  *   user-owned   : id, title, host, category, goals, status, priority, leverageScore,
- *                  leverageNote, source, sourceRef, notes — preserved from `existing`.
+ *                  source, sourceRef, notes, hiddenReason — preserved from `existing`.
  *   notes        : when the deadline ACTUALLY changed, a one-line
  *                  "(refreshed for new cycle YYYY-MM-DD)" is appended so the user sees
  *                  why a "closed" item is live again.
@@ -239,6 +191,9 @@ export function mergeOpportunity(existing, incoming, { runId, today } = {}) {
     requires18Plus: typeof next.requires18Plus === "boolean" ? next.requires18Plus : (prev.requires18Plus ?? null),
     effort: next.effort ?? prev.effort ?? null,
     tags: Array.isArray(next.tags) && next.tags.length ? next.tags : (prev.tags ?? []),
+    leverageNote: refreshStr(next.leverageNote, prev.leverageNote),
+    ...(next.intel || prev.intel ? { intel: next.intel ?? prev.intel } : {}),
+    lastVerified: next.lastVerified ?? prev.lastVerified ?? null,
     runId: runId ?? next.runId ?? prev.runId,
     discoveredAt: prev.discoveredAt ?? next.discoveredAt,
     // user-owned — preserved (id/title/host/category/goals/status/priority/leverage*/
