@@ -32,7 +32,7 @@ export function KnowledgeLink({ cortexRef, label = 'Open in Eightfold', classNam
       <Button type="button" variant="ghost" size="xs" onClick={(event) => { event.stopPropagation(); void open() }} disabled={state.pending}>
         <BookOpen aria-hidden="true" /> {label}
       </Button>
-      <span role="status" aria-live="polite" className="text-2xs text-muted-foreground">{state.message}</span>
+      {state.message && <span role="status" className="text-2xs text-muted-foreground">{state.message}</span>}
     </span>
   )
 }

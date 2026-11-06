@@ -1,3 +1,4 @@
+import { useRecordParam, useScrollIntoView } from '@/lib/use-url-param'
 import { useState } from 'react'
 import { useStore } from '@/lib/store'
 import { PageShell } from '@/components/shared/PageShell'
@@ -23,6 +24,9 @@ const views: Array<{ id: GoalView; label: string }> = [
 export function GoalsPage() {
   const [goals, setGoals] = useStore<Goal[]>('cortex-goals', [])
 
+  const linkedGoal = useRecordParam('goal')
+  const linkedLoaded = linkedGoal !== null && goals.some((goal) => goal.id === linkedGoal)
+  useScrollIntoView(linkedLoaded ? `goal-${linkedGoal}` : null)
   const [view, setView] = useState<GoalView>('area')
   const [showArchived, setShowArchived] = useState(false)
   const [newGoal, setNewGoal] = useState(emptyGoalDraft)
@@ -71,6 +75,7 @@ export function GoalsPage() {
       <GoalCard
         key={g.id}
         goal={g}
+        highlighted={linkedGoal === g.id}
         onToggleDone={() => toggleDone(g)}
         onEdit={() => setEditingId(g.id)}
         onToggleArchived={() => patchGoal(g.id, { status: g.status === 'archived' ? 'active' : 'archived' })}
