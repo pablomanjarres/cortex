@@ -245,7 +245,7 @@ export function SocialPage() {
                       colSpan={8} rowRef={(el) => { rowRefs.current[c.id] = el }}
                       details={<>
                         <ContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
-              <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
+                        <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
                         <div className="flex items-end justify-end gap-2 pt-4">
                           <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
                             <Trash2 /> Delete contact
