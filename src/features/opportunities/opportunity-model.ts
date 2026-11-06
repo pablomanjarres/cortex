@@ -70,53 +70,90 @@ export interface Opportunity {
   runId?: string
   notes: string
   tags: string[]
+  /** Deep-research facts that drive the profile score (opportunity-score.ts). Absent on legacy records. */
+  intel?: OppIntel
+  /** ISO date the weekly research last confirmed this item is real and open. */
+  lastVerified?: string | null
+  /** Set when the research run hid this item for failing the profile; cleared if it later passes. */
+  hiddenReason?: string | null
 }
 
-/** Structured reading of a natural-language hunt order (filled in by the radar agent). */
-export interface ObjectiveParsed {
-  /** One-line normalized restatement, e.g. "20 remote internships, $2k+/mo, deadline before 2026-09-01". */
-  summary?: string
-  category?: OpportunityCategory | null
-  /** How many of these the user wants (drives the "N / target found" progress). */
-  targetCount?: number | null
-  eligibility?: Eligibility | null
-  /** Cities / regions / countries the order targets, e.g. ["Medellín", "Bogotá", "Colombia"]. */
-  locations?: string[]
-  /** Freeform pay/reward ask, e.g. "$2k+/mo" (schema has no salary field, so kept as text). */
-  salaryText?: string | null
-  /** Only surface items whose deadline is on/before this (YYYY-MM-DD). */
-  deadlineBefore?: string | null
-  keywords?: string[]
-}
+/** Field tags the profile cares about. Robotics depth: humanoids/manipulation > robotics > hardware > iot. */
+export type FieldTag =
+  | 'humanoids' | 'manipulation' | 'robotics' | 'hardware' | 'iot'
+  | 'ai' | 'software' | 'startups' | 'founder' | 'research' | 'hackathon'
+
+export type Selectivity = 'reach' | 'competitive' | 'realistic' | 'easy'
 
 /**
- * A natural-language hunt order the user gives radar ("I need 20 remote internships,
- * $2k+, deadline before Sept"). The radar agent reads it, replies conversationally, and
- * fills `parsed`; the classifier then prioritizes + scores matching opportunities.
+ * What the weekly deep research learned about one opportunity. Every scalar is
+ * nullable: null means "not stated", never a guess. Normalized by opportunity-intel.ts.
  */
+export interface OppIntel {
+  fields: FieldTag[]
+  /** false = sketchy or pay-to-play. */
+  legit: boolean | null
+  ageMin: number | null
+  ageMax: number | null
+  colombiaAllowed: boolean | null
+  undergradAllowed: boolean | null
+  country: string | null
+  city: string | null
+  inPerson: boolean | null
+  visaSupport: boolean | null
+  /** Guaranteed grant or award. Prize pools are not funding. */
+  cashUsd: number | null
+  investmentUsd: number | null
+  equityPct: number | null
+  /** Total stipend over the whole program. */
+  stipendUsd: number | null
+  travelCovered: boolean | null
+  travelCapUsd: number | null
+  housingCovered: boolean | null
+  /** Out-of-pocket fee (registration, tuition). */
+  feeUsd: number | null
+  durationDays: number | null
+  hoursPerWeek: number | null
+  fullTime: boolean | null
+  relocation: boolean | null
+  leaveUniversity: boolean | null
+  dropout: boolean | null
+  ideaStageOk: boolean | null
+  mvpRequired: boolean | null
+  tractionRequired: boolean | null
+  companyRequired: boolean | null
+  hardwareAccess: boolean | null
+  /** Judgment signals, 0–10. */
+  prestige: number | null
+  network: number | null
+  founderDensity: number | null
+  technicalDensity: number | null
+  investorAccess: number | null
+  careerUpside: number | null
+  skillGain: number | null
+  selectivity: Selectivity | null
+  /** Estimated acceptance probability, 0–1. */
+  probability: number | null
+  effortHours: number | null
+}
+
+/** A plain-language focus for the next research run, set from chat (MCP set_hunt_order). */
 export interface Objective {
   id: string
-  /** Raw text the user typed. */
   text: string
-  /** The agent's conversational acknowledgment (the "talk to radar" reply). */
-  reply?: string
-  parsed?: ObjectiveParsed
-  /** thinking = agent is reading it; ready = parsed; error = agent call failed. */
   status: 'thinking' | 'ready' | 'error'
-  /** Active objectives steer the next radar run; inactive ones are paused. */
   active: boolean
   createdAt: string
-  error?: string
 }
 
 export interface OppData {
   items: Opportunity[]
   lastRun: string | null
-  /** Id (== timestamp) of the latest radar run, for the "this run" filter. */
+  /** Id (== timestamp) of the latest radar run. */
   lastRunId?: string
-  /** Markdown digest written by the weekly routine: what landed + what to look at. */
+  /** One-line summary of the latest research run. */
   report?: string
-  /** Natural-language hunt orders that steer radar (the "talk to radar" feature). */
+  /** Plain-language focus notes the research run reads. */
   objectives?: Objective[]
   /** Manual-run control (a launchd watcher executes the pipeline when set). */
   runRequestedAt?: string
@@ -154,8 +191,6 @@ export const categoryConfig: Record<OpportunityCategory, { label: string }> = {
   other: { label: 'Other' },
 }
 export const ALL_CATEGORIES = Object.keys(categoryConfig) as OpportunityCategory[]
-export const categoryOf = (c: string | null | undefined) =>
-  categoryConfig[c as OpportunityCategory] ?? categoryConfig.other
 
 // Statuses: only truly semantic states carry a tone (won/lost/applied); the
 // rest are neutral. `text` colors the inline status select per state.
@@ -170,23 +205,6 @@ export const statusConfig: Record<OppStatus, { label: string; chip: ChipVariant;
 export const ALL_STATUSES = Object.keys(statusConfig) as OppStatus[]
 export const statusOf = (s: string | null | undefined) => statusConfig[s as OppStatus] ?? statusConfig.new
 
-export const priorityConfig: Record<Opportunity['priority'], { label: string; rank: number; chip: ChipVariant }> = {
-  high: { label: 'High', rank: 0, chip: 'danger' },
-  medium: { label: 'Medium', rank: 1, chip: 'warning' },
-  low: { label: 'Low', rank: 2, chip: 'neutral' },
-}
-export const priorityOf = (p: string | null | undefined) =>
-  priorityConfig[p as Opportunity['priority']] ?? priorityConfig.medium
-
-export const goalConfig: Record<Goal, string> = {
-  internship: 'Internship',
-  exchange: 'Exchange',
-  funding: 'Funding',
-  'social-growth': 'Social growth',
-  users: 'Users',
-}
-export const ALL_GOALS = Object.keys(goalConfig) as Goal[]
-
 export const eligibilityConfig: Record<Eligibility, string> = {
   'remote-global': 'Remote / Global',
   latam: 'LatAm',
@@ -194,8 +212,6 @@ export const eligibilityConfig: Record<Eligibility, string> = {
   other: 'Other',
   unknown: 'Unknown',
 }
-export const eligibilityOf = (e: string | null | undefined) =>
-  eligibilityConfig[e as Eligibility] ?? eligibilityConfig.unknown
 
 export const modalityConfig: Record<Modality, { label: string }> = {
   remote: { label: 'Remote' },
@@ -203,8 +219,6 @@ export const modalityConfig: Record<Modality, { label: string }> = {
   'in-person': { label: 'In-person' },
   unknown: { label: 'Unknown' },
 }
-/** Pills the user can filter by (the 'unknown' bucket isn't offered as a filter). */
-export const MODALITY_FILTERS: Modality[] = ['remote', 'hybrid', 'in-person']
 /** Normalize possibly-absent modality (older records) to a valid key. */
 export const modalityOf = (o: Opportunity): Modality =>
   o.modality && modalityConfig[o.modality] ? o.modality : 'unknown'
