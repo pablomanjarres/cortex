@@ -148,7 +148,7 @@ export function OpportunitiesPage() {
 
         <RadarSection title="Apply" rows={view.apply} {...handlers} />
         <RadarSection title="Applied" rows={view.applied} {...handlers} />
-        <RadarSection title="Watchlist · next cycle" rows={view.watchlist} {...handlers} />
+        <RadarSection title="Watchlist" rows={view.watchlist} {...handlers} />
 
         {view.hidden.length > 0 && (
           <SectionDisclosure variant="inline" title={`${view.hidden.length} hidden`}>
