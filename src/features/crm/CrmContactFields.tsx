@@ -1,3 +1,5 @@
+import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
+import { recordRefs } from '@/lib/knowledge'
 import { Trash2 } from 'lucide-react'
 import { Field } from '@/components/shared/Field'
 import { TagInput } from '@/components/shared/TagInput'
@@ -22,7 +24,8 @@ export function CrmContactEditor({ contact, onChange, onDelete }: CrmContactFiel
   return (
     <>
       <CrmContactFields contact={contact} onChange={onChange} />
-      <div className="flex justify-end pt-4">
+      <div className="flex flex-wrap items-center justify-end gap-2 pt-4">
+        <KnowledgeLink cortexRef={recordRefs.crm(contact.id)} />
         <Button variant="destructive" size="sm" className="w-full md:w-auto" onClick={onDelete}>
           <Trash2 /> Delete contact
         </Button>

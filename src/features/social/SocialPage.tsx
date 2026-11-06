@@ -17,6 +17,9 @@ import {
 } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { syncBirthdayToCalendar } from '@/lib/calendar-sync'
+import { KnowledgeLink } from '@/components/shared/KnowledgeLink'
+import { recordRefs } from '@/lib/knowledge'
+import { useOpenOnce, useRecordParam } from '@/lib/use-url-param'
 import {
   ALL_CATEGORIES, DEFAULT_CONTACTS, calcAge, contactsToReachOut, daysOverdue, daysUntilBirthday, fmtDate,
   upcomingBirthdays, withContactDefaults, type Contact, type SortKey,
@@ -36,6 +39,9 @@ export function SocialPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
+  // `?record=contact:<id>` opens that contact once per link.
+  const recordId = useRecordParam('contact')
+  useOpenOnce(recordId, setExpanded)
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000)
@@ -208,6 +214,7 @@ export function SocialPage() {
                 </div>
               </>}>
               <ContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
+              <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
             </DisclosureCard>
           )
         })}
@@ -238,6 +245,7 @@ export function SocialPage() {
                       colSpan={8} rowRef={(el) => { rowRefs.current[c.id] = el }}
                       details={<>
                         <ContactFields contact={c} onChange={(patch) => setField(c.id, patch)} />
+                        <KnowledgeLink cortexRef={recordRefs.contact(c.id)} />
                         <div className="flex items-end justify-end gap-2 pt-4">
                           <Button variant="destructive" size="sm" onClick={() => deleteContact(c.id)}>
                             <Trash2 /> Delete contact

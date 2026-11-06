@@ -7,8 +7,9 @@ import { Skeleton } from '@/components/shared/Skeleton'
 import { Cpu, MemoryStick, HardDrive, Activity, Server, Clock } from 'lucide-react'
 import { HostHistory } from './HostHistory'
 import { ScreenBlackout } from './ScreenBlackout'
-import { selectPrimaryDisk } from './mac-stats'
+import { selectPrimaryDisk } from '../../../electron/mac-stats'
 import { systemApiUrl, usePolledJson, type HostKey } from './system-api'
+import { EightfoldProtection } from './EightfoldProtection'
 
 // ── Glances /api/4/all payload (subset we use) ────────────────────────────
 
@@ -344,6 +345,7 @@ export function SystemPage() {
       </p>
       <ScreenBlackout />
       <HostCard host={MAC} delay={0.03} />
+      <EightfoldProtection delay={0.06} />
     </PageShell>
   )
 }

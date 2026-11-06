@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { selectPrimaryDisk, type MacDisk } from '../src/features/system/mac-stats.ts'
+import { selectPrimaryDisk, type MacDisk } from '../electron/mac-stats.ts'
 
 const sharedApfsSize = 494_350_000_000
 const volumes: MacDisk[] = [

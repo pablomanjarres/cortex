@@ -1,3 +1,4 @@
+import { projectPriorityRank } from '../../../electron/project-priority'
 import { Bot, FolderKanban, Image, Layers, Monitor, Package, type LucideIcon } from 'lucide-react'
 import type { ProjectInfo } from '@/types/electron'
 
@@ -71,5 +72,5 @@ export function filterProjects(projects: ProjectInfo[], meta: Record<string, Pro
       }
       return true
     })
-    .sort((a, b) => (meta[a.name]?.priority ?? 99) - (meta[b.name]?.priority ?? 99))
+    .sort((a, b) => projectPriorityRank(meta[a.name]?.priority) - projectPriorityRank(meta[b.name]?.priority))
 }

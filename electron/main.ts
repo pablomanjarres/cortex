@@ -30,6 +30,10 @@ import { FOUNDER_RESEARCH_KEY, FounderResearchService, ResearchValidationError, 
 import { ScreenBlackoutService, BlackoutValidationError, BlackoutBusyError } from './screen-blackout-service.js'
 import { createNativeBlackoutAdapter } from './screen-blackout-native.js'
 import { blackoutOriginAllowed } from './screen-blackout-contract.js'
+import { KnowledgeVaultService } from './knowledge/vault.js'
+import { ResearchNarrativeStore, vaultBackedResearch } from './knowledge/research-narrative.js'
+import { handleKnowledgeRequest, resolveKnowledgeLink } from './knowledge/http.js'
+import { selectPrimaryDisk, type MacDisk } from './mac-stats.js'
 
 interface StoredAutomationRun {
   id: string
@@ -89,7 +93,7 @@ let cachedWorkHours: WorkHoursState = emptyWorkHoursState()
 interface HostStats {
   cpu: number; mem: number; memUsed: number; memTotal: number
   swap: number; load1: number; cores: number; uptime: string
-  rootFsPct?: number; rootFsUsed?: number; rootFsSize?: number
+  rootFsPct?: number; rootFsUsed?: number; rootFsSize?: number; diskMount?: string
   rxBps?: number; txBps?: number
 }
 let cachedMacStats: HostStats | null = null
@@ -222,8 +226,8 @@ async function fetchHostStats(host: string): Promise<HostStats> {
   if (swR && swR.ok) {
     try { const s = await swR.json(); swap = s?.percent ?? 0 } catch { /* ignore */ }
   }
-  const fsList = fsR.ok ? (await fsR.json()) as Array<{ mnt_point: string; percent: number; used: number; size: number }> : []
-  const root = fsList.find((f) => f.mnt_point === '/')
+  const fsList = fsR.ok ? (await fsR.json()) as MacDisk[] : []
+  const root = selectPrimaryDisk(fsList)
   let rxBps: number | undefined
   let txBps: number | undefined
   if (netR && netR.ok) {
@@ -251,6 +255,7 @@ async function fetchHostStats(host: string): Promise<HostStats> {
     load1: load.min1 ?? 0,
     cores: load.cpucore ?? 1,
     uptime,
+    diskMount: root?.mnt_point,
     rootFsPct: root?.percent,
     rootFsUsed: root?.used,
     rootFsSize: root?.size,
@@ -541,7 +546,7 @@ function buildHostStatsItems(label: string, s: HostStats | null, err: string | n
   )
   if (s.swap > 0) items.push({ label: `· Swap ${s.swap.toFixed(1)}%`, enabled: false })
   if (s.rootFsPct != null && s.rootFsSize != null && s.rootFsUsed != null) {
-    items.push({ label: `· Disk /  ${s.rootFsPct.toFixed(1)}%  ${fmtBytesShort(s.rootFsUsed)} / ${fmtBytesShort(s.rootFsSize)}`, enabled: false })
+    items.push({ label: `· Disk ${s.diskMount === '/System/Volumes/Data' ? 'Data' : (s.diskMount ?? '/')}  ${s.rootFsPct.toFixed(1)}%  ${fmtBytesShort(s.rootFsUsed)} / ${fmtBytesShort(s.rootFsSize)}`, enabled: false })
   }
   if (s.uptime) items.push({ label: `· Uptime ${s.uptime}`, enabled: false })
   return items
@@ -923,6 +928,8 @@ function startWebServer() {
       }
       return
     }
+
+    if (await handleKnowledgeRequest(req, res, url, remote, knowledgeHttpDeps)) return
 
     // ─── JSON API for data sync (used by browser/iPhone) ──────
     if (url.pathname === '/api/data' && req.method === 'GET') {
@@ -1896,6 +1903,16 @@ async function readResearchCrm() {
   return text === null ? null : parseStoredNoelleCrmSnapshot(JSON.parse(text))
 }
 
+// ─── Knowledge vault (Obsidian) ─────────────────────────────
+// One vault service for HTTP, MCP and research narrative. CORTEX_VAULT_ROOT
+// (absolute) overrides the default ~/Knowledge/Eightfold primary vault.
+const knowledgeVault = new KnowledgeVaultService({
+  configuredRoot: process.env.CORTEX_VAULT_ROOT && path.isAbsolute(process.env.CORTEX_VAULT_ROOT) ? process.env.CORTEX_VAULT_ROOT : undefined,
+})
+const researchNarrative = new ResearchNarrativeStore(knowledgeVault)
+
+// Stored research state (operational authority). Narrative fields are routed
+// to the vault by vaultBackedResearch once a campaign has been migrated.
 const researchStore = {
   read: async () => {
     const { text, rev } = await readDataFile(FOUNDER_RESEARCH_KEY)
@@ -1905,22 +1922,60 @@ const researchStore = {
   write: async (state: ResearchState) => {
     const result = await writeDataKey(FOUNDER_RESEARCH_KEY, state, { source: 'main' })
     if (!result.ok) throw new Error('Research data could not be saved')
-    const directory = path.join(dataDir, 'founder-research', state.campaign.id)
-    await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 })
-    await fs.promises.chmod(directory, 0o700)
-    for (const [name, contents] of Object.entries(researchArchiveFiles(state, await readResearchCrm()))) {
-      const file = path.join(directory, name), temporary = `${file}.tmp`
-      await fs.promises.writeFile(temporary, contents, { mode: 0o600 })
-      await fs.promises.chmod(temporary, 0o600)
-      await fs.promises.rename(temporary, file)
-    }
   },
 }
 
 const founderResearchService = new FounderResearchService({
-  ...researchStore,
+  ...vaultBackedResearch(researchStore, researchNarrative, { afterWrite: writeResearchArchive }),
   readCampaign: researchStore.read,
   readCrm: readResearchCrm,
+})
+
+/** Local archive mirror of the merged research view (narrative from wherever it is authoritative). */
+async function writeResearchArchive(state: ResearchState): Promise<void> {
+  const directory = path.join(dataDir, 'founder-research', state.campaign.id)
+  await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 })
+  await fs.promises.chmod(directory, 0o700)
+  for (const [name, contents] of Object.entries(researchArchiveFiles(state, await readResearchCrm()))) {
+    const file = path.join(directory, name), temporary = `${file}.tmp`
+    await fs.promises.writeFile(temporary, contents, { mode: 0o600 })
+    await fs.promises.chmod(temporary, 0o600)
+    await fs.promises.rename(temporary, file)
+  }
+}
+
+const knowledgeHttpDeps = {
+  vault: knowledgeVault,
+  isLoopback: isLoopbackAddress,
+  readBody,
+  origin: () => `http://${getTailscaleIP() ?? 'localhost'}:${WEB_PORT}`,
+  summaryInputs: knowledgeSummaryInputs,
+  migrateResearch: (dryRun: boolean) => founderResearchService.exclusive(async () => {
+    const state = await researchStore.read()
+    if (!state) return { dryRun, migrated: false, reason: 'No saved research campaign yet' }
+    return researchNarrative.migrate(state, { dryRun, now: new Date().toISOString() })
+  }),
+}
+
+/** Bounded inputs for GET /api/knowledge/summary; see knowledge/summary.ts for what is exposed. */
+async function knowledgeSummaryInputs() {
+  const from = localDate(), to = localDate(new Date(Date.now() + 7 * 86400000))
+  let calendar: { events: unknown; from: string; to: string } | { error: string }
+  try { calendar = { events: await getEventsInRange(from, to), from, to } } catch { calendar = { error: 'Calendar is unavailable' } }
+  let research: unknown = null
+  try { research = await founderResearchService.read() } catch { research = null }
+  const [projectMeta, goals, finances, crm, contacts, founderHistory] = await Promise.all(
+    ['cortex-project-meta', 'cortex-goals', 'cortex-finances', 'cortex-crm', 'cortex-contacts', 'cortex-founder-history'].map(key => readDataKeyParsed<unknown>(key, null)),
+  )
+  let noelleCrm: unknown = null
+  try { noelleCrm = await readResearchCrm() } catch { noelleCrm = null }
+  return { projectMeta, goals, calendar, finances, crm, contacts, noelleCrm, founderHistory, research }
+}
+
+ipcMain.handle('knowledge:open', async (_event, ref: unknown) => {
+  const link = resolveKnowledgeLink(knowledgeVault, String(ref), knowledgeHttpDeps.origin())
+  if (link.uri) await shell.openExternal(link.uri)
+  return link
 })
 
 ipcMain.handle('founder-research:read', async () => founderResearchService.read())
