@@ -7,10 +7,11 @@
 
 import { spawn } from "node:child_process"
 import { readFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
 const KEY = "cortex-opportunities"
-const WRAPPER = "/Users/pablo/projects/cortex/scripts/opportunity-radar-weekly.sh"
+const WRAPPER = fileURLToPath(new URL("./opportunity-radar-weekly.sh", import.meta.url))
 const LOG = `${process.env.HOME}/Library/Logs/opportunity-radar.log`
 const POLL_MS = 5000
 const RUN_TIMEOUT_MS = 60 * 60 * 1000
