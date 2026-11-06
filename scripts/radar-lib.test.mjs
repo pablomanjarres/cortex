@@ -207,6 +207,22 @@ test("mergeClassified: an explicit local day overrides the UTC day in the runId"
   assert.equal(mergeClassified({ items: [edge], lastRun: null }, [], "2026-11-07T01:00:00Z", undefined).archived, 1)
 })
 
+test("mergeClassified: host asides and apostrophe styles don't split one program", () => {
+  const stored = { ...storedThiel, id: "opp-osv", title: "O'Shaughnessy Fellowships", host: "O'Shaughnessy Ventures (OSV)", url: "https://www.osv.llc/fellowships", status: "new" }
+  const sighting = { ...incomingThiel, title: "O’Shaughnessy Fellowships", host: "O’Shaughnessy Ventures", url: "https://www.osvfellowship.com/" }
+  const { merged, added, refreshed } = mergeClassified({ items: [stored], lastRun: null }, [sighting], "2026-11-06T06:00:00Z", undefined)
+  assert.deepEqual([added.length, refreshed, merged.items.length, merged.items[0].id], [0, 1, 1, "opp-osv"])
+})
+
+test("mergeClassified: a shared program page links sightings; a shared bare domain does not", () => {
+  const stored = { ...storedThiel, id: "opp-500", title: "500 LatAm Accelerator", host: "500 Global", url: "https://500.co/latam", officialUrl: "https://500.co/latam", status: "new" }
+  const sighting = { ...incomingThiel, title: "500 Global LatAm Accelerator", host: "500 Global", url: "https://latam.aplica.500.co/", officialUrl: "https://500.co/latam" }
+  assert.equal(mergeClassified({ items: [stored], lastRun: null }, [sighting], "2026-11-06T06:00:00Z", undefined).refreshed, 1)
+  const other = { ...sighting, title: "500 Seed Program", url: "https://apply.500.co/seed", officialUrl: "https://500.co" }
+  const solo = { ...stored, officialUrl: "https://500.co" }
+  assert.equal(mergeClassified({ items: [solo], lastRun: null }, [other], "2026-11-06T06:00:00Z", undefined).added.length, 1)
+})
+
 test("mergeClassified: auto-archives stale fixed items and counts them", () => {
   const stale = { ...storedThiel, id: "opp-old", title: "Old Hack Week", host: "X", url: "https://oldhack.example.com", sourceRef: "https://oldhack.example.com", status: "new", deadline: "2026-06-01", rolling: false }
   const { merged, archived } = mergeClassified({ items: [stale], lastRun: null }, [], "2026-07-10T09:00:00Z", undefined)

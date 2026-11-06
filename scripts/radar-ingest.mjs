@@ -57,6 +57,7 @@ function normText(s) {
   return String(s || "")
     .toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")
     .replace(/\b20\d\d\b/g, " ")          // drop years so a recurring program matches across runs
+    .replace(/\([^)]*\)/g, " ")          // drop asides: "Z Fellows (Cory Levy)" is "Z Fellows"
     .replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()
 }
 /** Identity keys for an opportunity; two items collide if they share ANY key. */
@@ -64,6 +65,9 @@ function identityKeys(o) {
   const keys = []
   const u = normUrl(o.url)
   if (u && u.length > 6) keys.push("u:" + u)
+  // A program's own page identifies it too; a bare domain may host several programs.
+  const official = normUrl(o.officialUrl)
+  if (official.includes("/") && official !== u) keys.push("u:" + official)
   const t = normText(o.title)
   if (t.length >= 4) keys.push("t:" + t + "|" + normText(o.host))
   return keys
