@@ -157,7 +157,7 @@ const server = new McpServer(
       "- When he shares a THOUGHT, idea, reflection, realization, or opinion worth keeping, offer to save it with add_thought (e.g. \"Want me to save that as a thought in Cortex?\"). Don't save silently.",
       "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
       "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
-      "- Opportunities (fellowships, grants, accelerators, programs, residencies, hackathons, internships): get_opportunities to read the radar + active hunt orders (filter by category or deadline_type); add_opportunities to add ones you researched yourself (personalize using scripts/radar-profile.md and active hunt orders; include the deadline-intelligence fields); run_opportunity_radar to trigger the native scraper; set_hunt_order to steer it. The curated program catalog seeds via `node scripts/radar-seed-programs.mjs --write`.",
+      "- Opportunities (fellowships, grants, accelerators, residencies, research programs, hackathons): a weekly Codex deep-research run finds and re-verifies them against scripts/radar-profile.md and the profile rules in src/features/opportunities/opportunity-score.ts (hard filters: 18, Colombia, undergrad, open deadline, field fit, legit; then funding vs time cost, network, prestige). get_opportunities reads what passed (hidden ones carry hiddenReason); run_opportunity_radar starts a research run now; set_hunt_order adds a focus note for the next runs; add_opportunities adds ones you researched yourself — include `intel` facts or the profile hides them.",
       "- Study questions: pull the SMALLEST slice that answers — the full bundle is expensive. A date/deadline question → get_assignments {subject, undoneOnly, due_within_days}. A content question (\"cuando es el debate de migracion\", \"como se califica X\") → search_class_materials {query, subject?} (semantic; index kept fresh automatically). Browsing what's filed → list_class_materials {subject, unit?}; reading one → read_class_material. Past facts/decisions → get_study_notes {subject}. Reserve get_study_context for genuinely STARTING a work session on a course — and even then pass sections (e.g. [\"grades\",\"assignments\"]) to fetch only what the session needs.",
       "- When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material (disk path, or content_base64 for chat attachments); file every document as TWO materials: the original + a faithful Markdown twin named \"<name> (AI).md\" tagged ai-md in the same unit.",
       "",
@@ -2465,8 +2465,8 @@ server.tool(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GROUP: Opportunity Radar
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Store key cortex-opportunities holds the whole OppData blob (items + hunt
-// orders + report + run flags). Always read-modify-write the whole object so
+// Store key cortex-opportunities holds the whole OppData blob (items + focus
+// notes + report + run flags). Always read-modify-write the whole object so
 // objectives/report/run state aren't clobbered. Shapes mirror
 // src/features/opportunities/opportunity-model.ts.
 
@@ -2480,8 +2480,10 @@ interface McpOpportunity {
   deadlineType?: string; recurrence?: string | null; nextWindowExpected?: string | null;
   amountUsd?: number | null; requires18Plus?: boolean | null; officialUrl?: string;
   effort?: string | null;
+  // Deep-research facts + profile visibility (see opportunity-score.ts)
+  intel?: Record<string, unknown>; lastVerified?: string | null; hiddenReason?: string | null;
 }
-interface McpObjective { id: string; text: string; reply?: string; parsed?: unknown; status: string; active: boolean; createdAt: string; error?: string }
+interface McpObjective { id: string; text: string; status: string; active: boolean; createdAt: string }
 interface McpOppData {
   items: McpOpportunity[]; lastRun: string | null; lastRunId?: string; report?: string;
   objectives?: McpObjective[]; runRequestedAt?: string; runStatus?: string;
@@ -2501,9 +2503,26 @@ const oppDeadlineTypeOf = (o: McpOpportunity): string => {
   return "unknown";
 };
 
+// Mirrors OppIntel in src/features/opportunities/opportunity-model.ts.
+const nb = () => z.boolean().nullable().optional();
+const nn = (max: number) => z.number().min(0).max(max).nullable().optional();
+const OPP_INTEL = z.object({
+  fields: z.array(z.enum(["humanoids", "manipulation", "robotics", "hardware", "iot", "ai", "software", "startups", "founder", "research", "hackathon"])).default([]),
+  legit: nb(), ageMin: nn(99), ageMax: nn(99), colombiaAllowed: nb(), undergradAllowed: nb(),
+  country: z.string().nullable().optional(), city: z.string().nullable().optional(), inPerson: nb(), visaSupport: nb(),
+  cashUsd: nn(1e7), investmentUsd: nn(1e7), equityPct: nn(100), stipendUsd: nn(1e7),
+  travelCovered: nb(), travelCapUsd: nn(1e7), housingCovered: nb(), feeUsd: nn(1e7),
+  durationDays: nn(3650), hoursPerWeek: nn(100), fullTime: nb(), relocation: nb(), leaveUniversity: nb(), dropout: nb(),
+  ideaStageOk: nb(), mvpRequired: nb(), tractionRequired: nb(), companyRequired: nb(), hardwareAccess: nb(),
+  prestige: nn(10), network: nn(10), founderDensity: nn(10), technicalDensity: nn(10), investorAccess: nn(10),
+  careerUpside: nn(10), skillGain: nn(10),
+  selectivity: z.enum(["reach", "competitive", "realistic", "easy"]).nullable().optional(),
+  probability: nn(1), effortHours: nn(500),
+});
+
 server.tool(
   "get_opportunities",
-  "Read the Opportunity Radar: sourced opportunities (hackathons AND the programs lane — fellowships, grants, accelerators, residencies), active hunt orders, the latest run report, and run status. Use before sourcing to avoid duplicates and to read what the user is hunting for. A curated 30-program catalog can be (re)seeded with `node scripts/radar-seed-programs.mjs --write`.",
+  "Read the Opportunity Radar: opportunities that passed Pablo's profile (hidden ones are status 'archived' with a hiddenReason), each with its deep-research `intel` facts and lastVerified date, plus active focus notes, the latest run report and run status. Use before sourcing to avoid duplicates.",
   {
     status: z.string().optional().describe("Filter by status: new|pursuing|applied|won|lost|archived"),
     category: z.string().optional().describe("Filter by category (e.g. fellowship, grant, program, accelerator, hackathon)"),
@@ -2527,10 +2546,10 @@ server.tool(
 
 server.tool(
   "set_hunt_order",
-  "Add a natural-language hunt order that personalizes the radar (e.g. '20 remote AI internships paying $2k+/mo, deadline before Sept'). Active hunt orders steer the next radar run.",
-  { text: z.string().describe("What to hunt for, in plain language") },
+  "Add a plain-language focus note for the weekly research run (e.g. 'humanoid robotics summer programs in Europe'). Active notes steer research for 30 days, then lapse. The profile's hard filters still apply.",
+  { text: z.string().describe("What to focus on, in plain language") },
   async ({ text }) => run(async () => {
-    const objective: McpObjective = { id: `obj-${Date.now()}`, text, status: "thinking", active: true, createdAt: new Date().toISOString() };
+    const objective: McpObjective = { id: `obj-${Date.now()}`, text, status: "ready", active: true, createdAt: new Date().toISOString() };
     const data = await mutateKey<McpOppData>("cortex-opportunities", (data) => {
       if (!Array.isArray(data.objectives)) data.objectives = [];
       data.objectives.unshift(objective);
@@ -2542,8 +2561,8 @@ server.tool(
 
 server.tool(
   "run_opportunity_radar",
-  "Trigger the native Opportunity Radar pipeline — the same as the app's 'Run radar' button. Requests a run that the local radar watcher executes (scrape → classify → ingest); the scrape runs natively on this Mac, so only the local watcher daemon needs to be up. Optionally pass a hunt order to personalize this run. To source opportunities WITHOUT the native scraper (Claude Code does its own web research), use add_opportunities instead.",
-  { huntOrder: z.string().optional().describe("Optional plain-language focus for this run; added as an active hunt order first") },
+  "Start a research run now — the same as the app's 'Run research' button. The local radar watcher runs scripts/opportunity-research.mjs: Codex deep-researches and re-verifies opportunities for the profile (~20 min), then the profile rules score them and hide what fails. Optionally pass a focus note for this and the next runs.",
+  { huntOrder: z.string().optional().describe("Optional plain-language focus; saved as an active focus note first") },
   async ({ huntOrder }) => run(async () => {
     const requestedAt = new Date().toISOString();
     await mutateKey<McpOppData>("cortex-opportunities", (data) => {
@@ -2552,20 +2571,20 @@ server.tool(
       }
       if (huntOrder && huntOrder.trim()) {
         if (!Array.isArray(data.objectives)) data.objectives = [];
-        data.objectives.unshift({ id: `obj-${Date.now()}`, text: huntOrder.trim(), status: "thinking", active: true, createdAt: new Date().toISOString() });
+        data.objectives.unshift({ id: `obj-${Date.now()}`, text: huntOrder.trim(), status: "ready", active: true, createdAt: new Date().toISOString() });
       }
       data.runRequestedAt = requestedAt;
       data.runStatus = "requested";
       data.runError = undefined;
       return data;
     }, { items: [], lastRun: null });
-    return { ok: true, runStatus: "requested", requestedAt, note: "The radar watcher (launchd) will run the pipeline. Poll runStatus via get_opportunities." };
+    return { ok: true, runStatus: "requested", requestedAt, note: "The radar watcher (launchd) runs the research (~20 min). Poll runStatus via get_opportunities." };
   })
 );
 
 server.tool(
   "add_opportunities",
-  "Add opportunities YOU (Claude Code) sourced via your own web research directly into the Radar. This IS the personalized radar when the external scraper isn't used: first read the user's profile (scripts/radar-profile.md) and active hunt orders (get_opportunities), research matching opportunities on the web, then submit them here. Fellowships, grants, accelerators, residencies and structured builder programs are first-class targets (categories program/fellowship/grant/accelerator/residency) — fill in the deadline-intelligence fields (deadlineType, recurrence, nextWindowExpected, amountUsd, requires18Plus, officialUrl, effort) whenever known. A curated 30-program baseline also exists: `node scripts/radar-seed-programs.mjs --write` (source 'catalog'). Dedupes against existing items by URL and title+host, stamps them with a runId, and updates the run report.",
+  "Add opportunities YOU researched on the web. Read scripts/radar-profile.md and get_opportunities first, verify each on its official page, then submit. New items are ranked by the profile rules (src/features/opportunities/opportunity-score.ts); an item without `intel` facts scores low and is hidden, so fill intel from what the sources state (null when unstated). leverageNote = one plain 'why Pablo should care' sentence, no dates. Dedupes against existing items by URL and title+host and stamps lastVerified today.",
   {
     runId: z.string().optional().describe("Label/stamp for this radar run; defaults to an ISO timestamp"),
     report: z.string().optional().describe("Optional markdown digest (what you found + top picks) shown on the Radar tab"),
@@ -2595,6 +2614,7 @@ server.tool(
       sourceRef: z.string().optional().describe("Where you found it (handle, post URL, search)"),
       notes: z.string().optional(),
       tags: z.array(z.string()).optional(),
+      intel: OPP_INTEL.optional().describe("Deep-research facts that drive the profile score; null = not stated"),
     })).describe("The opportunities you found"),
   },
   async ({ runId, report, opportunities }) => run(async () => {
@@ -2629,6 +2649,7 @@ server.tool(
           location: o.location ?? "", modality: o.modality ?? "unknown", eligibility: o.eligibility ?? "unknown",
           reward: o.reward ?? "", url: o.url, source: o.source ?? "web", sourceRef: o.sourceRef ?? "",
           discoveredAt: now, runId: stamp, notes: o.notes ?? "", tags: o.tags ?? [],
+          ...(o.intel ? { intel: o.intel } : {}), lastVerified: now.slice(0, 10),
         };
         data.items.unshift(rec);
         if (u) seenUrl.add(u);

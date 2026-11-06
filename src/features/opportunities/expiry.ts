@@ -9,6 +9,9 @@ function calendarTime(value: string | null): number | null {
   return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value ? time : null
 }
 
+/** A real "YYYY-MM-DD" calendar date (rejects "2026-02-30" and free text). */
+export const isCalendarDate = (value: string): boolean => calendarTime(value) !== null
+
 /** Calendar-day distance, independent of UTC rollover and daylight-saving changes. */
 export function daysUntilDeadline(deadline: string | null, today: string): number | null {
   const end = calendarTime(deadline)

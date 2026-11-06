@@ -20,6 +20,8 @@
 
 import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
+import { isCalendarDate } from "../src/features/opportunities/expiry.ts"
+import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.ts"
 import {
   inferSource, stableId, deadlineTypeOf, rollingFromDeadlineType,
   mergeOpportunity, shouldAutoArchive,
@@ -80,6 +82,11 @@ function amountOrNull(v) {
 function boolOrNull(v) {
   return typeof v === "boolean" ? v : null
 }
+/** A real calendar date "YYYY-MM-DD" (the first 10 chars), else null. */
+function dateOrNull(v) {
+  const s = typeof v === "string" ? v.trim().slice(0, 10) : ""
+  return isCalendarDate(s) ? s : null
+}
 /** trimmed string | null */
 function strOrNull(v) {
   const s = typeof v === "string" ? v.trim() : ""
@@ -92,7 +99,7 @@ export function normalizeRecord(raw, runId) {
   // Deadline intelligence: explicit valid deadlineType wins; legacy records derive it
   // (rolling -> 'rolling', dated -> 'fixed', else 'unknown'). The legacy `rolling`
   // boolean is then re-derived so the two can never disagree.
-  const deadline = raw.deadline ? String(raw.deadline).slice(0, 10) : null
+  const deadline = dateOrNull(raw.deadline)
   const deadlineType = pick(DEADLINE_TYPES, raw.deadlineType, deadlineTypeOf({ ...raw, deadline }))
   const rec = {
     id: raw.id || stableId({ sourceRef, url, title: raw.title }),
@@ -126,6 +133,8 @@ export function normalizeRecord(raw, runId) {
     runId,
     notes: String(raw.notes ?? ""),
     tags: Array.isArray(raw.tags) ? raw.tags.map(String).slice(0, 20) : [],
+    ...(raw.intel ? { intel: normalizeIntel(raw.intel) } : {}),
+    lastVerified: dateOrNull(raw.lastVerified),
   }
   return rec
 }

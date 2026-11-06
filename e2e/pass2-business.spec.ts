@@ -55,19 +55,33 @@ test('a reach-out reminder opens its contact and resets only that contact', asyn
   await expect(reminder).toHaveCount(0)
 })
 
-test('a hunt order sends from the keyboard and pauses without leaving the list', async ({ page }) => {
-  const backend = await mockStores(page, { 'cortex-opportunities': { items: [], lastRun: null } })
+test('radar filters narrow the list and hidden items stay one click away', async ({ page }) => {
+  const base = {
+    category: 'fellowship', goals: [], priority: 'medium', leverageScore: 3, leverageNote: '', rolling: false,
+    eligibility: 'unknown', reward: '', url: '', source: 'web', sourceRef: '', discoveredAt: '2026-10-01T12:00:00Z',
+    notes: '', tags: [], host: '', deadline: null, deadlineType: 'rolling',
+  }
+  await mockStores(page, {
+    'cortex-opportunities': {
+      lastRun: '2026-10-20T12:00:00Z',
+      items: [
+        { ...base, id: 'trip', title: 'Funded SF residency', status: 'pursuing', location: 'San Francisco', modality: 'in-person' },
+        { ...base, id: 'online', title: 'Remote fellowship', status: 'pursuing', location: 'Remote', modality: 'remote' },
+        { ...base, id: 'junk', title: 'Trending repo', status: 'new', category: 'trending', location: '', modality: 'remote' },
+      ],
+    },
+  })
   await page.goto('/#/opportunities')
-  const composer = page.getByPlaceholder(/Find me 20 remote software internships/)
-  const send = page.getByRole('button', { name: 'Send', exact: true })
-  await expect(send).toBeDisabled()
-  await composer.fill('  Grants in Colombia  ')
-  await composer.press('ControlOrMeta+Enter')
-  await expect(composer).toHaveValue('')
-  const objectives = () => (backend.stores['cortex-opportunities'] as { objectives?: { text: string; active: boolean }[] }).objectives ?? []
-  await expect.poll(objectives).toMatchObject([{ text: 'Grants in Colombia', active: true }])
+  const title = (t: string) => page.getByRole('button', { name: `Details for ${t}`, exact: true })
+  await expect(title('Funded SF residency')).toBeVisible()
+  await expect(title('Remote fellowship')).toBeVisible()
+  await expect(title('Trending repo')).toHaveCount(0)
 
-  await page.getByRole('button', { name: 'Active', exact: true }).click()
-  await expect.poll(() => objectives()[0]?.active).toBe(false)
-  await expect(page.getByRole('button', { name: 'Paused', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'In person', exact: true }).click()
+  await expect(title('Remote fellowship')).toHaveCount(0)
+  await page.getByRole('button', { name: 'In person', exact: true }).click()
+
+  await page.getByRole('button', { name: '1 hidden', exact: true }).click()
+  await expect(title('Trending repo')).toBeVisible()
+  await expect(page.getByText('off-field', { exact: true })).toBeVisible()
 })

@@ -30,3 +30,25 @@ export function FilterChips<T extends string>({ label, options, value, onChange,
     </div>
   )
 }
+
+/** Independent filters that combine: each chip toggles on and off. */
+export function MultiFilterChips<T extends string>({ label, options, value, onChange, size = 'sm', className }: {
+  label: string
+  options: readonly FilterOption<T>[]
+  value: readonly T[]
+  onChange: (value: T[]) => void
+  size?: ComponentProps<typeof Chip>['size']
+  className?: string
+}) {
+  const toggle = (v: T) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v])
+  return (
+    <div role="group" aria-label={label} className={cn('flex flex-wrap gap-1.5', className)}>
+      {options.map((option) => (
+        <Chip key={option.value} selectable size={size} variant={option.variant}
+          selected={value.includes(option.value)} onClick={() => toggle(option.value)}>
+          {option.label}
+        </Chip>
+      ))}
+    </div>
+  )
+}

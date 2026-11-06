@@ -1,4 +1,4 @@
-import { useId, type ComponentProps, type ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { ExternalLink, Trash2 } from 'lucide-react'
 import { Field } from '@/components/shared/Field'
 import { TagInput } from '@/components/shared/TagInput'
@@ -9,11 +9,11 @@ import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import {
-  ALL_CATEGORIES, ALL_DEADLINE_TYPES, ALL_EFFORTS, ALL_GOALS, ALL_STATUSES,
+  ALL_CATEGORIES, ALL_DEADLINE_TYPES, ALL_EFFORTS, ALL_STATUSES,
   ageRuleOf, categoryConfig, deadlineTypeConfig, deadlineTypeOf, deadlineTypePatch,
-  effortConfig, eligibilityConfig, goalConfig, modalityConfig, modalityOf,
-  parseAmountUsd, priorityConfig, requires18PlusFor, sourceOf, statusConfig,
-  type AgeRule, type DeadlineType, type Effort, type Eligibility, type Goal,
+  effortConfig, eligibilityConfig, modalityConfig, modalityOf,
+  parseAmountUsd, requires18PlusFor, sourceOf, statusConfig,
+  type AgeRule, type DeadlineType, type Effort, type Eligibility,
   type Modality, type Opportunity, type OpportunityCategory, type OppStatus,
 } from './opportunity-model'
 
@@ -26,7 +26,6 @@ const MODALITY_OPTIONS = options(Object.keys(modalityConfig) as Modality[], (m) 
 const ELIGIBILITY_OPTIONS = options(Object.keys(eligibilityConfig) as Eligibility[], (e) => eligibilityConfig[e])
 const EFFORT_OPTIONS = [{ value: '', label: 'Unknown' }, ...options(ALL_EFFORTS, (e) => effortConfig[e])]
 const STATUS_OPTIONS = options(ALL_STATUSES, (s) => statusConfig[s].label)
-const PRIORITY_OPTIONS = options(['high', 'medium', 'low'] as const, (p) => priorityConfig[p].label)
 const DEADLINE_TYPE_OPTIONS = options(ALL_DEADLINE_TYPES, (d) => deadlineTypeConfig[d].label)
 const AGE_RULE_OPTIONS: Option[] = [
   { value: '', label: 'Unstated' },
@@ -59,15 +58,13 @@ function SelectField({ label, value, choices, onChange }: {
 
 const Pair = ({ children }: { children: ReactNode }) => <div className="grid grid-cols-2 gap-2">{children}</div>
 
-/** Inline editor for one opportunity: identity, deadline intelligence + money, goals/notes/tags. */
-export function OpportunityEditor({ o, setField, toggleGoal, onDelete }: {
+/** Inline editor for one opportunity: identity, deadline + money, why/notes/tags. */
+export function OpportunityEditor({ o, setField, onDelete }: {
   o: Opportunity
   setField: (id: string, f: Partial<Opportunity>) => void
-  toggleGoal: (id: string, g: Goal) => void
   onDelete: () => void
 }) {
   const set = (f: Partial<Opportunity>) => setField(o.id, f)
-  const goalsLabel = useId()
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -94,12 +91,8 @@ export function OpportunityEditor({ o, setField, toggleGoal, onDelete }: {
 
       {/* Status · deadline intelligence · money */}
       <div className="flex flex-col gap-2">
-        <Pair>
-          <SelectField label="Status" value={statusConfig[o.status] ? o.status : 'new'} choices={STATUS_OPTIONS}
-            onChange={(v) => set({ status: v as OppStatus })} />
-          <SelectField label="Priority" value={priorityConfig[o.priority] ? o.priority : 'medium'} choices={PRIORITY_OPTIONS}
-            onChange={(v) => set({ priority: v as Opportunity['priority'] })} />
-        </Pair>
+        <SelectField label="Status" value={statusConfig[o.status] ? o.status : 'new'} choices={STATUS_OPTIONS}
+          onChange={(v) => set({ status: v as OppStatus, hiddenReason: null })} />
         <Pair>
           <SelectField label="Deadline type" value={deadlineTypeOf(o)} choices={DEADLINE_TYPE_OPTIONS}
             onChange={(v) => set(deadlineTypePatch(v as DeadlineType))} />
@@ -115,35 +108,11 @@ export function OpportunityEditor({ o, setField, toggleGoal, onDelete }: {
             onChange={(v) => set({ requires18Plus: requires18PlusFor(v as AgeRule) })} />
         </Pair>
         <TextField label="Reward / prize" value={o.reward} onChange={(e) => set({ reward: e.target.value })} placeholder="$5k, stipend, credits…" />
-        <Field label={`Leverage: ${o.leverageScore}/5`}>
-          {(id) => (
-            <input
-              id={id}
-              type="range"
-              min={1}
-              max={5}
-              step={1}
-              value={o.leverageScore}
-              onChange={(e) => set({ leverageScore: parseInt(e.target.value) })}
-              className="w-full cursor-pointer accent-accent"
-            />
-          )}
-        </Field>
-        <TextField label="Leverage note (what it unlocks)" value={o.leverageNote} onChange={(e) => set({ leverageNote: e.target.value })} placeholder="e.g. funding + press + investor intros" />
+        <TextField label="Why it matters" value={o.leverageNote} onChange={(e) => set({ leverageNote: e.target.value })} placeholder="Funded SF trip, dense founder network…" />
       </div>
 
-      {/* Goals · notes · tags */}
+      {/* Notes · tags */}
       <div className="flex flex-col gap-2">
-        <div role="group" aria-labelledby={goalsLabel} className="space-y-1">
-          <p id={goalsLabel} className="text-xs text-muted-foreground">Goals it serves</p>
-          <div className="flex flex-wrap gap-1.5">
-            {ALL_GOALS.map((g) => (
-              <Chip key={g} selectable selected={o.goals.includes(g)} onClick={() => toggleGoal(o.id, g)}>
-                {goalConfig[g]}
-              </Chip>
-            ))}
-          </div>
-        </div>
         <Field label="Notes">
           {(id) => (
             <Textarea id={id} value={o.notes} onChange={(e) => set({ notes: e.target.value })} rows={4}
