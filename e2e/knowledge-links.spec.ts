@@ -25,7 +25,7 @@ test('a CRM record link opens the CRM tab, switches to its org, expands it and r
   const requested = await mockKnowledge(page, false)
   await page.goto('/#/social?tab=crm&record=crm%3Acrm-2')
   await expect(page.getByRole('tab', { name: 'CRM', exact: true })).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByPlaceholder('Notes about this contact...')).toBeVisible()
+  await expect(page.getByRole('textbox', { name: 'Notes', exact: true })).toBeVisible()
   await expect.poll(() => (backend.stores['cortex-crm'] as typeof crm).activeOrg).toBe('second')
   await page.getByRole('button', { name: 'Open in Eightfold', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'The Eightfold vault is not available on this device.' })).toBeVisible()
@@ -62,4 +62,31 @@ test('a project link expands that project with its vault link', async ({ page })
   await expect(page.locator('#project-alpha').getByRole('button', { name: 'Open in Eightfold', exact: true })).toHaveCount(0)
   await card.getByRole('button', { name: 'Open in Eightfold', exact: true }).click()
   await expect.poll(() => requested).toEqual(['project:my-cortex'])
+})
+
+test('a contact link opens that contact once, so closing it keeps it closed', async ({ page }) => {
+  await mockStores(page, { 'cortex-contacts': [
+    { id: 'contact-1', name: 'Fixture friend' },
+    { id: 'contact-2', name: 'Fixture mentor' },
+  ] })
+  await mockKnowledge(page, false)
+  await page.goto('/#/social?record=contact%3Acontact-2')
+  const toggle = page.getByRole('button', { name: 'Details for Fixture mentor' }).filter({ visible: true })
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByRole('button', { name: 'Details for Fixture friend' }).filter({ visible: true })).toHaveAttribute('aria-expanded', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await page.getByRole('searchbox', { name: 'Search contacts', exact: true }).fill('Fixture')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('a goal link scrolls that goal into view and highlights it', async ({ page }) => {
+  const goals = Array.from({ length: 30 }, (_, i) => ({ id: `goal-${i}`, title: `Fixture goal ${i}`, area: 'Fixtures', status: 'active', createdAt: '2026-10-01T00:00:00.000Z' }))
+  await mockStores(page, { 'cortex-goals': goals })
+  await mockKnowledge(page, false)
+  await page.goto('/#/goals?record=goal%3Agoal-29')
+  const linked = page.locator('[id="goal-goal-29"]')
+  await expect(linked).toHaveClass(/ring-accent/)
+  await expect(linked).toBeInViewport()
+  await expect(page.locator('[id="goal-goal-0"]')).not.toBeInViewport()
 })
