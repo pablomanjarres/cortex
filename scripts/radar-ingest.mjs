@@ -57,7 +57,6 @@ function normText(s) {
   return String(s || "")
     .toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")
     .replace(/\b20\d\d\b/g, " ")          // drop years so a recurring program matches across runs
-    .replace(/\([^)]*\)/g, " ")          // drop asides: "Z Fellows (Cory Levy)" is "Z Fellows"
     .replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()
 }
 /** Identity keys for an opportunity; two items collide if they share ANY key. */
@@ -69,7 +68,8 @@ function identityKeys(o) {
   const official = normUrl(o.officialUrl)
   if (official.includes("/") && official !== u) keys.push("u:" + official)
   const t = normText(o.title)
-  if (t.length >= 4) keys.push("t:" + t + "|" + normText(o.host))
+  // Host asides don't change the org ("Z Fellows (Cory Levy)"); title asides can ("Hack (Bogotá)").
+  if (t.length >= 4) keys.push("t:" + t + "|" + normText(String(o.host || "").replace(/\([^)]*\)/g, " ")))
   return keys
 }
 function pick(set, val, fallback) {

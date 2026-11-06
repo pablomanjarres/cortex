@@ -212,6 +212,9 @@ test("mergeClassified: host asides and apostrophe styles don't split one program
   const sighting = { ...incomingThiel, title: "O’Shaughnessy Fellowships", host: "O’Shaughnessy Ventures", url: "https://www.osvfellowship.com/" }
   const { merged, added, refreshed } = mergeClassified({ items: [stored], lastRun: null }, [sighting], "2026-11-06T06:00:00Z", undefined)
   assert.deepEqual([added.length, refreshed, merged.items.length, merged.items[0].id], [0, 1, 1, "opp-osv"])
+  const bogota = { ...stored, id: "opp-b", title: "City Hack (Bogotá)", host: "Org", url: "https://cityhack.example.com/bogota", officialUrl: "" }
+  const medellin = { ...sighting, title: "City Hack (Medellín)", host: "Org", url: "https://cityhack.example.com/medellin", officialUrl: "" }
+  assert.equal(mergeClassified({ items: [bogota], lastRun: null }, [medellin], "2026-11-06T06:00:00Z", undefined).added.length, 1)
 })
 
 test("mergeClassified: a shared program page links sightings; a shared bare domain does not", () => {
