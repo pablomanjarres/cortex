@@ -109,7 +109,8 @@ test("mergeOpportunity: radar-owned fields refresh from the new sighting", () =>
   assert.equal(m.url, "https://thielfellowship.org/apply")
   assert.equal(m.officialUrl, "https://thielfellowship.org")
   assert.deepEqual(m.tags, ["fellowship", "2027"])
-  assert.equal(m.leverageNote, "classifier note") // the research "why" is radar-owned
+  assert.equal(m.leverageNote, "my edited note") // an existing why is Pablo's
+  assert.equal(mergeOpportunity({ ...storedThiel, leverageNote: "" }, incomingThiel, { runId: "2026-07-10T09:00:00Z" }).leverageNote, "classifier note")
   assert.equal(m.runId, "2026-07-10T09:00:00Z") // new run stamp
 })
 
@@ -197,6 +198,13 @@ test("mergeClassified: a year-stripped title collision REFRESHES instead of drop
   assert.equal(it.id, "opp-abc123")          // user identity kept
   assert.equal(it.deadline, "2026-12-31")    // radar intel refreshed
   assert.equal(it.status, "pursuing")
+})
+
+test("mergeClassified: an explicit local day overrides the UTC day in the runId", () => {
+  const edge = { ...storedThiel, id: "opp-edge", title: "Edge Hack", host: "X", url: "https://edge.example.com", sourceRef: "https://edge.example.com", status: "new", deadline: "2026-10-30", rolling: false }
+  // 01:00 UTC Nov 7 is still Nov 6 in Bogotá: 7 days past, not 8 — keep it.
+  assert.equal(mergeClassified({ items: [edge], lastRun: null }, [], "2026-11-07T01:00:00Z", undefined, "2026-11-06").archived, 0)
+  assert.equal(mergeClassified({ items: [edge], lastRun: null }, [], "2026-11-07T01:00:00Z", undefined).archived, 1)
 })
 
 test("mergeClassified: auto-archives stale fixed items and counts them", () => {

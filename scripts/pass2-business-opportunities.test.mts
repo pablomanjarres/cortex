@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { OppIntel, Opportunity } from '../src/features/opportunities/opportunity-model.ts'
 import { emptyIntel } from '../src/features/opportunities/opportunity-intel.ts'
-import { countdownOf, factChips, placeLabel, radarView } from '../src/features/opportunities/opportunity-radar.ts'
+import { countdownOf, factChips, hiddenLabel, placeLabel, radarView } from '../src/features/opportunities/opportunity-radar.ts'
 
 const today = '2026-10-23'
 const opp = (fields: Partial<Opportunity> = {}, intel: Partial<OppIntel> | null = {}): Opportunity => ({
@@ -35,12 +35,14 @@ test('the view splits apply, applied, watchlist and hidden, and never shows clos
     opp({ id: 'closed', deadline: '2026-10-01' }),
     opp({ id: 'junk', category: 'hackathon' }, null),
     opp({ id: 'mine', status: 'pursuing', deadline: '2026-11-10' }, null),
+    opp({ id: 'mine-closed', status: 'pursuing', deadline: '2026-10-01' }, null),
   ], today, 'balanced')
   const ids = (rows: { o: Opportunity }[]) => rows.map((r) => r.o.id)
   assert.deepEqual(ids(view.apply), ['better', 'open', 'mine'])
   assert.deepEqual(ids(view.applied), ['applied'])
   assert.deepEqual(ids(view.watchlist), ['next-cycle'])
-  assert.deepEqual(ids(view.hidden).sort(), ['closed', 'junk'])
+  assert.deepEqual(ids(view.hidden).sort(), ['closed', 'junk', 'mine-closed'])
+  assert.equal(hiddenLabel(view.hidden.find((r) => r.o.id === 'mine-closed')!), 'closed')
 })
 
 test('filters narrow to remote, in person, funded and closing soon', () => {

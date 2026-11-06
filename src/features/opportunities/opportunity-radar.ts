@@ -90,7 +90,7 @@ export function radarView(items: Opportunity[], today: string, mode: Mode, filte
     if (!active.every((f) => f.test(o, s))) continue
     const row = { o, s }
     if (o.status === 'applied') view.applied.push(row)
-    else if (o.status === 'archived' || o.status === 'won' || o.status === 'lost' || (o.status === 'new' && !s.keep)) view.hidden.push(row)
+    else if (o.status === 'archived' || o.status === 'won' || o.status === 'lost' || s.urgency === 'closed' || (o.status === 'new' && !s.keep)) view.hidden.push(row)
     else if (isApplyNow(s.urgency)) view.apply.push(row)
     else view.watchlist.push(row)
   }
@@ -106,6 +106,7 @@ export function radarView(items: Opportunity[], today: string, mode: Mode, filte
 export function hiddenLabel(r: Row): string {
   const { o, s } = r
   if (o.status === 'won' || o.status === 'lost') return o.status
+  if (s.urgency === 'closed' && o.status !== 'new') return 'closed'
   return o.hiddenReason || s.reasons.join(', ') || 'archived'
 }
 
