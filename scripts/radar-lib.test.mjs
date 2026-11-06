@@ -109,7 +109,8 @@ test("mergeOpportunity: radar-owned fields refresh from the new sighting", () =>
   assert.equal(m.url, "https://thielfellowship.org/apply")
   assert.equal(m.officialUrl, "https://thielfellowship.org")
   assert.deepEqual(m.tags, ["fellowship", "2027"])
-  assert.equal(m.leverageNote, "classifier note") // the research "why" is radar-owned
+  assert.equal(m.leverageNote, "my edited note") // an existing why is Pablo's
+  assert.equal(mergeOpportunity({ ...storedThiel, leverageNote: "" }, incomingThiel, { runId: "2026-07-10T09:00:00Z" }).leverageNote, "classifier note")
   assert.equal(m.runId, "2026-07-10T09:00:00Z") // new run stamp
 })
 

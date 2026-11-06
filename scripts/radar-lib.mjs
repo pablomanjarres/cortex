@@ -147,11 +147,12 @@ const refreshStr = (incoming, existing) => {
  *
  *   radar-owned  : deadline, deadlineType(+rolling sync), recurrence, nextWindowExpected,
  *                  amountUsd, reward, url, officialUrl, location, modality, eligibility,
- *                  tags, leverageNote (the research "why"), intel, lastVerified —
+ *                  tags, intel, lastVerified —
  *                  refreshed from `incoming` (blank/unknown never overwrite),
  *                  runId -> the new run, discoveredAt -> kept from the original.
  *   user-owned   : id, title, host, category, goals, status, priority, leverageScore,
- *                  source, sourceRef, notes, hiddenReason — preserved from `existing`.
+ *                  source, sourceRef, notes, hiddenReason — preserved from `existing`;
+ *                  leverageNote is filled from `incoming` only while blank.
  *   notes        : when the deadline ACTUALLY changed, a one-line
  *                  "(refreshed for new cycle YYYY-MM-DD)" is appended so the user sees
  *                  why a "closed" item is live again.
@@ -191,7 +192,8 @@ export function mergeOpportunity(existing, incoming, { runId, today } = {}) {
     requires18Plus: typeof next.requires18Plus === "boolean" ? next.requires18Plus : (prev.requires18Plus ?? null),
     effort: next.effort ?? prev.effort ?? null,
     tags: Array.isArray(next.tags) && next.tags.length ? next.tags : (prev.tags ?? []),
-    leverageNote: refreshStr(next.leverageNote, prev.leverageNote),
+    // The research "why" fills a blank note; once set (or edited), it is Pablo's.
+    leverageNote: prev.leverageNote ? prev.leverageNote : (next.leverageNote ?? ""),
     ...(next.intel || prev.intel ? { intel: next.intel ?? prev.intel } : {}),
     lastVerified: next.lastVerified ?? prev.lastVerified ?? null,
     runId: runId ?? next.runId ?? prev.runId,
