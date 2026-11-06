@@ -64,8 +64,12 @@ function identityKeys(o) {
   const keys = []
   const u = normUrl(o.url)
   if (u && u.length > 6) keys.push("u:" + u)
+  // A program's own page identifies it too; a bare domain may host several programs.
+  const official = normUrl(o.officialUrl)
+  if (official.includes("/") && official !== u) keys.push("u:" + official)
   const t = normText(o.title)
-  if (t.length >= 4) keys.push("t:" + t + "|" + normText(o.host))
+  // Host asides don't change the org ("Z Fellows (Cory Levy)"); title asides can ("Hack (Bogotá)").
+  if (t.length >= 4) keys.push("t:" + t + "|" + normText(String(o.host || "").replace(/\([^)]*\)/g, " ")))
   return keys
 }
 function pick(set, val, fallback) {

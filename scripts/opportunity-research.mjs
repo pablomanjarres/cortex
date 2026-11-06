@@ -100,7 +100,8 @@ export function toRecord(raw, today) {
     leverageNote: typeof raw?.why === "string" ? raw.why.slice(0, 200) : "",
     notes: typeof raw?.evidence === "string" ? raw.evidence.slice(0, 600) : "",
     source: "web",
-    sourceRef: officialUrl || url,
+    // The apply link is the specific one; org homepages can be shared across programs.
+    sourceRef: url || officialUrl,
     intel,
     lastVerified: today,
   }
