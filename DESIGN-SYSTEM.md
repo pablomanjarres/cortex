@@ -265,6 +265,8 @@ Habits' `habit-progress.ts` owns cadence, goals, streaks, and weekly scoring;
 Gym's `domain/nutrition.ts` and `domain/workout-sessions.ts` own food totals and
 completed training metrics. Daily and Stats consume these rules. Student's
 `student-grades.ts` owns weighted grades and GPA. Goals uses `goal-model.ts`,
-`GoalCard`, and `GoalEditor`; Opportunities uses `opportunity-radar.ts` for radar
-status rules and `OpportunityRow` for results. Keep domain rules independent of
+`GoalCard`, and `GoalEditor`; Opportunities uses `opportunity-score.ts` for the
+profile rules (hard filters, funding vs time cost, score, modes),
+`opportunity-radar.ts` for the view split and chips, and `OpportunityRow` for
+results. Keep domain rules independent of
 page components and data access.

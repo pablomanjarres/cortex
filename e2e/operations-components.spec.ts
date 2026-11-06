@@ -46,7 +46,7 @@ test('automation run cards open their report from every list with the keyboard',
 
 const opportunity = {
   id: 'opp-fixture', title: 'Fixture Fellowship', host: 'Fixture Org', category: 'fellowship', goals: [],
-  priority: 'medium', leverageScore: 3, leverageNote: '', status: 'new', deadline: null, rolling: false,
+  priority: 'medium', leverageScore: 3, leverageNote: '', status: 'pursuing', deadline: null, rolling: false,
   location: 'Remote', eligibility: 'unknown', reward: '', url: '', source: 'catalog', sourceRef: '',
   discoveredAt: '2026-10-01T12:00:00Z', runId: 'run-1', notes: '', tags: ['remote'],
 }
@@ -84,19 +84,16 @@ test('opportunity editor keeps typed commas and writes labelled fields', async (
   expect(storedItem(backend.stores)).toMatchObject({ source: 'catalog', runId: 'run-1' })
 })
 
-test('top picks open the editor from the keyboard', async ({ page }) => {
+test('opportunity rows open the editor from the keyboard', async ({ page }) => {
   await mockStores(page, {
     'cortex-opportunities': { items: [opportunity], lastRun: '2026-10-20T12:00:00Z', lastRunId: 'run-1' },
   })
   await page.goto('/#/opportunities')
-  const pick = page.getByRole('button', { name: 'Open top pick Fixture Fellowship', exact: true })
-  await pick.focus()
-  await pick.press('Enter')
-  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Fixture Fellowship')
   const row = page.getByRole('button', { name: 'Details for Fixture Fellowship', exact: true })
   await row.focus()
   await row.press('Enter')
-  await expect(row).toHaveAttribute('aria-expanded', 'false')
-  await row.press('Space')
   await expect(row).toHaveAttribute('aria-expanded', 'true')
+  await expect(page.getByLabel('Title', { exact: true })).toHaveValue('Fixture Fellowship')
+  await row.press('Space')
+  await expect(row).toHaveAttribute('aria-expanded', 'false')
 })
