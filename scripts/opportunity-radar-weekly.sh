@@ -17,7 +17,8 @@ set -uo pipefail
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-CORTEX="/Users/pablo/Projects/cortex"
+# The checkout this script lives in, so launchd can run any clean checkout of main.
+CORTEX="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORTEX_API="http://127.0.0.1:3456"
 LOG="$HOME/Library/Logs/opportunity-radar.log"
 
