@@ -24,9 +24,11 @@ import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.ts"
-import { scoreOpportunity, visibilityPatch } from "../src/features/opportunities/opportunity-score.ts"
-import { mergeClassified, readStoreWithRev, writeMergedWithRetry } from "./radar-ingest.mjs"
-import { shouldPrune } from "./radar-lib.mjs"
+import { scoreOpportunity } from "../src/features/opportunities/opportunity-score.ts"
+import { reconcileOpportunityAlerts } from "./opportunity-alerts.mjs"
+import { buildStore, readStoreWithRev, writeMergedWithRetry } from "./radar-ingest.mjs"
+import { bogotaToday } from "./radar-lib.mjs"
+import { syncTodoist } from "./todoist-sync.mjs"
 import { buildResearchPrompt, researchSchema } from "./research-prompt.mjs"
 
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
@@ -44,9 +46,6 @@ const DISABLED_FEATURES = [
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-/** Bogotá calendar day, YYYY-MM-DD. */
-export const bogotaToday = (now = new Date()) => now.toLocaleDateString("en-CA", { timeZone: "America/Bogota" })
-
 /** Focus notes from chat steer a month of runs, then lapse. */
 const FOCUS_MAX_AGE_DAYS = 30
 const daysOld = (iso, today) => (Date.parse(`${today}T00:00:00Z`) - Date.parse(iso)) / 86_400_000
@@ -59,9 +58,11 @@ const daysOld = (iso, today) => (Date.parse(`${today}T00:00:00Z`) - Date.parse(i
 export function researchInputs(store, today) {
   const items = Array.isArray(store?.items) ? store.items : []
   const scored = new Map(items.map((o) => [o, scoreOpportunity(o, today)]))
+  // Premium first: those are the ones he is sure about, so they get re-verified every run.
   const live = items
-    .filter((o) => o.status === "pursuing" || o.status === "applied" || (o.status === "new" && scored.get(o).keep))
-    .sort((a, b) => scored.get(b).score - scored.get(a).score)
+    .filter((o) => o.premium || o.status === "pursuing" || o.status === "applied" || (o.status === "new" && scored.get(o).keep))
+    .filter((o) => !["won", "lost"].includes(o.status))
+    .sort((a, b) => Number(!!b.premium) - Number(!!a.premium) || scored.get(b).score - scored.get(a).score)
   const catalog = items.filter((o) => o.source === "catalog" && !live.includes(o) && (o.status === "new" || o.hiddenReason))
   const tracked = [...live, ...catalog]
     .slice(0, MAX_TRACKED)
@@ -89,6 +90,9 @@ export function toRecord(raw, today) {
     officialUrl,
     location: raw?.location,
     modality: raw?.modality,
+    opensAt: raw?.opensAt,
+    programStart: raw?.programStart,
+    programEnd: raw?.programEnd,
     eligibility: intel.colombiaAllowed === true ? "remote-global" : "unknown",
     deadline: raw?.deadline,
     deadlineType: raw?.deadlineType,
@@ -99,36 +103,13 @@ export function toRecord(raw, today) {
     requires18Plus: intel.ageMin != null ? intel.ageMin >= 18 : null,
     leverageNote: typeof raw?.why === "string" ? raw.why.slice(0, 200) : "",
     notes: typeof raw?.evidence === "string" ? raw.evidence.slice(0, 600) : "",
+    evidence: typeof raw?.evidence === "string" ? raw.evidence : null,
     source: "web",
     // The apply link is the specific one; org homepages can be shared across programs.
     sourceRef: url || officialUrl,
     intel,
     lastVerified: today,
   }
-}
-
-/** Apply the profile's visibility rule to every item. */
-export function applyVisibility(store, today) {
-  let hidden = 0
-  let restored = 0
-  const items = store.items.map((o) => {
-    const patch = visibilityPatch(o, today)
-    if (!patch) return o
-    if (patch.status === "archived" && o.status !== "archived") hidden++
-    if (patch.status === "new") restored++
-    return { ...o, ...patch }
-  })
-  return { store: { ...store, items }, hidden, restored }
-}
-
-/** Merge this run's records, re-apply visibility, prune stale junk, write a one-line report. */
-export function buildStore(existing, records, runId, today) {
-  const { merged } = mergeClassified(existing, records, runId, undefined, today)
-  const { store, hidden, restored } = applyVisibility(merged, today)
-  const items = store.items.filter((o) => !shouldPrune(o, today))
-  const kept = items.filter((o) => o.runId === runId && o.status !== "archived").length
-  const report = `${records.length} found · ${kept} kept · ${hidden} hidden${restored ? ` · ${restored} back` : ""}`
-  return { merged: { ...store, items, report }, kept, hidden, restored, pruned: store.items.length - items.length }
 }
 
 function runCodex(prompt, schemaPath, outPath, cwd) {
@@ -198,6 +179,27 @@ async function main() {
   }
   await writeMergedWithRetry(API, KEY, first.merged, rev, (fresh) => buildStore(fresh, records, runId, today))
   console.error("opportunity-research: written to Cortex")
+  await afterResearch(runId)
+}
+
+/**
+ * After every completed run: compare against the last verified state (alerts), then
+ * mirror actionable items into Todoist. Each step is isolated so one failure never
+ * hides the other; the next Kaiser check re-runs the comparison anyway.
+ */
+export async function afterResearch(runId, api = API) {
+  try {
+    const r = await reconcileOpportunityAlerts({ api, runId })
+    console.error(`opportunity-research: alerts ${r.baseline ? "baselined" : `+${r.created} new`} · ${r.pending} pending`)
+  } catch (e) {
+    console.error("opportunity-research: alert check failed:", e.message)
+  }
+  try {
+    const t = await syncTodoist({ api })
+    console.error(`opportunity-research: todoist ${t.skipped ? `skipped (${t.skipped})` : t.summary}`)
+  } catch (e) {
+    console.error("opportunity-research: todoist sync failed:", e.message)
+  }
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
