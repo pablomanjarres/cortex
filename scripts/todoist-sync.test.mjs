@@ -186,3 +186,21 @@ test("a task Cortex made for one program is never claimed by another sharing its
   assert.deepEqual(p.links, [])
 })
 
+test("a re-sighting with a new deadline but no fresh proof is not verified", async () => {
+  const { mergeOpportunity } = await import("./radar-lib.mjs")
+  const { deadlineConfidenceOf } = await import("../src/features/opportunities/opportunity-window.ts")
+  const prev = { ...opp(), opensAt: "2026-10-01", programStart: "2027-01-05" }
+  const merged = mergeOpportunity(prev, { deadline: "2026-12-15" }, { runId: "r2", today })
+  assert.deepEqual([merged.lastVerified, merged.evidence, merged.opensAt, merged.programStart], [null, null, null, null])
+  assert.equal(deadlineConfidenceOf(merged, today), "unsupported")
+  const same = mergeOpportunity(prev, { deadline: prev.deadline }, { runId: "r2", today })
+  assert.deepEqual([same.lastVerified, same.evidence, same.opensAt], [prev.lastVerified, prev.evidence, prev.opensAt], "same cycle keeps its proof")
+  // add_opportunities stamps lastVerified but sends no evidence: still not verified.
+  const { merged: viaChat } = buildStore({ items: [] }, [{ title: "No Proof Grant", host: "NP", category: "grant", url: "https://np.example/a", deadline: "2026-12-01", source: "web", lastVerified: today }], "r1", today)
+  assert.equal(deadlineConfidenceOf(viaChat.items[0], today), "unsupported")
+})
+
+test("the research run refuses to merge when Cortex cannot be read", async () => {
+  const { readStoreWithRev } = await import("./radar-ingest.mjs")
+  await assert.rejects(() => readStoreWithRev("http://127.0.0.1:9", "cortex-opportunities"))
+})
