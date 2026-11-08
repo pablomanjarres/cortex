@@ -83,6 +83,8 @@ export function looksLikeOpportunity(task) {
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 
+const isTravelLabel = (label) => label === "visa-pending" || /-travel-blocked$/.test(label)
+
 export function labelsFor(o, readiness) {
   const flag = travelCheckOf(o, readiness).flag
   return ["opportunity", slug(o.category || "other"), ...(o.premium ? ["premium"] : []), ...(flag ? [slug(flag)] : [])]
@@ -147,8 +149,10 @@ export function planTodoistSync({ items, tasks, sections = {}, linked = new Map(
       const want = labelsFor(effective, readiness)
       const have = Array.isArray(task.labels) ? task.labels : []
       const body = {}
-      const labels = [...new Set([...have, ...want])]
-      if (labels.length !== have.length) body.labels = labels
+      // On its own tasks Cortex also drops a travel flag label that no longer applies.
+      const kept = ours ? have.filter((l) => !isTravelLabel(l) || want.includes(l)) : have
+      const labels = [...new Set([...kept, ...want])]
+      if (labels.length !== have.length || kept.length !== have.length) body.labels = labels
       const verified = deadlineConfidenceOf(o, today) === "verified" ? o.deadline : null
       const current = task.deadline?.date ?? null
       if (verified && verified !== current && (ours || !current)) {
@@ -214,7 +218,8 @@ export function applyPlanToStore(store, plan, createdLinks, now) {
   const known = new Set(next.map((o) => o.sourceRef).filter(Boolean))
   const imported = plan.imports
     .filter((r) => !known.has(r.sourceRef))
-    .map((r) => ({ ...normalizeRecord(r, `todoist-import-${now}`), premium: true, todoistTaskId: r.todoistTaskId }))
+    // source stays "manual" even when the task links Luma or Devpost: it is his own pick, not news.
+    .map((r) => ({ ...normalizeRecord(r, `todoist-import-${now}`), source: "manual", premium: true, todoistTaskId: r.todoistTaskId }))
   return { ...store, items: [...imported, ...next] }
 }
 
@@ -277,7 +282,8 @@ export async function syncTodoist({ api = API, dryRun = false, client, now = new
   const project = (await td.projects()).find((p) => String(p.name).trim().toLowerCase() === PROJECT.toLowerCase() && !p.is_archived)
   if (!project) return { skipped: `no "${PROJECT}" project in Todoist (never created automatically)` }
   const [sectionList, tasks, opp, alerts, readinessRaw] = await Promise.all([
-    td.sections(project.id).catch(() => []), td.tasks(project.id),
+    // No fallback: without section names every "maybe" task would look 100% interesting.
+    td.sections(project.id), td.tasks(project.id),
     readKey(api, OPP_KEY), readKey(api, ALERTS_KEY), readKey(api, TRAVEL_READINESS_KEY),
   ])
   const sections = Object.fromEntries(sectionList.map((s) => [s.id, s.name]))
