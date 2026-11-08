@@ -158,7 +158,8 @@ const server = new McpServer(
       "- When he shares a THOUGHT, idea, reflection, realization, or opinion worth keeping, offer to save it with add_thought (e.g. \"Want me to save that as a thought in Cortex?\"). Don't save silently.",
       "- A quick note / link / thing to revisit later → add_capture. A book → add_book. A person or lead → add_contact / add_crm_contact. A calendar event → create_event.",
       "- A grocery bill or receipt → add_bill (it fills the Market week, creates Nutrition pantry items, and deducts the total from the Finances food budget). What he ate → log_ate. A meal template → create_meal_template. A shopping list from past buys → build_market_list.",
-      "- Opportunities (fellowships, grants, accelerators, residencies, research programs, hackathons): a weekly Codex deep-research run finds and re-verifies them against scripts/radar-profile.md and the profile rules in src/features/opportunities/opportunity-score.ts (hard filters: 18, Colombia, undergrad, open deadline, field fit, legit; then funding vs time cost, network, prestige). get_opportunities reads what passed (hidden ones carry hiddenReason); run_opportunity_radar starts a research run now; set_hunt_order adds a focus note for the next runs; add_opportunities adds ones you researched yourself — include `intel` facts or the profile hides them.",
+      "- Opportunities (fellowships, grants, accelerators, residencies, research programs, hackathons): a weekly Codex deep-research run finds and re-verifies them against scripts/radar-profile.md and the profile rules in src/features/opportunities/opportunity-score.ts (hard filters: 18, Colombia, undergrad, open deadline, field fit, legit; then funding vs time cost, network, prestige). get_opportunities reads what passed (hidden ones carry hiddenReason); run_opportunity_radar starts a research run now; set_hunt_order adds a focus note for the next runs; add_opportunities adds ones you researched yourself — include `intel` facts, `evidence` and exact dates or the profile hides them (re-sightings refresh the stored record). Items Pablo marked premium (his Todoist Opportunities list) are the ones he is 100% into: get_opportunities {premiumOnly:true}.",
+      "- Opportunity alerts (Kaiser, his ChatGPT dot, reads these on a schedule): get_opportunity_alerts returns a ready-to-post message plus alertIds; post the message as it is, then call ack_opportunity_alerts with those alertIds. If posting failed, ack with delivered:false (they stay queued). Never claim an alert was delivered without acking it. Travel/visa rule: get_travel_readiness / set_travel_readiness. Todoist mirror: sync_opportunity_todoist.",
       "- Study questions: pull the SMALLEST slice that answers — the full bundle is expensive. A date/deadline question → get_assignments {subject, undoneOnly, due_within_days}. A content question (\"cuando es el debate de migracion\", \"como se califica X\") → search_class_materials {query, subject?} (semantic; index kept fresh automatically). Browsing what's filed → list_class_materials {subject, unit?}; reading one → read_class_material. Past facts/decisions → get_study_notes {subject}. Reserve get_study_context for genuinely STARTING a work session on a course — and even then pass sections (e.g. [\"grades\",\"assignments\"]) to fetch only what the session needs.",
       "- When he states a durable fact, decision, or prof constraint mid-session, OFFER save_study_note (ask unless he said to save it). A file or link he shares for a class → add_class_material (disk path, or content_base64 for chat attachments); file every document as TWO materials: the original + a faithful Markdown twin named \"<name> (AI).md\" tagged ai-md in the same unit.",
       "",
@@ -2574,6 +2575,8 @@ interface McpOpportunity {
   effort?: string | null;
   // Deep-research facts + profile visibility (see opportunity-score.ts)
   intel?: Record<string, unknown>; lastVerified?: string | null; hiddenReason?: string | null;
+  opensAt?: string | null; programStart?: string | null; programEnd?: string | null;
+  evidence?: string | null; premium?: boolean; todoistTaskId?: string | null;
 }
 interface McpObjective { id: string; text: string; status: string; active: boolean; createdAt: string }
 interface McpOppData {
@@ -2582,18 +2585,12 @@ interface McpOppData {
   runStartedAt?: string; runFinishedAt?: string; runError?: string;
 }
 
-const normOppUrl = (u: string): string => (u || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[?#].*$/, "").replace(/\/+$/, "");
-
-// Normalize an item's deadline type (mirrors scripts/radar-lib.mjs + the UI):
-// explicit valid value wins; legacy records derive rolling→'rolling',
-// dated→'fixed', else 'unknown'.
-const OPP_DEADLINE_TYPES = new Set(["fixed", "rolling", "recurring", "always-open", "unknown"]);
-const oppDeadlineTypeOf = (o: McpOpportunity): string => {
-  if (o.deadlineType && OPP_DEADLINE_TYPES.has(o.deadlineType)) return o.deadlineType;
-  if (o.rolling === true) return "rolling";
-  if (o.deadline) return "fixed";
-  return "unknown";
-};
+// The radar's rules live in the repo (src/features/opportunities/*.ts, scripts/*.mjs) and
+// are shared with the weekly research run. Node strips their TypeScript at import time,
+// so the MCP server loads them at runtime instead of keeping a second copy here.
+const REPO_SCRIPTS = new URL("../../scripts/", import.meta.url);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const radarModule = (name: string): Promise<any> => import(new URL(name, REPO_SCRIPTS).href);
 
 // Mirrors OppIntel in src/features/opportunities/opportunity-model.ts.
 const nb = () => z.boolean().nullable().optional();
@@ -2603,7 +2600,7 @@ const OPP_INTEL = z.object({
   legit: nb(), ageMin: nn(99), ageMax: nn(99), colombiaAllowed: nb(), undergradAllowed: nb(),
   country: z.string().nullable().optional(), city: z.string().nullable().optional(), inPerson: nb(), visaSupport: nb(),
   cashUsd: nn(1e7), investmentUsd: nn(1e7), equityPct: nn(100), stipendUsd: nn(1e7),
-  travelCovered: nb(), travelCapUsd: nn(1e7), housingCovered: nb(), feeUsd: nn(1e7),
+  travelCovered: nb(), travelCapUsd: nn(1e7), housingCovered: nb(), mealsCovered: nb(), feeUsd: nn(1e7),
   durationDays: nn(3650), hoursPerWeek: nn(100), fullTime: nb(), relocation: nb(), leaveUniversity: nb(), dropout: nb(),
   ideaStageOk: nb(), mvpRequired: nb(), tractionRequired: nb(), companyRequired: nb(), hardwareAccess: nb(),
   prestige: nn(10), network: nn(10), founderDensity: nn(10), technicalDensity: nn(10), investorAccess: nn(10),
@@ -2621,18 +2618,28 @@ server.tool(
     deadline_type: z.enum(["fixed", "rolling", "recurring", "always-open", "unknown"]).optional().describe("Filter by deadline behavior (legacy records derive it: rolling flag → rolling, dated → fixed, else unknown)"),
     limit: z.number().optional().describe("Max items to return, default 50"),
     includeArchived: z.boolean().optional().describe("Include archived items, default false"),
+    premiumOnly: z.boolean().optional().describe("Only items Pablo marked premium (100% interested), default false"),
   },
-  async ({ status, category, deadline_type, limit, includeArchived }) => run(async () => {
+  async ({ status, category, deadline_type, limit, includeArchived, premiumOnly }) => run(async () => {
     const data = ((await readKey("cortex-opportunities")) as McpOppData | null) ?? { items: [], lastRun: null };
+    const [{ opportunityFacts }, { getTravelReadiness }, { bogotaToday, deadlineTypeOf }] = await Promise.all([
+      import(new URL("../src/features/opportunities/opportunity-alert-card.ts", REPO_SCRIPTS).href),
+      radarModule("opportunity-alerts.mjs"), radarModule("radar-lib.mjs"),
+    ]);
     let items = Array.isArray(data.items) ? data.items : [];
     if (!includeArchived) items = items.filter(o => o.status !== "archived");
     if (status) items = items.filter(o => o.status === status);
     if (category) items = items.filter(o => o.category === category);
-    if (deadline_type) items = items.filter(o => oppDeadlineTypeOf(o) === deadline_type);
+    if (deadline_type) items = items.filter(o => deadlineTypeOf(o) === deadline_type);
+    if (premiumOnly) items = items.filter(o => o.premium === true);
     const total = items.length;
     items = items.slice(0, limit && limit > 0 ? limit : 50);
+    // Derived, never stored: window status, deadline verification, eligibility, travel flag, funding lines.
+    const { readiness } = await getTravelReadiness({ api: BASE });
+    const day = bogotaToday();
+    const withFacts = items.map(o => ({ ...o, facts: opportunityFacts(o, readiness, day) }));
     const activeHuntOrders = (data.objectives || []).filter(o => o.active).map(o => ({ id: o.id, text: o.text, status: o.status }));
-    return { total, showing: items.length, items, activeHuntOrders, lastRun: data.lastRun, lastRunId: data.lastRunId, runStatus: data.runStatus, report: data.report };
+    return { total, showing: withFacts.length, items: withFacts, activeHuntOrders, lastRun: data.lastRun, lastRunId: data.lastRunId, runStatus: data.runStatus, report: data.report };
   })
 );
 
@@ -2683,7 +2690,7 @@ server.tool(
     opportunities: z.array(z.object({
       title: z.string(),
       host: z.string().describe("Organization / host"),
-      category: z.enum(["hackathon", "grant", "accelerator", "fellowship", "internship", "exchange", "competition", "pitch", "speaking", "scholarship", "community", "launch", "trending", "program", "residency", "research", "other"]),
+      category: z.enum(["hackathon", "grant", "accelerator", "fellowship", "internship", "exchange", "competition", "pitch", "speaking", "scholarship", "community", "launch", "trending", "program", "residency", "research", "travel", "other"]),
       url: z.string().describe("Direct link"),
       goals: z.array(z.enum(["internship", "exchange", "funding", "social-growth", "users"])).optional(),
       priority: z.enum(["low", "medium", "high"]).optional(),
@@ -2706,55 +2713,108 @@ server.tool(
       sourceRef: z.string().optional().describe("Where you found it (handle, post URL, search)"),
       notes: z.string().optional(),
       tags: z.array(z.string()).optional(),
-      intel: OPP_INTEL.optional().describe("Deep-research facts that drive the profile score; null = not stated"),
+      intel: OPP_INTEL.optional().describe("Deep-research facts that drive the profile score; null = not stated. cashUsd = equity-free grant only; investment goes in investmentUsd. All amounts in USD."),
+      evidence: z.string().optional().describe("Official URL + the exact eligibility/deadline wording you relied on. A deadline without evidence is never shown as verified."),
+      opensAt: z.string().nullable().optional().describe("Exact YYYY-MM-DD applications open (future openings only), else null. Never an estimate."),
+      programStart: z.string().nullable().optional().describe("Exact YYYY-MM-DD program/event start, else null"),
+      programEnd: z.string().nullable().optional().describe("Exact YYYY-MM-DD program/event end, else null"),
     })).describe("The opportunities you found"),
   },
   async ({ runId, report, opportunities }) => run(async () => {
+    // One ingest path with the weekly research run (scripts/radar-ingest.mjs buildStore):
+    // identity dedupe, re-sightings refresh radar-owned fields (user fields survive),
+    // profile visibility, pruning. Then the alert check compares against the last state.
     const stamp = runId || new Date().toISOString();
-    const now = new Date().toISOString();
-    let added: McpOpportunity[] = [];
-    let skipped: string[] = [];
-    let totalItems = 0;
+    const [{ buildStore }, { bogotaToday }, { reconcileOpportunityAlerts }] = await Promise.all([
+      radarModule("radar-ingest.mjs"), radarModule("radar-lib.mjs"), radarModule("opportunity-alerts.mjs"),
+    ]);
+    const day = bogotaToday();
+    const records = opportunities.map(o => ({ ...o, source: o.source ?? "web", lastVerified: day }));
+    let outcome: { added: McpOpportunity[]; refreshed: number; hidden: number; total: number } = { added: [], refreshed: 0, hidden: 0, total: 0 };
     await mutateKey<McpOppData>("cortex-opportunities", (data) => {
-      if (!Array.isArray(data.items)) data.items = [];
-      const seenUrl = new Set(data.items.map(o => normOppUrl(o.url)).filter(Boolean));
-      const seenTitleHost = new Set(data.items.map(o => `${(o.title || "").trim().toLowerCase()}|${(o.host || "").trim().toLowerCase()}`));
-      added = [];
-      skipped = [];
-      for (const o of opportunities) {
-        const u = normOppUrl(o.url);
-        const th = `${o.title.trim().toLowerCase()}|${o.host.trim().toLowerCase()}`;
-        if ((u && seenUrl.has(u)) || seenTitleHost.has(th)) { skipped.push(o.title); continue; }
-        // Deadline intelligence: explicit deadlineType wins and re-derives the legacy
-        // rolling boolean (rolling|always-open → true); legacy callers derive the type.
-        const deadline = o.deadline ?? null;
-        const deadlineType = o.deadlineType ?? (o.rolling ? "rolling" : deadline ? "fixed" : "unknown");
-        const rolling = deadlineType === "rolling" || deadlineType === "always-open";
-        const rec: McpOpportunity = {
-          id: `opp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          title: o.title, host: o.host, category: o.category, goals: o.goals ?? [],
-          priority: o.priority ?? "medium", leverageScore: o.leverageScore ?? 3, leverageNote: o.leverageNote ?? "",
-          status: "new", deadline, deadlineType, rolling,
-          recurrence: o.recurrence ?? null, nextWindowExpected: o.nextWindowExpected ?? null,
-          amountUsd: o.amountUsd ?? null, requires18Plus: o.requires18Plus ?? null,
-          officialUrl: o.officialUrl ?? "", effort: o.effort ?? null,
-          location: o.location ?? "", modality: o.modality ?? "unknown", eligibility: o.eligibility ?? "unknown",
-          reward: o.reward ?? "", url: o.url, source: o.source ?? "web", sourceRef: o.sourceRef ?? "",
-          discoveredAt: now, runId: stamp, notes: o.notes ?? "", tags: o.tags ?? [],
-          ...(o.intel ? { intel: o.intel } : {}), lastVerified: now.slice(0, 10),
-        };
-        data.items.unshift(rec);
-        if (u) seenUrl.add(u);
-        seenTitleHost.add(th);
-        added.push(rec);
-      }
-      data.lastRun = now;
-      data.lastRunId = stamp;
-      if (report) data.report = report;
-      totalItems = data.items.length;
-      return data;
+      const built = buildStore({ ...data, items: Array.isArray(data.items) ? data.items : [] }, records, stamp, day, report);
+      outcome = { added: built.added, refreshed: built.refreshed, hidden: built.hidden, total: built.merged.items.length };
+      // runId may be a label ("chatgpt-weekly-…"); lastRun stays a timestamp the page can render.
+      return { ...built.merged, lastRun: new Date().toISOString(), report: report ?? data.report ?? built.merged.report };
     }, { items: [], lastRun: null });
-    return { ok: true, added: added.length, skippedDuplicates: skipped.length, skipped, runId: stamp, totalItems };
+    let alerts: unknown;
+    try {
+      const r = await reconcileOpportunityAlerts({ api: BASE, runId: stamp });
+      alerts = { baseline: r.baseline, created: r.created, pending: r.pending, headlines: r.createdAlerts.map((a: { card: { headline: string } }) => a.card.headline) };
+    } catch (e) {
+      alerts = { error: `alert check failed (next get_opportunity_alerts retries): ${(e as Error).message}` };
+    }
+    return {
+      ok: true, added: outcome.added.length, refreshed: outcome.refreshed, hiddenByProfile: outcome.hidden,
+      addedTitles: outcome.added.map(o => o.title), runId: stamp, totalItems: outcome.total, alerts,
+    };
+  })
+);
+
+server.tool(
+  "get_opportunity_alerts",
+  "Kaiser's scheduled check. Runs the alert check (new / opened / reopened / new support / deadline moved / verified deadline within 7 days), then returns a ready-to-post `message` and the `alertIds` it covers. mode 'auto' (default): urgent alerts always, the weekly digest (top 5) only when due; 'urgent': urgent only; 'all': everything pending now. Post `message` exactly, then call ack_opportunity_alerts with `alertIds`. hasAlerts=false means nothing to send. Alerts stay queued until acked, so a failed post or an offline Mac only delays them.",
+  {
+    mode: z.enum(["auto", "urgent", "all"]).optional().describe("Default auto"),
+    max: z.number().int().min(1).max(10).optional().describe("Digest size, default 5"),
+  },
+  async ({ mode, max }) => run(async () => {
+    const { readAlertDelivery } = await radarModule("opportunity-alerts.mjs");
+    const d = await readAlertDelivery({ api: BASE, mode: mode ?? "auto", max });
+    return {
+      hasAlerts: d.hasAlerts, digestDue: d.digestDue, message: d.message, alertIds: d.alertIds,
+      urgent: d.urgent.length, digest: d.digest.length, summarizedOverflow: d.overflowIds.length, check: d.check,
+    };
+  })
+);
+
+server.tool(
+  "ack_opportunity_alerts",
+  "Record the delivery of alerts returned by get_opportunity_alerts. delivered=true (default) marks them delivered so they are never sent again (idempotent). delivered=false logs a failed attempt and keeps them queued for the next check.",
+  {
+    alertIds: z.array(z.string()).min(1).describe("alertIds from get_opportunity_alerts"),
+    delivered: z.boolean().optional().describe("Default true"),
+    channel: z.string().optional().describe("Who delivered, default 'kaiser'"),
+    note: z.string().optional().describe("Optional: where it was posted, or why it failed"),
+  },
+  async ({ alertIds, delivered, channel, note }) => run(async () => {
+    const { ackOpportunityAlerts } = await radarModule("opportunity-alerts.mjs");
+    return ackOpportunityAlerts({ api: BASE, ids: alertIds, delivered: delivered ?? true, channel: channel ?? "kaiser", note });
+  })
+);
+
+server.tool(
+  "get_travel_readiness",
+  "Read Pablo's travel/visa rule that drives travel flags (default: US visa pending, in-person US events before 2027-05-01 are US_TRAVEL_BLOCKED; unknown dates are VISA_PENDING; remote is never flagged).",
+  {},
+  async () => run(async () => {
+    const { getTravelReadiness } = await radarModule("opportunity-alerts.mjs");
+    return getTravelReadiness({ api: BASE });
+  })
+);
+
+server.tool(
+  "set_travel_readiness",
+  "Change the travel/visa rule for one country (e.g. when the US visa is approved: country 'US', visa 'approved'). Ask Pablo before changing it.",
+  {
+    country: z.string().describe("Country code, e.g. US"),
+    visa: z.enum(["pending", "approved", "not-needed"]).optional(),
+    blockedBefore: z.string().nullable().optional().describe("YYYY-MM-DD: in-person events starting before this are blocked while the visa is pending; null = no date block"),
+    note: z.string().optional(),
+  },
+  async ({ country, visa, blockedBefore, note }) => run(async () => {
+    const { setTravelReadiness } = await radarModule("opportunity-alerts.mjs");
+    return setTravelReadiness({ api: BASE, country, visa, blockedBefore, note });
+  })
+);
+
+server.tool(
+  "sync_opportunity_todoist",
+  "Sync the Cortex radar with Pablo's existing Todoist 'Opportunities' project: tasks there mark radar items premium (or import as premium), and actionable alerts (Apply/Prepare) get one task each with the verified deadline, a prep date, labels, the official link and visa warnings. Never touches completed tasks or writes unverified deadlines. Needs a Todoist token (Keychain cortex-todoist). Use dryRun to preview.",
+  { dryRun: z.boolean().optional().describe("Preview without changing Todoist or Cortex") },
+  async ({ dryRun }) => run(async () => {
+    const { syncTodoist } = await radarModule("todoist-sync.mjs");
+    return syncTodoist({ api: BASE, dryRun: dryRun ?? false });
   })
 );
 
@@ -2833,7 +2893,7 @@ if (httpMode) {
       }
     } else if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, tools: 86 })); // keep in sync with server.tool() count
+      res.end(JSON.stringify({ ok: true, tools: 92 })); // keep in sync with server.tool() count
     } else {
       res.writeHead(404); res.end("Not found");
     }
