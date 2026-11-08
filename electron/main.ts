@@ -34,6 +34,7 @@ import { KnowledgeVaultService } from './knowledge/vault.js'
 import { ResearchNarrativeStore, vaultBackedResearch } from './knowledge/research-narrative.js'
 import { handleKnowledgeRequest, resolveKnowledgeLink } from './knowledge/http.js'
 import { selectPrimaryDisk, type MacDisk } from './mac-stats.js'
+import { backupPreviousVersion } from './data-backup.js'
 
 interface StoredAutomationRun {
   id: string
@@ -1699,6 +1700,12 @@ if (!isDev && !envDataDir && fs.existsSync(legacyDir) && legacyDir !== dataDir) 
 const backupDir = path.join(dataDir, 'backups')
 if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true })
 
+// Per-write .bak/versioned backups stay on local disk: iCloud may evict files
+// under backups/, and copying onto an evicted file blocks until it downloads.
+const writeBackupDir = dataDir === iCloudDir ? path.join(app.getPath('userData'), 'backups') : backupDir
+const WRITE_BACKUP_TIMEOUT_MS = 2000
+console.log(`[Cortex] Per-write backups: ${writeBackupDir}`)
+
 // ─── Shared store read/write path ──────────────────────────
 // ONE write pipeline used by IPC data:write, HTTP POST /api/data, and
 // main-process writers (tray habit toggle, automations): sanitize →
@@ -1736,26 +1743,29 @@ async function readDataFile(key: string): Promise<{ text: string | null; rev: st
     return { text, rev }
   } catch (e) {
     console.warn(`[Cortex] data read: main file corrupt for "${key}", falling back to backup...`)
-    // Fallback 1: the .bak.json
-    try {
-      const text = await readAndDecryptAsync(path.join(backupDir, `${key}.bak.json`))
-      JSON.parse(text)
-      console.warn(`[Cortex] data read: recovered "${key}" from .bak`)
-      return { text, rev }
-    } catch { /* continue to versioned fallback */ }
-    // Fallback 2: latest readable versioned backup
-    try {
-      const versionsDir = path.join(backupDir, 'versions', key)
-      const versions = (await fs.promises.readdir(versionsDir)).sort().reverse()
-      for (const v of versions) {
-        try {
-          const text = await readAndDecryptAsync(path.join(versionsDir, v))
-          JSON.parse(text)
-          console.warn(`[Cortex] data read: recovered "${key}" from version ${v}`)
-          return { text, rev }
-        } catch { /* try next version */ }
-      }
-    } catch { /* no versions dir */ }
+    // Local per-write backups first, then the older ones still in the data folder's backups/.
+    for (const dir of new Set([writeBackupDir, backupDir])) {
+      // Fallback 1: the .bak.json
+      try {
+        const text = await readAndDecryptAsync(path.join(dir, `${key}.bak.json`))
+        JSON.parse(text)
+        console.warn(`[Cortex] data read: recovered "${key}" from .bak in ${dir}`)
+        return { text, rev }
+      } catch { /* continue to versioned fallback */ }
+      // Fallback 2: latest readable versioned backup
+      try {
+        const versionsDir = path.join(dir, 'versions', key)
+        const versions = (await fs.promises.readdir(versionsDir)).sort().reverse()
+        for (const v of versions) {
+          try {
+            const text = await readAndDecryptAsync(path.join(versionsDir, v))
+            JSON.parse(text)
+            console.warn(`[Cortex] data read: recovered "${key}" from version ${v} in ${dir}`)
+            return { text, rev }
+          } catch { /* try next version */ }
+        }
+      } catch { /* no versions dir */ }
+    }
     console.error(`[Cortex] data read: all fallbacks failed for "${key}":`, e)
     return { text: null, rev }
   }
@@ -1851,16 +1861,11 @@ async function writeDataKey(
         }
       }
       if (currentRev !== null) {
-        // .bak + versioned backup of the previous file (copies encrypted bytes as-is)
-        await fs.promises.copyFile(file, path.join(backupDir, `${key}.bak.json`))
-        const versionsDir = path.join(backupDir, 'versions', key)
-        await fs.promises.mkdir(versionsDir, { recursive: true })
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-        await fs.promises.copyFile(file, path.join(versionsDir, `${timestamp}.json`))
-        const versions = (await fs.promises.readdir(versionsDir)).sort().reverse()
-        for (const v of versions.slice(VERSIONED_BACKUPS_KEPT)) {
-          try { await fs.promises.unlink(path.join(versionsDir, v)) } catch { /* ignore */ }
-        }
+        // .bak + versioned backup of the previous file (copies encrypted bytes
+        // as-is). Best-effort and time-bounded: it never blocks or fails the write.
+        await backupPreviousVersion({
+          key, file, backupDir: writeBackupDir, keep: VERSIONED_BACKUPS_KEPT, timeoutMs: WRITE_BACKUP_TIMEOUT_MS,
+        })
       }
 
       await encryptAndWriteAsync(file, committed)
