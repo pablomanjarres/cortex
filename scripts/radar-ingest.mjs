@@ -167,6 +167,9 @@ export async function readStoreWithRev(api = API, key = KEY) {
 //     while user-owned fields (status/priority/notes/edits) are preserved. This is how
 //     "Thiel Fellowship 2027" refreshes the stale 2026 entry instead of vanishing.
 //   - fixed-deadline items that closed >7d ago and are still status 'new' auto-archive.
+const saysNothingAboutDeadline = (raw) =>
+  raw.deadline === undefined && raw.deadlineType === undefined && raw.rolling === undefined
+
 export function mergeClassified(existing, classified, runId, report, today = String(runId).slice(0, 10)) {
   const seen = new Map() // identity key -> index in existingKept
 
@@ -193,7 +196,10 @@ export function mergeClassified(existing, classified, runId, report, today = Str
       // idx === -1 → collides with a record ADDED this same run (classifier emitted a
       // duplicate); just skip it. idx >= 0 → re-sighting of a stored item: REFRESH it.
       if (idx >= 0) {
-        existingKept[idx] = mergeOpportunity(existingKept[idx], rec, { runId, today })
+        // A sighting that says nothing about the deadline (chat adds may omit it) is not a
+        // sighting of "no deadline": the stored deadline, its type and its proof stay.
+        const incoming = saysNothingAboutDeadline(raw) ? { ...rec, deadline: undefined, deadlineType: undefined, rolling: undefined } : rec
+        existingKept[idx] = mergeOpportunity(existingKept[idx], incoming, { runId, today })
         refreshed++
       }
       continue

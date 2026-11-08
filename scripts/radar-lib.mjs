@@ -171,7 +171,8 @@ export function mergeOpportunity(existing, incoming, { runId, today } = {}) {
   // Deadline intel: always trust the fresh sighting (that's the whole point of the
   // merge — a new cycle replaces the stale one, even fixed -> rolling or date -> null).
   const deadline = next.deadline !== undefined ? next.deadline : (prev.deadline ?? null)
-  const deadlineType = deadlineTypeOf({ ...next, deadline })
+  const silent = next.deadline === undefined && next.deadlineType === undefined
+  const deadlineType = silent ? deadlineTypeOf(prev) : deadlineTypeOf({ ...next, deadline })
   const deadlineChanged = (prev.deadline ?? null) !== (deadline ?? null)
 
   const notes = deadlineChanged && day
