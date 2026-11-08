@@ -9,6 +9,8 @@ import { deadlineTypeOf, type ChipVariant, type Opportunity } from './opportunit
 import {
   isApplyNow, isInPerson, scoreOpportunity, type FundingClass, type Mode, type Scored,
 } from './opportunity-score'
+import { DEFAULT_TRAVEL_READINESS, travelCheckOf, type TravelCheck, type TravelReadiness } from './travel-readiness'
+import { fundingOf } from './opportunity-funding'
 
 // ── Dates and money ──────────────────────────────────────────────────────────
 
@@ -64,8 +66,9 @@ export function countdownOf(o: Opportunity, today: string): Countdown {
 
 // ── Filters (the only ones: where, money, time) ──────────────────────────────
 
-export type RadarFilter = 'remote' | 'in-person' | 'funded' | 'soon'
+export type RadarFilter = 'premium' | 'remote' | 'in-person' | 'funded' | 'soon'
 export const RADAR_FILTERS: { key: RadarFilter; label: string; test: (o: Opportunity, s: Scored) => boolean }[] = [
+  { key: 'premium', label: 'Premium', test: (o) => o.premium === true },
   { key: 'remote', label: 'Remote', test: (o) => !isInPerson(o) },
   { key: 'in-person', label: 'In person', test: (o) => isInPerson(o) },
   { key: 'funded', label: 'Funded', test: (_, s) => s.funding === 'full' || s.funding === 'mostly' },
@@ -74,27 +77,31 @@ export const RADAR_FILTERS: { key: RadarFilter; label: string; test: (o: Opportu
 
 // ── Sections ─────────────────────────────────────────────────────────────────
 
-export interface Row { o: Opportunity; s: Scored }
+export interface Row { o: Opportunity; s: Scored; travel: TravelCheck }
 export interface RadarView { apply: Row[]; applied: Row[]; watchlist: Row[]; hidden: Row[] }
 
 /**
  * Split items into what to apply to now, what he applied to, what to watch for the next
  * cycle, and what the profile hides (with its reason). A closed deadline never lands in
- * Apply. Each list ranks by the mode's score.
+ * Apply; a premium item is never hidden by the profile. Each list ranks premium first,
+ * then by the mode's score.
  */
-export function radarView(items: Opportunity[], today: string, mode: Mode, filters: RadarFilter[] = []): RadarView {
+export function radarView(
+  items: Opportunity[], today: string, mode: Mode, filters: RadarFilter[] = [],
+  readiness: TravelReadiness = DEFAULT_TRAVEL_READINESS,
+): RadarView {
   const view: RadarView = { apply: [], applied: [], watchlist: [], hidden: [] }
   const active = RADAR_FILTERS.filter((f) => filters.includes(f.key))
   for (const o of items) {
     const s = scoreOpportunity(o, today, mode)
     if (!active.every((f) => f.test(o, s))) continue
-    const row = { o, s }
+    const row = { o, s, travel: travelCheckOf(o, readiness) }
     if (o.status === 'applied') view.applied.push(row)
-    else if (o.status === 'archived' || o.status === 'won' || o.status === 'lost' || s.urgency === 'closed' || (o.status === 'new' && !s.keep)) view.hidden.push(row)
+    else if (o.status === 'archived' || o.status === 'won' || o.status === 'lost' || s.urgency === 'closed' || (o.status === 'new' && !s.keep && !o.premium)) view.hidden.push(row)
     else if (isApplyNow(s.urgency)) view.apply.push(row)
     else view.watchlist.push(row)
   }
-  const byScore = (a: Row, b: Row) => b.s.score - a.s.score
+  const byScore = (a: Row, b: Row) => Number(!!b.o.premium) - Number(!!a.o.premium) || b.s.score - a.s.score
   view.apply.sort(byScore)
   view.applied.sort(byScore)
   view.watchlist.sort(byScore)
@@ -112,6 +119,14 @@ export function hiddenLabel(r: Row): string {
 
 // ── Chips ────────────────────────────────────────────────────────────────────
 
+/** Travel flag chip: blocked trips read as danger, a pending visa as a warning. */
+export function travelChip(t: TravelCheck): { text: string; variant: ChipVariant; title: string } | null {
+  if (!t.flag) return null
+  return t.flag === 'VISA_PENDING'
+    ? { text: 'Visa pending', variant: 'warning', title: t.reason }
+    : { text: `${t.flag.split('_')[0]} blocked`, variant: 'danger', title: t.reason }
+}
+
 export const FUNDING_CHIP: Record<FundingClass, ChipVariant | null> = {
   full: 'success', mostly: 'accent', partial: 'neutral', none: null, unknown: null,
 }
@@ -128,13 +143,17 @@ export function factChips(o: Opportunity): string[] {
   const i = o.intel
   if (!i) return []
   const days = i.durationDays
+  // Money and support come from the one breakdown alerts and Todoist also use.
+  const f = fundingOf(o)
   return [
-    i.travelCovered ? 'Travel covered' : i.travelCapUsd ? `Travel up to ${fmtAmount(i.travelCapUsd)}` : null,
-    i.housingCovered ? 'Housing covered' : null,
-    i.cashUsd ? `${fmtAmount(i.cashUsd)} grant` : null,
-    i.stipendUsd ? `${fmtAmount(i.stipendUsd)} stipend` : null,
-    i.investmentUsd ? `${fmtAmount(i.investmentUsd)} invest${i.equityPct ? ` · ${i.equityPct}%` : ''}` : null,
-    i.feeUsd ? `${fmtAmount(i.feeUsd)} fee` : null,
+    f.travel === 'covered' ? 'Travel covered' : f.travelCapUsd ? `Travel up to ${fmtAmount(f.travelCapUsd)}` : null,
+    f.housing ? 'Housing covered' : null,
+    f.meals ? 'Meals covered' : null,
+    f.visaSupport ? 'Visa support' : null,
+    f.grantUsd ? `${fmtAmount(f.grantUsd)} grant` : null,
+    f.stipendUsd ? `${fmtAmount(f.stipendUsd)} stipend` : null,
+    f.investmentUsd ? `${fmtAmount(f.investmentUsd)} investment${f.equityPct ? ` · ${f.equityPct}% equity` : ''}` : null,
+    f.feeUsd ? `${fmtAmount(f.feeUsd)} fee` : null,
     days != null ? (days >= 60 ? `${Math.round(days / 30)} months` : `${days} days`) : null,
     i.relocation ? 'Relocation' : null,
     i.leaveUniversity ? 'Leave school' : null,
@@ -143,6 +162,8 @@ export function factChips(o: Opportunity): string[] {
     i.companyRequired ? 'Needs company' : null,
     i.probability != null ? `~${Math.round(i.probability * 100)}% odds` : i.selectivity,
     i.effortHours != null ? `~${i.effortHours}h to apply` : null,
+    o.opensAt ? `Opens ${fmtDate(o.opensAt)}` : null,
+    o.programStart ? `Runs ${fmtDate(o.programStart)}${o.programEnd ? `–${fmtDate(o.programEnd)}` : ''}` : null,
     o.lastVerified ? `Verified ${fmtDate(o.lastVerified)}` : null,
   ].filter((x): x is string => Boolean(x))
 }

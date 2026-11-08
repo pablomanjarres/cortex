@@ -14,6 +14,7 @@ import { OpportunityRow } from './OpportunityRow'
 import { DEFAULT_DATA, type OppData, type Opportunity } from './opportunity-model'
 import { RADAR_FILTERS, hiddenLabel, radarView, type RadarFilter, type Row } from './opportunity-radar'
 import { ALL_MODES, MODES, type Mode } from './opportunity-score'
+import { DEFAULT_TRAVEL_READINESS, TRAVEL_READINESS_KEY, readinessOf, type TravelReadiness } from './travel-readiness'
 
 const FILTER_OPTIONS = RADAR_FILTERS.map((f) => ({ value: f.key, label: f.label }))
 /** Hidden rows are reference only; the best-scoring few are enough to spot a wrong call. */
@@ -67,6 +68,8 @@ function RadarSection({ title, rows, ...handlers }: RowHandlers & { title: strin
 
 export function OpportunitiesPage() {
   const [data, updateData] = useStore<OppData>('cortex-opportunities', DEFAULT_DATA)
+  const [readinessRaw] = useStore<TravelReadiness>(TRAVEL_READINESS_KEY, DEFAULT_TRAVEL_READINESS)
+  const readiness = useMemo(() => readinessOf(readinessRaw), [readinessRaw])
   const today = useToday()
   const items = useMemo(() => data.items || [], [data.items])
 
@@ -74,7 +77,7 @@ export function OpportunitiesPage() {
   const [filters, setFilters] = useState<RadarFilter[]>([])
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const view = useMemo(() => radarView(items, today, mode, filters), [items, today, mode, filters])
+  const view = useMemo(() => radarView(items, today, mode, filters, readiness), [items, today, mode, filters, readiness])
 
   const setItems = (fn: (prev: Opportunity[]) => Opportunity[]) =>
     updateData((p) => ({ ...p, items: fn(p.items || []) }))

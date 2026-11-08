@@ -6,13 +6,14 @@ import { Button } from '@/components/ui/button'
 import { Chip } from '@/components/ui/chip'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import {
   ALL_CATEGORIES, ALL_DEADLINE_TYPES, ALL_EFFORTS, ALL_STATUSES,
   ageRuleOf, categoryConfig, deadlineTypeConfig, deadlineTypeOf, deadlineTypePatch,
   effortConfig, eligibilityConfig, modalityConfig, modalityOf,
-  parseAmountUsd, requires18PlusFor, sourceOf, statusConfig,
+  parseAmountUsd, premiumPatch, requires18PlusFor, sourceOf, statusConfig,
   type AgeRule, type DeadlineType, type Effort, type Eligibility,
   type Modality, type Opportunity, type OpportunityCategory, type OppStatus,
 } from './opportunity-model'
@@ -93,15 +94,25 @@ export function OpportunityEditor({ o, setField, onDelete }: {
       <div className="flex flex-col gap-2">
         <SelectField label="Status" value={statusConfig[o.status] ? o.status : 'new'} choices={STATUS_OPTIONS}
           onChange={(v) => set({ status: v as OppStatus, hiddenReason: null })} />
+        <div className="flex items-center justify-between gap-2">
+          <span id={`premium-${o.id}`} className="text-xs text-muted-foreground">Premium (100% interested)</span>
+          <Switch aria-labelledby={`premium-${o.id}`} checked={o.premium === true}
+            onCheckedChange={(on: boolean) => set(premiumPatch(o, on))} />
+        </div>
         <Pair>
           <SelectField label="Deadline type" value={deadlineTypeOf(o)} choices={DEADLINE_TYPE_OPTIONS}
             onChange={(v) => set(deadlineTypePatch(v as DeadlineType))} />
           <TextField label="Deadline" type="date" value={o.deadline ?? ''} onChange={(e) => set({ deadline: e.target.value || null })} className="cursor-pointer font-mono" />
         </Pair>
         <Pair>
-          <TextField label="Recurrence" value={o.recurrence ?? ''} onChange={(e) => set({ recurrence: e.target.value || null })} placeholder="annual, 2 batches/yr…" />
-          <TextField label="Next window expected" value={o.nextWindowExpected ?? ''} onChange={(e) => set({ nextWindowExpected: e.target.value || null })} placeholder="~Sep 2026 (estimate)" />
+          <TextField label="Applications open" type="date" value={o.opensAt ?? ''} onChange={(e) => set({ opensAt: e.target.value || null })} className="cursor-pointer font-mono" />
+          <TextField label="Program starts" type="date" value={o.programStart ?? ''} onChange={(e) => set({ programStart: e.target.value || null })} className="cursor-pointer font-mono" />
         </Pair>
+        <Pair>
+          <TextField label="Program ends" type="date" value={o.programEnd ?? ''} onChange={(e) => set({ programEnd: e.target.value || null })} className="cursor-pointer font-mono" />
+          <TextField label="Recurrence" value={o.recurrence ?? ''} onChange={(e) => set({ recurrence: e.target.value || null })} placeholder="annual, 2 batches/yr…" />
+        </Pair>
+        <TextField label="Next window expected" value={o.nextWindowExpected ?? ''} onChange={(e) => set({ nextWindowExpected: e.target.value || null })} placeholder="~Sep 2026 (estimate)" />
         <Pair>
           <TextField label="Amount (USD)" type="number" min={0} value={o.amountUsd ?? ''} onChange={(e) => set({ amountUsd: parseAmountUsd(e.target.value) })} placeholder="50000" className="font-mono tabular-nums" />
           <SelectField label="Age rule" value={ageRuleOf(o)} choices={AGE_RULE_OPTIONS}
