@@ -16,7 +16,7 @@ const never = () => new Promise<never>(() => {})
 
 test('a backup copy that never finishes does not block the caller', async () => {
   const { file, backupDir } = tempDirs()
-  const stalled: BackupFs = { ...fs.promises, copyFile: never }
+  const stalled: BackupFs = { ...fs.promises, readFile: never }
   const started = Date.now()
   const result = await backupPreviousVersion({
     key: 'cortex-active-sprint', file, backupDir, keep: 10, timeoutMs: 50, fs: stalled,
@@ -27,7 +27,7 @@ test('a backup copy that never finishes does not block the caller', async () => 
 
 test('while a stalled backup is still running, later backups of that key are skipped at once', async () => {
   const { file, backupDir } = tempDirs()
-  const stalled: BackupFs = { ...fs.promises, copyFile: never }
+  const stalled: BackupFs = { ...fs.promises, readFile: never }
   const opts = { key: 'cortex-stalled-key', file, backupDir, keep: 10, timeoutMs: 50, fs: stalled }
   assert.equal(await backupPreviousVersion(opts), 'timeout')
   const started = Date.now()
@@ -37,7 +37,7 @@ test('while a stalled backup is still running, later backups of that key are ski
 
 test('a failing copy is reported, never thrown', async () => {
   const { file, backupDir } = tempDirs()
-  const failing: BackupFs = { ...fs.promises, copyFile: async () => { throw new Error('EIO') } }
+  const failing: BackupFs = { ...fs.promises, writeFile: async () => { throw new Error('EIO') } }
   const result = await backupPreviousVersion({
     key: 'cortex-failing-key', file, backupDir, keep: 10, timeoutMs: 1000, fs: failing,
   })
@@ -59,4 +59,22 @@ test('writes the .bak copy and keeps only the newest versioned backups', async (
   assert.equal(versions.length, 10)
   assert.ok(!versions.includes('2020-01-01T00-00-00-000Z.json'), 'oldest versions are pruned')
   assert.equal(fs.readFileSync(path.join(versionsDir, versions.at(-1)!), 'utf8'), '"previous"')
+})
+
+test('a read that finishes after the timeout never writes a backup', async () => {
+  const { file, backupDir } = tempDirs()
+  let release: () => void = () => {}
+  const late: BackupFs = {
+    ...fs.promises,
+    readFile: (async (...args: Parameters<typeof fs.promises.readFile>) => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return fs.promises.readFile(...args)
+    }) as BackupFs['readFile'],
+  }
+  const key = 'cortex-late-read-key'
+  assert.equal(await backupPreviousVersion({ key, file, backupDir, keep: 10, timeoutMs: 20, fs: late }), 'timeout')
+  fs.writeFileSync(file, '"new"') // the data write proceeds
+  release()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.ok(!fs.existsSync(path.join(backupDir, `${key}.bak.json`)), 'the new version must not be saved as the backup')
 })
