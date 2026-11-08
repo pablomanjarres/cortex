@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 /** The filesystem calls the backup step uses — injectable for tests. */
-export type BackupFs = Pick<typeof fs.promises, 'copyFile' | 'mkdir' | 'readdir' | 'unlink'>
+export type BackupFs = Pick<typeof fs.promises, 'readFile' | 'writeFile' | 'mkdir' | 'readdir' | 'unlink'>
 
 export type BackupResult = 'ok' | 'timeout' | 'skipped' | 'error'
 
@@ -22,13 +22,20 @@ export interface BackupOptions {
 // cloud-evicted file). New backups of those keys are skipped, not stacked.
 const inFlight = new Set<string>()
 
-async function copyAndPrune({ key, file, backupDir, keep, fs: io = fs.promises }: BackupOptions) {
+async function copyAndPrune(
+  { key, file, backupDir, keep, fs: io = fs.promises }: BackupOptions,
+  gaveUp: () => boolean,
+) {
+  // Read the previous bytes first. If that read only finishes after the caller gave up, the
+  // write may already have replaced the file, so these bytes might be the new version: skip.
+  const previous = await io.readFile(file)
+  if (gaveUp()) return
   await io.mkdir(backupDir, { recursive: true })
-  await io.copyFile(file, path.join(backupDir, `${key}.bak.json`))
+  await io.writeFile(path.join(backupDir, `${key}.bak.json`), previous)
   const versionsDir = path.join(backupDir, 'versions', key)
   await io.mkdir(versionsDir, { recursive: true })
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-  await io.copyFile(file, path.join(versionsDir, `${timestamp}.json`))
+  await io.writeFile(path.join(versionsDir, `${timestamp}.json`), previous)
   const versions = (await io.readdir(versionsDir)).sort().reverse()
   for (const v of versions.slice(keep)) {
     try { await io.unlink(path.join(versionsDir, v)) } catch { /* ignore */ }
@@ -43,7 +50,8 @@ async function copyAndPrune({ key, file, backupDir, keep, fs: io = fs.promises }
 export async function backupPreviousVersion(opts: BackupOptions): Promise<BackupResult> {
   if (inFlight.has(opts.key)) return 'skipped'
   inFlight.add(opts.key)
-  const work = copyAndPrune(opts).then(
+  let timedOut = false
+  const work = copyAndPrune(opts, () => timedOut).then(
     () => 'ok' as const,
     (e) => {
       console.warn(`[Cortex] backup failed for "${opts.key}":`, e)
@@ -59,6 +67,7 @@ export async function backupPreviousVersion(opts: BackupOptions): Promise<Backup
   const result = await Promise.race([work, timeout])
   clearTimeout(timer)
   if (result === 'timeout') {
+    timedOut = true
     console.warn(`[Cortex] backup for "${opts.key}" exceeded ${opts.timeoutMs}ms; writing without waiting for it`)
   }
   return result
