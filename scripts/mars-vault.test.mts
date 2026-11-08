@@ -8,6 +8,7 @@ import path from 'node:path'
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cortex-mars-'))
 process.env.MARS_VAULT_ROOT = root
 const { readJournalDay, readVoiceAnchors, searchVault, writeJournalLine } = await import('../electron/integrations/mars.ts')
+const { vaultErrorStatus } = await import('../electron/knowledge/vault-files.ts')
 
 /** Stand-in for a note iCloud has evicted: its size is known but no bytes are on disk. */
 function evict(file: string) {
@@ -33,8 +34,10 @@ test('Mars helpers skip notes still in iCloud and never wait for one', (t) => {
 
   assert.deepEqual(searchVault('red').map(match => match.rel), [path.join('content', 'Near.md')])
   assert.deepEqual(readVoiceAnchors().map(anchor => anchor.name), ['Calm'])
-  assert.throws(() => readJournalDay('2026-11-08'), /still in iCloud/)
-  assert.throws(() => writeJournalLine('note', { date: '2026-11-08' }), /still in iCloud/)
+  const answers503 = (error: unknown) => /still in iCloud/.test(String(error)) && vaultErrorStatus(error) === 503
+  assert.throws(() => readJournalDay('2026-11-08'), answers503)
+  assert.throws(() => writeJournalLine('note', { date: '2026-11-08' }), answers503)
+  assert.equal(vaultErrorStatus(new Error('boom')), 500)
   const opened = reads.mock.calls.map(call => String(call.arguments[0]))
   assert.deepEqual(opened.filter(file => /Far\.md|Evicted\.md|2026-11-08\.md/.test(file)), [])
 })
