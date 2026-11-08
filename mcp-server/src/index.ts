@@ -2893,7 +2893,7 @@ if (httpMode) {
       }
     } else if (req.url === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, tools: 92 })); // keep in sync with server.tool() count
+      res.end(JSON.stringify({ ok: true, tools: 91 })); // keep in sync with server.tool() count
     } else {
       res.writeHead(404); res.end("Not found");
     }
