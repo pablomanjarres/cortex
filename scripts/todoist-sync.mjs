@@ -198,3 +198,124 @@ export function planTodoistSync({ items, tasks, sections = {}, linked = new Map(
   return plan
 }
 
+/**
+ * Apply plan.links / imports / created links to the radar blob. Pure. A premium item the
+ * profile had auto-hidden comes back; one he archived himself stays archived.
+ */
+export function applyPlanToStore(store, plan, createdLinks, now) {
+  const items = Array.isArray(store?.items) ? store.items : []
+  const patch = new Map(plan.links.map((p) => [p.oppId, { premium: p.premium, todoistTaskId: p.taskId }]))
+  for (const l of createdLinks) patch.set(l.oppId, { ...(patch.get(l.oppId) ?? {}), todoistTaskId: l.taskId })
+  const next = items.map((o) => {
+    const p = patch.get(o.id)
+    if (!p) return o
+    return { ...o, ...(p.premium ? premiumPatch(o, true) : {}), todoistTaskId: p.todoistTaskId }
+  })
+  const known = new Set(next.map((o) => o.sourceRef).filter(Boolean))
+  const imported = plan.imports
+    .filter((r) => !known.has(r.sourceRef))
+    .map((r) => ({ ...normalizeRecord(r, `todoist-import-${now}`), premium: true, todoistTaskId: r.todoistTaskId }))
+  return { ...store, items: [...imported, ...next] }
+}
+
+// ── Todoist REST v1 ──────────────────────────────────────────────────────────
+
+export function todoistToken() {
+  if (process.env.TODOIST_API_TOKEN) return Promise.resolve(process.env.TODOIST_API_TOKEN.trim())
+  return new Promise((resolve) => {
+    execFile("security", ["find-generic-password", "-s", "cortex-todoist", "-a", "api-token", "-w"], { timeout: 10_000 },
+      (err, stdout) => resolve(err ? null : String(stdout).trim() || null))
+  })
+}
+
+export function todoistClient(token, fetchImpl = fetch) {
+  const call = async (method, path, body, requestId) => {
+    const res = await fetchImpl(`${TODOIST}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+        ...(requestId ? { "X-Request-Id": requestId } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`Todoist ${res.status} ${method} ${path.split("?")[0]}`)
+    return res.status === 204 ? {} : res.json()
+  }
+  const all = async (path) => {
+    const out = []
+    let cursor = null
+    for (let page = 0; page < 20; page++) {
+      const sep = path.includes("?") ? "&" : "?"
+      const r = await call("GET", `${path}${sep}limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`)
+      out.push(...(r?.results ?? []))
+      cursor = r?.next_cursor ?? null
+      if (!cursor) break
+    }
+    return out
+  }
+  return {
+    projects: () => all("/projects"),
+    sections: (projectId) => all(`/sections?project_id=${encodeURIComponent(projectId)}`),
+    tasks: (projectId) => all(`/tasks?project_id=${encodeURIComponent(projectId)}`),
+    task: (id) => call("GET", `/tasks/${encodeURIComponent(id)}`),
+    create: (body, requestId) => call("POST", "/tasks", body, requestId),
+    update: (id, body) => call("POST", `/tasks/${encodeURIComponent(id)}`, body),
+  }
+}
+
+// ── Run ──────────────────────────────────────────────────────────────────────
+
+export async function syncTodoist({ api = API, dryRun = false, client, now = new Date().toISOString() } = {}) {
+  const today = bogotaToday(new Date(now))
+  const token = client ? null : await todoistToken()
+  if (!client && !token) return { skipped: "no Todoist token (env TODOIST_API_TOKEN or Keychain cortex-todoist)" }
+  const td = client ?? todoistClient(token)
+
+  const project = (await td.projects()).find((p) => String(p.name).trim().toLowerCase() === PROJECT.toLowerCase() && !p.is_archived)
+  if (!project) return { skipped: `no "${PROJECT}" project in Todoist (never created automatically)` }
+  const [sectionList, tasks, opp, alerts, readinessRaw] = await Promise.all([
+    td.sections(project.id).catch(() => []), td.tasks(project.id),
+    readKey(api, OPP_KEY), readKey(api, ALERTS_KEY), readKey(api, TRAVEL_READINESS_KEY),
+  ])
+  const sections = Object.fromEntries(sectionList.map((s) => [s.id, s.name]))
+  const items = Array.isArray(opp.data?.items) ? opp.data.items : []
+  const readiness = readinessRaw.data ? readinessOf(readinessRaw.data) : DEFAULT_TRAVEL_READINESS
+
+  const actionable = new Map()
+  for (const a of normalizeAlertStore(alerts.data).alerts) {
+    if (a.state === "expired") continue
+    const seen = actionable.get(a.opportunityId)
+    // Newest first; an Apply/Prepare alert beats a newer Verify/Skip one for task creation.
+    if (!seen || (!ACTIONABLE.has(seen.card?.action) && ACTIONABLE.has(a.card?.action))) actionable.set(a.opportunityId, a)
+  }
+  const activeIds = new Set(tasks.map((t) => String(t.id)))
+  const linked = new Map()
+  for (const o of items.filter((x) => x.todoistTaskId && !activeIds.has(String(x.todoistTaskId))).slice(0, MAX_LINK_LOOKUPS)) {
+    linked.set(String(o.todoistTaskId), await td.task(o.todoistTaskId))
+  }
+
+  const plan = planTodoistSync({ items, tasks, sections, linked, actionable, readiness, today, projectId: project.id })
+  const counts = `${plan.links.filter((l) => l.premium).length} marked premium · ${plan.imports.length} imported · ${plan.creates.length} created · ${plan.updates.length} updated`
+  if (dryRun) return { dryRun: true, summary: counts, plan }
+
+  const createdLinks = []
+  for (const u of plan.updates) await td.update(u.taskId, u.body)
+  for (const c of plan.creates) {
+    const t = await td.create(c.body, `cortex-${c.oppId}`)
+    if (t?.id) createdLinks.push({ oppId: c.oppId, taskId: String(t.id) })
+  }
+  if (plan.links.length || plan.imports.length || createdLinks.length) {
+    await mutateKey(api, OPP_KEY, (current) => ({ value: applyPlanToStore(current ?? { items: [], lastRun: null }, plan, createdLinks, now) }))
+  }
+  return { summary: counts, plan: { ...plan, imports: plan.imports.map((r) => r.title) } }
+}
+
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) {
+  syncTodoist({ dryRun: process.argv.includes("--dry") })
+    .then((r) => console.log(JSON.stringify(r, null, 2)))
+    .catch((e) => { console.error("todoist-sync FATAL:", e.message); process.exit(1) })
+}
