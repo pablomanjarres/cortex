@@ -35,7 +35,8 @@ export const DEFAULT_TRAVEL_READINESS: TravelReadiness = {
 /** Place text (deburred, lower case) that puts an event in a country. */
 export const COUNTRY_PLACES: Record<string, RegExp> = {
   US: new RegExp([
-    'united states', '\\busa\\b', '\\bu\\.s\\.', '\\bus\\b',
+    // A bare "us" only as a trailing ", US": in free text it is usually the English word.
+    'united states', '\\busa\\b', '\\bu\\.s\\.', ',\\s*us\\b',
     'san francisco', 'bay area', 'silicon valley', 'palo alto', 'stanford', 'berkeley', 'mountain view',
     'menlo park', 'san jose', 'new york', '\\bnyc\\b', 'boston', 'cambridge,? (ma|massachusetts)', '\\bmit\\b',
     'seattle', 'los angeles', 'san diego', 'austin', 'chicago', 'pittsburgh', 'atlanta', 'miami',
@@ -43,6 +44,14 @@ export const COUNTRY_PLACES: Record<string, RegExp> = {
     'california', 'massachusetts', 'texas', 'pennsylvania', 'new jersey', 'georgia tech',
   ].join('|')),
 }
+
+/** A stated country (intel.country) names the country outright. */
+const COUNTRY_NAMES: Record<string, RegExp> = {
+  US: /^(us|usa|u\.s\.a?\.?|united states( of america)?)$/,
+}
+
+const inCountry = (o: Opportunity, country: string) =>
+  COUNTRY_NAMES[country]?.test((o.intel?.country ?? '').trim().toLowerCase()) || COUNTRY_PLACES[country]?.test(placeText(o))
 
 export type TravelFlag = `${string}_TRAVEL_BLOCKED` | 'VISA_PENDING'
 
@@ -77,11 +86,8 @@ export function readinessOf(raw: unknown): TravelReadiness {
  */
 export function travelCheckOf(o: Opportunity, readiness: TravelReadiness): TravelCheck {
   if (!isInPerson(o)) return NONE
-  const where = placeText(o)
   for (const rule of readiness.rules) {
-    if (rule.visa !== 'pending') continue
-    const place = COUNTRY_PLACES[rule.country]
-    if (!place || !place.test(where)) continue
+    if (rule.visa !== 'pending' || !inCountry(o, rule.country)) continue
     const start = date(o.programStart)
     const end = date(o.programEnd)
     const cutoff = rule.blockedBefore
