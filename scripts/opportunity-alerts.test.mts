@@ -189,3 +189,144 @@ test('travel readiness is user data: approving the visa clears the flag', () => 
   assert.equal(travelCheckOf(sf, later).flag, 'VISA_PENDING')
 })
 
+test('investment is never reported as an equity-free grant', () => {
+  const accel = opp({ category: 'accelerator', amountUsd: 300_000 }, { cashUsd: null, investmentUsd: 300_000, equityPct: 7 })
+  const lines = fundingLines(accel)
+  assert.deepEqual(lines, ['Investment: $300,000 for 7% equity (not a grant)'])
+  assert.ok(lines.every((l) => !/grant: \$300/i.test(l)))
+  const text = check(baselined([]), [accel]).created[0]?.text ?? ''
+  assert.match(text, /Investment: \$300,000 for 7% equity \(not a grant\)/)
+  assert.doesNotMatch(text, /Grant: \$300,000/)
+  // A legacy amount with no intel is never called a grant either.
+  assert.deepEqual(fundingLines(opp({ amountUsd: 50_000, intel: undefined })), ['Amount: $50,000 (type unverified, not counted as a grant)'])
+  // A real grant and an investment side by side stay separate.
+  assert.deepEqual(fundingLines(opp({}, { cashUsd: 10_000, investmentUsd: 100_000 })), [
+    'Grant: $10,000 (equity-free)', 'Investment: $100,000 for equity (not a grant)',
+  ])
+})
+
+test('failed delivery keeps alerts queued; a later success delivers them once', () => {
+  const r = check(baselined([]), [opp()])
+  const ids = selectDelivery(r.store, at(T0), 'all').alertIds
+  const failed = ackAlerts(r.store, { ids, delivered: false, channel: 'kaiser', note: 'post failed', now: at(T0) })
+  assert.deepEqual(failed.failed, ids)
+  assert.equal(failed.store.alerts[0].state, 'pending')
+  assert.equal(failed.store.alerts[0].deliveries[0].ok, false)
+  assert.deepEqual(selectDelivery(failed.store, at(T0), 'all').alertIds, ids, 'still offered next time')
+
+  const ok = ackAlerts(failed.store, { ids, delivered: true, channel: 'kaiser', now: at(T0) })
+  assert.deepEqual(ok.acked, ids)
+  const again = ackAlerts(ok.store, { ids, delivered: true, channel: 'kaiser', now: at(T0) })
+  assert.deepEqual(again.already, ids, 'acking twice is a no-op')
+  assert.equal(selectDelivery(ok.store, at(T0), 'all').hasAlerts, false)
+})
+
+test('an unacknowledged alert survives later checks (offline Mac, missed poll)', () => {
+  let store = check(baselined([]), [opp()]).store
+  for (const day of ['2026-11-10', '2026-11-11', '2026-11-12']) store = check(store, [opp()], day).store
+  assert.equal(store.alerts.filter((a) => a.state === 'pending').length, 1)
+})
+
+test('pending alerts expire once he applies or applications close', () => {
+  const store = check(baselined([]), [opp()]).store
+  assert.equal(check(store, [opp({ status: 'applied' })]).store.alerts[0].state, 'expired')
+  assert.equal(check(store, [opp()], '2026-12-16').store.alerts[0].state, 'expired')
+})
+
+test('digest: urgent always, at most 5 others, weekly in auto mode, one card per opportunity', () => {
+  const many = Array.from({ length: 8 }, (_, n) => opp({ id: `opp-${n}`, title: `Program ${n}`, url: `https://p${n}.example/a`, officialUrl: '', deadline: '2027-01-20' }))
+  const urgent = opp({ id: 'opp-u', title: 'Closing Soon', url: 'https://u.example/a', officialUrl: '', deadline: '2026-11-12' })
+  const r = check(baselined([]), [...many, urgent])
+  // The urgent one has two alerts (new + deadline soon) but is one card.
+  assert.equal(r.created.filter((a) => a.opportunityId === 'opp-u').length, 2)
+  const d = selectDelivery(r.store, at(T0), 'auto')
+  assert.equal(d.urgent.length, 1)
+  assert.equal(d.digest.length, 5)
+  assert.equal(d.overflowIds.length, 3)
+  assert.match(d.message, /\+3 more on the Cortex Opportunity Radar/)
+  const acked = ackAlerts(r.store, { ids: d.alertIds, delivered: true, channel: 'kaiser', now: at(T0) }).store
+  assert.equal(acked.lastDigestAt, at(T0))
+  // A new digest-level find two days later waits for next week's digest.
+  const next = check(acked, [...many, urgent, opp({ id: 'opp-new', title: 'Fresh', url: 'https://f.example/a', officialUrl: '', deadline: '2027-02-01' })], '2026-11-11').store
+  assert.equal(selectDelivery(next, at('2026-11-11'), 'auto').hasAlerts, false)
+  assert.equal(selectDelivery(next, at('2026-11-16'), 'auto').digest.length, 1)
+})
+
+test('premium items are never auto-hidden and outrank the rest', () => {
+  const weak = opp({ premium: true }, { fields: ['iot'], prestige: 2, network: 2, founderDensity: 2, technicalDensity: 2 })
+  assert.equal(scoreOpportunity(weak, T0).keep, false)
+  assert.equal(visibilityPatch(weak, T0), null)
+  assert.deepEqual(visibilityPatch({ ...weak, status: 'archived', hiddenReason: 'off-field' }, T0), { status: 'new', hiddenReason: null })
+  const r = check(baselined([]), [weak])
+  assert.equal(r.created.length, 1, 'premium alerts even when the profile would hide it')
+  assert.match(r.created[0].text, /Premium: on your 100% list/)
+})
+
+test('he is not alerted about things he added himself or already applied to', () => {
+  assert.equal(check(baselined([]), [opp({ source: 'manual' })]).created.length, 0)
+  assert.equal(check(baselined([]), [opp({ status: 'applied' })]).created.length, 0)
+})
+
+test('every alert card carries the full notification format', () => {
+  const a = check(baselined([]), [opp()]).created[0]
+  for (const field of ['Why it matters', 'Funding', 'Deadline', 'Where and when', 'Eligibility', 'Visa/travel', 'Apply', 'Recommended action']) {
+    assert.match(a.text, new RegExp(`- ${field.replace('/', '\\/')}: `), field)
+  }
+  assert.match(a.text, /Deadline: 2026-12-15 \(36 days left, verified 2026-11-09\)/)
+  assert.match(a.text, /Eligibility: confirmed/)
+  assert.match(a.text, /Recommended action: Prepare/)
+})
+
+// ── Regressions from the independent review ──────────────────────────────────
+
+test('urgent delivery that carries a digest-level alert does not reset the weekly digest clock', () => {
+  // opp-a: new (digest, deadline far) ... then its deadline moves earlier (urgent).
+  let store = check(baselined([]), [opp({ deadline: '2027-01-30' }), opp({ id: 'opp-c', title: 'Other', url: 'https://c.example/a', officialUrl: '', deadline: '2027-02-01' })]).store
+  const digest = selectDelivery(store, at(T0), 'all')
+  store = ackAlerts(store, { ids: digest.alertIds, delivered: true, channel: 'kaiser', now: at(T0) }).store
+  const firstDigest = store.lastDigestAt
+  store = check(store, [opp({ deadline: '2026-12-20', runId: 'run-2' }), opp({ id: 'opp-c', title: 'Other', url: 'https://c.example/a', officialUrl: '' , deadline: '2027-02-01' })], '2026-11-10').store
+  store = check(store, [opp({ deadline: '2026-12-20', runId: 'run-2' }), opp({ id: 'opp-c', title: 'Other', url: 'https://c.example/a', officialUrl: '', deadline: '2027-02-01', runId: 'run-2' }, { travelCovered: true }) ], '2026-11-10').store
+  const urgentOnly = selectDelivery(store, at('2026-11-10'), 'urgent')
+  assert.ok(urgentOnly.urgent.length >= 1)
+  const after = ackAlerts(store, { ids: urgentOnly.alertIds, delivered: true, channel: 'kaiser', now: at('2026-11-10') }).store
+  assert.equal(after.lastDigestAt, firstDigest)
+})
+
+test('an urgent group with a pending digest alert of the same opportunity keeps the digest clock', () => {
+  let store = check(baselined([]), [opp({ deadline: '2027-01-30' })]).store // new_open, digest
+  store = check(store, [opp({ deadline: '2026-11-14', runId: 'run-2' })]).store // moved earlier + soon, urgent
+  const d = selectDelivery(store, at(T0), 'urgent')
+  assert.equal(d.urgent.length, 1)
+  assert.ok(d.alertIds.length >= 2, 'the digest-priority new_open rides along in the urgent card')
+  assert.equal(ackAlerts(store, { ids: d.alertIds, delivered: true, channel: 'kaiser', now: at(T0) }).store.lastDigestAt, null)
+})
+
+test('an opening date that passes with no deadline yet reads as open and alerts once', () => {
+  const upcoming = opp({ opensAt: '2026-11-20', deadline: null, deadlineType: 'unknown' })
+  const store = baselined([upcoming])
+  assert.equal(applicationStatusOf(upcoming, '2026-11-21'), 'open')
+  const r = check(store, [upcoming], '2026-11-21')
+  assert.deepEqual(r.created.map((a) => a.type), ['opened'])
+  assert.equal(r.created[0].card.deadline.confidence, 'none')
+})
+
+test('a stated "no undergrads" is reported as stated, not as unknown', () => {
+  const elite = opp({}, { undergradAllowed: false, prestige: 10, cashUsd: 200_000 })
+  const e = eligibilityOf(elite, T0)
+  assert.equal(e.level, 'unclear')
+  assert.doesNotMatch(e.note, /Unstated/)
+})
+
+test('evidence falls back to notes only for records that predate the evidence field', () => {
+  const legacy = opp({ evidence: undefined, notes: 'https://orbit.example — "closes Dec 15"' })
+  assert.equal(deadlineConfidenceOf(legacy, T0), 'verified')
+  const touched = opp({ evidence: null, notes: 'see https://my-notes.example' })
+  assert.equal(deadlineConfidenceOf(touched, T0), 'unsupported')
+})
+
+test('premium switch brings back a profile-hidden item, never one he archived', () => {
+  assert.deepEqual(premiumPatch({ status: 'archived', hiddenReason: 'off-field' }, true), { premium: true, status: 'new', hiddenReason: null })
+  assert.deepEqual(premiumPatch({ status: 'archived', hiddenReason: null }, true), { premium: true })
+  assert.deepEqual(premiumPatch({ status: 'new', hiddenReason: null }, false), { premium: false })
+})
