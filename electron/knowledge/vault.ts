@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { bodyOf, composeNote, parseNote, type Properties, type PropertyValue } from './frontmatter.js'
 import { DEFAULT_REGISTRY_PATHS, DEFAULT_VAULT_ROOT, isDir, obsidianUri, readRegistry, resolveMarsRoot } from './vault-discovery.js'
-import { VaultError, cleanProperties, createExclusive, isGenerated, parseCanvas, replaceAtomic, revisionOf, rewrite, sanitizeTitle, withoutKeys } from './vault-files.js'
+import { VaultError, cleanProperties, createExclusive, isGenerated, isPlaceholder, parseCanvas, replaceAtomic, requestDownload, revisionOf, rewrite, sanitizeTitle, stillInCloud, withoutKeys } from './vault-files.js'
 
 export { DEFAULT_REGISTRY_PATHS, DEFAULT_VAULT_ROOT, obsidianSearchUri, obsidianUri, resolveMarsRoot } from './vault-discovery.js'
 export { VaultError, revisionOf, type CanvasEdge, type CanvasNode } from './vault-files.js'
@@ -43,7 +43,7 @@ export interface VaultServiceOptions {
   now?: () => Date
 }
 
-interface WalkEntry { path: string; kind: FileKind; size: number; mtimeMs: number }
+interface WalkEntry { path: string; kind: FileKind; size: number; mtimeMs: number; placeholder: boolean }
 interface HeadEntry { mtimeMs: number; size: number; id: string | null; type: string | null; cortexRefs: string[]; title: string }
 
 const limitOf = (value?: number) => Math.max(1, Math.min(MAX_LIMIT, Math.trunc(Number.isFinite(value) ? Number(value) : DEFAULT_LIMIT)))
@@ -179,7 +179,7 @@ export class KnowledgeVaultService {
         let stat: fs.Stats
         try { stat = fs.statSync(full) } catch { continue }
         const rel = posix(path.relative(root, full))
-        files.push({ path: rel, kind: READABLE[path.extname(rel).toLowerCase()] ?? 'attachment', size: stat.size, mtimeMs: stat.mtimeMs })
+        files.push({ path: rel, kind: READABLE[path.extname(rel).toLowerCase()] ?? 'attachment', size: stat.size, mtimeMs: stat.mtimeMs, placeholder: isPlaceholder(stat) })
       }
     }
     if (isDir(start)) {
@@ -191,17 +191,19 @@ export class KnowledgeVaultService {
     return { files, truncated }
   }
 
-  /** Frontmatter heads for Markdown notes, cached by mtime+size. */
-  private noteHeads(vault: VaultRecord, folder?: string): { notes: (HeadEntry & { path: string })[]; truncated: boolean } {
+  /** Frontmatter heads for Markdown notes, cached by mtime+size. `pending` lists uncached notes still in iCloud. */
+  private noteHeads(vault: VaultRecord, folder?: string): { notes: (HeadEntry & { path: string })[]; truncated: boolean; pending: string[] } {
     const { files, truncated } = this.walk(vault, folder)
     let cache = this.heads.get(vault.path)
     if (!cache) { cache = new Map(); this.heads.set(vault.path, cache) }
     const root = fs.realpathSync(vault.path)
     const notes: (HeadEntry & { path: string })[] = []
+    const pending: string[] = []
     for (const file of files) {
       if (file.kind !== 'markdown') continue
       let head = cache.get(file.path)
       if (!head || head.mtimeMs !== file.mtimeMs || head.size !== file.size) {
+        if (file.placeholder) { pending.push(file.path); continue }
         let raw = ''
         try {
           const fd = fs.openSync(path.join(root, file.path), 'r')
@@ -213,7 +215,14 @@ export class KnowledgeVaultService {
       }
       notes.push({ ...head, path: file.path })
     }
-    return { notes, truncated }
+    return { notes, truncated, pending }
+  }
+
+  /** Request every pending note and explain why the answer has to wait. */
+  private stillDownloading(vault: VaultRecord, pending: string[], what: string): VaultError {
+    const root = fs.realpathSync(vault.path)
+    for (const rel of pending) requestDownload(path.join(root, rel))
+    return new VaultError(503, `${what} ${pending.length === 1 ? '1 note is' : `${pending.length} notes are`} still in iCloud. Their download was requested; try again shortly.`, { pending: pending.slice(0, 20) })
   }
 
   // ─── Public read API ────────────────────────────────────
@@ -260,7 +269,7 @@ export class KnowledgeVaultService {
     outer: for (const file of files) {
       if (exts?.length && !exts.includes(path.extname(file.path).toLowerCase())) continue
       if (file.path.toLowerCase().includes(query) && push({ path: file.path, kind: 'filename', snippet: file.path })) break
-      if (file.kind === 'attachment') continue
+      if (file.kind === 'attachment' || file.placeholder) continue
       if (file.size > MAX_READ_BYTES) continue
       if ((budget -= file.size) < 0) { truncated = true; break }
       let raw: string
@@ -289,6 +298,7 @@ export class KnowledgeVaultService {
     if (!kind) throw new VaultError(400, 'Only Markdown, text, Base and Canvas files can be read.')
     const stat = fs.statSync(full)
     if (stat.size > MAX_READ_BYTES) throw new VaultError(413, 'The file is too large to read through this service.')
+    if (isPlaceholder(stat)) throw stillInCloud(full)
     const raw = fs.readFileSync(full, 'utf8')
     const start = offsetOf(opts.cursor, opts.offset), limit = limitOf(opts.limit)
     const base = { vaultId: vault.id, vault: vault.name, path: clean, kind, revision: revisionOf(raw), mtime: new Date(stat.mtimeMs).toISOString() }
@@ -314,7 +324,9 @@ export class KnowledgeVaultService {
   private locate(vault: VaultRecord, opts: { path?: string; id?: string }): string {
     if (opts.path) return opts.path
     if (!opts.id || typeof opts.id !== 'string') throw new VaultError(400, 'A path or note id is required.')
-    const found = this.noteHeads(vault).notes.filter(note => note.id === opts.id)
+    const { notes, pending } = this.noteHeads(vault)
+    const found = notes.filter(note => note.id === opts.id)
+    if (!found.length && pending.length) throw this.stillDownloading(vault, pending, `No downloaded note has id "${opts.id}", and`)
     if (!found.length) throw new VaultError(404, `No note has id "${opts.id}".`)
     if (found.length > 1) throw new VaultError(409, `More than one note has id "${opts.id}".`, { paths: found.map(note => note.path) })
     return found[0].path
@@ -339,13 +351,16 @@ export class KnowledgeVaultService {
   /** Full notes under a folder of the primary vault, optionally filtered by `type`. */
   readNotes(folder: string, type?: string): { ref: NoteRef; properties: Properties; body: string; revision: string; complex: boolean }[] {
     const vault = this.writableVault()
-    const { notes, truncated } = this.noteHeads(vault, folder)
+    const { notes, truncated, pending } = this.noteHeads(vault, folder)
     if (truncated) throw new VaultError(413, `Too many files under "${folder}".`)
+    if (pending.length) throw this.stillDownloading(vault, pending, `Under "${folder}",`)
     const out = []
     for (const head of notes) {
       if (type && head.type !== type) continue
       const { full } = this.existing(vault, head.path)
-      if (fs.statSync(full).size > MAX_READ_BYTES) continue
+      const stat = fs.statSync(full)
+      if (stat.size > MAX_READ_BYTES) continue
+      if (isPlaceholder(stat)) throw stillInCloud(full)
       const raw = fs.readFileSync(full, 'utf8'), parsed = parseNote(raw)
       out.push({ ref: this.ref(vault, head.path, head.id), properties: parsed.properties, body: bodyOf(parsed), revision: revisionOf(raw), complex: parsed.complex })
     }
@@ -389,6 +404,7 @@ export class KnowledgeVaultService {
     const rel = this.locate(vault, opts)
     const { rel: clean } = this.existing(vault, rel)
     const target = this.writeTarget(vault, clean)
+    if (isPlaceholder(fs.statSync(target.full))) throw stillInCloud(target.full)
     const raw = fs.readFileSync(target.full, 'utf8')
     const current = revisionOf(raw)
     if (current !== opts.baseRevision) throw new VaultError(409, 'The note changed since it was read.', { revision: current })
