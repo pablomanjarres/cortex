@@ -31,6 +31,7 @@ import { ScreenBlackoutService, BlackoutValidationError, BlackoutBusyError } fro
 import { createNativeBlackoutAdapter } from './screen-blackout-native.js'
 import { blackoutOriginAllowed } from './screen-blackout-contract.js'
 import { KnowledgeVaultService } from './knowledge/vault.js'
+import { vaultErrorStatus } from './knowledge/vault-files.js'
 import { ResearchNarrativeStore, vaultBackedResearch } from './knowledge/research-narrative.js'
 import { handleKnowledgeRequest, resolveKnowledgeLink } from './knowledge/http.js'
 import { selectPrimaryDisk, type MacDisk } from './mac-stats.js'
@@ -1199,7 +1200,7 @@ function startWebServer() {
         const date = url.searchParams.get('date') || undefined
         const doc = date ? readJournalDay(date) : readJournalToday()
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(doc))
-      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
+      } catch (e) { res.writeHead(vaultErrorStatus(e), corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 
@@ -1211,7 +1212,7 @@ function startWebServer() {
         if (!text) { res.writeHead(400, corsHeaders); res.end(JSON.stringify({ error: 'Missing text' })); return }
         const result = writeJournalLine(text, { date, tag })
         res.writeHead(200, corsHeaders); res.end(JSON.stringify(result))
-      } catch (e) { res.writeHead(500, corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
+      } catch (e) { res.writeHead(vaultErrorStatus(e), corsHeaders); res.end(JSON.stringify({ error: errorMessage(e) })) }
       return
     }
 

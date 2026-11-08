@@ -14,6 +14,9 @@ export class VaultError extends Error {
   constructor(status: VaultError['status'], message: string, details?: Record<string, unknown>) { super(message); this.status = status; this.details = details }
 }
 
+/** The HTTP status for an error thrown by a vault helper: its own status, else 500. */
+export const vaultErrorStatus = (error: unknown) => error instanceof VaultError ? error.status : 500
+
 export const MAX_WRITE_BYTES = 1024 * 1024
 export const revisionOf = (raw: string) => createHash('sha256').update(raw).digest('hex')
 
