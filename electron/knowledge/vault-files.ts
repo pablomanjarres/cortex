@@ -1,6 +1,8 @@
 // File-level primitives for vault writes: atomic exclusive create, atomic
-// revision-checked replace, note rewriting and input sanitizing.
+// revision-checked replace, note rewriting and input sanitizing, plus the
+// cloud placeholder check that keeps reads from waiting on iCloud downloads.
 
+import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -14,6 +16,33 @@ export class VaultError extends Error {
 
 export const MAX_WRITE_BYTES = 1024 * 1024
 export const revisionOf = (raw: string) => createHash('sha256').update(raw).digest('hex')
+
+/**
+ * A cloud placeholder, such as an iCloud Drive file evicted to save space: its
+ * size is known but none of its bytes are on disk. Reading one blocks until the
+ * download finishes, which can take hours, so callers must never read it inline.
+ */
+export const isPlaceholder = (stat: Pick<fs.Stats, 'size' | 'blocks'>) => stat.size > 0 && stat.blocks === 0
+
+const ICLOUD_DRIVE = `${path.sep}Library${path.sep}Mobile Documents${path.sep}`
+
+/** Ask iCloud Drive to download a placeholder in the background. Never waits. */
+export function requestDownload(full: string): void {
+  if (process.platform !== 'darwin' || !full.includes(ICLOUD_DRIVE)) return
+  try {
+    const child = spawn('/usr/bin/brctl', ['download', full], { detached: true, stdio: 'ignore' })
+    child.on('error', () => {})
+    child.unref()
+  } catch {
+    // Best effort: the caller already answers without the file.
+  }
+}
+
+/** The answer for a file whose bytes are still in iCloud: request them and fail fast. */
+export function stillInCloud(full: string): VaultError {
+  requestDownload(full)
+  return new VaultError(503, 'This file is still in iCloud. Its download was requested; try again shortly.')
+}
 
 export interface CanvasNode { id: string; type?: string; x?: number; y?: number; width?: number; height?: number; text?: string; label?: string; [key: string]: unknown }
 export interface CanvasEdge { id: string; fromNode: string; toNode: string; [key: string]: unknown }
