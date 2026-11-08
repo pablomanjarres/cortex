@@ -63,7 +63,7 @@ export async function reconcileOpportunityAlerts({ api = API, runId = null, now 
     const pending = r.store.alerts.filter((a) => a.state === "pending").length
     return {
       value: r.store,
-      result: { baseline: r.baseline, created: r.created.length, createdAlerts: r.created, expired: r.expired, pending, tracked: items.length },
+      result: { baseline: r.baseline, created: r.created.length, createdAlerts: r.created, expired: r.expired, pending, tracked: items.length, store: r.store },
     }
   })
 }
@@ -71,8 +71,7 @@ export async function reconcileOpportunityAlerts({ api = API, runId = null, now 
 /** Reconcile (so time-based alerts like "deadline in 3 days" appear), then select what to send. */
 export async function readAlertDelivery({ api = API, mode = "auto", max, now = new Date().toISOString() } = {}) {
   const check = await reconcileOpportunityAlerts({ api, now })
-  const { data } = await readKey(api, ALERTS_KEY)
-  const delivery = selectDelivery(data, now, mode, max)
+  const delivery = selectDelivery(check.store, now, mode, max)
   return { ...delivery, check: { baseline: check.baseline, created: check.created, expired: check.expired, pending: check.pending } }
 }
 
@@ -96,7 +95,9 @@ async function main() {
   const [cmd = "check", ...rest] = process.argv.slice(2)
   if (cmd === "check") {
     const r = await reconcileOpportunityAlerts({})
-    console.log(JSON.stringify({ ...r, createdAlerts: r.createdAlerts.map((a) => a.card.headline) }, null, 2))
+    const summary = { ...r }
+    delete summary.store
+    console.log(JSON.stringify({ ...summary, createdAlerts: r.createdAlerts.map((a) => a.card.headline) }, null, 2))
   } else if (cmd === "pending") {
     const r = await readAlertDelivery({ mode: rest[0] || "auto" })
     console.log(r.message)

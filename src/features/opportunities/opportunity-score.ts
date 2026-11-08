@@ -336,6 +336,8 @@ export const ALL_MODES = Object.keys(MODES) as Mode[]
 export interface Scored {
   /** 0–100 in the requested mode. */
   score: number
+  /** 0–100 in the mode that rates it highest (what keep is judged on). */
+  best: number
   /** Passes the hard filters and clears KEEP_SCORE in its best mode. */
   keep: boolean
   /** Why it is hidden (empty when kept). */
@@ -361,6 +363,7 @@ export function scoreOpportunity(o: Opportunity, today: string, mode: Mode = 'ba
   const reasons = check.ok ? (best < KEEP_SCORE ? [`low score (${best})`] : []) : check.reasons
   return {
     score: modeScore(c, mode, penalty),
+    best,
     keep: reasons.length === 0,
     reasons,
     urgency: urgencyOf(o, today),

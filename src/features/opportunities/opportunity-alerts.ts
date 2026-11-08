@@ -13,7 +13,7 @@ import { daysUntilDeadline } from './expiry.ts'
 import type { ApplicationStatus, Opportunity, OppStatus } from './opportunity-model.ts'
 import { buildCard, renderCard, type AlertCard } from './opportunity-alert-card.ts'
 import { SUPPORT_LABEL, supportKeysOf, type SupportKey } from './opportunity-funding.ts'
-import { ALL_MODES, scoreOpportunity } from './opportunity-score.ts'
+import { scoreOpportunity } from './opportunity-score.ts'
 import type { TravelReadiness } from './travel-readiness.ts'
 import {
   applicationStatusOf, daysLeft, deadlineConfidenceOf, isLiveStatus,
@@ -187,8 +187,7 @@ function priorityOf(ev: Detected, card: AlertCard): AlertPriority {
   return d.confidence === 'verified' && d.daysLeft !== null && d.daysLeft >= 0 && d.daysLeft <= URGENT_DAYS ? 'urgent' : 'digest'
 }
 
-const rankOf = (o: Opportunity, today: string) =>
-  Math.max(...ALL_MODES.map((m) => scoreOpportunity(o, today, m).score)) + (o.premium ? 20 : 0)
+const rankOf = (o: Opportunity, today: string) => scoreOpportunity(o, today).best + (o.premium ? 20 : 0)
 
 /** Short stable id from the dedupe key (FNV-1a), so a re-created alert keeps its id. */
 function alertId(key: string): string {
