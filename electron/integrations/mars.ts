@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { resolveMarsRoot } from '../knowledge/vault.js'
+import { isPlaceholder, requestDownload, stillInCloud } from '../knowledge/vault-files.js'
 
 // Legacy Mars vault: MARS_VAULT_ROOT, else the Mars vault registered in
 // Obsidian (resolution owned by the knowledge vault service).
@@ -46,6 +47,7 @@ export function readJournalDay(date?: string): JournalDoc {
   if (!fs.existsSync(file)) {
     return { date: d, path: file, exists: false, frontmatter: {}, body: '' }
   }
+  if (isPlaceholder(fs.statSync(file))) throw stillInCloud(file)
   const raw = fs.readFileSync(file, 'utf-8')
   const parsed = parseFrontmatter(raw)
   return { date: d, path: file, exists: true, ...parsed }
@@ -66,6 +68,7 @@ export function writeJournalLine(text: string, opts?: { date?: string; tag?: str
     const header = `---\ndate: ${d}\ntype: journal\ncreatedAt: ${isoNow()}\n---\n\n# ${d}\n\n`
     fs.writeFileSync(file, header + line)
   } else {
+    if (isPlaceholder(fs.statSync(file))) throw stillInCloud(file)
     fs.appendFileSync(file, line)
   }
   return { ok: true, path: file }
@@ -97,7 +100,10 @@ export function searchVault(query: string, limit = 20): VaultMatch[] {
         walk(full)
       } else if (e.isFile() && e.name.endsWith('.md')) {
         let raw: string
-        try { raw = fs.readFileSync(full, 'utf-8') } catch { continue }
+        try {
+          if (isPlaceholder(fs.statSync(full))) continue
+          raw = fs.readFileSync(full, 'utf-8')
+        } catch { continue }
         const lines = raw.split('\n')
         for (let i = 0; i < lines.length; i++) {
           if (matches.length >= limit) break
@@ -125,15 +131,14 @@ export interface VoiceAnchor {
 
 export function readVoiceAnchors(): VoiceAnchor[] {
   if (!fs.existsSync(VOICE_ANCHORS_DIR)) return []
-  const entries = fs.readdirSync(VOICE_ANCHORS_DIR).filter(f => f.endsWith('.md'))
-  return entries.map(f => {
+  const anchors: VoiceAnchor[] = []
+  for (const f of fs.readdirSync(VOICE_ANCHORS_DIR).filter(name => name.endsWith('.md'))) {
     const full = path.join(VOICE_ANCHORS_DIR, f)
-    return {
-      name: f.replace(/\.md$/, ''),
-      path: full,
-      body: fs.readFileSync(full, 'utf-8'),
-    }
-  })
+    // An anchor still in iCloud is requested now and returned once it is on disk.
+    if (isPlaceholder(fs.statSync(full))) { requestDownload(full); continue }
+    anchors.push({ name: f.replace(/\.md$/, ''), path: full, body: fs.readFileSync(full, 'utf-8') })
+  }
+  return anchors
 }
 
 export interface VaultStats {
