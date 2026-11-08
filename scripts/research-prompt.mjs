@@ -34,6 +34,9 @@ const OPPORTUNITY = object({
   modality: enumOf(["remote", "hybrid", "in-person"]),
   deadline: nullable("string"),
   deadlineType: enumOf(DEADLINE_TYPES),
+  opensAt: nullable("string"),
+  programStart: nullable("string"),
+  programEnd: nullable("string"),
   nextWindowExpected: nullable("string"),
   amountUsd: nullable("number"),
   reward: str,
@@ -95,10 +98,19 @@ Rules:
   If the current cycle closed but the next is predictable, use deadlineType "recurring",
   deadline null, and say when it reopens in nextWindowExpected (mark estimates).
 - deadline: exact "YYYY-MM-DD" or null. Nothing else.
+- opensAt: the exact date applications open, only when the official page states a future
+  opening date. programStart / programEnd: the exact program or event dates. Each is
+  "YYYY-MM-DD" or null. Never estimate these; estimates go in nextWindowExpected.
 - Apply the hard filters yourself. Drop anything that fails them.
+- Category "travel" = travel grants and funded trips (conference travel awards, student
+  travel grants).
 - intel facts: only what the sources state. Use null when unstated; never guess.
-  cashUsd = guaranteed grant/award (not a prize pool). stipendUsd = total over the
-  program. travelCapUsd = reimbursement cap. feeUsd = what he must pay.
+  All money in USD: convert other currencies at today's rate and quote the original
+  amount and currency in evidence.
+  cashUsd = guaranteed, equity-free grant/award (not a prize pool). investmentUsd =
+  money for equity or a SAFE; never put investment in cashUsd. stipendUsd = total over
+  the program. travelCovered = flights paid; travelCapUsd = reimbursement cap.
+  housingCovered / mealsCovered / visaSupport = stated support. feeUsd = what he must pay.
 - intel signals (0-10, your judgment): prestige, network, founderDensity,
   technicalDensity, investorAccess, careerUpside, skillGain. 9-10 = YC / Stanford / MIT /
   Thiel / ICRA tier. 5 = decent regional program. Under 4 = don't bother.

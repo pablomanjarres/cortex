@@ -22,11 +22,13 @@ import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 import { isCalendarDate } from "../src/features/opportunities/expiry.ts"
 import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.ts"
+import { visibilityPatch } from "../src/features/opportunities/opportunity-score.ts"
 import {
   inferSource, stableId, deadlineTypeOf, rollingFromDeadlineType,
-  mergeOpportunity, shouldAutoArchive,
+  mergeOpportunity, shouldAutoArchive, shouldPrune,
   CATEGORIES, SOURCES, DEADLINE_TYPES, EFFORTS,
 } from "./radar-lib.mjs"
+import { readKey, writeKey } from "./cortex-store.mjs"
 
 const API = process.env.CORTEX_API ?? "http://localhost:3456"
 const KEY = "cortex-opportunities"
@@ -46,14 +48,14 @@ function clampScore(n) {
 // ── identity-based dedup ─────────────────────────────────────────────────────
 // The SAME opportunity shows up across X / Reddit / Devpost / SERP with different post
 // URLs, so we key on the OPPORTUNITY (apply-URL + title+host), not the post sourceRef.
-function normUrl(u) {
+export function normUrl(u) {
   if (!u) return ""
   let s = String(u).trim().toLowerCase()
   s = s.replace(/^https?:\/\//, "").replace(/^www\./, "")
   s = s.split("#")[0].split("?")[0].replace(/\/+$/, "")
   return s
 }
-function normText(s) {
+export function normText(s) {
   return String(s || "")
     .toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")
     .replace(/\b20\d\d\b/g, " ")          // drop years so a recurring program matches across runs
@@ -92,9 +94,9 @@ function dateOrNull(v) {
   return isCalendarDate(s) ? s : null
 }
 /** trimmed string | null */
-function strOrNull(v) {
+function strOrNull(v, max = 200) {
   const s = typeof v === "string" ? v.trim() : ""
-  return s ? s.slice(0, 200) : null
+  return s ? s.slice(0, max) : null
 }
 
 export function normalizeRecord(raw, runId) {
@@ -139,25 +141,24 @@ export function normalizeRecord(raw, runId) {
     tags: Array.isArray(raw.tags) ? raw.tags.map(String).slice(0, 20) : [],
     ...(raw.intel ? { intel: normalizeIntel(raw.intel) } : {}),
     lastVerified: dateOrNull(raw.lastVerified),
+    // Window and program dates: exact calendar dates or null, never estimates.
+    opensAt: dateOrNull(raw.opensAt),
+    programStart: dateOrNull(raw.programStart),
+    programEnd: dateOrNull(raw.programEnd),
+    evidence: strOrNull(raw.evidence, 1200),
+    ...(raw.premium === true ? { premium: true } : {}),
   }
   return rec
 }
 
 // Read the existing store, also capturing the optimistic-concurrency rev
-// (X-Cortex-Rev header; null against servers that don't send it).
+// (X-Cortex-Rev header; null against servers that don't send it). A key that does not
+// exist yet is an empty radar; a failed read THROWS, so a run never writes a merge built
+// from nothing over real data while Cortex is briefly unreachable.
 export async function readStoreWithRev(api = API, key = KEY) {
-  try {
-    const res = await fetch(`${api}/api/data?key=${key}`)
-    if (res.ok) {
-      const rev = res.headers.get("x-cortex-rev")
-      const body = await res.json()
-      if (body && Array.isArray(body.items)) return { existing: body, rev }
-      return { existing: { items: [], lastRun: null }, rev }
-    }
-  } catch (e) {
-    console.error("warn: could not read existing store:", e.message)
-  }
-  return { existing: { items: [], lastRun: null }, rev: null }
+  const { data, rev } = await readKey(api, key)
+  if (data && Array.isArray(data.items)) return { existing: data, rev }
+  return { existing: { items: [], lastRun: null }, rev }
 }
 
 // Pure merge: classified records into the existing store.
@@ -166,6 +167,9 @@ export async function readStoreWithRev(api = API, key = KEY) {
 //     while user-owned fields (status/priority/notes/edits) are preserved. This is how
 //     "Thiel Fellowship 2027" refreshes the stale 2026 entry instead of vanishing.
 //   - fixed-deadline items that closed >7d ago and are still status 'new' auto-archive.
+const saysNothingAboutDeadline = (raw) =>
+  raw.deadline === undefined && raw.deadlineType === undefined && raw.rolling === undefined
+
 export function mergeClassified(existing, classified, runId, report, today = String(runId).slice(0, 10)) {
   const seen = new Map() // identity key -> index in existingKept
 
@@ -192,7 +196,10 @@ export function mergeClassified(existing, classified, runId, report, today = Str
       // idx === -1 → collides with a record ADDED this same run (classifier emitted a
       // duplicate); just skip it. idx >= 0 → re-sighting of a stored item: REFRESH it.
       if (idx >= 0) {
-        existingKept[idx] = mergeOpportunity(existingKept[idx], rec, { runId, today })
+        // A sighting that says nothing about the deadline (chat adds may omit it) is not a
+        // sighting of "no deadline": the stored deadline, its type and its proof stay.
+        const incoming = saysNothingAboutDeadline(raw) ? { ...rec, deadline: undefined, deadlineType: undefined, rolling: undefined } : rec
+        existingKept[idx] = mergeOpportunity(existingKept[idx], incoming, { runId, today })
         refreshed++
       }
       continue
@@ -218,12 +225,35 @@ export function mergeClassified(existing, classified, runId, report, today = Str
   return { merged, added, refreshed, archived, existingDropped }
 }
 
-async function postMerged(api, key, merged, baseRev) {
-  return fetch(`${api}/api/data`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(baseRev != null ? { key, data: merged, baseRev } : { key, data: merged }),
+/** Apply the profile's visibility rule to every item. */
+export function applyVisibility(store, today) {
+  let hidden = 0
+  let restored = 0
+  const items = store.items.map((o) => {
+    const patch = visibilityPatch(o, today)
+    if (!patch) return o
+    if (patch.status === "archived" && o.status !== "archived") hidden++
+    if (patch.status === "new") restored++
+    return { ...o, ...patch }
   })
+  return { store: { ...store, items }, hidden, restored }
+}
+
+/**
+ * One research run into the store, shared by the native weekly run and ChatGPT research
+ * (MCP add_opportunities): merge re-sightings, re-apply visibility, prune stale junk,
+ * write a one-line report (or the caller's report when given).
+ */
+export function buildStore(existing, records, runId, today, report) {
+  const { merged, added, refreshed } = mergeClassified(existing, records, runId, undefined, today)
+  const { store, hidden, restored } = applyVisibility(merged, today)
+  const items = store.items.filter((o) => !shouldPrune(o, today))
+  const kept = items.filter((o) => o.runId === runId && o.status !== "archived").length
+  const summary = `${records.length} found · ${kept} kept · ${hidden} hidden${restored ? ` · ${restored} back` : ""}`
+  return {
+    merged: { ...store, items, report: report || summary },
+    added, refreshed, kept, hidden, restored, pruned: store.items.length - items.length,
+  }
 }
 
 /**
@@ -233,15 +263,15 @@ async function postMerged(api, key, merged, baseRev) {
  */
 export async function writeMergedWithRetry(api, key, firstMerged, firstRev, remerge) {
   let merged = firstMerged
-  let res = await postMerged(api, key, merged, firstRev)
+  let res = await writeKey(api, key, merged, firstRev)
   if (res.status === 409) {
     console.error("radar-ingest: write conflict — re-reading and re-applying merge")
     const { existing, rev } = await readStoreWithRev(api, key)
     merged = remerge(existing).merged
-    res = await postMerged(api, key, merged, rev)
+    res = await writeKey(api, key, merged, rev)
     if (res.status === 409) {
       console.error("radar-ingest: conflict persists — falling back to last-write-wins")
-      res = await postMerged(api, key, merged, null)
+      res = await writeKey(api, key, merged, null)
     }
   }
   if (!res.ok) throw new Error(`POST /api/data failed: ${res.status} ${await res.text()}`)

@@ -57,7 +57,8 @@ export function isInPerson(o: Opportunity): boolean {
   return o.modality === 'in-person' || o.modality === 'hybrid'
 }
 
-const placeText = (o: Opportunity) => deburr(`${o.intel?.city ?? ''} ${o.intel?.country ?? ''} ${o.location}`)
+/** City, country and location as one deburred, lower-case string for place rules. */
+export const placeText = (o: Opportunity) => deburr(`${o.intel?.city ?? ''} ${o.intel?.country ?? ''} ${o.location}`)
 const COLOMBIA = /colombia|bogota|medellin|cali\b|barranquilla|cartagena|bucaramanga/
 const HUBS: [RegExp, number][] = [
   [/san francisco|bay area|palo alto|stanford|berkeley|mountain view|menlo park|\bsf\b/, 4],
@@ -111,6 +112,34 @@ export function hardCheck(o: Opportunity, today: string): HardCheck {
   if (!o.lastVerified) risk += 1
 
   return { ok: reasons.length === 0, reasons, risk: clamp10(risk) }
+}
+
+// ── Eligibility for the profile ──────────────────────────────────────────────
+
+export type EligibilityLevel = 'confirmed' | 'likely' | 'unclear' | 'ineligible'
+export interface EligibilityCheck { level: EligibilityLevel; note: string }
+
+const ELIGIBILITY_FAILS = /^(age |not open to Colombia|no undergrads|requires dropping out)/
+
+/**
+ * How sure the record is that an 18-year-old Colombian undergraduate may apply.
+ * confirmed: Colombia, undergrads and the age rule are all stated and pass.
+ * likely:    Colombia is stated open; age or undergrad status is unstated.
+ * unclear:   Colombia is unstated. ineligible: a stated rule fails.
+ */
+export function eligibilityOf(o: Opportunity, today: string): EligibilityCheck {
+  const fails = hardCheck(o, today).reasons.filter((r) => ELIGIBILITY_FAILS.test(r))
+  if (fails.length) return { level: 'ineligible', note: fails.join(', ') }
+  const i = o.intel
+  const colombia = i?.colombiaAllowed === true || o.eligibility === 'remote-global' || o.eligibility === 'latam'
+  const undergrad = i?.undergradAllowed === true
+  const age = i?.ageMin != null || i?.ageMax != null || typeof o.requires18Plus === 'boolean'
+  // Elite programs survive a stated "no undergrads" in hardCheck; say so, never "unstated".
+  if (i?.undergradAllowed === false) return { level: 'unclear', note: 'States no undergrads; kept only for its upside.' }
+  const unknown = [!colombia && 'Colombia', !undergrad && 'undergrads', !age && 'age rule'].filter(Boolean)
+  if (!unknown.length) return { level: 'confirmed', note: 'Open to Colombia, undergrads and age 18.' }
+  const note = `Unstated: ${unknown.join(', ')}.`
+  return { level: colombia ? 'likely' : 'unclear', note }
 }
 
 // ── Components (each 0–10) ───────────────────────────────────────────────────
@@ -256,6 +285,31 @@ export function timeCostPenalty(o: Opportunity): number {
   return clamp10(p)
 }
 
+const GENERIC_COURSE = /\b(course|bootcamp|webinar|mooc|certificate program|masterclass)\b/
+const CONFERENCE = /\b(conference|summit|expo|congress|meetup|networking)\b/
+
+/**
+ * Low-value formats the profile penalizes: generic Devpost hackathons, online courses,
+ * unfunded conferences and networking events, and international trips he pays for.
+ */
+export function lowValuePenalty(o: Opportunity): number {
+  const i = o.intel
+  const title = deburr(`${o.title} ${o.category}`)
+  const funding = fundingClassOf(o)
+  const strong = (i?.prestige ?? 0) >= 7
+  let p = 0
+  const devpost = o.source === 'devpost' || /devpost\.com/.test(`${o.url} ${o.sourceRef}`)
+  if (devpost && !strong && !i?.travelCovered && !(i?.travelCapUsd ?? 0)) p += 6
+  if (!isInPerson(o) && GENERIC_COURSE.test(title)) p += 6
+  if (CONFERENCE.test(title) && (funding === 'none' || funding === 'unknown') && !strong) p += 5
+  // Paying his own international flight is a stated cost; unknown funding only nudges.
+  if (isInPerson(o) && !COLOMBIA.test(placeText(o)) && i?.travelCovered !== true && !(i?.travelCapUsd ?? 0)) {
+    p += i?.travelCovered === false ? 3 : 1
+  }
+  if ((i?.feeUsd ?? 0) >= 500) p += 2
+  return clamp10(p)
+}
+
 export function relocationPenalty(o: Opportunity): number {
   if (!o.intel?.relocation) return 0
   const days = o.intel.durationDays ?? 90
@@ -266,7 +320,7 @@ export function relocationPenalty(o: Opportunity): number {
 
 export type Mode = 'balanced' | 'founder' | 'robotics' | 'research' | 'hackathon' | 'travel' | 'money'
 
-const PENALTY_WEIGHT = { timeCost: 0.1, relocation: 0.1, eligibilityRisk: 0.1 }
+const PENALTY_WEIGHT = { timeCost: 0.1, relocation: 0.1, eligibilityRisk: 0.1, lowValue: 0.1 }
 
 export const MODES: Record<Mode, { label: string; weights: Partial<Record<Component, number>> }> = {
   balanced: { label: 'Balanced', weights: { fieldFit: 0.2, funding: 0.15, network: 0.15, career: 0.1, travel: 0.1, prestige: 0.1, value: 0.1, skill: 0.05, timing: 0.05 } },
@@ -282,6 +336,8 @@ export const ALL_MODES = Object.keys(MODES) as Mode[]
 export interface Scored {
   /** 0–100 in the requested mode. */
   score: number
+  /** 0–100 in the mode that rates it highest (what keep is judged on). */
+  best: number
   /** Passes the hard filters and clears KEEP_SCORE in its best mode. */
   keep: boolean
   /** Why it is hidden (empty when kept). */
@@ -302,10 +358,12 @@ export function scoreOpportunity(o: Opportunity, today: string, mode: Mode = 'ba
   const penalty = PENALTY_WEIGHT.timeCost * timeCostPenalty(o)
     + PENALTY_WEIGHT.relocation * relocationPenalty(o)
     + PENALTY_WEIGHT.eligibilityRisk * check.risk
+    + PENALTY_WEIGHT.lowValue * lowValuePenalty(o)
   const best = Math.max(...ALL_MODES.map((m) => modeScore(c, m, penalty)))
   const reasons = check.ok ? (best < KEEP_SCORE ? [`low score (${best})`] : []) : check.reasons
   return {
     score: modeScore(c, mode, penalty),
+    best,
     keep: reasons.length === 0,
     reasons,
     urgency: urgencyOf(o, today),
@@ -316,11 +374,13 @@ export function scoreOpportunity(o: Opportunity, today: string, mode: Mode = 'ba
 /**
  * The research run's visibility rule. Only untouched items move: 'new' ones that fail
  * hide with a reason, and ones this rule hid come back once they pass. Anything Pablo
- * acted on, or archived himself, stays as he left it. Returns null when nothing changes.
+ * acted on, archived himself, or marked premium stays visible as he left it.
+ * Returns null when nothing changes.
  */
 export function visibilityPatch(o: Opportunity, today: string): Pick<Opportunity, 'status' | 'hiddenReason'> | null {
   const autoHidden = o.status === 'archived' && !!o.hiddenReason
   if (o.status !== 'new' && !autoHidden) return null
+  if (o.premium) return autoHidden ? { status: 'new', hiddenReason: null } : null
   const { keep, reasons } = scoreOpportunity(o, today)
   if (keep) return autoHidden ? { status: 'new', hiddenReason: null } : null
   const hiddenReason = reasons.join(', ')

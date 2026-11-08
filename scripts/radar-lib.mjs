@@ -65,7 +65,7 @@ export const EFFORTS = new Set(["low", "medium", "high"])
 export const CATEGORIES = new Set([
   "hackathon", "grant", "accelerator", "fellowship", "internship", "exchange",
   "competition", "pitch", "speaking", "scholarship", "community", "launch",
-  "trending", "program", "residency", "research", "other",
+  "trending", "program", "residency", "research", "travel", "other",
 ])
 export const SOURCES = new Set([
   "x", "linkedin", "reddit", "instagram", "github", "devpost", "luma",
@@ -99,6 +99,9 @@ export function deadlineTypeOf(item) {
 export function rollingFromDeadlineType(deadlineType) {
   return deadlineType === "rolling" || deadlineType === "always-open"
 }
+
+/** Bogotá calendar day, YYYY-MM-DD: the radar's "today" everywhere (scripts and MCP). */
+export const bogotaToday = (now = new Date()) => now.toLocaleDateString("en-CA", { timeZone: "America/Bogota" })
 
 /** YYYY-MM-DD string for `days` days after a YYYY-MM-DD `dateStr` (negative = before). */
 export function addDays(dateStr, days) {
@@ -147,11 +150,12 @@ const refreshStr = (incoming, existing) => {
  *
  *   radar-owned  : deadline, deadlineType(+rolling sync), recurrence, nextWindowExpected,
  *                  amountUsd, reward, url, officialUrl, location, modality, eligibility,
- *                  tags, intel, lastVerified —
+ *                  tags, intel, lastVerified, opensAt, programStart, programEnd, evidence —
  *                  refreshed from `incoming` (blank/unknown never overwrite),
  *                  runId -> the new run, discoveredAt -> kept from the original.
  *   user-owned   : id, title, host, category, goals, status, priority, leverageScore,
- *                  source, sourceRef, notes, hiddenReason — preserved from `existing`;
+ *                  source, sourceRef, notes, hiddenReason, premium, todoistTaskId —
+ *                  preserved from `existing` (a sighting may set premium, never clear it);
  *                  leverageNote is filled from `incoming` only while blank.
  *   notes        : when the deadline ACTUALLY changed, a one-line
  *                  "(refreshed for new cycle YYYY-MM-DD)" is appended so the user sees
@@ -167,7 +171,8 @@ export function mergeOpportunity(existing, incoming, { runId, today } = {}) {
   // Deadline intel: always trust the fresh sighting (that's the whole point of the
   // merge — a new cycle replaces the stale one, even fixed -> rolling or date -> null).
   const deadline = next.deadline !== undefined ? next.deadline : (prev.deadline ?? null)
-  const deadlineType = deadlineTypeOf({ ...next, deadline })
+  const silent = next.deadline === undefined && next.deadlineType === undefined
+  const deadlineType = silent ? deadlineTypeOf(prev) : deadlineTypeOf({ ...next, deadline })
   const deadlineChanged = (prev.deadline ?? null) !== (deadline ?? null)
 
   const notes = deadlineChanged && day
@@ -195,7 +200,26 @@ export function mergeOpportunity(existing, incoming, { runId, today } = {}) {
     // The research "why" fills a blank note; once set (or edited), it is Pablo's.
     leverageNote: prev.leverageNote ? prev.leverageNote : (next.leverageNote ?? ""),
     ...(next.intel || prev.intel ? { intel: next.intel ?? prev.intel } : {}),
-    lastVerified: next.lastVerified ?? prev.lastVerified ?? null,
+    // Proof and dates belong to one cycle. When the deadline moved, the old cycle's
+    // verification, evidence and dates no longer vouch for it: keep only what this
+    // sighting supplied. Otherwise a blank field keeps the stored value.
+    ...(deadlineChanged
+      ? {
+          lastVerified: next.lastVerified ?? null,
+          evidence: next.evidence ?? null,
+          opensAt: next.opensAt ?? null,
+          programStart: next.programStart ?? null,
+          programEnd: next.programEnd ?? null,
+        }
+      : {
+          lastVerified: next.lastVerified ?? prev.lastVerified ?? null,
+          evidence: next.evidence ?? prev.evidence ?? null,
+          opensAt: next.opensAt ?? prev.opensAt ?? null,
+          programStart: next.programStart ?? prev.programStart ?? null,
+          programEnd: next.programEnd ?? prev.programEnd ?? null,
+        }),
+    // Premium is his call: a sighting can set it, never clear it.
+    ...(prev.premium || next.premium === true ? { premium: true } : {}),
     runId: runId ?? next.runId ?? prev.runId,
     discoveredAt: prev.discoveredAt ?? next.discoveredAt,
     // user-owned — preserved (id/title/host/category/goals/status/priority/leverage*/
