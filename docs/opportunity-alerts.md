@@ -165,24 +165,24 @@ verified.
 
 ## Deploy
 
-The live MCP server and the ChatGPT tunnel run
-`/Users/pablo/Projects/cortex/mcp-server/dist/index.js`. That server loads the shared
-radar modules from the same checkout at runtime (`../../scripts`, `../src/features`).
-To deploy:
+The live MCP server (launchd `com.cortex.mcp-server`) and the ChatGPT tunnel
+(`connection.json` `mcp_command`) run
+`/Users/pablo/Projects/.worktrees/cortex-radar/mcp-server/dist/index.js`. That is the
+clean, detached `main` checkout the weekly research run also uses. The server loads the
+shared radar modules from the same checkout at runtime (`../../scripts`, `../src/features`),
+so one update ships the tools and the weekly run together. To deploy a merged change:
 
-1. Merge this branch into `main`.
-2. Update the checkout the live server runs from, then rebuild:
-   `npm run build --prefix mcp-server`.
+1. Move the checkout to the new `main`:
+   `git -C /Users/pablo/Projects/.worktrees/cortex-radar fetch origin && git -C /Users/pablo/Projects/.worktrees/cortex-radar checkout --detach origin/main`.
+2. Rebuild the server (run `npm ci` there first when `mcp-server/package.json` changed):
+   `npm run build --prefix /Users/pablo/Projects/.worktrees/cortex-radar/mcp-server`.
 3. Restart the HTTP server:
    `launchctl kickstart -k gui/$(id -u)/com.cortex.mcp-server`.
-4. Stop the tunnel runtime so the supervisor reconnects with the new code within 2
-   minutes:
+4. Stop the tunnel runtime. The supervisor reconnects with the new code on its next
+   check:
    `"$HOME/Library/Application Support/CortexChatGPTTunnel/tunnel-client" runtimes stop cortex-chatgpt`.
-5. Refresh the Cortex app's tools in ChatGPT's connector settings.
-6. Update the clean radar checkout (`/Users/pablo/Projects/.worktrees/cortex-radar`) to
-   the new `main`, so the weekly run checks alerts and syncs Todoist.
-7. Optionally, run `npm run cortex:install` and relaunch the app for the Premium
-   filter and travel chips.
+5. Refresh the Cortex app's tools in ChatGPT's connector settings when the tool list changed.
+6. Optionally, run `npm run cortex:install` and relaunch the app for UI changes.
 
 ## CLI
 
