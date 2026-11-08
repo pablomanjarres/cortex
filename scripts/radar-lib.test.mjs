@@ -121,11 +121,16 @@ test("mergeOpportunity: research facts and verification refresh; hidden state st
   assert.deepEqual(fresh.intel, { prestige: 10 })
   assert.equal(fresh.lastVerified, "2026-07-10")
   assert.equal(fresh.hiddenReason, "low score (30)")
-  const seeded = mergeOpportunity(stored, { ...incomingThiel, leverageNote: "", lastVerified: null },
+  // Same cycle (deadline unchanged): an unverified sighting keeps the stored verification.
+  const seeded = mergeOpportunity(stored, { ...incomingThiel, deadline: stored.deadline, leverageNote: "", lastVerified: null },
     { runId: "2026-07-10T09:00:00Z", today: "2026-07-10" })
   assert.deepEqual(seeded.intel, { prestige: 5 })
   assert.equal(seeded.lastVerified, "2026-06-01")
   assert.equal(seeded.leverageNote, "my edited note")
+  // New cycle (deadline moved) with no fresh check: the old verification no longer vouches for it.
+  const newCycle = mergeOpportunity(stored, { ...incomingThiel, lastVerified: null }, { runId: "2026-07-10T09:00:00Z", today: "2026-07-10" })
+  assert.equal(newCycle.deadline, "2026-12-31")
+  assert.equal(newCycle.lastVerified, null)
 })
 
 test("mergeOpportunity: appends a refresh note ONLY when the deadline changed", () => {
