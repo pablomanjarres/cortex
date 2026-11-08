@@ -6,7 +6,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { Client } from "../mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js"
 import { StdioClientTransport } from "../mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js"
@@ -150,6 +150,11 @@ test("ChatGPT research -> Cortex queue -> Kaiser read/ack, with retry and no dup
     await call("set_travel_readiness", { country: "US", visa: "approved" })
     const after = (await call("get_opportunities", { limit: 50 })).items.find((o) => o.title === "Robot Arm Summit SF")
     assert.equal(after.facts.travel.flag, null)
+
+    // /health reports a hand-kept tool count; it must match what the server registers.
+    const { tools } = await client.listTools()
+    const source = readFileSync(new URL("../mcp-server/src/index.ts", import.meta.url), "utf8")
+    assert.equal(Number(source.match(/ok: true, tools: (\d+)/)?.[1]), tools.length, "/health tool count")
 
     const alertsStore = store.get("cortex-opportunity-alerts").data
     assert.equal(new Set(alertsStore.alerts.map((a) => a.dedupeKey)).size, alertsStore.alerts.length, "no duplicate alerts stored")
