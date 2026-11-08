@@ -133,6 +133,37 @@ test('search covers filenames, Markdown, Bases and Canvas cards with bounded pag
   assert.throws(() => fx.service.search({ query: '  ' }), VaultError)
 })
 
+/** Stand-in for a note iCloud has evicted: its size is known but no bytes are on disk. */
+function evict(file: string) {
+  fs.writeFileSync(file, '')
+  fs.truncateSync(file, 4096)
+  assert.equal(fs.statSync(file).blocks, 0, 'the test filesystem keeps sparse files sparse')
+}
+
+test('listings, search and note lookups never open a note that is still in iCloud', (t) => {
+  const fx = fixture()
+  t.after(() => fs.rmSync(fx.dir, { recursive: true, force: true }))
+  evict(path.join(fx.eightfold, 'Ventures', 'Evicted.md'))
+  const reads = t.mock.method(fs, 'readFileSync')
+  const opens = t.mock.method(fs, 'openSync')
+  assert.deepEqual(fx.service.search({ query: 'evicted' }).matches.map(match => match.path), ['Ventures/Evicted.md'])
+  assert.equal(fx.service.homeNote()?.id, 'home-eightfold')
+  assert.deepEqual(fx.service.notesForRef('project:cortex').map(note => note.id), ['venture-cortex'])
+  assert.ok(fx.service.listFiles({ folder: 'Ventures' }).files.some(file => file.path === 'Ventures/Evicted.md'))
+  const opened = [...reads.mock.calls, ...opens.mock.calls].map(call => String(call.arguments[0]))
+  assert.deepEqual(opened.filter(file => file.endsWith('Evicted.md')), [])
+})
+
+test('a direct read or update of a note still in iCloud answers at once with 503', (t) => {
+  const fx = fixture()
+  t.after(() => fs.rmSync(fx.dir, { recursive: true, force: true }))
+  evict(path.join(fx.eightfold, 'Ventures', 'Evicted.md'))
+  const pending = (error: unknown) => error instanceof VaultError && error.status === 503
+  assert.throws(() => fx.service.read({ path: 'Ventures/Evicted.md' }), pending)
+  assert.throws(() => fx.service.updateNote({ path: 'Ventures/Evicted.md', baseRevision: 'a'.repeat(64), body: 'new' }), pending)
+  assert.throws(() => fx.service.readNotes('Ventures'), pending)
+})
+
 test('notes resolve by Cortex record reference and the Home note is found by type', () => {
   const fx = fixture()
   assert.deepEqual(fx.service.notesForRef('project:cortex').map(note => note.id), ['venture-cortex'])
