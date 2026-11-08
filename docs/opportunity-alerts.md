@@ -174,7 +174,8 @@ so one update ships the tools and the weekly run together. To deploy a merged ch
 
 1. Move the checkout to the new `main`:
    `git -C /Users/pablo/Projects/.worktrees/cortex-radar fetch origin && git -C /Users/pablo/Projects/.worktrees/cortex-radar checkout --detach origin/main`.
-2. Rebuild the server (run `npm ci` there first when `mcp-server/package.json` changed):
+2. Rebuild the server. When `mcp-server/package.json` changed, run `npm install` there first
+   (its lockfile is not tracked, so `npm ci` would reject a stale one):
    `npm run build --prefix /Users/pablo/Projects/.worktrees/cortex-radar/mcp-server`.
 3. Restart the HTTP server:
    `launchctl kickstart -k gui/$(id -u)/com.cortex.mcp-server`.
