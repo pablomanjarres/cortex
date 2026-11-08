@@ -36,6 +36,7 @@ export const INTEL_SPEC: Record<Exclude<keyof OppIntel, 'fields' | 'selectivity'
   travelCovered: 'bool',
   travelCapUsd: USD,
   housingCovered: 'bool',
+  mealsCovered: 'bool',
   feeUsd: USD,
   durationDays: { min: 0, max: 3650 },
   hoursPerWeek: { min: 0, max: 100 },

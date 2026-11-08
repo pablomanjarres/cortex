@@ -9,7 +9,7 @@
 export type OpportunityCategory =
   | 'hackathon' | 'grant' | 'accelerator' | 'fellowship' | 'internship'
   | 'exchange' | 'competition' | 'pitch' | 'speaking' | 'scholarship'
-  | 'community' | 'launch' | 'trending' | 'program' | 'residency' | 'research' | 'other'
+  | 'community' | 'launch' | 'trending' | 'program' | 'residency' | 'research' | 'travel' | 'other'
 
 export type Goal = 'internship' | 'exchange' | 'funding' | 'social-growth' | 'users'
 
@@ -76,7 +76,21 @@ export interface Opportunity {
   lastVerified?: string | null
   /** Set when the research run hid this item for failing the profile; cleared if it later passes. */
   hiddenReason?: string | null
+  /** Exact date applications open ("YYYY-MM-DD"); null when unstated. Never an estimate. */
+  opensAt?: string | null
+  /** Exact program dates ("YYYY-MM-DD"); null when unstated. Drive travel and visa checks. */
+  programStart?: string | null
+  programEnd?: string | null
+  /** Official URL plus the exact wording the research relied on. Radar-owned, refreshed every run. */
+  evidence?: string | null
+  /** Pablo is 100% interested (his Todoist Opportunities list, or set by hand). Never auto-hidden. */
+  premium?: boolean
+  /** Linked task in the Todoist Opportunities project. */
+  todoistTaskId?: string | null
 }
+
+/** Where an application window stands today (opportunity-window.ts derives it). */
+export type ApplicationStatus = 'upcoming' | 'open' | 'rolling' | 'closed' | 'unknown'
 
 /** Field tags the profile cares about. Robotics depth: humanoids/manipulation > robotics > hardware > iot. */
 export type FieldTag =
@@ -110,6 +124,7 @@ export interface OppIntel {
   travelCovered: boolean | null
   travelCapUsd: number | null
   housingCovered: boolean | null
+  mealsCovered: boolean | null
   /** Out-of-pocket fee (registration, tuition). */
   feeUsd: number | null
   durationDays: number | null
@@ -188,6 +203,7 @@ export const categoryConfig: Record<OpportunityCategory, { label: string }> = {
   program: { label: 'Program' },
   residency: { label: 'Residency' },
   research: { label: 'Research' },
+  travel: { label: 'Travel grant' },
   other: { label: 'Other' },
 }
 export const ALL_CATEGORIES = Object.keys(categoryConfig) as OpportunityCategory[]
@@ -263,6 +279,15 @@ export function deadlineTypeOf(o: Opportunity): DeadlineType {
 
 export const effortConfig: Record<Effort, string> = { low: 'Low', medium: 'Medium', high: 'High' }
 export const ALL_EFFORTS = Object.keys(effortConfig) as Effort[]
+
+/**
+ * Turning premium on brings back an item the profile auto-hid (archived with a reason);
+ * one he archived himself stays archived. The Todoist sync applies the same rule.
+ */
+export function premiumPatch(o: Pick<Opportunity, 'status' | 'hiddenReason'>, on: boolean): Partial<Opportunity> {
+  if (!on) return { premium: false }
+  return o.status === 'archived' && o.hiddenReason ? { premium: true, status: 'new', hiddenReason: null } : { premium: true }
+}
 
 /** Writing a deadline type keeps the legacy `rolling` boolean in sync. */
 export function deadlineTypePatch(type: DeadlineType): Pick<Opportunity, 'deadlineType' | 'rolling'> {
