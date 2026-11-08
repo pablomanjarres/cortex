@@ -204,3 +204,51 @@ test("the research run refuses to merge when Cortex cannot be read", async () =>
   const { readStoreWithRev } = await import("./radar-ingest.mjs")
   await assert.rejects(() => readStoreWithRev("http://127.0.0.1:9", "cortex-opportunities"))
 })
+
+test("a chat re-sighting that omits the deadline keeps the stored deadline, type and proof", () => {
+  const rolling = opp({ id: "opp-r", title: "Rolling Grant", host: "RG", url: "https://rg.example/apply", officialUrl: "", deadline: null, deadlineType: "rolling", rolling: true })
+  const existing = { items: [opp(), rolling], lastRun: null }
+  const { merged } = buildStore(existing, [
+    { title: "Z Fellows", host: "Z Fellows", category: "fellowship", url: "https://zfellows.com/apply", source: "web", lastVerified: today },
+    { title: "Rolling Grant", host: "RG", category: "grant", url: "https://rg.example/apply", source: "web", lastVerified: today },
+  ], "r1", today)
+  const z = merged.items.find((o) => o.id === "opp-z")
+  assert.deepEqual([z.deadline, z.deadlineType, z.evidence], ["2026-12-01", "fixed", opp().evidence])
+  const r = merged.items.find((o) => o.id === "opp-r")
+  assert.deepEqual([r.deadline, r.deadlineType, r.rolling], [null, "rolling", true])
+  // An explicit null is still a fresh sighting with no deadline.
+  const { merged: cleared } = buildStore(existing, [{ title: "Z Fellows", host: "Z Fellows", category: "fellowship", url: "https://zfellows.com/apply", deadline: null, source: "web" }], "r1", today)
+  assert.equal(cleared.items.find((o) => o.id === "opp-z").deadline, null)
+})
+
+test("Todoist imports stay source manual, even with a Luma or Devpost link", () => {
+  const p = plan({ items: [], tasks: [task({ id: "l", content: "ETH Bogota hackathon https://lu.ma/eth-bogota" })] })
+  const store = applyPlanToStore({ items: [], lastRun: null }, p, [], "2026-11-09T00:00:00.000Z")
+  assert.equal(store.items[0].source, "manual")
+})
+
+test("a travel label Cortex added is dropped from its own task once the flag clears", () => {
+  const stale = ["opportunity", "fellowship", "us-travel-blocked"]
+  const ours = plan({ items: [opp()], tasks: [task({ content: "Apply: Z Fellows", description: "x\ncortex:opp-z", labels: stale })] })
+  assert.deepEqual(ours.updates[0].body.labels, ["opportunity", "fellowship"])
+  const his = plan({ items: [opp()], tasks: [task({ labels: stale })] })
+  assert.ok(his.updates[0].body.labels.includes("us-travel-blocked"), "labels on his own tasks are only ever added")
+})
+
+test("a failed Todoist sections read stops the sync instead of treating maybe-tasks as premium", async () => {
+  const { createServer } = await import("node:http")
+  const server = createServer((req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end("null") })
+  await new Promise((r) => server.listen(0, "127.0.0.1", r))
+  const api = `http://127.0.0.1:${server.address().port}`
+  const client = {
+    projects: async () => [{ id: "P1", name: "Opportunities" }],
+    sections: async () => { throw new Error("Todoist 429 GET /sections") },
+    tasks: async () => [task({ id: "m", content: "Maybe: some summer program", section_id: "s-maybe" })],
+    task: async () => null, create: async () => ({}), update: async () => ({}),
+  }
+  try {
+    await assert.rejects(() => syncTodoist({ api, dryRun: true, client }), /sections/)
+  } finally {
+    server.close()
+  }
+})

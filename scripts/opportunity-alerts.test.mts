@@ -330,3 +330,12 @@ test('premium switch brings back a profile-hidden item, never one he archived', 
   assert.deepEqual(premiumPatch({ status: 'archived', hiddenReason: null }, true), { premium: true })
   assert.deepEqual(premiumPatch({ status: 'new', hiddenReason: null }, false), { premium: false })
 })
+
+test('the word "us" in a free-text location is not the United States; a stated country is', () => {
+  const toronto = opp({ modality: 'in-person', location: 'Join us at MaRS, Toronto', programStart: '2027-03-01' }, { inPerson: true, city: 'Toronto', country: 'Canada' })
+  assert.equal(travelCheckOf(toronto, readiness).flag, null)
+  const coded = opp({ modality: 'in-person', location: 'Riverside campus', programStart: '2027-03-01' }, { inPerson: true, city: 'Riverside', country: 'US' })
+  assert.equal(travelCheckOf(coded, readiness).flag, 'US_TRAVEL_BLOCKED')
+  const suffix = opp({ modality: 'in-person', location: 'Tempe, AZ, US' }, { inPerson: true })
+  assert.equal(travelCheckOf(suffix, readiness).flag, 'VISA_PENDING')
+})
