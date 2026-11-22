@@ -120,8 +120,11 @@ export function hiddenLabel(r: Row): string {
 
 // ── Chips ────────────────────────────────────────────────────────────────────
 
+/** A flag chip on a radar row: short text, semantic tone, and a tooltip saying why. */
+export interface FlagChip { text: string; variant: ChipVariant; title: string }
+
 /** Travel flag chip: blocked trips read as danger, a pending visa as a warning. */
-export function travelChip(t: TravelCheck): { text: string; variant: ChipVariant; title: string } | null {
+export function travelChip(t: TravelCheck): FlagChip | null {
   if (!t.flag) return null
   return t.flag === 'VISA_PENDING'
     ? { text: 'Visa pending', variant: 'warning', title: t.reason }
@@ -129,7 +132,7 @@ export function travelChip(t: TravelCheck): { text: string; variant: ChipVariant
 }
 
 /** Recommendation letter flag: recommenders need weeks of notice, so it reads as a warning. */
-export function lettersChip(o: Opportunity): { text: string; variant: ChipVariant; title: string } | null {
+export function lettersChip(o: Opportunity): FlagChip | null {
   const n = lettersNeededOf(o)
   if (n === 0) return null
   return {
