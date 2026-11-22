@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import {
   ALL_CATEGORIES, ALL_DEADLINE_TYPES, ALL_EFFORTS, ALL_STATUSES,
   ageRuleOf, categoryConfig, deadlineTypeConfig, deadlineTypeOf, deadlineTypePatch,
-  effortConfig, eligibilityConfig, modalityConfig, modalityOf,
+  effortConfig, eligibilityConfig, letterCountOf, modalityConfig, modalityOf,
   parseAmountUsd, premiumPatch, requires18PlusFor, sourceOf, statusConfig,
   type AgeRule, type DeadlineType, type Effort, type Eligibility,
   type Modality, type Opportunity, type OpportunityCategory, type OppStatus,
@@ -118,7 +118,10 @@ export function OpportunityEditor({ o, setField, onDelete }: {
           <SelectField label="Age rule" value={ageRuleOf(o)} choices={AGE_RULE_OPTIONS}
             onChange={(v) => set({ requires18Plus: requires18PlusFor(v as AgeRule) })} />
         </Pair>
-        <TextField label="Reward / prize" value={o.reward} onChange={(e) => set({ reward: e.target.value })} placeholder="$5k, stipend, credits…" />
+        <Pair>
+          <TextField label="Reward / prize" value={o.reward} onChange={(e) => set({ reward: e.target.value })} placeholder="$5k, stipend, credits…" />
+          <TextField label="Rec letters needed" type="number" min={0} max={10} value={o.recommendationLetters ?? ''} onChange={(e) => set({ recommendationLetters: letterCountOf(e.target.value) })} placeholder="Unstated" className="font-mono tabular-nums" />
+        </Pair>
         <TextField label="Why it matters" value={o.leverageNote} onChange={(e) => set({ leverageNote: e.target.value })} placeholder="Funded SF trip, dense founder network…" />
       </div>
 
