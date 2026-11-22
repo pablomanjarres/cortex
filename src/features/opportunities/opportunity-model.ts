@@ -53,6 +53,11 @@ export interface Opportunity {
   amountUsd?: number | null
   /** true ONLY for an explicit 18+/legal-age rule; false = minors explicitly OK; null = unstated. */
   requires18Plus?: boolean | null
+  /**
+   * Recommendation or reference letters the application collects from someone else
+   * (professor, mentor, employer). 0 = none needed; null = unstated. See letterCountOf.
+   */
+  recommendationLetters?: number | null
   /** Application effort heuristic. */
   effort?: Effort | null
   location: string
@@ -300,6 +305,19 @@ export function parseAmountUsd(value: string): number | null {
   const n = Number(v)
   return v === '' || !Number.isFinite(n) ? null : Math.max(0, Math.round(n))
 }
+
+/**
+ * A recommendation letter count as a whole number from 0 to 10; blank or junk is
+ * unstated (null). The one rule for research answers, MCP writes, merges and the editor.
+ */
+export function letterCountOf(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN
+  return Number.isFinite(n) ? Math.min(10, Math.max(0, Math.round(n))) : null
+}
+
+/** Letters this application needs from someone else, or 0 when none are stated as needed. */
+export const lettersNeededOf = (o: Pick<Opportunity, 'recommendationLetters'>): number =>
+  letterCountOf(o.recommendationLetters) ?? 0
 
 export type AgeRule = '' | 'yes' | 'no'
 export const ageRuleOf = (o: Opportunity): AgeRule =>

@@ -15,6 +15,7 @@
 // Kept dependency-free and side-effect-free so scripts/radar-lib.test.mjs can `node --test`.
 
 import { createHash } from "node:crypto"
+import { letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
 
 // host substring → canonical source. Order matters only for readability; matches are
 // by domain suffix so subdomains (foo.devpost.com, eventbrite.co.uk) resolve correctly.
@@ -149,7 +150,8 @@ const refreshStr = (incoming, existing) => {
  * user keeps what they own (id, status, priority, leverage edits, notes).
  *
  *   radar-owned  : deadline, deadlineType(+rolling sync), recurrence, nextWindowExpected,
- *                  amountUsd, reward, url, officialUrl, location, modality, eligibility,
+ *                  amountUsd, recommendationLetters, reward, url, officialUrl, location,
+ *                  modality, eligibility,
  *                  tags, intel, lastVerified, opensAt, programStart, programEnd, evidence —
  *                  refreshed from `incoming` (blank/unknown never overwrite),
  *                  runId -> the new run, discoveredAt -> kept from the original.
@@ -195,6 +197,7 @@ export function mergeOpportunity(existing, incoming, { runId, today } = {}) {
     modality: next.modality && next.modality !== "unknown" ? next.modality : (prev.modality ?? "unknown"),
     eligibility: next.eligibility && next.eligibility !== "unknown" ? next.eligibility : (prev.eligibility ?? "unknown"),
     requires18Plus: typeof next.requires18Plus === "boolean" ? next.requires18Plus : (prev.requires18Plus ?? null),
+    recommendationLetters: letterCountOf(next.recommendationLetters) ?? letterCountOf(prev.recommendationLetters),
     effort: next.effort ?? prev.effort ?? null,
     tags: Array.isArray(next.tags) && next.tags.length ? next.tags : (prev.tags ?? []),
     // The research "why" fills a blank note; once set (or edited), it is Pablo's.
