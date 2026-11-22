@@ -120,7 +120,7 @@ export function OpportunityEditor({ o, setField, onDelete }: {
         </Pair>
         <Pair>
           <TextField label="Reward / prize" value={o.reward} onChange={(e) => set({ reward: e.target.value })} placeholder="$5k, stipend, credits…" />
-          <TextField label="Rec letters needed" type="number" min={0} max={10} value={o.recommendationLetters ?? ''} onChange={(e) => set({ recommendationLetters: letterCountOf(e.target.value) })} placeholder="Unstated" className="font-mono tabular-nums" />
+          <TextField label="Rec letters" type="number" min={0} max={10} value={o.recommendationLetters ?? ''} onChange={(e) => set({ recommendationLetters: letterCountOf(e.target.value) })} placeholder="Unstated" className="font-mono tabular-nums" />
         </Pair>
         <TextField label="Why it matters" value={o.leverageNote} onChange={(e) => set({ leverageNote: e.target.value })} placeholder="Funded SF trip, dense founder network…" />
       </div>
