@@ -5,7 +5,7 @@ import { Chip } from '@/components/ui/chip'
 import { Select } from '@/components/ui/select'
 import { CountdownChip } from './CountdownChip'
 import { OpportunityEditor } from './OpportunityEditor'
-import { FUNDING_CHIP, factChips, placeLabel, travelChip, type Row } from './opportunity-radar'
+import { FUNDING_CHIP, factChips, lettersChip, placeLabel, travelChip, type Row } from './opportunity-radar'
 import { FUNDING_LABEL } from './opportunity-score'
 import { ALL_STATUSES, statusConfig, statusOf, type OppStatus, type Opportunity } from './opportunity-model'
 
@@ -23,6 +23,7 @@ export function OpportunityRow({ row, today, note, expanded, onToggle, setField,
   const { o, s } = row
   const fundingVariant = FUNDING_CHIP[s.funding]
   const travel = travelChip(row.travel)
+  const letters = lettersChip(o)
   const sub = note ?? (o.leverageNote || o.host)
   const facts = expanded ? factChips(o) : []
   return (
@@ -46,6 +47,7 @@ export function OpportunityRow({ row, today, note, expanded, onToggle, setField,
         <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
           {o.premium && <Chip size="sm" variant="accent" title="On your 100% list">Premium</Chip>}
           {travel && <Chip size="sm" variant={travel.variant} title={travel.title}>{travel.text}</Chip>}
+          {letters && <Chip size="sm" variant={letters.variant} title={letters.title}>{letters.text}</Chip>}
           {fundingVariant && <Chip size="sm" variant={fundingVariant}>{FUNDING_LABEL[s.funding]}</Chip>}
           <Chip size="sm">{placeLabel(o)}</Chip>
           <CountdownChip opportunity={o} today={today} />
