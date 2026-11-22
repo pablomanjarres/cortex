@@ -39,6 +39,7 @@ const OPPORTUNITY = object({
   programEnd: nullable("string"),
   nextWindowExpected: nullable("string"),
   amountUsd: nullable("number"),
+  recommendationLetters: nullable("number"),
   reward: str,
   effort: enumOf(EFFORTS, true),
   why: str,
@@ -111,6 +112,10 @@ Rules:
   money for equity or a SAFE; never put investment in cashUsd. stipendUsd = total over
   the program. travelCovered = flights paid; travelCapUsd = reimbursement cap.
   housingCovered / mealsCovered / visaSupport = stated support. feeUsd = what he must pay.
+- recommendationLetters: how many recommendation or reference letters the application
+  collects from someone else (professor, mentor, employer), including referees the
+  program emails. 0 when the official page says none are needed. 1 when letters are
+  required but the count is not stated. null when the page does not say.
 - intel signals (0-10, your judgment): prestige, network, founderDensity,
   technicalDensity, investorAccess, careerUpside, skillGain. 9-10 = YC / Stanford / MIT /
   Thiel / ICRA tier. 5 = decent regional program. Under 4 = don't bother.
