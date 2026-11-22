@@ -12,7 +12,10 @@
 //      shouldAutoArchive expires fixed-deadline items that closed >7 days ago.
 //   3. stableId — the one content-hash id helper (ingest + catalog seed share it).
 //
-// Kept dependency-free and side-effect-free so scripts/radar-lib.test.mjs can `node --test`.
+// Side-effect-free. Its only non-builtin import is the shared opportunity model
+// (src/features/opportunities/opportunity-model.ts, plain TypeScript with no imports), so it
+// and its importers need a Node with TypeScript stripping; scripts/radar-lib.test.mjs still
+// runs under plain `node --test`.
 
 import { createHash } from "node:crypto"
 import { letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
