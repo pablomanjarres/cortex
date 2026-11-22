@@ -5,7 +5,7 @@
  */
 
 import { daysUntilDeadline } from './expiry'
-import { deadlineTypeOf, type ChipVariant, type Opportunity } from './opportunity-model'
+import { deadlineTypeOf, lettersNeededOf, type ChipVariant, type Opportunity } from './opportunity-model'
 import {
   isApplyNow, isInPerson, scoreOpportunity, type FundingClass, type Mode, type Scored,
 } from './opportunity-score'
@@ -64,15 +64,16 @@ export function countdownOf(o: Opportunity, today: string): Countdown {
   return { text: dt === 'recurring' ? 'recurring' : 'no date', variant: 'neutral' }
 }
 
-// ── Filters (the only ones: where, money, time) ──────────────────────────────
+// ── Filters (the only ones: where, money, time, letters) ─────────────────────
 
-export type RadarFilter = 'premium' | 'remote' | 'in-person' | 'funded' | 'soon'
+export type RadarFilter = 'premium' | 'remote' | 'in-person' | 'funded' | 'soon' | 'letters'
 export const RADAR_FILTERS: { key: RadarFilter; label: string; test: (o: Opportunity, s: Scored) => boolean }[] = [
   { key: 'premium', label: 'Premium', test: (o) => o.premium === true },
   { key: 'remote', label: 'Remote', test: (o) => !isInPerson(o) },
   { key: 'in-person', label: 'In person', test: (o) => isInPerson(o) },
   { key: 'funded', label: 'Funded', test: (_, s) => s.funding === 'full' || s.funding === 'mostly' },
   { key: 'soon', label: 'Closing ≤21d', test: (_, s) => s.urgency === 'urgent' || s.urgency === 'high' },
+  { key: 'letters', label: 'Needs letters', test: (o) => lettersNeededOf(o) > 0 },
 ]
 
 // ── Sections ─────────────────────────────────────────────────────────────────
@@ -119,12 +120,26 @@ export function hiddenLabel(r: Row): string {
 
 // ── Chips ────────────────────────────────────────────────────────────────────
 
+/** A flag chip on a radar row: short text, semantic tone, and a tooltip saying why. */
+export interface FlagChip { text: string; variant: ChipVariant; title: string }
+
 /** Travel flag chip: blocked trips read as danger, a pending visa as a warning. */
-export function travelChip(t: TravelCheck): { text: string; variant: ChipVariant; title: string } | null {
+export function travelChip(t: TravelCheck): FlagChip | null {
   if (!t.flag) return null
   return t.flag === 'VISA_PENDING'
     ? { text: 'Visa pending', variant: 'warning', title: t.reason }
     : { text: `${t.flag.split('_')[0]} blocked`, variant: 'danger', title: t.reason }
+}
+
+/** Recommendation letter flag: recommenders need weeks of notice, so it reads as a warning. */
+export function lettersChip(o: Opportunity): FlagChip | null {
+  const n = lettersNeededOf(o)
+  if (n === 0) return null
+  return {
+    text: n === 1 ? 'Rec letter' : `${n} rec letters`,
+    variant: 'warning',
+    title: `Needs ${n} recommendation letter${n === 1 ? '' : 's'}. Ask your recommenders early.`,
+  }
 }
 
 export const FUNDING_CHIP: Record<FundingClass, ChipVariant | null> = {

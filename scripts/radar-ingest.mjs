@@ -22,6 +22,7 @@ import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 import { isCalendarDate } from "../src/features/opportunities/expiry.ts"
 import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.ts"
+import { letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
 import { visibilityPatch } from "../src/features/opportunities/opportunity-score.ts"
 import {
   inferSource, stableId, deadlineTypeOf, rollingFromDeadlineType,
@@ -124,6 +125,7 @@ export function normalizeRecord(raw, runId) {
     nextWindowExpected: strOrNull(raw.nextWindowExpected),
     amountUsd: amountOrNull(raw.amountUsd),
     requires18Plus: boolOrNull(raw.requires18Plus),
+    recommendationLetters: letterCountOf(raw.recommendationLetters),
     effort: pick(EFFORTS, raw.effort, null),
     location: String(raw.location ?? ""),
     modality: pick(MODALITY, raw.modality, "unknown"),

@@ -2572,7 +2572,7 @@ interface McpOpportunity {
   // Deadline intelligence (optional — legacy records derive them at read time)
   deadlineType?: string; recurrence?: string | null; nextWindowExpected?: string | null;
   amountUsd?: number | null; requires18Plus?: boolean | null; officialUrl?: string;
-  effort?: string | null;
+  effort?: string | null; recommendationLetters?: number | null;
   // Deep-research facts + profile visibility (see opportunity-score.ts)
   intel?: Record<string, unknown>; lastVerified?: string | null; hiddenReason?: string | null;
   opensAt?: string | null; programStart?: string | null; programEnd?: string | null;
@@ -2703,6 +2703,7 @@ server.tool(
       nextWindowExpected: z.string().nullable().optional().describe("Freeform estimate of the next application window (mark estimates)"),
       amountUsd: z.number().nullable().optional().describe("Representative USD amount (grant/stipend/top prize) as a number, or null"),
       requires18Plus: z.boolean().nullable().optional().describe("true ONLY for an explicit 18+/legal-age rule; false when minors explicitly allowed; null/omit when unstated"),
+      recommendationLetters: z.number().int().min(0).max(10).nullable().optional().describe("How many recommendation/reference letters the application collects from professors, mentors or employers; 0 = none needed; 1 when required but the count is unstated; null/omit when unstated"),
       officialUrl: z.string().optional().describe("Canonical program homepage when identifiable (url stays the apply/discovery link)"),
       effort: z.enum(["low", "medium", "high"]).nullable().optional().describe("Application effort: low = form, medium = essays/submission, high = multi-stage"),
       location: z.string().optional().describe("City/country, or 'Remote'"),

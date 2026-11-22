@@ -6,7 +6,7 @@
  */
 
 import { fundingLines } from './opportunity-funding.ts'
-import { deadlineTypeOf, type ApplicationStatus, type Opportunity } from './opportunity-model.ts'
+import { deadlineTypeOf, lettersNeededOf, type ApplicationStatus, type Opportunity } from './opportunity-model.ts'
 import { eligibilityOf, isInPerson, type EligibilityCheck } from './opportunity-score.ts'
 import { travelCheckOf, type TravelCheck, type TravelReadiness } from './travel-readiness.ts'
 import {
@@ -24,6 +24,8 @@ export interface AlertCard {
   place: string
   dates: string
   eligibility: EligibilityCheck
+  /** Recommendation letters the application needs; 0 when none are stated. Absent on older cards. */
+  letters?: number
   travel: TravelCheck
   link: string
   action: AlertAction
@@ -92,6 +94,7 @@ export function buildCard(o: Opportunity, headline: string, readiness: TravelRea
     place: placeOf(o),
     dates: datesOf(o),
     eligibility,
+    letters: lettersNeededOf(o),
     travel,
     link: o.officialUrl || o.url || '',
     action: recommendedAction(status, confidence, days, eligibility, travel, deadlineTypeOf(o) === 'recurring' || !!o.nextWindowExpected),
@@ -117,6 +120,7 @@ export function renderCard(card: AlertCard, also: string[] = []): string {
     `- Deadline: ${card.deadline.label}`,
     `- Where and when: ${card.place}; ${card.dates}`,
     `- Eligibility: ${card.eligibility.level}. ${card.eligibility.note}`,
+    ...(card.letters ? [`- Recommendation letters: ${card.letters} needed. Ask your recommenders early.`] : []),
     `- Visa/travel: ${card.travel.flag ? `${card.travel.flag}. ${card.travel.reason}` : 'no warning'}`,
     `- Apply: ${card.link || 'no official link recorded'}`,
     `- Recommended action: ${card.action}`,

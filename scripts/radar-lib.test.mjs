@@ -150,6 +150,23 @@ test("mergeOpportunity: blank incoming values never erase existing intel", () =>
   assert.deepEqual(m.tags, ["fellowship"])
 })
 
+test("recommendation letters: a 0-10 count, refreshed only when a sighting states one", () => {
+  const runId = "2026-07-10T09:00:00Z"
+  const letters = (v) => normalizeRecord({ title: "L", url: "https://l.example.com", recommendationLetters: v }, runId).recommendationLetters
+  assert.equal(letters(2), 2)
+  assert.equal(letters("3"), 3)
+  assert.equal(letters(0), 0)
+  assert.equal(letters(40), 10)
+  assert.equal(letters("two"), null)
+  assert.equal(letters(undefined), null)
+  const opts = { runId, today: "2026-07-10" }
+  const stored = { ...storedThiel, recommendationLetters: 2 }
+  assert.equal(mergeOpportunity(stored, { ...incomingThiel, recommendationLetters: null }, opts).recommendationLetters, 2)
+  assert.equal(mergeOpportunity(stored, { ...incomingThiel, recommendationLetters: 0 }, opts).recommendationLetters, 0)
+  assert.equal(mergeOpportunity(storedThiel, { ...incomingThiel, recommendationLetters: 3 }, opts).recommendationLetters, 3)
+  assert.equal(mergeOpportunity(storedThiel, incomingThiel, opts).recommendationLetters, null)
+})
+
 test("mergeOpportunity: rolling boolean stays in sync when the cycle goes rolling", () => {
   const m = mergeOpportunity(storedThiel, { ...incomingThiel, deadline: null, deadlineType: "rolling" },
     { runId: "2026-07-10T09:00:00Z", today: "2026-07-10" })

@@ -277,6 +277,14 @@ test('every alert card carries the full notification format', () => {
   assert.match(a.text, /Recommended action: Prepare/)
 })
 
+test('an alert card names recommendation letters only when the application needs them', () => {
+  const needs = check(baselined([]), [opp({ recommendationLetters: 2 })]).created[0]
+  assert.equal(needs.card.letters, 2)
+  assert.match(needs.text, /- Recommendation letters: 2 needed\. Ask your recommenders early\.\n- Visa\/travel: /)
+  assert.doesNotMatch(check(baselined([]), [opp({ recommendationLetters: 0 })]).created[0].text, /Recommendation letters/)
+  assert.doesNotMatch(check(baselined([]), [opp()]).created[0].text, /Recommendation letters/)
+})
+
 // ── Regressions from the independent review ──────────────────────────────────
 
 test('urgent delivery that carries a digest-level alert does not reset the weekly digest clock', () => {

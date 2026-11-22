@@ -98,6 +98,7 @@ export function toRecord(raw, today) {
     deadlineType: raw?.deadlineType,
     nextWindowExpected: raw?.nextWindowExpected,
     amountUsd: raw?.amountUsd,
+    recommendationLetters: raw?.recommendationLetters,
     reward: raw?.reward,
     effort: raw?.effort,
     requires18Plus: intel.ageMin != null ? intel.ageMin >= 18 : null,

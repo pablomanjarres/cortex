@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { OppIntel, Opportunity } from '../src/features/opportunities/opportunity-model.ts'
 import { emptyIntel } from '../src/features/opportunities/opportunity-intel.ts'
-import { countdownOf, factChips, hiddenLabel, placeLabel, radarView } from '../src/features/opportunities/opportunity-radar.ts'
+import { letterCountOf } from '../src/features/opportunities/opportunity-model.ts'
+import { countdownOf, factChips, hiddenLabel, lettersChip, placeLabel, radarView } from '../src/features/opportunities/opportunity-radar.ts'
 
 const today = '2026-10-23'
 const opp = (fields: Partial<Opportunity> = {}, intel: Partial<OppIntel> | null = {}): Opportunity => ({
@@ -56,6 +57,29 @@ test('filters narrow to remote, in person, funded and closing soon', () => {
   assert.deepEqual(ids(['funded']), ['sf'])
   assert.deepEqual(ids(['soon']), ['sf'])
   assert.deepEqual(ids(['remote', 'funded']), [])
+})
+
+test('opportunities that need recommendation letters get a flag and a filter', () => {
+  const items = [
+    opp({ id: 'two', deadline: '2026-11-10', recommendationLetters: 2 }),
+    opp({ id: 'one', deadline: '2026-11-10', recommendationLetters: 1 }),
+    opp({ id: 'none', deadline: '2026-11-10', recommendationLetters: 0 }),
+    opp({ id: 'unstated', deadline: '2026-11-10' }),
+  ]
+  assert.deepEqual(radarView(items, today, 'balanced', ['letters']).apply.map((r) => r.o.id).sort(), ['one', 'two'])
+  assert.equal(lettersChip(items[0])?.text, '2 rec letters')
+  assert.equal(lettersChip(items[0])?.variant, 'warning')
+  assert.equal(lettersChip(items[1])?.text, 'Rec letter')
+  assert.equal(lettersChip(items[2]), null)
+  assert.equal(lettersChip(items[3]), null)
+})
+
+test('a hand-typed letter count is a whole number from 0 to 10, blank is unstated', () => {
+  assert.equal(letterCountOf(''), null)
+  assert.equal(letterCountOf('2'), 2)
+  assert.equal(letterCountOf('-1'), 0)
+  assert.equal(letterCountOf(2.6), 3)
+  assert.equal(letterCountOf(null), null)
 })
 
 test('place and fact chips stay short', () => {
