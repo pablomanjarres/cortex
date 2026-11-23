@@ -5,7 +5,7 @@ import test from 'node:test'
 import type { OppIntel, Opportunity } from '../src/features/opportunities/opportunity-model.ts'
 import { emptyIntel } from '../src/features/opportunities/opportunity-intel.ts'
 import {
-  ackAlerts, reconcileAlerts, selectDelivery, type AlertStore,
+  ackAlerts, alertWorthy, reconcileAlerts, selectDelivery, type AlertStore,
 } from '../src/features/opportunities/opportunity-alerts.ts'
 import { fundingLines } from '../src/features/opportunities/opportunity-funding.ts'
 import { applicationStatusOf, deadlineConfidenceOf } from '../src/features/opportunities/opportunity-window.ts'
@@ -283,6 +283,12 @@ test('an alert card names recommendation letters only when the application needs
   assert.match(needs.text, /- Recommendation letters: 2 needed\. Ask your recommenders early\.\n- Visa\/travel: /)
   assert.doesNotMatch(check(baselined([]), [opp({ recommendationLetters: 0 })]).created[0].text, /Recommendation letters/)
   assert.doesNotMatch(check(baselined([]), [opp()]).created[0].text, /Recommendation letters/)
+})
+
+test('a watched item stays alert-worthy even when it fails the profile', () => {
+  const failing = opp({ status: 'watching' }, { colombiaAllowed: false })
+  assert.equal(alertWorthy(failing, T0), true)
+  assert.equal(alertWorthy({ ...failing, status: 'new' }, T0), false)
 })
 
 // ── Regressions from the independent review ──────────────────────────────────

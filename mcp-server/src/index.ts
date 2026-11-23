@@ -2613,7 +2613,7 @@ server.tool(
   "get_opportunities",
   "Read the Opportunity Radar: opportunities that passed Pablo's profile (hidden ones are status 'archived' with a hiddenReason), each with its deep-research `intel` facts and lastVerified date, plus active focus notes, the latest run report and run status. Use before sourcing to avoid duplicates.",
   {
-    status: z.string().optional().describe("Filter by status: new|pursuing|applied|won|lost|archived"),
+    status: z.string().optional().describe("Filter by status: new|pursuing|watching (on the Watchlist by hand)|applied|won|lost|archived"),
     category: z.string().optional().describe("Filter by category (e.g. fellowship, grant, program, accelerator, hackathon)"),
     deadline_type: z.enum(["fixed", "rolling", "recurring", "always-open", "unknown"]).optional().describe("Filter by deadline behavior (legacy records derive it: rolling flag → rolling, dated → fixed, else unknown)"),
     limit: z.number().optional().describe("Max items to return, default 50"),

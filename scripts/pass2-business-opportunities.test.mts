@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { OppIntel, Opportunity } from '../src/features/opportunities/opportunity-model.ts'
 import { emptyIntel } from '../src/features/opportunities/opportunity-intel.ts'
-import { letterCountOf } from '../src/features/opportunities/opportunity-model.ts'
+import { letterCountOf, statusConfig } from '../src/features/opportunities/opportunity-model.ts'
 import { countdownOf, factChips, hiddenLabel, lettersChip, placeLabel, radarView } from '../src/features/opportunities/opportunity-radar.ts'
 
 const today = '2026-10-23'
@@ -44,6 +44,20 @@ test('the view splits apply, applied, watchlist and hidden, and never shows clos
   assert.deepEqual(ids(view.watchlist), ['next-cycle'])
   assert.deepEqual(ids(view.hidden).sort(), ['closed', 'junk', 'mine-closed'])
   assert.equal(hiddenLabel(view.hidden.find((r) => r.o.id === 'mine-closed')!), 'closed')
+})
+
+test('an item moved to the Watchlist stays there whether its window is open, closed or unknown', () => {
+  const view = radarView([
+    opp({ id: 'open-soon', status: 'watching', deadline: '2026-11-01' }),
+    opp({ id: 'closed', status: 'watching', deadline: '2026-10-01' }),
+    opp({ id: 'unscored', status: 'watching', category: 'hackathon' }, null),
+    opp({ id: 'auto', deadline: '2026-11-01' }),
+  ], today, 'balanced')
+  const ids = (rows: { o: Opportunity }[]) => rows.map((r) => r.o.id).sort()
+  assert.deepEqual(ids(view.apply), ['auto'])
+  assert.deepEqual(ids(view.watchlist), ['closed', 'open-soon', 'unscored'])
+  assert.deepEqual(ids(view.hidden), [])
+  assert.equal(statusConfig.watching.label, 'Watchlist')
 })
 
 test('filters narrow to remote, in person, funded and closing soon', () => {

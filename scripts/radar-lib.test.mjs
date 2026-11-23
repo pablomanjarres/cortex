@@ -188,7 +188,7 @@ test("shouldAutoArchive: boundary at exactly -7d (7 days past = keep, 8 = archiv
 
 test("shouldAutoArchive: never touches engaged statuses or non-fixed types", () => {
   const today = "2026-07-10"
-  for (const status of ["pursuing", "applied", "won", "lost", "archived"]) {
+  for (const status of ["pursuing", "watching", "applied", "won", "lost", "archived"]) {
     assert.equal(shouldAutoArchive({ status, deadlineType: "fixed", deadline: "2026-01-01" }, today), false, status)
   }
   assert.equal(shouldAutoArchive({ status: "new", deadlineType: "rolling", deadline: "2026-01-01" }, today), false)
@@ -248,6 +248,23 @@ test("mergeClassified: a shared program page links sightings; a shared bare doma
   assert.equal(mergeClassified({ items: [solo], lastRun: null }, [other], "2026-11-06T06:00:00Z", undefined).added.length, 1)
 })
 
+test("mergeClassified: a sighting with an existing id refreshes that item; stored id clashes are cleaned", () => {
+  const runId = "2026-11-22T03:35:51.040Z"
+  // Stored under the id of its first sighting; a later refresh moved its url elsewhere.
+  const stored = normalizeRecord({ title: "Orbit Fellowships", host: "Orbit", url: "https://orbit.llc/fellowships", sourceRef: "https://orbitfellowship.com/" }, "2026-11-06T00:00:00Z")
+  const sighting = { title: "Orbit Fellowship", host: "Orbit", url: "https://orbitfellowship.com/" }
+  assert.equal(normalizeRecord(sighting, runId).id, stored.id)
+  const r = mergeClassified({ items: [stored] }, [sighting], runId, undefined, "2026-11-22")
+  assert.equal(r.added.length, 0)
+  assert.equal(r.refreshed, 1)
+  assert.deepEqual(r.merged.items.map((o) => o.id), [stored.id])
+  // A store that already holds two records under one id keeps only the first.
+  const twin = { ...stored, title: "Orbit Fellowship", url: "https://orbitfellowship.com/", officialUrl: "" }
+  const clash = mergeClassified({ items: [twin, stored] }, [], runId, undefined, "2026-11-22")
+  assert.equal(clash.existingDropped, 1)
+  assert.deepEqual(clash.merged.items.map((o) => o.title), ["Orbit Fellowship"])
+})
+
 test("mergeClassified: auto-archives stale fixed items and counts them", () => {
   const stale = { ...storedThiel, id: "opp-old", title: "Old Hack Week", host: "X", url: "https://oldhack.example.com", sourceRef: "https://oldhack.example.com", status: "new", deadline: "2026-06-01", rolling: false }
   const { merged, archived } = mergeClassified({ items: [stale], lastRun: null }, [], "2026-07-10T09:00:00Z", undefined)
@@ -284,6 +301,8 @@ test("normalizeRecord: defaults + derives deadlineType and keeps rolling in sync
   assert.equal(researched.intel.prestige, 10)
   assert.deepEqual(researched.intel.fields, ["ai"])
   assert.equal(researched.lastVerified, "2026-07-10")
+  // a hand-picked Watchlist status survives ingest
+  assert.equal(normalizeRecord({ title: "W", url: "https://w.example.com", status: "watching" }, runId).status, "watching")
   // new categories pass the whitelist
   assert.equal(normalizeRecord({ title: "P", url: "https://p.example.com", category: "program" }, runId).category, "program")
   assert.equal(normalizeRecord({ title: "R", url: "https://r.example.com", category: "residency" }, runId).category, "residency")

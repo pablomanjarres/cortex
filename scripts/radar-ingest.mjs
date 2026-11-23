@@ -22,7 +22,7 @@ import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 import { isCalendarDate } from "../src/features/opportunities/expiry.ts"
 import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.ts"
-import { letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
+import { ALL_STATUSES, letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
 import { visibilityPatch } from "../src/features/opportunities/opportunity-score.ts"
 import {
   inferSource, stableId, deadlineTypeOf, rollingFromDeadlineType,
@@ -37,7 +37,7 @@ const KEY = "cortex-opportunities"
 const GOALS = new Set(["internship", "exchange", "funding", "social-growth", "users"])
 const ELIGIBILITY = new Set(["remote-global", "latam", "us-eu", "other", "unknown"])
 const MODALITY = new Set(["remote", "hybrid", "in-person", "unknown"])
-const STATUS = new Set(["new", "pursuing", "applied", "won", "lost", "archived"])
+const STATUS = new Set(ALL_STATUSES)
 const PRIORITY = new Set(["low", "medium", "high"])
 
 function clampScore(n) {
@@ -65,6 +65,9 @@ export function normText(s) {
 /** Identity keys for an opportunity; two items collide if they share ANY key. */
 function identityKeys(o) {
   const keys = []
+  // Ids must stay unique (rows and edits key on them). A re-sighting can carry the id of a
+  // stored item whose url has since moved, because ids come from the first sighting's link.
+  if (o.id) keys.push("i:" + o.id)
   const u = normUrl(o.url)
   if (u && u.length > 6) keys.push("u:" + u)
   // A program's own page identifies it too; a bare domain may host several programs.
@@ -191,7 +194,8 @@ export function mergeClassified(existing, classified, runId, report, today = Str
   for (const raw of classified) {
     const rec = normalizeRecord(raw, runId)
     const keys = identityKeys(rec)
-    if (keys.length === 0) continue
+    // Nothing but its generated id to identify it (no usable url or title): skip it.
+    if (keys.every((k) => k.startsWith("i:"))) continue
     const hitKey = keys.find((k) => seen.has(k))
     if (hitKey !== undefined) {
       const idx = seen.get(hitKey)
