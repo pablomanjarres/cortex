@@ -2,7 +2,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
-  inferSource, hostOf,
+  inferSource, hostOf, platformOf, siteOf, orgSiteOf,
   deadlineTypeOf, rollingFromDeadlineType, mergeOpportunity, shouldAutoArchive, shouldPrune,
   addDays, stableId,
 } from "./radar-lib.mjs"
@@ -37,6 +37,30 @@ test("inferSource: post host (sourceRef) wins over apply host (url)", () => {
 test("inferSource falls back when host is unknown/absent", () => {
   assert.equal(inferSource("https://example.org/apply", "", "web"), "web")
   assert.equal(inferSource("", "", "manual"), "manual")
+})
+
+test("siteOf: the registrable domain, including registry labels under a country code", () => {
+  assert.equal(siteOf("https://www.aalto.fi/en/asci"), "aalto.fi")
+  assert.equal(siteOf("https://latam.aplica.500.co/"), "500.co")
+  assert.equal(siteOf("https://www.ox.ac.uk/admissions"), "ox.ac.uk")
+  assert.equal(siteOf("https://unal.edu.co/convocatorias"), "unal.edu.co")
+  assert.equal(siteOf("http://localhost:3456/x"), "")
+  assert.equal(siteOf(""), "")
+})
+
+test("platformOf: shared platforms by name, any other site null", () => {
+  assert.equal(platformOf("https://cloud.devpost.com/"), "devpost")
+  assert.equal(platformOf("https://medellin.eventbrite.co"), "eventbrite")
+  assert.equal(platformOf("https://www.aalto.fi/en"), null)
+  assert.equal(platformOf(""), null)
+})
+
+test("orgSiteOf: an org's own domain, blank on platforms and shared hosting", () => {
+  assert.equal(orgSiteOf("https://www.aalto.fi/en/asci"), "aalto.fi")
+  assert.equal(orgSiteOf("https://cloud.devpost.com/"), "")
+  assert.equal(orgSiteOf("https://gdg-bogota.notion.site/fellowship"), "")
+  assert.equal(orgSiteOf("https://sites.google.com/view/hack"), "")
+  assert.equal(orgSiteOf("https://www.google.com/about"), "google.com")
 })
 
 // ── deadlineType derivation ───────────────────────────────────────────────────
@@ -263,6 +287,34 @@ test("mergeClassified: a sighting with an existing id refreshes that item; store
   const clash = mergeClassified({ items: [twin, stored] }, [], runId, undefined, "2026-11-22")
   assert.equal(clash.existingDropped, 1)
   assert.deepEqual(clash.merged.items.map((o) => o.title), ["Orbit Fellowship"])
+})
+
+// One program seen twice: a later run named the host more fully and the URL slug followed.
+const aaltoPage = (slug) => `https://www.aalto.fi/en/${slug}-asci/${slug}-international-summer-research-programme`
+const aaltoStored = { ...storedThiel, id: "opp-b93e55cbd9bd", title: "Aalto International Summer Research Programme 2027", host: "Aalto University", url: aaltoPage("aalto-science-institute"), officialUrl: "", status: "new" }
+const aaltoSighting = { ...incomingThiel, title: "Aalto International Summer Research Programme 2027", host: "Aalto University Science Institute", url: aaltoPage("aalto-university-science-institute"), officialUrl: "" }
+const mergeOne = (stored, sighting) => mergeClassified({ items: [stored], lastRun: null }, [sighting], "2026-11-09T06:00:00Z", undefined)
+
+test("mergeClassified: a fuller host name on the program's own site refreshes the stored record", () => {
+  const { merged, added, refreshed } = mergeOne(aaltoStored, aaltoSighting)
+  assert.deepEqual([added.length, refreshed, merged.items.length, merged.items[0].id], [0, 1, 1, "opp-b93e55cbd9bd"])
+  assert.equal(merged.items[0].url, aaltoSighting.url)
+  // Either direction: a shorter host on a later sighting links too.
+  assert.equal(mergeOne({ ...aaltoStored, host: aaltoSighting.host }, { ...aaltoSighting, host: aaltoStored.host }).refreshed, 1)
+})
+
+test("mergeClassified: a related host links only on the same org site and whole words", () => {
+  const otherSite = { ...aaltoSighting, url: "https://summer-research.example.org/aalto" }
+  assert.equal(mergeOne(aaltoStored, otherSite).added.length, 1)
+  // A shared platform hosts many organizers, so its domain says nothing about the org.
+  const onDevpost = (host, slug) => ({ ...aaltoSighting, title: "Build With AI 2027", host, url: `https://${slug}.devpost.com/` })
+  assert.equal(mergeOne({ ...aaltoStored, ...onDevpost("Google", "gdg"), id: "opp-gdg" }, onDevpost("Google Cloud", "cloud")).added.length, 1)
+  // Shared hosting is the same: two orgs' Notion pages share notion.site.
+  const onNotion = (host, slug) => ({ ...aaltoSighting, title: "AI Builders Fellowship 2027", host, url: `https://${slug}.notion.site/apply` })
+  assert.equal(mergeOne({ ...aaltoStored, ...onNotion("Google", "gdsc-a"), id: "opp-gdsc" }, onNotion("Google Developer Groups", "gdg-b")).added.length, 1)
+  // "Aalto" is the start of "Aaltoes", but not as a whole word.
+  assert.equal(mergeOne({ ...aaltoStored, host: "Aalto" }, { ...aaltoSighting, host: "Aaltoes" }).added.length, 1)
+  assert.equal(mergeOne(aaltoStored, { ...aaltoSighting, title: "Aalto Research Fellowship 2027" }).added.length, 1)
 })
 
 test("mergeClassified: auto-archives stale fixed items and counts them", () => {

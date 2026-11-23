@@ -25,7 +25,7 @@ import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.
 import { ALL_STATUSES, letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
 import { visibilityPatch } from "../src/features/opportunities/opportunity-score.ts"
 import {
-  inferSource, stableId, deadlineTypeOf, rollingFromDeadlineType,
+  inferSource, orgSiteOf, stableId, deadlineTypeOf, rollingFromDeadlineType,
   mergeOpportunity, shouldAutoArchive, shouldPrune,
   CATEGORIES, SOURCES, DEADLINE_TYPES, EFFORTS,
 } from "./radar-lib.mjs"
@@ -62,6 +62,9 @@ export function normText(s) {
     .replace(/\b20\d\d\b/g, " ")          // drop years so a recurring program matches across runs
     .replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()
 }
+// Host asides don't change the org ("Z Fellows (Cory Levy)"); title asides can ("Hack (Bogotá)").
+const hostText = (o) => normText(String(o.host || "").replace(/\([^)]*\)/g, " "))
+
 /** Identity keys for an opportunity; two items collide if they share ANY key. */
 function identityKeys(o) {
   const keys = []
@@ -74,9 +77,42 @@ function identityKeys(o) {
   const official = normUrl(o.officialUrl)
   if (official.includes("/") && official !== u) keys.push("u:" + official)
   const t = normText(o.title)
-  // Host asides don't change the org ("Z Fellows (Cory Levy)"); title asides can ("Hack (Bogotá)").
-  if (t.length >= 4) keys.push("t:" + t + "|" + normText(String(o.host || "").replace(/\([^)]*\)/g, " ")))
+  if (t.length >= 4) keys.push("t:" + t + "|" + hostText(o))
   return keys
+}
+
+// A renamed host: a later run may name the org more fully ("Aalto University" ->
+// "Aalto University Science Institute") and the page slug can change with it. The same
+// year-stripped title on the same org site is then one program when one host is the
+// other's leading words. A shared platform or hosting service (Devpost, X, Notion,
+// Vercel) says nothing about the org, so it never links sightings this way.
+function renameKey(o) {
+  const t = normText(o.title)
+  const site = orgSiteOf(o.url)
+  return t.length >= 4 && site ? t + "|" + site : ""
+}
+function hostsRelated(a, b) {
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a]
+  return short !== "" && (long === short || long.startsWith(short + " "))
+}
+
+/** Identity lookup for one merge: shared identity keys first, then the renamed-host rule. */
+function identityIndex() {
+  const byKey = new Map()    // identity key -> index
+  const byRename = new Map() // renameKey -> [{ host, idx }]
+  return {
+    find(o) {
+      const hit = identityKeys(o).find((k) => byKey.has(k))
+      if (hit !== undefined) return byKey.get(hit)
+      const host = hostText(o)
+      return byRename.get(renameKey(o))?.find((c) => hostsRelated(c.host, host))?.idx
+    },
+    add(o, idx) {
+      identityKeys(o).forEach((k) => byKey.set(k, idx))
+      const key = renameKey(o)
+      if (key) byRename.set(key, [...(byRename.get(key) ?? []), { host: hostText(o), idx }])
+    },
+  }
 }
 function pick(set, val, fallback) {
   return set.has(val) ? val : fallback
@@ -167,24 +203,24 @@ export async function readStoreWithRev(api = API, key = KEY) {
 }
 
 // Pure merge: classified records into the existing store.
-//   - identity collision (url or year-stripped title+host) => MERGE, not drop: the
-//     incoming sighting refreshes radar-owned fields (deadline intel, links, logistics)
-//     while user-owned fields (status/priority/notes/edits) are preserved. This is how
-//     "Thiel Fellowship 2027" refreshes the stale 2026 entry instead of vanishing.
+//   - identity collision (url, year-stripped title+host, or a renamed host on the same
+//     org site) => MERGE, not drop: the incoming sighting refreshes radar-owned fields
+//     (deadline intel, links, logistics) while user-owned fields (status/priority/
+//     notes/edits) are preserved. This is how "Thiel Fellowship 2027" refreshes the
+//     stale 2026 entry instead of vanishing.
 //   - fixed-deadline items that closed >7d ago and are still status 'new' auto-archive.
 const saysNothingAboutDeadline = (raw) =>
   raw.deadline === undefined && raw.deadlineType === undefined && raw.rolling === undefined
 
 export function mergeClassified(existing, classified, runId, report, today = String(runId).slice(0, 10)) {
-  const seen = new Map() // identity key -> index in existingKept
+  const seen = identityIndex() // identity -> index in existingKept
 
   // pass 1: keep existing, dropping any pre-existing self-duplicates (cleans old dupes)
   const existingKept = []
   let existingDropped = 0
   for (const it of existing.items) {
-    const keys = identityKeys(it)
-    if (keys.some((k) => seen.has(k))) { existingDropped++; continue }
-    keys.forEach((k) => seen.set(k, existingKept.length))
+    if (seen.find(it) !== undefined) { existingDropped++; continue }
+    seen.add(it, existingKept.length)
     existingKept.push(it)
   }
 
@@ -193,12 +229,10 @@ export function mergeClassified(existing, classified, runId, report, today = Str
   let refreshed = 0
   for (const raw of classified) {
     const rec = normalizeRecord(raw, runId)
-    const keys = identityKeys(rec)
     // Nothing but its generated id to identify it (no usable url or title): skip it.
-    if (keys.every((k) => k.startsWith("i:"))) continue
-    const hitKey = keys.find((k) => seen.has(k))
-    if (hitKey !== undefined) {
-      const idx = seen.get(hitKey)
+    if (identityKeys(rec).every((k) => k.startsWith("i:"))) continue
+    const idx = seen.find(rec)
+    if (idx !== undefined) {
       // idx === -1 → collides with a record ADDED this same run (classifier emitted a
       // duplicate); just skip it. idx >= 0 → re-sighting of a stored item: REFRESH it.
       if (idx >= 0) {
@@ -210,7 +244,7 @@ export function mergeClassified(existing, classified, runId, report, today = Str
       }
       continue
     }
-    keys.forEach((k) => seen.set(k, -1)) // -1: marks keys owned by newly-added records
+    seen.add(rec, -1) // -1: marks identities owned by newly-added records
     added.push(rec)
   }
 
