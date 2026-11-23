@@ -75,6 +75,22 @@ export function siteOf(u) {
   return labels.slice(underRegistry ? -3 : -2).join(".")
 }
 
+// Hosting and form services that serve many unrelated orgs from one domain.
+const SHARED_HOSTS = [
+  "notion.site", "notion.so", "sites.google.com", "docs.google.com", "forms.gle",
+  "vercel.app", "netlify.app", "pages.dev", "webflow.io", "framer.website", "wixsite.com",
+  "carrd.co", "gitbook.io", "typeform.com", "tally.so", "airtable.com", "medium.com",
+  "substack.com", "linktr.ee",
+]
+
+/** An organization's own site as its registrable domain, or "" when the URL lives on a
+ *  shared platform or hosting service, whose domain says nothing about the org. */
+export function orgSiteOf(u) {
+  const host = hostOf(u).split(":")[0]
+  if (platformOf(u) || SHARED_HOSTS.some((h) => host === h || host.endsWith("." + h))) return ""
+  return siteOf(u)
+}
+
 // ── Shared schema vocab ───────────────────────────────────────────────────────
 // One source of truth for the enums the ingest whitelist, the seed script, and the
 // tests all agree on. The UI + MCP mirror these unions (TypeScript side).
