@@ -22,7 +22,7 @@ import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 import { isCalendarDate } from "../src/features/opportunities/expiry.ts"
 import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.ts"
-import { letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
+import { ALL_STATUSES, letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
 import { visibilityPatch } from "../src/features/opportunities/opportunity-score.ts"
 import {
   inferSource, stableId, deadlineTypeOf, rollingFromDeadlineType,
@@ -37,7 +37,7 @@ const KEY = "cortex-opportunities"
 const GOALS = new Set(["internship", "exchange", "funding", "social-growth", "users"])
 const ELIGIBILITY = new Set(["remote-global", "latam", "us-eu", "other", "unknown"])
 const MODALITY = new Set(["remote", "hybrid", "in-person", "unknown"])
-const STATUS = new Set(["new", "pursuing", "applied", "won", "lost", "archived"])
+const STATUS = new Set(ALL_STATUSES)
 const PRIORITY = new Set(["low", "medium", "high"])
 
 function clampScore(n) {

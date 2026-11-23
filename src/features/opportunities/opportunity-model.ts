@@ -18,7 +18,8 @@ export type Eligibility = 'remote-global' | 'latam' | 'us-eu' | 'other' | 'unkno
 /** How/where the opportunity actually happens (venue axis — distinct from `eligibility`, which is the region axis). */
 export type Modality = 'remote' | 'hybrid' | 'in-person' | 'unknown'
 
-export type OppStatus = 'new' | 'pursuing' | 'applied' | 'won' | 'lost' | 'archived'
+/** `watching` = moved to the Watchlist by hand: it stays there whatever its window does. */
+export type OppStatus = 'new' | 'pursuing' | 'watching' | 'applied' | 'won' | 'lost' | 'archived'
 
 /** Deadline intelligence: how this opportunity's application window behaves. */
 export type DeadlineType = 'fixed' | 'rolling' | 'recurring' | 'always-open' | 'unknown'
@@ -218,6 +219,7 @@ export const ALL_CATEGORIES = Object.keys(categoryConfig) as OpportunityCategory
 export const statusConfig: Record<OppStatus, { label: string; chip: ChipVariant; text: string }> = {
   new: { label: 'New', chip: 'neutral', text: 'text-foreground' },
   pursuing: { label: 'Pursuing', chip: 'accent', text: 'text-accent' },
+  watching: { label: 'Watchlist', chip: 'neutral', text: 'text-foreground' },
   applied: { label: 'Applied', chip: 'warning', text: 'text-warning' },
   won: { label: 'Won', chip: 'success', text: 'text-success' },
   lost: { label: 'Lost', chip: 'danger', text: 'text-destructive' },
@@ -225,6 +227,10 @@ export const statusConfig: Record<OppStatus, { label: string; chip: ChipVariant;
 }
 export const ALL_STATUSES = Object.keys(statusConfig) as OppStatus[]
 export const statusOf = (s: string | null | undefined) => statusConfig[s as OppStatus] ?? statusConfig.new
+
+/** Statuses he chose to follow: the research run re-verifies them and they stay alert-worthy. */
+const FOLLOWED: readonly OppStatus[] = ['pursuing', 'watching', 'applied']
+export const isFollowedStatus = (s: string | null | undefined): boolean => FOLLOWED.includes(s as OppStatus)
 
 export const eligibilityConfig: Record<Eligibility, string> = {
   'remote-global': 'Remote / Global',
