@@ -10,7 +10,7 @@
  */
 
 import { daysUntilDeadline } from './expiry.ts'
-import type { ApplicationStatus, Opportunity, OppStatus } from './opportunity-model.ts'
+import { isFollowedStatus, type ApplicationStatus, type Opportunity, type OppStatus } from './opportunity-model.ts'
 import { buildCard, renderCard, type AlertCard } from './opportunity-alert-card.ts'
 import { SUPPORT_LABEL, supportKeysOf, type SupportKey } from './opportunity-funding.ts'
 import { scoreOpportunity } from './opportunity-score.ts'
@@ -115,10 +115,10 @@ export function snapshotOf(o: Opportunity, today: string): OppSnapshot {
 
 const USER_CLOSED: OppStatus[] = ['archived', 'won', 'lost', 'applied']
 
-/** Worth interrupting him for: not closed out by him, and premium, pursued, or passing the profile. */
+/** Worth interrupting him for: not closed out by him, and premium, followed, or passing the profile. */
 export function alertWorthy(o: Opportunity, today: string): boolean {
   if (USER_CLOSED.includes(o.status)) return false
-  if (o.premium || o.status === 'pursuing') return true
+  if (o.premium || isFollowedStatus(o.status)) return true
   return scoreOpportunity(o, today).keep
 }
 

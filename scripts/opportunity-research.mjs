@@ -24,6 +24,7 @@ import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.ts"
+import { isFollowedStatus } from "../src/features/opportunities/opportunity-model.ts"
 import { scoreOpportunity } from "../src/features/opportunities/opportunity-score.ts"
 import { reconcileOpportunityAlerts } from "./opportunity-alerts.mjs"
 import { buildStore, readStoreWithRev, writeMergedWithRetry } from "./radar-ingest.mjs"
@@ -60,7 +61,7 @@ export function researchInputs(store, today) {
   const scored = new Map(items.map((o) => [o, scoreOpportunity(o, today)]))
   // Premium first: those are the ones he is sure about, so they get re-verified every run.
   const live = items
-    .filter((o) => o.premium || o.status === "pursuing" || o.status === "applied" || (o.status === "new" && scored.get(o).keep))
+    .filter((o) => o.premium || isFollowedStatus(o.status) || (o.status === "new" && scored.get(o).keep))
     .filter((o) => !["won", "lost"].includes(o.status))
     .sort((a, b) => Number(!!b.premium) - Number(!!a.premium) || scored.get(b).score - scored.get(a).score)
   const catalog = items.filter((o) => o.source === "catalog" && !live.includes(o) && (o.status === "new" || o.hiddenReason))
@@ -173,7 +174,7 @@ async function main() {
   const first = buildStore(existing, records, runId, today)
   console.error(`opportunity-research: ${first.merged.report}`)
   if (dry) {
-    const live = first.merged.items.filter((o) => o.status === "new" || o.status === "pursuing" || o.status === "applied")
+    const live = first.merged.items.filter((o) => o.status === "new" || isFollowedStatus(o.status))
     const rows = live.map((o) => [scoreOpportunity(o, today).score, o.title]).sort((a, b) => b[0] - a[0])
     console.log(rows.map(([s, t]) => `${String(s).padStart(3)}  ${t}`).join("\n"))
     return
