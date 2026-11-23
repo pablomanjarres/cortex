@@ -44,20 +44,35 @@ export function hostOf(u) {
   }
 }
 
+/** The shared platform a URL lives on ("devpost", "x", ...), or null for any other site. */
+export function platformOf(u) {
+  const host = hostOf(u)
+  if (!host) return null
+  for (const [needle, src] of HOST_SOURCE) {
+    if (needle.endsWith(".") ? host.includes(needle) : (host === needle || host.endsWith("." + needle))) {
+      return src
+    }
+  }
+  return null
+}
+
 /** Platform a hit was found on, derived from where it lives. `sourceRef` (the post URL)
  *  wins over `url` (the apply link), so a hackathon found on X but applied-to on Devpost
  *  still reads as "x". Falls back to the caller's already-validated source. */
 export function inferSource(url, sourceRef, fallback = "web") {
-  for (const ref of [sourceRef, url]) {
-    const host = hostOf(ref)
-    if (!host) continue
-    for (const [needle, src] of HOST_SOURCE) {
-      if (needle.endsWith(".") ? host.includes(needle) : (host === needle || host.endsWith("." + needle))) {
-        return src
-      }
-    }
-  }
-  return fallback
+  return platformOf(sourceRef) ?? platformOf(url) ?? fallback
+}
+
+// Labels under a country code that name a registry, not an org: ox.ac.uk, unal.edu.co.
+const REGISTRY_LABELS = new Set(["ac", "co", "com", "edu", "gov", "net", "org"])
+
+/** Registrable domain of a URL ("https://www.aalto.fi/en/x" -> "aalto.fi"), "" when there
+ *  is none. A short registry list stands in for the public-suffix list. */
+export function siteOf(u) {
+  const labels = hostOf(u).split(":")[0].split(".").filter(Boolean)
+  if (labels.length < 2) return ""
+  const underRegistry = labels.length > 2 && labels.at(-1).length === 2 && REGISTRY_LABELS.has(labels.at(-2))
+  return labels.slice(underRegistry ? -3 : -2).join(".")
 }
 
 // ── Shared schema vocab ───────────────────────────────────────────────────────
