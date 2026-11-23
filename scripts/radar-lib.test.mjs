@@ -2,7 +2,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
-  inferSource, hostOf, platformOf, siteOf,
+  inferSource, hostOf, platformOf, siteOf, orgSiteOf,
   deadlineTypeOf, rollingFromDeadlineType, mergeOpportunity, shouldAutoArchive, shouldPrune,
   addDays, stableId,
 } from "./radar-lib.mjs"
@@ -53,6 +53,14 @@ test("platformOf: shared platforms by name, any other site null", () => {
   assert.equal(platformOf("https://medellin.eventbrite.co"), "eventbrite")
   assert.equal(platformOf("https://www.aalto.fi/en"), null)
   assert.equal(platformOf(""), null)
+})
+
+test("orgSiteOf: an org's own domain, blank on platforms and shared hosting", () => {
+  assert.equal(orgSiteOf("https://www.aalto.fi/en/asci"), "aalto.fi")
+  assert.equal(orgSiteOf("https://cloud.devpost.com/"), "")
+  assert.equal(orgSiteOf("https://gdg-bogota.notion.site/fellowship"), "")
+  assert.equal(orgSiteOf("https://sites.google.com/view/hack"), "")
+  assert.equal(orgSiteOf("https://www.google.com/about"), "google.com")
 })
 
 // ── deadlineType derivation ───────────────────────────────────────────────────
@@ -301,6 +309,9 @@ test("mergeClassified: a related host links only on the same org site and whole 
   // A shared platform hosts many organizers, so its domain says nothing about the org.
   const onDevpost = (host, slug) => ({ ...aaltoSighting, title: "Build With AI 2027", host, url: `https://${slug}.devpost.com/` })
   assert.equal(mergeOne({ ...aaltoStored, ...onDevpost("Google", "gdg"), id: "opp-gdg" }, onDevpost("Google Cloud", "cloud")).added.length, 1)
+  // Shared hosting is the same: two orgs' Notion pages share notion.site.
+  const onNotion = (host, slug) => ({ ...aaltoSighting, title: "AI Builders Fellowship 2027", host, url: `https://${slug}.notion.site/apply` })
+  assert.equal(mergeOne({ ...aaltoStored, ...onNotion("Google", "gdsc-a"), id: "opp-gdsc" }, onNotion("Google Developer Groups", "gdg-b")).added.length, 1)
   // "Aalto" is the start of "Aaltoes", but not as a whole word.
   assert.equal(mergeOne({ ...aaltoStored, host: "Aalto" }, { ...aaltoSighting, host: "Aaltoes" }).added.length, 1)
   assert.equal(mergeOne(aaltoStored, { ...aaltoSighting, title: "Aalto Research Fellowship 2027" }).added.length, 1)
