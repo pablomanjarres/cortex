@@ -2,7 +2,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
-  inferSource, hostOf,
+  inferSource, hostOf, platformOf, siteOf,
   deadlineTypeOf, rollingFromDeadlineType, mergeOpportunity, shouldAutoArchive, shouldPrune,
   addDays, stableId,
 } from "./radar-lib.mjs"
@@ -37,6 +37,22 @@ test("inferSource: post host (sourceRef) wins over apply host (url)", () => {
 test("inferSource falls back when host is unknown/absent", () => {
   assert.equal(inferSource("https://example.org/apply", "", "web"), "web")
   assert.equal(inferSource("", "", "manual"), "manual")
+})
+
+test("siteOf: the registrable domain, including registry labels under a country code", () => {
+  assert.equal(siteOf("https://www.aalto.fi/en/asci"), "aalto.fi")
+  assert.equal(siteOf("https://latam.aplica.500.co/"), "500.co")
+  assert.equal(siteOf("https://www.ox.ac.uk/admissions"), "ox.ac.uk")
+  assert.equal(siteOf("https://unal.edu.co/convocatorias"), "unal.edu.co")
+  assert.equal(siteOf("http://localhost:3456/x"), "")
+  assert.equal(siteOf(""), "")
+})
+
+test("platformOf: shared platforms by name, any other site null", () => {
+  assert.equal(platformOf("https://cloud.devpost.com/"), "devpost")
+  assert.equal(platformOf("https://medellin.eventbrite.co"), "eventbrite")
+  assert.equal(platformOf("https://www.aalto.fi/en"), null)
+  assert.equal(platformOf(""), null)
 })
 
 // ── deadlineType derivation ───────────────────────────────────────────────────
