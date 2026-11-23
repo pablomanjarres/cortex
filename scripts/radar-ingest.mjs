@@ -25,7 +25,7 @@ import { normalizeIntel } from "../src/features/opportunities/opportunity-intel.
 import { ALL_STATUSES, letterCountOf } from "../src/features/opportunities/opportunity-model.ts"
 import { visibilityPatch } from "../src/features/opportunities/opportunity-score.ts"
 import {
-  inferSource, platformOf, siteOf, stableId, deadlineTypeOf, rollingFromDeadlineType,
+  inferSource, orgSiteOf, stableId, deadlineTypeOf, rollingFromDeadlineType,
   mergeOpportunity, shouldAutoArchive, shouldPrune,
   CATEGORIES, SOURCES, DEADLINE_TYPES, EFFORTS,
 } from "./radar-lib.mjs"
@@ -84,11 +84,11 @@ function identityKeys(o) {
 // A renamed host: a later run may name the org more fully ("Aalto University" ->
 // "Aalto University Science Institute") and the page slug can change with it. The same
 // year-stripped title on the same org site is then one program when one host is the
-// other's leading words. A shared platform's domain (Devpost, Luma, X) says nothing
-// about the org, so it never links sightings this way.
+// other's leading words. A shared platform or hosting service (Devpost, X, Notion,
+// Vercel) says nothing about the org, so it never links sightings this way.
 function renameKey(o) {
   const t = normText(o.title)
-  const site = platformOf(o.url) ? "" : siteOf(o.url)
+  const site = orgSiteOf(o.url)
   return t.length >= 4 && site ? t + "|" + site : ""
 }
 function hostsRelated(a, b) {
@@ -205,8 +205,9 @@ export async function readStoreWithRev(api = API, key = KEY) {
 // Pure merge: classified records into the existing store.
 //   - identity collision (url, year-stripped title+host, or a renamed host on the same
 //     org site) => MERGE, not drop: the incoming sighting refreshes radar-owned fields
-//     (deadline intel, links, logistics) while user-owned fields (status/priority/notes/edits) are preserved. This is how
-//     "Thiel Fellowship 2027" refreshes the stale 2026 entry instead of vanishing.
+//     (deadline intel, links, logistics) while user-owned fields (status/priority/
+//     notes/edits) are preserved. This is how "Thiel Fellowship 2027" refreshes the
+//     stale 2026 entry instead of vanishing.
 //   - fixed-deadline items that closed >7d ago and are still status 'new' auto-archive.
 const saysNothingAboutDeadline = (raw) =>
   raw.deadline === undefined && raw.deadlineType === undefined && raw.rolling === undefined
