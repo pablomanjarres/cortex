@@ -44,12 +44,15 @@ export function hostOf(u) {
   }
 }
 
+/** True when `host` is `domain` or one of its subdomains. */
+const onDomain = (host, domain) => host === domain || host.endsWith("." + domain)
+
 /** The shared platform a URL lives on ("devpost", "x", ...), or null for any other site. */
 export function platformOf(u) {
   const host = hostOf(u)
   if (!host) return null
   for (const [needle, src] of HOST_SOURCE) {
-    if (needle.endsWith(".") ? host.includes(needle) : (host === needle || host.endsWith("." + needle))) {
+    if (needle.endsWith(".") ? host.includes(needle) : onDomain(host, needle)) {
       return src
     }
   }
@@ -87,7 +90,7 @@ const SHARED_HOSTS = [
  *  shared platform or hosting service, whose domain says nothing about the org. */
 export function orgSiteOf(u) {
   const host = hostOf(u).split(":")[0]
-  if (platformOf(u) || SHARED_HOSTS.some((h) => host === h || host.endsWith("." + h))) return ""
+  if (platformOf(u) || SHARED_HOSTS.some((h) => onDomain(host, h))) return ""
   return siteOf(u)
 }
 
