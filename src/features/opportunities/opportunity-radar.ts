@@ -84,7 +84,8 @@ export interface RadarView { apply: Row[]; applied: Row[]; watchlist: Row[]; hid
 /**
  * Split items into what to apply to now, what he applied to, what to watch for the next
  * cycle, and what the profile hides (with its reason). A closed deadline never lands in
- * Apply; a premium item is never hidden by the profile. Each list ranks premium first,
+ * Apply; a premium item is never hidden by the profile; an item he moved to the Watchlist
+ * (status `watching`) stays there whatever its window does. Each list ranks premium first,
  * then by the mode's score.
  */
 export function radarView(
@@ -98,6 +99,7 @@ export function radarView(
     if (!active.every((f) => f.test(o, s))) continue
     const row = { o, s, travel: travelCheckOf(o, readiness) }
     if (o.status === 'applied') view.applied.push(row)
+    else if (o.status === 'watching') view.watchlist.push(row)
     else if (o.status === 'archived' || o.status === 'won' || o.status === 'lost' || s.urgency === 'closed' || (o.status === 'new' && !s.keep && !o.premium)) view.hidden.push(row)
     else if (isApplyNow(s.urgency)) view.apply.push(row)
     else view.watchlist.push(row)
