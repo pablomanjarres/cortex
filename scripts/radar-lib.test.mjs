@@ -265,6 +265,31 @@ test("mergeClassified: a sighting with an existing id refreshes that item; store
   assert.deepEqual(clash.merged.items.map((o) => o.title), ["Orbit Fellowship"])
 })
 
+// One program seen twice: a later run named the host more fully and the URL slug followed.
+const aaltoPage = (slug) => `https://www.aalto.fi/en/${slug}-asci/${slug}-international-summer-research-programme`
+const aaltoStored = { ...storedThiel, id: "opp-b93e55cbd9bd", title: "Aalto International Summer Research Programme 2027", host: "Aalto University", url: aaltoPage("aalto-science-institute"), officialUrl: "", status: "new" }
+const aaltoSighting = { ...incomingThiel, title: "Aalto International Summer Research Programme 2027", host: "Aalto University Science Institute", url: aaltoPage("aalto-university-science-institute"), officialUrl: "" }
+const mergeOne = (stored, sighting) => mergeClassified({ items: [stored], lastRun: null }, [sighting], "2026-11-09T06:00:00Z", undefined)
+
+test("mergeClassified: a fuller host name on the program's own site refreshes the stored record", () => {
+  const { merged, added, refreshed } = mergeOne(aaltoStored, aaltoSighting)
+  assert.deepEqual([added.length, refreshed, merged.items.length, merged.items[0].id], [0, 1, 1, "opp-b93e55cbd9bd"])
+  assert.equal(merged.items[0].url, aaltoSighting.url)
+  // Either direction: a shorter host on a later sighting links too.
+  assert.equal(mergeOne({ ...aaltoStored, host: aaltoSighting.host }, { ...aaltoSighting, host: aaltoStored.host }).refreshed, 1)
+})
+
+test("mergeClassified: a related host links only on the same org site and whole words", () => {
+  const otherSite = { ...aaltoSighting, url: "https://summer-research.example.org/aalto" }
+  assert.equal(mergeOne(aaltoStored, otherSite).added.length, 1)
+  // A shared platform hosts many organizers, so its domain says nothing about the org.
+  const onDevpost = (host, slug) => ({ ...aaltoSighting, title: "Build With AI 2027", host, url: `https://${slug}.devpost.com/` })
+  assert.equal(mergeOne({ ...aaltoStored, ...onDevpost("Google", "gdg"), id: "opp-gdg" }, onDevpost("Google Cloud", "cloud")).added.length, 1)
+  // "Aalto" is the start of "Aaltoes", but not as a whole word.
+  assert.equal(mergeOne({ ...aaltoStored, host: "Aalto" }, { ...aaltoSighting, host: "Aaltoes" }).added.length, 1)
+  assert.equal(mergeOne(aaltoStored, { ...aaltoSighting, title: "Aalto Research Fellowship 2027" }).added.length, 1)
+})
+
 test("mergeClassified: auto-archives stale fixed items and counts them", () => {
   const stale = { ...storedThiel, id: "opp-old", title: "Old Hack Week", host: "X", url: "https://oldhack.example.com", sourceRef: "https://oldhack.example.com", status: "new", deadline: "2026-06-01", rolling: false }
   const { merged, archived } = mergeClassified({ items: [stale], lastRun: null }, [], "2026-07-10T09:00:00Z", undefined)
