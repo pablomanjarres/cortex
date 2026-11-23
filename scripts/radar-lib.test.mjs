@@ -188,7 +188,7 @@ test("shouldAutoArchive: boundary at exactly -7d (7 days past = keep, 8 = archiv
 
 test("shouldAutoArchive: never touches engaged statuses or non-fixed types", () => {
   const today = "2026-07-10"
-  for (const status of ["pursuing", "applied", "won", "lost", "archived"]) {
+  for (const status of ["pursuing", "watching", "applied", "won", "lost", "archived"]) {
     assert.equal(shouldAutoArchive({ status, deadlineType: "fixed", deadline: "2026-01-01" }, today), false, status)
   }
   assert.equal(shouldAutoArchive({ status: "new", deadlineType: "rolling", deadline: "2026-01-01" }, today), false)
@@ -284,6 +284,8 @@ test("normalizeRecord: defaults + derives deadlineType and keeps rolling in sync
   assert.equal(researched.intel.prestige, 10)
   assert.deepEqual(researched.intel.fields, ["ai"])
   assert.equal(researched.lastVerified, "2026-07-10")
+  // a hand-picked Watchlist status survives ingest
+  assert.equal(normalizeRecord({ title: "W", url: "https://w.example.com", status: "watching" }, runId).status, "watching")
   // new categories pass the whitelist
   assert.equal(normalizeRecord({ title: "P", url: "https://p.example.com", category: "program" }, runId).category, "program")
   assert.equal(normalizeRecord({ title: "R", url: "https://r.example.com", category: "residency" }, runId).category, "residency")
